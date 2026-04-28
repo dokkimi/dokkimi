@@ -1,11 +1,3 @@
-# GitHub Repo Setup
-
-## README.md
-
-Paste the following as the README:
-
----
-
 # Dokkimi
 
 Integration, E2E, and visual regression testing for microservices without changing your code.
