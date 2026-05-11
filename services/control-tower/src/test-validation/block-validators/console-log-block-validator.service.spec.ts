@@ -285,7 +285,7 @@ describe('ConsoleLogBlockValidatorService', () => {
         block,
         makeStepExecution(),
       );
-      await jest.advanceTimersByTimeAsync(500);
+      await jest.advanceTimersByTimeAsync(1000);
       const results = await promise;
       expect(results[0].passed).toBe(true);
       expect(mockPrisma.consoleLog.findMany).toHaveBeenCalledTimes(2);
@@ -324,8 +324,8 @@ describe('ConsoleLogBlockValidatorService', () => {
         block,
         makeStepExecution(),
       );
-      // Advance through all retries (3 x 500ms)
-      await jest.advanceTimersByTimeAsync(1500);
+      // Advance through all retries (3 x 1000ms)
+      await jest.advanceTimersByTimeAsync(3000);
       const results = await promise;
       expect(results[0].passed).toBe(false);
       // 1 initial + 3 retries
