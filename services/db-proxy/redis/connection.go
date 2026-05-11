@@ -192,4 +192,3 @@ func (pc *proxyConnection) logCommand(pq pendingCommand, response *respValue) {
 	}
 	pc.logger.Log(msg)
 }
-

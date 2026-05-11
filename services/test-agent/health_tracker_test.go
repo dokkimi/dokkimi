@@ -206,4 +206,3 @@ func TestHealthTracker_UnknownItem(t *testing.T) {
 		t.Errorf("Expected %d items in status, got %d", len(expectedItemIds), len(status))
 	}
 }
-

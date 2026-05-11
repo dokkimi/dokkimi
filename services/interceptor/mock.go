@@ -24,8 +24,8 @@ type MockManager struct {
 func NewMockManager(cache *MockCache, _ interface{}, origin string, urlMap func() UrlMap) *MockManager {
 	return &MockManager{
 		cache:  cache,
-		origin:  origin,
-		urlMap:  urlMap,
+		origin: origin,
+		urlMap: urlMap,
 	}
 }
 
@@ -86,6 +86,7 @@ func (m *MockManager) FindMatch(r *http.Request) *MockEndpoint {
 //   - Target: specific (1) vs wildcard (0)
 //   - Method: specific (1) vs wildcard (0)
 //   - Path: exact (2) vs variable (2) vs prefix (1) vs wildcard (0)
+//
 // Note: Path variables score 2 (same as exact) but exact matches are checked first in pathMatches
 // Total possible score: 6 (was 5 before body matching)
 func (m *MockManager) calculateSpecificity(mock *MockEndpoint, r *http.Request, _ UrlMap) int {
@@ -218,7 +219,7 @@ func (m *MockManager) pathMatches(pattern, path string) bool {
 	// Path variable matching using pathmatch library
 	// First, normalize :variable syntax to {variable} syntax
 	normalizedPattern := m.normalizePathVariableSyntax(pattern)
-	
+
 	// Check if the normalized pattern contains variables
 	if m.hasPathVariables(normalizedPattern) {
 		matched, _, err := pathmatch.CompileAndMatch(normalizedPattern, path)
@@ -236,7 +237,7 @@ func (m *MockManager) normalizePathVariableSyntax(pattern string) string {
 	// Split by "/" and process each segment
 	parts := strings.Split(pattern, "/")
 	normalized := make([]string, 0, len(parts))
-	
+
 	for _, part := range parts {
 		if strings.HasPrefix(part, ":") && len(part) > 1 {
 			// Convert :variable to {variable}
@@ -246,7 +247,7 @@ func (m *MockManager) normalizePathVariableSyntax(pattern string) string {
 			normalized = append(normalized, part)
 		}
 	}
-	
+
 	return strings.Join(normalized, "/")
 }
 
@@ -284,7 +285,7 @@ func (m *MockManager) ApplyMock(mock *MockEndpoint) (*http.Response, error) {
 		Header:     make(http.Header),
 		Body:       http.NoBody,
 	}
-	
+
 	// Mark as mocked
 	response.Header.Set("X-Mocked", "true")
 
@@ -319,4 +320,3 @@ func (m *MockManager) ApplyMock(mock *MockEndpoint) (*http.Response, error) {
 
 	return response, nil
 }
-

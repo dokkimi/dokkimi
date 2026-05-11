@@ -9,12 +9,12 @@ import (
 
 // HealthTracker tracks the health status of all expected namespace items
 type HealthTracker struct {
-	expectedItemIds map[string]bool   // Map of item IDs we're waiting for
-	healthStatus    map[string]bool   // Map of item ID -> ready status
-	itemIdToName    map[string]string // Map of item ID -> human-readable name
-	mutex           sync.RWMutex
-	allReadyChan    chan struct{} // Channel to signal when all items are ready
-	allReadyOnce    sync.Once
+	expectedItemIds     map[string]bool   // Map of item IDs we're waiting for
+	healthStatus        map[string]bool   // Map of item ID -> ready status
+	itemIdToName        map[string]string // Map of item ID -> human-readable name
+	mutex               sync.RWMutex
+	allReadyChan        chan struct{} // Channel to signal when all items are ready
+	allReadyOnce        sync.Once
 	testExecutionLogger *TestExecutionLogger
 }
 
@@ -29,10 +29,10 @@ func NewHealthTracker(expectedItemIds []string, testExecutionLogger *TestExecuti
 	}
 
 	return &HealthTracker{
-		expectedItemIds: expectedMap,
-		healthStatus:    healthMap,
-		itemIdToName:    itemIdToName,
-		allReadyChan:     make(chan struct{}),
+		expectedItemIds:     expectedMap,
+		healthStatus:        healthMap,
+		itemIdToName:        itemIdToName,
+		allReadyChan:        make(chan struct{}),
 		testExecutionLogger: testExecutionLogger,
 	}
 }

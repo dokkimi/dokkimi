@@ -9,16 +9,16 @@ import (
 
 // fakeBrowser implements BrowserReader for unit tests — no chromium required.
 type fakeBrowser struct {
-	text         map[string]string
-	attrs        map[string]map[string]string
-	values       map[string]string
-	counts       map[string]int
-	exists       map[string]bool
-	location     string
-	cookies      map[string]string
-	localStorage map[string]string
+	text           map[string]string
+	attrs          map[string]map[string]string
+	values         map[string]string
+	counts         map[string]int
+	exists         map[string]bool
+	location       string
+	cookies        map[string]string
+	localStorage   map[string]string
 	sessionStorage map[string]string
-	readErr      error
+	readErr        error
 }
 
 func (f *fakeBrowser) Text(sel string, _ time.Duration) (string, error) {

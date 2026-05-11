@@ -8,10 +8,10 @@ import (
 
 func TestReadLenEncInt(t *testing.T) {
 	tests := []struct {
-		name     string
-		data     []byte
-		wantVal  uint64
-		wantN    int
+		name    string
+		data    []byte
+		wantVal uint64
+		wantN   int
 	}{
 		{"1-byte", []byte{42}, 42, 1},
 		{"1-byte zero", []byte{0}, 0, 1},

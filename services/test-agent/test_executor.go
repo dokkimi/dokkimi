@@ -15,9 +15,9 @@ import (
 
 // Retry configuration for transient errors
 const (
-	maxRetries       = 3
-	initialBackoff   = 500 * time.Millisecond
-	maxBackoff       = 5 * time.Second
+	maxRetries        = 3
+	initialBackoff    = 500 * time.Millisecond
+	maxBackoff        = 5 * time.Second
 	backoffMultiplier = 2.0
 )
 

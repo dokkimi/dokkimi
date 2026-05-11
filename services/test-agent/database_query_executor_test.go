@@ -322,5 +322,3 @@ func TestConvertPostgresParams_IgnoresNonNumericKeys(t *testing.T) {
 		t.Errorf("expected nil args for non-numeric keys, got %v", args)
 	}
 }
-
-

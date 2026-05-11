@@ -10,8 +10,8 @@ import (
 	"syscall"
 	"time"
 
-	_ "github.com/lib/pq"
 	"dokkimi.com/db-proxy-shared"
+	_ "github.com/lib/pq"
 )
 
 func main() {

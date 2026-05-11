@@ -20,7 +20,7 @@ func LoadConfig(defaultDBUser string) (*Config, error) {
 		DatabaseType:     os.Getenv("DATABASE_TYPE"),
 		InstanceItemName: os.Getenv("INSTANCE_ITEM_NAME"),
 		InstanceID:       os.Getenv("NAMESPACE"), // NAMESPACE env var contains instance ID
-		ControlTowerURL:   os.Getenv("CONTROL_TOWER_URL"),
+		ControlTowerURL:  os.Getenv("CONTROL_TOWER_URL"),
 
 		// Optional fields
 		InstanceItemID: os.Getenv("NAMESPACE_ITEM_ID"),
@@ -100,4 +100,3 @@ func getEnvOrDefault(key, defaultValue string) string {
 	}
 	return defaultValue
 }
-

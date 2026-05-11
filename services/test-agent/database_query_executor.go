@@ -27,10 +27,10 @@ type DatabaseQueryExecutor struct {
 	logEndpointURL string
 	databaseMap    map[string]DatabaseInfo
 	instanceId     string
-	pgPools        map[string]*sql.DB           // cached postgres connection pools, keyed by database name
-	mysqlPools     map[string]*sql.DB           // cached mysql connection pools, keyed by database name
-	redisClients   map[string]*redis.Client     // cached redis clients, keyed by database name
-	mongoClients   map[string]*mongo.Client     // cached mongo clients, keyed by database name
+	pgPools        map[string]*sql.DB       // cached postgres connection pools, keyed by database name
+	mysqlPools     map[string]*sql.DB       // cached mysql connection pools, keyed by database name
+	redisClients   map[string]*redis.Client // cached redis clients, keyed by database name
+	mongoClients   map[string]*mongo.Client // cached mongo clients, keyed by database name
 }
 
 // DatabaseInfo contains connection information for a database
@@ -586,12 +586,12 @@ func (e *DatabaseQueryExecutor) getMongoClient(databaseName string) (*mongo.Clie
 // Uses bson.D for ordered fields to preserve key order from the test definition
 // through the wire protocol, so the proxy's reconstructed query matches exactly.
 type mongoCommand struct {
-	Operation  string `json:"operation"`
-	Collection string `json:"collection"`
-	Filter     bson.D `json:"-"`
-	Document   bson.D `json:"-"`
+	Operation  string   `json:"operation"`
+	Collection string   `json:"collection"`
+	Filter     bson.D   `json:"-"`
+	Document   bson.D   `json:"-"`
 	Documents  []bson.D `json:"-"`
-	Update     bson.D `json:"-"`
+	Update     bson.D   `json:"-"`
 }
 
 // parseMongoCommand parses a JSON query string into a mongoCommand, preserving
@@ -1007,8 +1007,8 @@ func (e *DatabaseQueryExecutor) logQueryResult(
 		"databaseType":   databaseType,
 		"databaseName":   databaseName,
 		"query":          query,
-		"success":       success,
-		"timestamp":     time.Now().UTC().Format(time.RFC3339Nano),
+		"success":        success,
+		"timestamp":      time.Now().UTC().Format(time.RFC3339Nano),
 	}
 
 	if params != nil && len(params) > 0 {
@@ -1065,5 +1065,3 @@ func (e *DatabaseQueryExecutor) logQueryResult(
 
 	log.Printf("Successfully logged database query for %s/%s", databaseType, databaseName)
 }
-
-

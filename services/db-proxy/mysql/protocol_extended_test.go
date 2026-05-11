@@ -86,13 +86,13 @@ func TestParseColumnDef(t *testing.T) {
 			buf = append(buf, byte(len(s)))
 			buf = append(buf, []byte(s)...)
 		}
-		buf = append(buf, 0x0c)           // fixed_length_fields marker
-		buf = append(buf, 0, 0)           // character_set
-		buf = append(buf, 0, 0, 0, 0)     // column_length
-		buf = append(buf, ft)             // type
-		buf = append(buf, 0, 0)           // flags
-		buf = append(buf, 0)              // decimals
-		buf = append(buf, 0, 0)           // filler
+		buf = append(buf, 0x0c)       // fixed_length_fields marker
+		buf = append(buf, 0, 0)       // character_set
+		buf = append(buf, 0, 0, 0, 0) // column_length
+		buf = append(buf, ft)         // type
+		buf = append(buf, 0, 0)       // flags
+		buf = append(buf, 0)          // decimals
+		buf = append(buf, 0, 0)       // filler
 		return buf
 	}
 
@@ -147,30 +147,30 @@ func TestParseBinaryRowValues(t *testing.T) {
 	nullBitmapLen := (numCols + 7 + 2) / 8
 
 	var payload []byte
-	payload = append(payload, 0x00)                      // header
+	payload = append(payload, 0x00)                           // header
 	payload = append(payload, make([]byte, nullBitmapLen)...) // null bitmap (all non-null)
 
-	payload = append(payload, 42)                          // tiny: 42
+	payload = append(payload, 42) // tiny: 42
 
 	shortBuf := make([]byte, 2)
 	binary.LittleEndian.PutUint16(shortBuf, 1000)
-	payload = append(payload, shortBuf...)                 // short: 1000
+	payload = append(payload, shortBuf...) // short: 1000
 
 	longBuf := make([]byte, 4)
 	binary.LittleEndian.PutUint32(longBuf, 50000)
-	payload = append(payload, longBuf...)                  // long: 50000
+	payload = append(payload, longBuf...) // long: 50000
 
 	longlongBuf := make([]byte, 8)
 	binary.LittleEndian.PutUint64(longlongBuf, 9999999999)
-	payload = append(payload, longlongBuf...)              // longlong: 9999999999
+	payload = append(payload, longlongBuf...) // longlong: 9999999999
 
 	floatBuf := make([]byte, 4)
 	binary.LittleEndian.PutUint32(floatBuf, math.Float32bits(3.14))
-	payload = append(payload, floatBuf...)                 // float: 3.14
+	payload = append(payload, floatBuf...) // float: 3.14
 
 	doubleBuf := make([]byte, 8)
 	binary.LittleEndian.PutUint64(doubleBuf, math.Float64bits(2.718281828))
-	payload = append(payload, doubleBuf...)                // double: 2.718281828
+	payload = append(payload, doubleBuf...) // double: 2.718281828
 
 	payload = append(payload, 5, 'h', 'e', 'l', 'l', 'o') // text: "hello"
 
@@ -432,13 +432,13 @@ func TestStripDeprecateEOFFromGreeting(t *testing.T) {
 	payload = append(payload, 0x0a) // protocol version
 	payload = append(payload, []byte(version)...)
 	payload = append(payload, 0x01, 0x00, 0x00, 0x00) // conn_id = 1
-	payload = append(payload, make([]byte, 8)...)       // auth_plugin_data_part_1
-	payload = append(payload, 0x00)                      // filler
-	payload = append(payload, 0xFF, 0xFF)                // cap_lower (all bits set)
-	payload = append(payload, 0x21)                      // charset
-	payload = append(payload, 0x02, 0x00)                // status flags
+	payload = append(payload, make([]byte, 8)...)     // auth_plugin_data_part_1
+	payload = append(payload, 0x00)                   // filler
+	payload = append(payload, 0xFF, 0xFF)             // cap_lower (all bits set)
+	payload = append(payload, 0x21)                   // charset
+	payload = append(payload, 0x02, 0x00)             // status flags
 	// cap_upper: set CLIENT_DEPRECATE_EOF (bit 24 = bit 8 of upper = bit 0 of upper byte 1)
-	payload = append(payload, 0xFF, 0xFF) // all bits set in upper caps
+	payload = append(payload, 0xFF, 0xFF)          // all bits set in upper caps
 	payload = append(payload, make([]byte, 10)...) // remaining fields
 
 	pkt := &mysqlPacket{sequenceID: 0, payload: payload}

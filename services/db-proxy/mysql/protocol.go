@@ -164,7 +164,7 @@ func readLenEncString(data []byte) (string, int, bool) {
 
 // columnDef holds column name and type from a ColumnDefinition41 packet
 type columnDef struct {
-	name     string
+	name      string
 	fieldType byte
 }
 

@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
-	)
+)
 
 func buildFindResponseMsg(cursorDoc bson.D) *mongoMessage {
 	responseDoc := bson.D{
@@ -120,20 +120,20 @@ func TestStripCompressionOnFindResponse(t *testing.T) {
 func TestHelloResponseSkipBSONAllTypes(t *testing.T) {
 	// Build a hello response with the types MongoDB actually uses
 	doc := bson.D{
-		{Key: "ismaster", Value: true},                          // bool 0x08
-		{Key: "maxBsonObjectSize", Value: int32(16777216)},      // int32 0x10
-		{Key: "maxMessageSizeBytes", Value: int32(48000000)},    // int32
+		{Key: "ismaster", Value: true},                                   // bool 0x08
+		{Key: "maxBsonObjectSize", Value: int32(16777216)},               // int32 0x10
+		{Key: "maxMessageSizeBytes", Value: int32(48000000)},             // int32
 		{Key: "localTime", Value: bson.DateTime(time.Now().UnixMilli())}, // datetime 0x09
-		{Key: "connectionId", Value: int64(42)},                 // int64 0x12
-		{Key: "minWireVersion", Value: int32(0)},                // int32
-		{Key: "maxWireVersion", Value: int32(21)},               // int32
-		{Key: "readOnly", Value: false},                         // bool
-		{Key: "topologyVersion", Value: bson.D{                  // document 0x03
+		{Key: "connectionId", Value: int64(42)},                          // int64 0x12
+		{Key: "minWireVersion", Value: int32(0)},                         // int32
+		{Key: "maxWireVersion", Value: int32(21)},                        // int32
+		{Key: "readOnly", Value: false},                                  // bool
+		{Key: "topologyVersion", Value: bson.D{ // document 0x03
 			{Key: "processId", Value: bson.NewObjectID()},
 			{Key: "counter", Value: int64(0)},
 		}},
-		{Key: "compression", Value: bson.A{"zstd", "snappy"}},  // array 0x04
-		{Key: "ok", Value: float64(1)},                          // double 0x01
+		{Key: "compression", Value: bson.A{"zstd", "snappy"}}, // array 0x04
+		{Key: "ok", Value: float64(1)},                        // double 0x01
 	}
 
 	raw, _ := bson.Marshal(doc)

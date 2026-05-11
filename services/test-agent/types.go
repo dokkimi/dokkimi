@@ -7,12 +7,12 @@ import (
 
 // HealthStatusUpdate represents the health status update from interceptors/sidecars
 type HealthStatusUpdate struct {
-	InstanceID      string `json:"instanceId"`
-	InstanceItemName string `json:"instanceItemName"`
-	InstanceItemID  string `json:"instanceItemId"` // ID for matching (preferred over name)
-	Ready           bool   `json:"ready"`
-	Timestamp       string `json:"timestamp"`
-	Details         HealthStatusDetails `json:"details,omitempty"`
+	InstanceID       string              `json:"instanceId"`
+	InstanceItemName string              `json:"instanceItemName"`
+	InstanceItemID   string              `json:"instanceItemId"` // ID for matching (preferred over name)
+	Ready            bool                `json:"ready"`
+	Timestamp        string              `json:"timestamp"`
+	Details          HealthStatusDetails `json:"details,omitempty"`
 }
 
 // HealthStatusDetails contains additional details about the health check
@@ -33,11 +33,11 @@ type TestConfig struct {
 
 // ExecuteRequest is the body for POST /execute
 type ExecuteRequest struct {
-	TestRunID   string `json:"testRunId"`               // Required: scopes this execution run
-	Mode        string `json:"mode"`                    // "all" | "run-step"
-	StartAtStep *int   `json:"startAtStep,omitempty"`   // "all" mode: start from this step index (skip earlier)
-	StopBefore  *int   `json:"stopBefore,omitempty"`    // "all" mode: stop before this step index (exclusive)
-	StepIndex   *int   `json:"stepIndex,omitempty"`     // "run-step" mode
+	TestRunID   string `json:"testRunId"`             // Required: scopes this execution run
+	Mode        string `json:"mode"`                  // "all" | "run-step"
+	StartAtStep *int   `json:"startAtStep,omitempty"` // "all" mode: start from this step index (skip earlier)
+	StopBefore  *int   `json:"stopBefore,omitempty"`  // "all" mode: stop before this step index (exclusive)
+	StepIndex   *int   `json:"stepIndex,omitempty"`   // "run-step" mode
 }
 
 // TestDefinition represents a named test with sequential steps
@@ -52,11 +52,11 @@ type TestDefinition struct {
 
 // TestStep represents a single step: action + extract (assertions are stripped before reaching test-agent)
 type TestStep struct {
-	Name          string                  `json:"name,omitempty"`
-	Description   string                  `json:"description,omitempty"`
-	StopOnFailure *bool                   `json:"stopOnFailure,omitempty"`
-	Action        StepAction              `json:"action"`
-	Extract       map[string]ExtractRule  `json:"extract,omitempty"`
+	Name          string                 `json:"name,omitempty"`
+	Description   string                 `json:"description,omitempty"`
+	StopOnFailure *bool                  `json:"stopOnFailure,omitempty"`
+	Action        StepAction             `json:"action"`
+	Extract       map[string]ExtractRule `json:"extract,omitempty"`
 }
 
 // ExtractRule defines how to extract a variable from a response.
@@ -123,9 +123,9 @@ type TestCompletionNotification struct {
 // ConfigMapData represents the data structure in the ConfigMap
 type ConfigMapData struct {
 	ExpectedNamespaceItemIds []string                `json:"expectedNamespaceItemIds"`
-	TestConfig                *TestConfig             `json:"testConfig"`
-	URLMap                    map[string]URLMapEntry   `json:"urlMap"`
-	DatabaseMap               map[string]DatabaseInfo `json:"databaseMap,omitempty"`
+	TestConfig               *TestConfig             `json:"testConfig"`
+	URLMap                   map[string]URLMapEntry  `json:"urlMap"`
+	DatabaseMap              map[string]DatabaseInfo `json:"databaseMap,omitempty"`
 }
 
 // URLMapEntry represents an entry in the URL map
@@ -135,4 +135,3 @@ type URLMapEntry struct {
 	Name           string `json:"name"`
 	InstanceItemID string `json:"instanceItemId"`
 }
-

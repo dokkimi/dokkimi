@@ -76,12 +76,12 @@ func defaultBrowserFactory(browserURL string, viewportWidth, viewportHeight int)
 // across all subsequent calls so that cookies, localStorage, and page state
 // persist across step groups within a test run.
 type UIStepExecutor struct {
-	factory    UIDriverFactory
-	cachedDrv  UIDriver
-	urlMap     map[string]URLMapEntry
-	varCtx     *VariableContext
-	logger     *TestExecutionLogger
-	uploader   *ArtifactUploader // nil = no artifact pipeline (tests / non-CT runs); screenshot/failure capture log instead
+	factory   UIDriverFactory
+	cachedDrv UIDriver
+	urlMap    map[string]URLMapEntry
+	varCtx    *VariableContext
+	logger    *TestExecutionLogger
+	uploader  *ArtifactUploader // nil = no artifact pipeline (tests / non-CT runs); screenshot/failure capture log instead
 }
 
 // NewUIStepExecutor constructs an executor against the default chromedp-backed

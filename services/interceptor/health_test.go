@@ -19,41 +19,41 @@ func TestNewHealthChecker(t *testing.T) {
 			config: &HealthConfig{
 				HealthCheckEndpoint: "/health",
 				ServicePort:         "8080",
-			InstanceItemName:    "item-123",
-			InstanceID:           "namespace-123",
-				ControlTowerURL:      "http://localhost:3002",
+				InstanceItemName:    "item-123",
+				InstanceID:          "namespace-123",
+				ControlTowerURL:     "http://localhost:3002",
 				CheckTimeout:        5 * time.Second,
 			},
 			want: true,
 		},
 		{
 			name: "missing health check endpoint returns nil",
-		config: &HealthConfig{
-			ServicePort:      "8080",
-			InstanceItemName: "item-123",
-			InstanceID:       "namespace-123",
-			ControlTowerURL:   "http://localhost:3002",
-		},
+			config: &HealthConfig{
+				ServicePort:      "8080",
+				InstanceItemName: "item-123",
+				InstanceID:       "namespace-123",
+				ControlTowerURL:  "http://localhost:3002",
+			},
 			want: false,
 		},
 		{
 			name: "missing service port returns nil",
 			config: &HealthConfig{
 				HealthCheckEndpoint: "/health",
-			InstanceItemName:    "item-123",
-			InstanceID:           "namespace-123",
-				ControlTowerURL:      "http://localhost:3002",
+				InstanceItemName:    "item-123",
+				InstanceID:          "namespace-123",
+				ControlTowerURL:     "http://localhost:3002",
 			},
 			want: false,
 		},
 		{
 			name: "missing namespace item ID returns nil",
-		config: &HealthConfig{
-			HealthCheckEndpoint: "/health",
-			ServicePort:         "8080",
-			InstanceID:          "namespace-123",
-			ControlTowerURL:      "http://localhost:3002",
-		},
+			config: &HealthConfig{
+				HealthCheckEndpoint: "/health",
+				ServicePort:         "8080",
+				InstanceID:          "namespace-123",
+				ControlTowerURL:     "http://localhost:3002",
+			},
 			want: false,
 		},
 	}
@@ -72,9 +72,9 @@ func TestHealthChecker_getCheckInterval(t *testing.T) {
 	cfg := &HealthConfig{
 		HealthCheckEndpoint: "/health",
 		ServicePort:         "8080",
-			InstanceItemName:    "item-123",
-			InstanceID:           "namespace-123",
-		ControlTowerURL:      "http://localhost:3002",
+		InstanceItemName:    "item-123",
+		InstanceID:          "namespace-123",
+		ControlTowerURL:     "http://localhost:3002",
 		CheckTimeout:        5 * time.Second,
 	}
 
@@ -208,9 +208,9 @@ func TestHealthChecker_updateState(t *testing.T) {
 	cfg := &HealthConfig{
 		HealthCheckEndpoint: "/health",
 		ServicePort:         "8080",
-			InstanceItemName:    "item-123",
-			InstanceID:           "namespace-123",
-		ControlTowerURL:      "http://localhost:3002",
+		InstanceItemName:    "item-123",
+		InstanceID:          "namespace-123",
+		ControlTowerURL:     "http://localhost:3002",
 		CheckTimeout:        5 * time.Second,
 	}
 
@@ -299,4 +299,3 @@ func TestHealthChecker_updateState(t *testing.T) {
 		})
 	}
 }
-

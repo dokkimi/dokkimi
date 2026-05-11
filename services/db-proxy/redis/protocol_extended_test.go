@@ -24,9 +24,9 @@ func TestBoolToInt(t *testing.T) {
 
 func TestExtractCommand_NonArray(t *testing.T) {
 	tests := []struct {
-		name  string
-		val   respValue
-		want  string
+		name string
+		val  respValue
+		want string
 	}{
 		{"null array", respValue{typ: respArray, isNull: true}, ""},
 		{"empty array", respValue{typ: respArray, array: []respValue{}}, ""},

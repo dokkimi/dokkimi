@@ -18,9 +18,9 @@ type TestExecutionLogMessage struct {
 	Message        string            `json:"message"`
 	StepIndex      *int              `json:"stepIndex,omitempty"`
 	SubActionIndex *int              `json:"subActionIndex,omitempty"` // index within a parallel action batch
-	SubStepIndex   *int              `json:"subStepIndex,omitempty"`  // UI sub-step position within action.steps
-	ActionType     string            `json:"actionType,omitempty"`    // UI sub-step kind (visit/click/type/...)
-	Selector       string            `json:"selector,omitempty"`      // UI sub-step CSS selector (when applicable)
+	SubStepIndex   *int              `json:"subStepIndex,omitempty"`   // UI sub-step position within action.steps
+	ActionType     string            `json:"actionType,omitempty"`     // UI sub-step kind (visit/click/type/...)
+	Selector       string            `json:"selector,omitempty"`       // UI sub-step CSS selector (when applicable)
 	Duration       *int              `json:"duration,omitempty"`
 	Error          string            `json:"error,omitempty"`
 	ErrorType      string            `json:"errorType,omitempty"`
@@ -51,7 +51,7 @@ func NewTestExecutionLogger(logEndpointURL string, instanceId string, timeout ti
 		httpClient: &http.Client{
 			Timeout: timeout,
 		},
-		logChan: make(chan TestExecutionLogMessage, 1000), // Buffered channel
+		logChan:  make(chan TestExecutionLogMessage, 1000), // Buffered channel
 		stopChan: make(chan struct{}),
 	}
 

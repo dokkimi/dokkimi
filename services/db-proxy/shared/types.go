@@ -18,7 +18,7 @@ type Config struct {
 	InstanceItemName string // Item definition name (e.g., "postgres-db", "mysql-db", "mongo-db")
 	InstanceItemID   string // Instance item ID
 	InstanceID       string // Instance ID
-	ControlTowerURL   string
+	ControlTowerURL  string
 	TestAgentURL     string // Optional: URL for test-agent
 	CheckTimeout     time.Duration
 	QueryPort        string // Port for query endpoint (default: 8080)
@@ -51,5 +51,3 @@ type HealthStatusDetails struct {
 	CheckDuration int    `json:"checkDuration,omitempty"`
 	Error         string `json:"error,omitempty"`
 }
-
-

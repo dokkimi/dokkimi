@@ -32,13 +32,13 @@ type proxyConnection struct {
 	prepareSkipRemaining int
 
 	// Result accumulation
-	columns        []columnDef
-	resultRows     []map[string]interface{}
-	inResultSet    bool
+	columns         []columnDef
+	resultRows      []map[string]interface{}
+	inResultSet     bool
 	binaryResultSet bool // true when result set is from COM_STMT_EXECUTE
-	columnCount    int
-	columnsRead    int
-	eofAfterCols   bool // have we seen the EOF after column defs?
+	columnCount     int
+	columnsRead     int
+	eofAfterCols    bool // have we seen the EOF after column defs?
 }
 
 func newProxyConnection(client, upstream net.Conn, cfg *shared.Config, logger *shared.QueryLogger) *proxyConnection {
@@ -314,4 +314,3 @@ func (pc *proxyConnection) completeQueryLocked(success bool, rowsAffected int64,
 	}
 	pc.logger.Log(msg)
 }
-

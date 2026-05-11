@@ -10,8 +10,8 @@ import (
 	"syscall"
 	"time"
 
-	_ "github.com/go-sql-driver/mysql"
 	shared "dokkimi.com/db-proxy-shared"
+	_ "github.com/go-sql-driver/mysql"
 )
 
 func main() {

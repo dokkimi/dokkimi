@@ -229,4 +229,3 @@ func (w *ConfigMapWatcher) IsInitialized() bool {
 	defer w.mu.RUnlock()
 	return w.initialized
 }
-

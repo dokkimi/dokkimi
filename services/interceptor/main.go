@@ -49,7 +49,7 @@ func main() {
 
 	// Initialize components
 	cache := NewMockCache(cfg.MockCacheTTL)
-	
+
 	// Get URL map function
 	getUrlMap := func() UrlMap {
 		return cache.GetUrlMap()
@@ -115,11 +115,11 @@ func main() {
 				InstanceItemName:    instanceItemName,
 				InstanceItemID:      cfg.NamespaceItemID,
 				InstanceID:          cfg.Namespace,
-				ControlTowerURL:      cfg.ControlTowerURL,
+				ControlTowerURL:     cfg.ControlTowerURL,
 				TestAgentURL:        cfg.TestAgentURL,
 				CheckTimeout:        5 * time.Second,
 				Origin:              cfg.Origin,       // Service name to health check
-				K8sDNSIP:            cfg.K8sDNSIP,    // K8s DNS for resolving service ClusterIP
+				K8sDNSIP:            cfg.K8sDNSIP,     // K8s DNS for resolving service ClusterIP
 				K8sNamespace:        cfg.K8sNamespace, // K8s namespace for service resolution
 			}
 			healthChecker = NewHealthChecker(healthConfig)
@@ -374,7 +374,7 @@ func handleRequest(w http.ResponseWriter, r *http.Request, proxy *ProxyService, 
 func handleHealthCheck(w http.ResponseWriter, _ *http.Request, cache *MockCache) {
 	// Check if cache is initialized (basic health check)
 	_ = cache.GetMocks() // This will never fail, just ensures cache is accessible
-	
+
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte(`{"status":"healthy"}`))

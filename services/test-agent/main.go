@@ -215,8 +215,8 @@ func main() {
 			}
 
 			podCtx, podCancel := context.WithTimeout(ctx, timeout)
-		allPodsReady, podFailReason := podReadinessChecker.VerifyAllPodsReadyWithRetry(podCtx, namespaceInstanceId, 8, 1*time.Second)
-		podCancel()
+			allPodsReady, podFailReason := podReadinessChecker.VerifyAllPodsReadyWithRetry(podCtx, namespaceInstanceId, 8, 1*time.Second)
+			podCancel()
 			if !allPodsReady {
 				log.Printf("Pod readiness check failed: %s", podFailReason)
 				testExecutionLogger.LogEvent("POD_READINESS_FAILED", podFailReason, nil, nil)

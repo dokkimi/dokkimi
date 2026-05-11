@@ -190,4 +190,3 @@ func (pc *proxyConnection) logQuery(pq pendingQuery, response *mongoMessage) {
 
 	pc.logger.Log(msg)
 }
-

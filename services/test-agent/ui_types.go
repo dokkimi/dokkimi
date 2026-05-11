@@ -52,8 +52,8 @@ var validUISubStepKinds = map[UISubStepKind]struct{}{
 //	  "steps":  [ ...UISubStep... ]
 //	}
 type UIAction struct {
-	Target string       `json:"target"`
-	Steps  []UISubStep  `json:"steps"`
+	Target string      `json:"target"`
+	Steps  []UISubStep `json:"steps"`
 }
 
 // UISubStep is a single UI action step. The JSON shape is a discriminated union
@@ -63,19 +63,19 @@ type UISubStep struct {
 	Kind UISubStepKind
 
 	// Exactly one of the following is populated based on Kind.
-	Visit      string             // Kind == UISubVisit
-	Click      string             // Kind == UISubClick
-	Type       *UITypeStep        // Kind == UISubType
-	WaitFor    *UIWaitForStep     // Kind == UISubWaitFor
-	Extract    UIExtractMap       // Kind == UISubExtract
-	Screenshot *UIScreenshotStep  // Kind == UISubScreenshot
-	Scroll     *UIScrollStep      // Kind == UISubScroll
-	Select     *UISelectStep      // Kind == UISubSelect
-	Hover      string             // Kind == UISubHover
-	Key        *UIKeyStep         // Kind == UISubKey
-	Upload     *UIUploadStep      // Kind == UISubUpload
-	Drag       *UIDragStep        // Kind == UISubDrag
-	Viewport   *UIViewportStep    // Kind == UISubViewport
+	Visit      string            // Kind == UISubVisit
+	Click      string            // Kind == UISubClick
+	Type       *UITypeStep       // Kind == UISubType
+	WaitFor    *UIWaitForStep    // Kind == UISubWaitFor
+	Extract    UIExtractMap      // Kind == UISubExtract
+	Screenshot *UIScreenshotStep // Kind == UISubScreenshot
+	Scroll     *UIScrollStep     // Kind == UISubScroll
+	Select     *UISelectStep     // Kind == UISubSelect
+	Hover      string            // Kind == UISubHover
+	Key        *UIKeyStep        // Kind == UISubKey
+	Upload     *UIUploadStep     // Kind == UISubUpload
+	Drag       *UIDragStep       // Kind == UISubDrag
+	Viewport   *UIViewportStep   // Kind == UISubViewport
 
 	// Optional per-sub-step timeout in milliseconds. When > 0, overrides the
 	// executor's defaultUISubStepTimeout for this sub-step only. Wire form is
@@ -153,9 +153,9 @@ type UITypeStep struct {
 // `.dokkimi/<project>/baselines/<name>.png`. test-agent only captures and
 // uploads; CT runs the post-run diff (see UI_TEST_ARTIFACT_PIPELINE.md).
 type UIScreenshotStep struct {
-	Name     string                  `json:"name"`
-	Selector string                  `json:"selector,omitempty"`
-	Match    *UIScreenshotMatch      `json:"match,omitempty"`
+	Name     string             `json:"name"`
+	Selector string             `json:"selector,omitempty"`
+	Match    *UIScreenshotMatch `json:"match,omitempty"`
 }
 
 // UIScreenshotMatch is the optional baseline-diff configuration on a

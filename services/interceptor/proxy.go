@@ -165,9 +165,9 @@ func (p *ProxyService) rewriteLocationHeader(resp *http.Response) {
 // getTargetURL determines the target URL for the request
 func (p *ProxyService) getTargetURL(r *http.Request) string {
 	urlMap := p.urlMap()
-	
+
 	serviceName := extractServiceNameFromRequest(r, urlMap)
-	
+
 	// If service name was found in path, remove the raw path[0] from the path for forwarding.
 	// The raw path[0] may differ from serviceName if normalization was applied (e.g., MY_SERVICE → my-service).
 	if serviceName != "" {
@@ -181,7 +181,7 @@ func (p *ProxyService) getTargetURL(r *http.Request) string {
 			}
 		}
 	}
-	
+
 	// Check if we have a URL mapping
 	if serviceInfo, exists := urlMap[serviceName]; exists {
 		baseURL := serviceInfo.URL
@@ -263,7 +263,7 @@ func extractServiceNameFromRequest(r *http.Request, urlMap UrlMap) string {
 			}
 		}
 	}
-	
+
 	// Fallback: try path (for browser/ingress requests where service name is in path)
 	pathParts := strings.Split(strings.TrimPrefix(r.URL.Path, "/"), "/")
 	if len(pathParts) > 0 && pathParts[0] != "" {
@@ -325,4 +325,3 @@ func isHopByHopHeader(key string) bool {
 	}
 	return false
 }
-

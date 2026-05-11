@@ -266,7 +266,7 @@ func TestProxyService_getTargetURL(t *testing.T) {
 		IdleConnTimeout: 90 * time.Second,
 	}
 	cache := NewMockCache(5 * time.Minute)
-	
+
 	urlMap := UrlMap{
 		"example": ServiceInfo{ // Service name only (not FQDN)
 			Scheme: "https",
@@ -305,7 +305,7 @@ func TestProxyService_getTargetURL(t *testing.T) {
 			want:    "https://target.example.com/path?query=1",
 		},
 		{
-			name:    "with FQDN hostname, extracts service name",
+			name: "with FQDN hostname, extracts service name",
 			request: func() *http.Request {
 				req := httptest.NewRequest("GET", "http://nginx-test.dokkimi-xxx.svc.cluster.local/path", nil)
 				req.Host = "nginx-test.dokkimi-xxx.svc.cluster.local"
@@ -314,7 +314,7 @@ func TestProxyService_getTargetURL(t *testing.T) {
 			want: "http://nginx-test:80/path?",
 		},
 		{
-			name:    "with FQDN hostname and port, extracts service name",
+			name: "with FQDN hostname and port, extracts service name",
 			request: func() *http.Request {
 				req := httptest.NewRequest("GET", "http://nginx-test.dokkimi-xxx.svc.cluster.local:8080/path", nil)
 				req.Host = "nginx-test.dokkimi-xxx.svc.cluster.local:8080"
@@ -338,7 +338,7 @@ func TestProxyService_getTargetURL(t *testing.T) {
 			want:    "http://other.com/path?query=1",
 		},
 		{
-			name:    "no URL mapping, empty scheme defaults to http",
+			name: "no URL mapping, empty scheme defaults to http",
 			request: func() *http.Request {
 				req := httptest.NewRequest("GET", "http://other.com/path", nil)
 				req.URL.Scheme = "" // Clear scheme
@@ -347,7 +347,7 @@ func TestProxyService_getTargetURL(t *testing.T) {
 			want: "http://other.com/path?",
 		},
 		{
-			name:    "with URL mapping and port in Host header",
+			name: "with URL mapping and port in Host header",
 			request: func() *http.Request {
 				req := httptest.NewRequest("GET", "http://example.com:8080/path", nil)
 				req.Host = "example.com:8080"
@@ -356,7 +356,7 @@ func TestProxyService_getTargetURL(t *testing.T) {
 			want: "https://target.example.com/path?",
 		},
 		{
-			name:    "with URL mapping, port stripped from hostname",
+			name: "with URL mapping, port stripped from hostname",
 			request: func() *http.Request {
 				req := httptest.NewRequest("GET", "http://test.com:9090/path", nil)
 				req.Host = "test.com:9090"
@@ -456,7 +456,7 @@ func TestProxyService_forwardRequest_InvalidURL(t *testing.T) {
 		IdleConnTimeout: 90 * time.Second,
 	}
 	cache := NewMockCache(5 * time.Minute)
-	
+
 	// URL map with invalid URL
 	urlMap := UrlMap{
 		"example.com": ServiceInfo{
@@ -472,7 +472,7 @@ func TestProxyService_forwardRequest_InvalidURL(t *testing.T) {
 
 	req := httptest.NewRequest("GET", "http://example.com/test", nil)
 	_, err := proxy.forwardRequest(req)
-	
+
 	// Should handle gracefully (may or may not error depending on URL parsing)
 	_ = err // We're just testing it doesn't panic
 }
@@ -612,16 +612,14 @@ func TestProxyService_forwardRequest_RequestCreationError(t *testing.T) {
 	// Create request with invalid method to trigger error in NewRequestWithContext
 	req := httptest.NewRequest("GET", "http://example.com/test", nil)
 	req.Method = "INVALID METHOD WITH SPACES" // This might cause issues
-	
+
 	// Try to create a request that will fail - actually, http.NewRequestWithContext
 	// is pretty lenient, so we'll test with a context that's cancelled
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // Cancel immediately
 	req = req.WithContext(ctx)
-	
+
 	_, err := proxy.forwardRequest(req)
 	// May or may not error, but should not panic
 	_ = err
 }
-
-

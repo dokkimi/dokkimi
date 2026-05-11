@@ -149,9 +149,9 @@ func TestLogger_sendLog_ErrorHandling(t *testing.T) {
 	// Send a log (should not panic even if it fails)
 	message := HttpLogMessage{
 		InstanceID: "test-ns",
-		Method:      "GET",
-		URL:         "/test",
-		Timestamp:   time.Now().Format(time.RFC3339),
+		Method:     "GET",
+		URL:        "/test",
+		Timestamp:  time.Now().Format(time.RFC3339),
 	}
 
 	// Manually call sendLog (normally called by worker)
@@ -164,17 +164,17 @@ func TestLogger_sendLog_InvalidJSON(t *testing.T) {
 	// Create a logger with a channel that will receive the message
 	logger := &Logger{
 		logEndpointURL: "http://localhost:5000",
-		httpClient:      &http.Client{Timeout: 5 * time.Second},
-		logChan:         make(chan HttpLogMessage, 1),
-		stopChan:        make(chan struct{}),
+		httpClient:     &http.Client{Timeout: 5 * time.Second},
+		logChan:        make(chan HttpLogMessage, 1),
+		stopChan:       make(chan struct{}),
 	}
 
 	// Create a message that should always be marshallable
 	message := HttpLogMessage{
 		InstanceID: "test-ns",
-		Method:      "GET",
-		URL:         "/test",
-		Timestamp:   time.Now().Format(time.RFC3339),
+		Method:     "GET",
+		URL:        "/test",
+		Timestamp:  time.Now().Format(time.RFC3339),
 	}
 
 	// This should not panic
@@ -191,16 +191,16 @@ func TestLogger_sendLog_Success(t *testing.T) {
 
 	logger := &Logger{
 		logEndpointURL: server.URL,
-		httpClient:      &http.Client{Timeout: 5 * time.Second},
-		logChan:         make(chan HttpLogMessage, 1),
-		stopChan:        make(chan struct{}),
+		httpClient:     &http.Client{Timeout: 5 * time.Second},
+		logChan:        make(chan HttpLogMessage, 1),
+		stopChan:       make(chan struct{}),
 	}
 
 	message := HttpLogMessage{
 		InstanceID: "test-ns",
-		Method:      "GET",
-		URL:         "/test",
-		Timestamp:   time.Now().Format(time.RFC3339),
+		Method:     "GET",
+		URL:        "/test",
+		Timestamp:  time.Now().Format(time.RFC3339),
 	}
 
 	// Should send successfully
@@ -210,16 +210,16 @@ func TestLogger_sendLog_Success(t *testing.T) {
 func TestLogger_sendLog_RequestCreationError(t *testing.T) {
 	logger := &Logger{
 		logEndpointURL: "http://[::1]:namedport", // Invalid URL
-		httpClient:      &http.Client{Timeout: 5 * time.Second},
-		logChan:         make(chan HttpLogMessage, 1),
-		stopChan:        make(chan struct{}),
+		httpClient:     &http.Client{Timeout: 5 * time.Second},
+		logChan:        make(chan HttpLogMessage, 1),
+		stopChan:       make(chan struct{}),
 	}
 
 	message := HttpLogMessage{
 		InstanceID: "test-ns",
-		Method:      "GET",
-		URL:         "/test",
-		Timestamp:   time.Now().Format(time.RFC3339),
+		Method:     "GET",
+		URL:        "/test",
+		Timestamp:  time.Now().Format(time.RFC3339),
 	}
 
 	// Should not panic even with invalid URL
@@ -230,16 +230,16 @@ func TestLogger_sendLog_NetworkError(t *testing.T) {
 	// Use unreachable address
 	logger := &Logger{
 		logEndpointURL: "http://192.0.2.1:9999",
-		httpClient:      &http.Client{Timeout: 100 * time.Millisecond},
-		logChan:         make(chan HttpLogMessage, 1),
-		stopChan:        make(chan struct{}),
+		httpClient:     &http.Client{Timeout: 100 * time.Millisecond},
+		logChan:        make(chan HttpLogMessage, 1),
+		stopChan:       make(chan struct{}),
 	}
 
 	message := HttpLogMessage{
 		InstanceID: "test-ns",
-		Method:      "GET",
-		URL:         "/test",
-		Timestamp:   time.Now().Format(time.RFC3339),
+		Method:     "GET",
+		URL:        "/test",
+		Timestamp:  time.Now().Format(time.RFC3339),
 	}
 
 	// Should not panic on network error
@@ -254,19 +254,18 @@ func TestLogger_sendLog_Non200Response(t *testing.T) {
 
 	logger := &Logger{
 		logEndpointURL: server.URL,
-		httpClient:      &http.Client{Timeout: 5 * time.Second},
-		logChan:         make(chan HttpLogMessage, 1),
-		stopChan:        make(chan struct{}),
+		httpClient:     &http.Client{Timeout: 5 * time.Second},
+		logChan:        make(chan HttpLogMessage, 1),
+		stopChan:       make(chan struct{}),
 	}
 
 	message := HttpLogMessage{
 		InstanceID: "test-ns",
-		Method:      "GET",
-		URL:         "/test",
-		Timestamp:   time.Now().Format(time.RFC3339),
+		Method:     "GET",
+		URL:        "/test",
+		Timestamp:  time.Now().Format(time.RFC3339),
 	}
 
 	// Should handle non-200 response gracefully
 	logger.sendLog(message)
 }
-

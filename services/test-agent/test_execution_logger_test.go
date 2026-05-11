@@ -235,4 +235,3 @@ type connectionError struct {
 func (e *connectionError) Error() string {
 	return e.message
 }
-

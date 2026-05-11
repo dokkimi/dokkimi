@@ -19,7 +19,7 @@ type MockCache struct {
 // NewMockCache creates a new mock cache
 func NewMockCache(ttl time.Duration) *MockCache {
 	return &MockCache{
-		mocks: make([]MockEndpoint, 0),
+		mocks:  make([]MockEndpoint, 0),
 		urlMap: make(UrlMap),
 		ttl:    ttl,
 	}
@@ -75,4 +75,3 @@ func (c *MockCache) IsStale() bool {
 	defer c.mu.RUnlock()
 	return time.Since(c.lastUpdated) > c.ttl
 }
-

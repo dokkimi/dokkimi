@@ -29,8 +29,8 @@ type proxyConnection struct {
 	pending    []pendingQuery    // queries awaiting response
 
 	// Result accumulation for the current query
-	columns    []columnMeta               // from RowDescription
-	resultRows []map[string]interface{}   // accumulated from DataRow messages
+	columns    []columnMeta             // from RowDescription
+	resultRows []map[string]interface{} // accumulated from DataRow messages
 }
 
 func newProxyConnection(client, upstream net.Conn, cfg *shared.Config, logger *shared.QueryLogger) *proxyConnection {
@@ -236,4 +236,3 @@ func extractBindStmtName(frame []byte) string {
 	}
 	return string(body[:stmtEnd])
 }
-

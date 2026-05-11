@@ -91,7 +91,7 @@ func TestExtractParseQuery(t *testing.T) {
 	body.WriteByte(0)
 	body.WriteString(query)
 	body.WriteByte(0)
-	binary.Write(&body, binary.BigEndian, int16(1)) // 1 param type
+	binary.Write(&body, binary.BigEndian, int16(1))   // 1 param type
 	binary.Write(&body, binary.BigEndian, uint32(23)) // int4 OID
 
 	bodyBytes := body.Bytes()
@@ -137,9 +137,9 @@ func TestExtractParseQuery_UnnamedStatement(t *testing.T) {
 
 func TestExtractCommandTag(t *testing.T) {
 	tests := []struct {
-		tag          string
-		wantTag      string
-		wantRows     int64
+		tag      string
+		wantTag  string
+		wantRows int64
 	}{
 		{"INSERT 0 5", "INSERT 0 5", 5},
 		{"UPDATE 3", "UPDATE 3", 3},
@@ -234,8 +234,8 @@ func TestExtractBindStmtName(t *testing.T) {
 
 func TestExtractTypedDataRow(t *testing.T) {
 	cols := []columnMeta{
-		{name: "id", typeOID: 23},    // int4
-		{name: "name", typeOID: 25},  // text
+		{name: "id", typeOID: 23},     // int4
+		{name: "name", typeOID: 25},   // text
 		{name: "active", typeOID: 16}, // bool
 		{name: "score", typeOID: 701}, // float8
 	}
@@ -285,9 +285,9 @@ func TestExtractColumnInfo(t *testing.T) {
 	// Field 1: "id" with typeOID 23 (int4)
 	body.WriteString("id")
 	body.WriteByte(0)
-	body.Write(make([]byte, 6))                                  // tableOID(4)+colAttr(2)
-	binary.Write(&body, binary.BigEndian, uint32(23))             // typeOID
-	body.Write(make([]byte, 8))                                  // typeLen(2)+typeMod(4)+fmtCode(2)
+	body.Write(make([]byte, 6))                       // tableOID(4)+colAttr(2)
+	binary.Write(&body, binary.BigEndian, uint32(23)) // typeOID
+	body.Write(make([]byte, 8))                       // typeLen(2)+typeMod(4)+fmtCode(2)
 	// Field 2: "name" with typeOID 25 (text)
 	body.WriteString("name")
 	body.WriteByte(0)
@@ -319,7 +319,7 @@ func TestReadStartupMessage(t *testing.T) {
 	msg := make([]byte, 9)
 	binary.BigEndian.PutUint32(msg[0:4], 9)
 	binary.BigEndian.PutUint32(msg[4:8], 196608) // version 3.0
-	msg[8] = 0                                    // terminator
+	msg[8] = 0                                   // terminator
 	buf.Write(msg)
 
 	msgLen, raw, err := readStartupMessage(&buf)

@@ -21,4 +21,3 @@ func TestErrorReader(t *testing.T) {
 		t.Errorf("Close() should not return error, got %v", err)
 	}
 }
-

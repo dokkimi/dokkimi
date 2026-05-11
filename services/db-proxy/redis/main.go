@@ -9,8 +9,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/redis/go-redis/v9"
 	shared "dokkimi.com/db-proxy-shared"
+	"github.com/redis/go-redis/v9"
 )
 
 func main() {

@@ -16,8 +16,8 @@ import (
 
 // ConfigMapReader handles reading configuration from Kubernetes ConfigMaps
 type ConfigMapReader struct {
-	clientset *kubernetes.Clientset
-	namespace string
+	clientset     *kubernetes.Clientset
+	namespace     string
 	configMapName string
 }
 
@@ -112,4 +112,3 @@ func (r *ConfigMapReader) ReadConfigMapData(ctx context.Context) (*ConfigMapData
 func (r *ConfigMapReader) GetClientset() *kubernetes.Clientset {
 	return r.clientset
 }
-

@@ -126,10 +126,10 @@ func (p *PodReadinessChecker) VerifyAllPodsReady(ctx context.Context, instanceId
 // fatalPodReasons are Kubernetes container waiting reasons that indicate
 // an unrecoverable error. These are not transient and should abort immediately.
 var fatalPodReasons = map[string]bool{
-	"ErrImagePull":      true,
-	"ImagePullBackOff":  true,
-	"InvalidImageName":  true,
-	"CrashLoopBackOff":  true,
+	"ErrImagePull":     true,
+	"ImagePullBackOff": true,
+	"InvalidImageName": true,
+	"CrashLoopBackOff": true,
 }
 
 // checkForFatalPodErrors scans all pods for fatal container errors like image pull failures
@@ -203,4 +203,3 @@ func (p *PodReadinessChecker) isPodReady(pod *corev1.Pod) bool {
 
 	return true
 }
-

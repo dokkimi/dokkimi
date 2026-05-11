@@ -39,6 +39,20 @@ jobs:
       - name: Prisma validate
         run: cd shared/prisma && npx prisma validate
 
+      - uses: actions/setup-go@v6
+        with:
+          go-version: '1.26'
+          cache: false
+
+      - name: Go format check
+        run: test -z "$(gofmt -l services/)"
+
+      - name: Go vet
+        run: |
+          for dir in services/interceptor services/test-agent services/db-proxy/postgres services/db-proxy/mysql services/db-proxy/mongo services/db-proxy/redis; do
+            (cd "$dir" && go vet ./...)
+          done
+
   build-and-test:
     name: Build & Test
     runs-on: ubuntu-latest
@@ -74,6 +88,9 @@ jobs:
 
       - name: Definition validator tests
         run: yarn workspace @dokkimi/definition-validator test
+
+      - name: Definition resolver tests
+        run: yarn workspace @dokkimi/definition-resolver test
 
       - name: Go tests — interceptor
         run: cd services/interceptor && go test ./...

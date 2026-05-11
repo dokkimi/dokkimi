@@ -49,15 +49,15 @@ type commandInfo struct {
 	rawBSONBody    []byte // Kind 0 BSON document, for reconstructing the JSON query
 	// kind1Sections maps identifier (e.g. "documents", "updates", "deletes") to
 	// the raw BSON documents from Kind 1 document sequence sections.
-	kind1Sections  map[string][]bson.D
+	kind1Sections map[string][]bson.D
 }
 
 type responseInfo struct {
-	ok          float64
-	n           int64
-	errmsg      string
-	hasOk       bool
-	data        []map[string]interface{}
+	ok     float64
+	n      int64
+	errmsg string
+	hasOk  bool
+	data   []map[string]interface{}
 }
 
 // readMessage reads a complete MongoDB wire protocol message from the reader.
@@ -551,13 +551,13 @@ func skipBSONValue(elemType byte, doc []byte, pos int, docLen int) int {
 // driver API. This function maps wire-level commands back to the format used in
 // test definitions so the validator's exact string match works:
 //
-//   Wire "insert" + 1 doc   → {"operation":"insertOne","collection":"...","document":{...}}
-//   Wire "insert" + N docs  → {"operation":"insertMany","collection":"...","documents":[...]}
-//   Wire "update" + multi:false → {"operation":"updateOne","collection":"...","filter":{...},"update":{...}}
-//   Wire "update" + multi:true  → {"operation":"updateMany","collection":"...","filter":{...},"update":{...}}
-//   Wire "delete" + limit:1 → {"operation":"deleteOne","collection":"...","filter":{...}}
-//   Wire "delete" + limit:0 → {"operation":"deleteMany","collection":"...","filter":{...}}
-//   Wire "find"             → {"operation":"find","collection":"...","filter":{...}}
+//	Wire "insert" + 1 doc   → {"operation":"insertOne","collection":"...","document":{...}}
+//	Wire "insert" + N docs  → {"operation":"insertMany","collection":"...","documents":[...]}
+//	Wire "update" + multi:false → {"operation":"updateOne","collection":"...","filter":{...},"update":{...}}
+//	Wire "update" + multi:true  → {"operation":"updateMany","collection":"...","filter":{...},"update":{...}}
+//	Wire "delete" + limit:1 → {"operation":"deleteOne","collection":"...","filter":{...}}
+//	Wire "delete" + limit:0 → {"operation":"deleteMany","collection":"...","filter":{...}}
+//	Wire "find"             → {"operation":"find","collection":"...","filter":{...}}
 func reconstructQuery(cmd commandInfo) string {
 	if cmd.rawBSONBody == nil || cmd.commandName == "" {
 		query := cmd.commandName
@@ -930,8 +930,8 @@ func stripCompressionFromHello(raw []byte) []byte {
 			// Rebuild the message
 			result := make([]byte, 0, headerSize+4+1+len(newDoc))
 			result = append(result, raw[:headerSize]...) // original header
-			result = append(result, flags...)             // flagBits
-			result = append(result, 0)                    // kind 0
+			result = append(result, flags...)            // flagBits
+			result = append(result, 0)                   // kind 0
 			result = append(result, newDoc...)
 
 			// Check if original had checksum

@@ -134,11 +134,11 @@ func TestReadMessageTruncated(t *testing.T) {
 
 func TestExtractCommandInfo(t *testing.T) {
 	tests := []struct {
-		name       string
-		key        string
-		value      string
-		wantCmd    string
-		wantColl   string
+		name     string
+		key      string
+		value    string
+		wantCmd  string
+		wantColl string
 	}{
 		{"find", "find", "orders", "find", "orders"},
 		{"insert", "insert", "users", "insert", "users"},

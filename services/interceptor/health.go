@@ -40,7 +40,7 @@ type HealthConfig struct {
 	InstanceItemName    string // Item name (for logging/debugging)
 	InstanceItemID      string // Item ID (for test-agent matching)
 	InstanceID          string
-	ControlTowerURL      string
+	ControlTowerURL     string
 	TestAgentURL        string // Optional: URL for test-agent
 	CheckTimeout        time.Duration
 	Origin              string // Service name to health check (e.g., "service-a")
@@ -61,8 +61,8 @@ func NewHealthChecker(cfg *HealthConfig) *HealthChecker {
 			Timeout: cfg.CheckTimeout,
 		},
 		state:            StateBooting,
-		lastStatus:        false,
-		consecutiveReady:  0,
+		lastStatus:       false,
+		consecutiveReady: 0,
 		stopChan:         make(chan struct{}),
 		statusChangeChan: make(chan bool, 10),
 	}
@@ -147,7 +147,7 @@ func (h *HealthChecker) performCheck() {
 	h.stateMutex.RLock()
 	currentState := h.state
 	h.stateMutex.RUnlock()
-	
+
 	// Only publish ready=true if we're in HEALTHY state
 	// This ensures we don't report ready on the first check
 	shouldReportReady := currentState == StateHealthy
@@ -287,9 +287,9 @@ func (h *HealthChecker) updateState(ready bool) {
 // publishStatus publishes health status to LPS and optionally to test-agent
 func (h *HealthChecker) publishStatus(ready bool, checkDuration int, statusCode int, checkErr error) {
 	statusUpdate := HealthStatusUpdate{
-		InstanceID:      h.config.InstanceID,
+		InstanceID:       h.config.InstanceID,
 		InstanceItemName: h.config.InstanceItemName,
-		InstanceItemID:  h.config.InstanceItemID, // Use ID for test-agent matching
+		InstanceItemID:   h.config.InstanceItemID, // Use ID for test-agent matching
 		Ready:            ready,
 		Timestamp:        time.Now().Format(time.RFC3339Nano),
 		Details: HealthStatusDetails{
@@ -391,12 +391,12 @@ func (h *HealthChecker) sendStatusUpdateToTestAgent(update HealthStatusUpdate) {
 
 // HealthStatusUpdate represents the status update sent to LPS
 type HealthStatusUpdate struct {
-	InstanceID      string              `json:"instanceId"`
+	InstanceID       string              `json:"instanceId"`
 	InstanceItemName string              `json:"instanceItemName"`
-	InstanceItemID  string              `json:"instanceItemId"` // ID for test-agent matching
-	Ready           bool                `json:"ready"`
-	Timestamp       string              `json:"timestamp"`
-	Details         HealthStatusDetails `json:"details,omitempty"`
+	InstanceItemID   string              `json:"instanceItemId"` // ID for test-agent matching
+	Ready            bool                `json:"ready"`
+	Timestamp        string              `json:"timestamp"`
+	Details          HealthStatusDetails `json:"details,omitempty"`
 }
 
 // HealthStatusDetails contains additional details about the health check
@@ -405,4 +405,3 @@ type HealthStatusDetails struct {
 	StatusCode    int    `json:"statusCode,omitempty"`
 	Error         string `json:"error,omitempty"`
 }
-

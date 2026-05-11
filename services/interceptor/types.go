@@ -29,4 +29,3 @@ type ServiceInfo struct {
 
 // UrlMap maps hostnames to service information
 type UrlMap map[string]ServiceInfo
-

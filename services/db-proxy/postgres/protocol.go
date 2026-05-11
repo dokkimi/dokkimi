@@ -242,7 +242,6 @@ func extractColumnInfo(frame []byte) []columnMeta {
 	return cols
 }
 
-
 // extractTypedDataRow extracts column values from a DataRow ('D') frame, using
 // type OIDs from RowDescription to coerce text-format values to native types.
 func extractTypedDataRow(frame []byte, cols []columnMeta) []interface{} {

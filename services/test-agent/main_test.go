@@ -22,10 +22,10 @@ func TestHandleHealthStatus(t *testing.T) {
 			name:   "valid POST updates health status",
 			method: "POST",
 			body: HealthStatusUpdate{
-				InstanceID:      "instance-123",
+				InstanceID:       "instance-123",
 				InstanceItemName: "item-1",
-				Ready:           true,
-				Timestamp:       "2024-01-01T12:00:00Z",
+				Ready:            true,
+				Timestamp:        "2024-01-01T12:00:00Z",
 			},
 			wantStatusCode: http.StatusOK,
 			wantReady:      true,
@@ -35,14 +35,14 @@ func TestHandleHealthStatus(t *testing.T) {
 			method: "GET",
 			body: HealthStatusUpdate{
 				InstanceItemName: "item-1",
-				Ready:           true,
+				Ready:            true,
 			},
 			wantStatusCode: http.StatusMethodNotAllowed,
 		},
 		{
-			name:   "invalid JSON returns 400",
-			method: "POST",
-			body:   HealthStatusUpdate{},
+			name:           "invalid JSON returns 400",
+			method:         "POST",
+			body:           HealthStatusUpdate{},
 			wantStatusCode: http.StatusOK, // We still return 200 even with invalid data
 		},
 	}
@@ -86,10 +86,10 @@ func TestHandleHealthStatus_MultipleUpdates(t *testing.T) {
 
 	// Update item-1 to ready
 	update1 := HealthStatusUpdate{
-		InstanceID:      "instance-123",
+		InstanceID:       "instance-123",
 		InstanceItemName: "item-1",
-		Ready:           true,
-		Timestamp:       "2024-01-01T12:00:00Z",
+		Ready:            true,
+		Timestamp:        "2024-01-01T12:00:00Z",
 	}
 
 	body1, _ := json.Marshal(update1)
@@ -105,10 +105,10 @@ func TestHandleHealthStatus_MultipleUpdates(t *testing.T) {
 
 	// Update item-2 to ready
 	update2 := HealthStatusUpdate{
-		InstanceID:      "instance-123",
+		InstanceID:       "instance-123",
 		InstanceItemName: "item-2",
-		Ready:           true,
-		Timestamp:       "2024-01-01T12:00:01Z",
+		Ready:            true,
+		Timestamp:        "2024-01-01T12:00:01Z",
 	}
 
 	body2, _ := json.Marshal(update2)
@@ -128,4 +128,3 @@ func TestHandleHealthStatus_MultipleUpdates(t *testing.T) {
 		t.Errorf("Expected both items to be ready, got status: %v", status)
 	}
 }
-

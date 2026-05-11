@@ -21,7 +21,7 @@ func TestHandleRequest(t *testing.T) {
 		IdleConnTimeout: 90 * time.Second,
 		Namespace:       "test-ns",
 		Origin:          "test-origin",
-			LogActions:      true,
+		LogActions:      true,
 	}
 	cache := NewMockCache(5 * time.Minute)
 	urlMapFunc := func() UrlMap { return make(UrlMap) }
@@ -31,13 +31,13 @@ func TestHandleRequest(t *testing.T) {
 	defer logger.Stop()
 
 	tests := []struct {
-		name           string
-		request        *http.Request
-		useMock        bool
+		name             string
+		request          *http.Request
+		useMock          bool
 		validateResponse func(*testing.T, *httptest.ResponseRecorder)
 	}{
 		{
-			name:    "forward request successfully",
+			name: "forward request successfully",
 			request: func() *http.Request {
 				req := httptest.NewRequest("GET", targetServer.URL+"/test", nil)
 				// Create a new request to avoid body consumption issues
@@ -115,7 +115,7 @@ func TestHandleRequest_WithoutLogger(t *testing.T) {
 		IdleConnTimeout: 90 * time.Second,
 		Namespace:       "test-ns",
 		Origin:          "test-origin",
-			LogActions:      false, // Logger disabled
+		LogActions:      false, // Logger disabled
 	}
 	cache := NewMockCache(5 * time.Minute)
 	urlMapFunc := func() UrlMap { return make(UrlMap) }
@@ -141,7 +141,7 @@ func TestHandleRequest_ResponseBodyError(t *testing.T) {
 		IdleConnTimeout: 90 * time.Second,
 		Namespace:       "test-ns",
 		Origin:          "test-origin",
-			LogActions:      false,
+		LogActions:      false,
 	}
 	cache := NewMockCache(5 * time.Minute)
 	urlMapFunc := func() UrlMap { return make(UrlMap) }
@@ -181,7 +181,7 @@ func TestHandleRequest_ResponseBodyBuffering(t *testing.T) {
 		IdleConnTimeout: 90 * time.Second,
 		Namespace:       "test-ns",
 		Origin:          "test-origin",
-			LogActions:      true,
+		LogActions:      true,
 	}
 	cache := NewMockCache(5 * time.Minute)
 	urlMapFunc := func() UrlMap { return make(UrlMap) }
@@ -228,7 +228,7 @@ func TestHandleRequest_NilBody(t *testing.T) {
 		IdleConnTimeout: 90 * time.Second,
 		Namespace:       "test-ns",
 		Origin:          "test-origin",
-			LogActions:      false,
+		LogActions:      false,
 	}
 	cache := NewMockCache(5 * time.Minute)
 	urlMapFunc := func() UrlMap { return make(UrlMap) }
@@ -448,4 +448,3 @@ func TestHealthCheckForServiceShouldForward(t *testing.T) {
 		t.Errorf("Expected interceptor health response %q, got %q", `{"status":"healthy"}`, body2)
 	}
 }
-

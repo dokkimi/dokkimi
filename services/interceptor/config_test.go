@@ -10,12 +10,12 @@ func TestLoadConfig(t *testing.T) {
 	// Save original env vars
 	originalEnv := map[string]string{
 		"CONTROL_TOWER_URL": os.Getenv("CONTROL_TOWER_URL"),
-		"API_KEY":          os.Getenv("API_KEY"),
-		"K8S_NAMESPACE":    os.Getenv("K8S_NAMESPACE"),
-		"NAMESPACE":        os.Getenv("NAMESPACE"),
-		"PORT":             os.Getenv("PORT"),
-		"ORIGIN":           os.Getenv("ORIGIN"),
-		"LOG_ACTIONS":      os.Getenv("LOG_ACTIONS"),
+		"API_KEY":           os.Getenv("API_KEY"),
+		"K8S_NAMESPACE":     os.Getenv("K8S_NAMESPACE"),
+		"NAMESPACE":         os.Getenv("NAMESPACE"),
+		"PORT":              os.Getenv("PORT"),
+		"ORIGIN":            os.Getenv("ORIGIN"),
+		"LOG_ACTIONS":       os.Getenv("LOG_ACTIONS"),
 	}
 
 	// Restore original env vars after test
@@ -30,19 +30,19 @@ func TestLoadConfig(t *testing.T) {
 	}()
 
 	tests := []struct {
-		name    string
-		env     map[string]string
-		wantErr bool
+		name     string
+		env      map[string]string
+		wantErr  bool
 		validate func(*testing.T, *Config)
 	}{
 		{
 			name: "valid config with all required fields",
 			env: map[string]string{
 				"CONTROL_TOWER_URL": "http://localhost:5000",
-				"API_KEY":          "test-key",
-				"K8S_NAMESPACE":    "dokkimi-test-namespace",
-				"NAMESPACE":        "test-namespace",
-				"PORT":             "80",
+				"API_KEY":           "test-key",
+				"K8S_NAMESPACE":     "dokkimi-test-namespace",
+				"NAMESPACE":         "test-namespace",
+				"PORT":              "80",
 			},
 			wantErr: false,
 			validate: func(t *testing.T, cfg *Config) {
@@ -67,9 +67,9 @@ func TestLoadConfig(t *testing.T) {
 			name: "missing PORT",
 			env: map[string]string{
 				"CONTROL_TOWER_URL": "http://localhost:5000",
-				"API_KEY":          "test-key",
-				"K8S_NAMESPACE":    "dokkimi-test-namespace",
-				"NAMESPACE":        "test-namespace",
+				"API_KEY":           "test-key",
+				"K8S_NAMESPACE":     "dokkimi-test-namespace",
+				"NAMESPACE":         "test-namespace",
 			},
 			wantErr: true,
 		},
@@ -87,9 +87,9 @@ func TestLoadConfig(t *testing.T) {
 			name: "missing API_KEY",
 			env: map[string]string{
 				"CONTROL_TOWER_URL": "http://localhost:5000",
-				"K8S_NAMESPACE":    "dokkimi-test-namespace",
-				"NAMESPACE":        "test-namespace",
-				"PORT":             "80",
+				"K8S_NAMESPACE":     "dokkimi-test-namespace",
+				"NAMESPACE":         "test-namespace",
+				"PORT":              "80",
 			},
 			wantErr: true,
 		},
@@ -97,9 +97,9 @@ func TestLoadConfig(t *testing.T) {
 			name: "missing K8S_NAMESPACE",
 			env: map[string]string{
 				"CONTROL_TOWER_URL": "http://localhost:5000",
-				"API_KEY":          "test-key",
-				"NAMESPACE":        "test-namespace",
-				"PORT":             "80",
+				"API_KEY":           "test-key",
+				"NAMESPACE":         "test-namespace",
+				"PORT":              "80",
 			},
 			wantErr: true,
 		},
@@ -107,9 +107,9 @@ func TestLoadConfig(t *testing.T) {
 			name: "missing NAMESPACE",
 			env: map[string]string{
 				"CONTROL_TOWER_URL": "http://localhost:5000",
-				"API_KEY":          "test-key",
-				"K8S_NAMESPACE":    "dokkimi-test-namespace",
-				"PORT":             "80",
+				"API_KEY":           "test-key",
+				"K8S_NAMESPACE":     "dokkimi-test-namespace",
+				"PORT":              "80",
 			},
 			wantErr: true,
 		},
@@ -117,10 +117,10 @@ func TestLoadConfig(t *testing.T) {
 			name: "custom port",
 			env: map[string]string{
 				"CONTROL_TOWER_URL": "http://localhost:5000",
-				"API_KEY":          "test-key",
-				"K8S_NAMESPACE":    "dokkimi-test-namespace",
-				"NAMESPACE":        "test-namespace",
-				"PORT":             "8080",
+				"API_KEY":           "test-key",
+				"K8S_NAMESPACE":     "dokkimi-test-namespace",
+				"NAMESPACE":         "test-namespace",
+				"PORT":              "8080",
 			},
 			wantErr: false,
 			validate: func(t *testing.T, cfg *Config) {
@@ -133,11 +133,11 @@ func TestLoadConfig(t *testing.T) {
 			name: "LOG_ACTIONS false",
 			env: map[string]string{
 				"CONTROL_TOWER_URL": "http://localhost:5000",
-				"API_KEY":          "test-key",
-				"K8S_NAMESPACE":    "dokkimi-test-namespace",
-				"NAMESPACE":        "test-namespace",
-				"PORT":             "80",
-				"LOG_ACTIONS":      "false",
+				"API_KEY":           "test-key",
+				"K8S_NAMESPACE":     "dokkimi-test-namespace",
+				"NAMESPACE":         "test-namespace",
+				"PORT":              "80",
+				"LOG_ACTIONS":       "false",
 			},
 			wantErr: false,
 			validate: func(t *testing.T, cfg *Config) {
@@ -150,10 +150,10 @@ func TestLoadConfig(t *testing.T) {
 			name: "LOG_ACTIONS true by default",
 			env: map[string]string{
 				"CONTROL_TOWER_URL": "http://localhost:5000",
-				"API_KEY":          "test-key",
-				"K8S_NAMESPACE":    "dokkimi-test-namespace",
-				"NAMESPACE":        "test-namespace",
-				"PORT":             "80",
+				"API_KEY":           "test-key",
+				"K8S_NAMESPACE":     "dokkimi-test-namespace",
+				"NAMESPACE":         "test-namespace",
+				"PORT":              "80",
 			},
 			wantErr: false,
 			validate: func(t *testing.T, cfg *Config) {
@@ -166,11 +166,11 @@ func TestLoadConfig(t *testing.T) {
 			name: "optional fields",
 			env: map[string]string{
 				"CONTROL_TOWER_URL": "http://localhost:5000",
-				"API_KEY":          "test-key",
-				"K8S_NAMESPACE":    "dokkimi-test-namespace",
-				"NAMESPACE":        "test-namespace",
-				"PORT":             "80",
-				"ORIGIN":           "test-origin",
+				"API_KEY":           "test-key",
+				"K8S_NAMESPACE":     "dokkimi-test-namespace",
+				"NAMESPACE":         "test-namespace",
+				"PORT":              "80",
+				"ORIGIN":            "test-origin",
 			},
 			wantErr: false,
 			validate: func(t *testing.T, cfg *Config) {

@@ -250,4 +250,3 @@ func (h *HealthChecker) sendStatusUpdateToTestAgent(update HealthStatusUpdate) {
 	// Log error but don't block health checking
 	log.Printf("Health check: Failed to send status update to test-agent after %d retries", maxRetries)
 }
-

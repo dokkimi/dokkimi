@@ -11,18 +11,18 @@ import (
 
 // DatabaseLogMessage represents the format expected by LPS POST /logs/database
 type DatabaseLogMessage struct {
-	InstanceID     string                 `json:"instanceId"`
-	InstanceItemID string                 `json:"instanceItemId,omitempty"`
-	DatabaseType   string                 `json:"databaseType"`
-	DatabaseName   string                 `json:"databaseName"`
-	Query          string                 `json:"query"`
-	Params         map[string]interface{} `json:"params,omitempty"`
-	Success        bool                   `json:"success"`
+	InstanceID     string                   `json:"instanceId"`
+	InstanceItemID string                   `json:"instanceItemId,omitempty"`
+	DatabaseType   string                   `json:"databaseType"`
+	DatabaseName   string                   `json:"databaseName"`
+	Query          string                   `json:"query"`
+	Params         map[string]interface{}   `json:"params,omitempty"`
+	Success        bool                     `json:"success"`
 	Data           []map[string]interface{} `json:"data,omitempty"`
-	RowsAffected   *int64                 `json:"rowsAffected,omitempty"`
-	Error          string                 `json:"error,omitempty"`
-	Duration       *int                   `json:"duration,omitempty"`
-	Timestamp      string                 `json:"timestamp,omitempty"`
+	RowsAffected   *int64                   `json:"rowsAffected,omitempty"`
+	Error          string                   `json:"error,omitempty"`
+	Duration       *int                     `json:"duration,omitempty"`
+	Timestamp      string                   `json:"timestamp,omitempty"`
 }
 
 // QueryLogger handles async logging of database queries to LPS

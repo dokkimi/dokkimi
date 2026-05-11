@@ -160,7 +160,7 @@ func TestMockCache_Concurrency(t *testing.T) {
 
 	// Test concurrent access
 	done := make(chan bool)
-	
+
 	// Writer goroutine
 	go func() {
 		for i := 0; i < 100; i++ {
@@ -192,4 +192,3 @@ func TestMockCache_Concurrency(t *testing.T) {
 		t.Errorf("Expected 1 mock after concurrent access, got %d", len(mocks))
 	}
 }
-

@@ -12,22 +12,22 @@ import (
 
 // HttpLogMessage represents the format expected by Log Processor Service
 type HttpLogMessage struct {
-	InstanceID        string                 `json:"instanceId"`
-	Method            string                 `json:"method"`
-	URL               string                 `json:"url"`
-	StatusCode        *int                   `json:"statusCode,omitempty"`
-	RequestBody       interface{}            `json:"requestBody,omitempty"`
-	ResponseBody      interface{}            `json:"responseBody,omitempty"`
-	RequestHeaders    map[string]interface{} `json:"requestHeaders,omitempty"`
-	ResponseHeaders   map[string]interface{} `json:"responseHeaders,omitempty"`
-	IsMocked          *bool                  `json:"isMocked,omitempty"`
-	Timestamp         string                 `json:"timestamp,omitempty"`
-	Origin            *string                 `json:"origin,omitempty"`   // Origin service name
-	OriginID          *string                `json:"instanceItemId,omitempty"`  // Origin's instanceItemId
-	Target            *string                 `json:"target,omitempty"`    // Target service name
-	TargetID          *string                 `json:"targetId,omitempty"` // Target's instanceItemId
-	RequestSentAt     *string                 `json:"requestSentAt,omitempty"`     // ISO timestamp when request was sent
-	ResponseReceivedAt *string                 `json:"responseReceivedAt,omitempty"` // ISO timestamp when response was received
+	InstanceID         string                 `json:"instanceId"`
+	Method             string                 `json:"method"`
+	URL                string                 `json:"url"`
+	StatusCode         *int                   `json:"statusCode,omitempty"`
+	RequestBody        interface{}            `json:"requestBody,omitempty"`
+	ResponseBody       interface{}            `json:"responseBody,omitempty"`
+	RequestHeaders     map[string]interface{} `json:"requestHeaders,omitempty"`
+	ResponseHeaders    map[string]interface{} `json:"responseHeaders,omitempty"`
+	IsMocked           *bool                  `json:"isMocked,omitempty"`
+	Timestamp          string                 `json:"timestamp,omitempty"`
+	Origin             *string                `json:"origin,omitempty"`             // Origin service name
+	OriginID           *string                `json:"instanceItemId,omitempty"`     // Origin's instanceItemId
+	Target             *string                `json:"target,omitempty"`             // Target service name
+	TargetID           *string                `json:"targetId,omitempty"`           // Target's instanceItemId
+	RequestSentAt      *string                `json:"requestSentAt,omitempty"`      // ISO timestamp when request was sent
+	ResponseReceivedAt *string                `json:"responseReceivedAt,omitempty"` // ISO timestamp when response was received
 }
 
 // Logger handles async logging to Log Processor Service (LPS)
@@ -45,7 +45,7 @@ func NewLogger(logEndpointURL string, timeout time.Duration) *Logger {
 		httpClient: &http.Client{
 			Timeout: timeout,
 		},
-		logChan: make(chan HttpLogMessage, 1000), // Buffered channel
+		logChan:  make(chan HttpLogMessage, 1000), // Buffered channel
 		stopChan: make(chan struct{}),
 	}
 
@@ -108,7 +108,7 @@ func (l *Logger) logResponseInternal(r *http.Request, statusCode int, isMocked b
 	// Extract target information from urlMap
 	var targetName *string
 	var targetID *string
-	
+
 	// Use provided targetServiceName if available (extracted before proxy modified path)
 	// Otherwise, try to extract from request (fallback for cases where targetServiceName wasn't set)
 	var serviceName string
@@ -117,7 +117,7 @@ func (l *Logger) logResponseInternal(r *http.Request, statusCode int, isMocked b
 	} else {
 		serviceName = extractServiceNameFromRequest(r, urlMap)
 	}
-	
+
 	// Check urlMap - if service is in map, it's an internal service
 	if serviceName != "" {
 		if serviceInfo, exists := urlMap[serviceName]; exists {
@@ -132,7 +132,7 @@ func (l *Logger) logResponseInternal(r *http.Request, statusCode int, isMocked b
 			targetName = &serviceName
 		}
 	}
-	
+
 	// If still no target, it's an external service - use hostname (but never "localhost")
 	if targetName == nil {
 		host := r.Host
@@ -174,21 +174,21 @@ func (l *Logger) logResponseInternal(r *http.Request, statusCode int, isMocked b
 
 	// Create HTTP log message for LPS
 	logMessage := HttpLogMessage{
-		InstanceID:        namespace,
-		Method:            r.Method,
-		URL:               fullURL,
-		StatusCode:        &statusCode,
-		RequestBody:       requestBody,
-		ResponseBody:      responseBody,
-		RequestHeaders:    reqHeaders,
-		ResponseHeaders:   responseHeaders,
-		IsMocked:          &isMocked,
-		Timestamp:         time.Now().Format(time.RFC3339Nano),
-		Origin:            originName,
-		OriginID:          originIDPtr,
-		Target:            targetName,
-		TargetID:          targetID,
-		RequestSentAt:     requestSentAtStr,
+		InstanceID:         namespace,
+		Method:             r.Method,
+		URL:                fullURL,
+		StatusCode:         &statusCode,
+		RequestBody:        requestBody,
+		ResponseBody:       responseBody,
+		RequestHeaders:     reqHeaders,
+		ResponseHeaders:    responseHeaders,
+		IsMocked:           &isMocked,
+		Timestamp:          time.Now().Format(time.RFC3339Nano),
+		Origin:             originName,
+		OriginID:           originIDPtr,
+		Target:             targetName,
+		TargetID:           targetID,
+		RequestSentAt:      requestSentAtStr,
 		ResponseReceivedAt: responseReceivedAtStr,
 	}
 
@@ -257,20 +257,19 @@ func (l *Logger) Stop() {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-		drained := 0
-		for {
-			select {
-			case message := <-l.logChan:
-				// Send remaining log
-				l.sendLog(message)
-				drained++
-			case <-ctx.Done():
-				// Timeout reached, stop draining
-				return
-			default:
-				// Channel empty, we're done
-				return
-			}
+	drained := 0
+	for {
+		select {
+		case message := <-l.logChan:
+			// Send remaining log
+			l.sendLog(message)
+			drained++
+		case <-ctx.Done():
+			// Timeout reached, stop draining
+			return
+		default:
+			// Channel empty, we're done
+			return
 		}
+	}
 }
-
