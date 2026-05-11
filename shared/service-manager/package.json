@@ -1,6 +1,6 @@
 {
   "name": "@dokkimi/service-manager",
-  "version": "0.3.6",
+  "version": "0.3.7",
   "description": "Daemon lifecycle manager for Dokkimi backend services",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",

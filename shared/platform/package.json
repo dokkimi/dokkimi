@@ -1,6 +1,6 @@
 {
   "name": "@dokkimi/platform",
-  "version": "0.3.6",
+  "version": "0.3.7",
   "description": "OS-agnostic platform utilities for Dokkimi",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",

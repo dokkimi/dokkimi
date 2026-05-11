@@ -1,6 +1,6 @@
 {
   "name": "@dokkimi/config",
-  "version": "0.3.6",
+  "version": "0.3.7",
   "description": "Centralized configuration for Dokkimi platform",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
