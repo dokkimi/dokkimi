@@ -1,0 +1,97 @@
+{
+  "name": "redis-queries",
+  "description": "Redis integration — SET and GET operations",
+  "config": {
+    "timeoutSeconds": 60
+  },
+  "items": [
+    {
+      "$ref": "../../shared/service-a.yaml"
+    },
+    {
+      "$ref": "../../shared/redis.json"
+    }
+  ],
+  "tests": [
+    {
+      "name": "SET and GET a key",
+      "variables": {
+        "redisConnStr": "redis://:dokkimi@redis-db:6379"
+      },
+      "steps": [
+        {
+          "name": "SET a Redis key",
+          "action": {
+            "type": "httpRequest",
+            "method": "POST",
+            "url": "service-a/redis-set",
+            "headers": {
+              "Content-Type": "application/json"
+            },
+            "body": {
+              "queries": [
+                {
+                  "databaseType": "redis",
+                  "connectionString": "{{redisConnStr}}",
+                  "command": "SET test-key \"hello-world\""
+                }
+              ]
+            }
+          },
+          "assertions": [
+            {
+              "assertions": [
+                {
+                  "path": "response.status",
+                  "operator": "eq",
+                  "value": 200
+                },
+                {
+                  "path": "response.body.queryResults[0][0].result",
+                  "operator": "eq",
+                  "value": "OK"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "GET the key back",
+          "action": {
+            "type": "httpRequest",
+            "method": "POST",
+            "url": "service-a/redis-get",
+            "headers": {
+              "Content-Type": "application/json"
+            },
+            "body": {
+              "queries": [
+                {
+                  "databaseType": "redis",
+                  "connectionString": "{{redisConnStr}}",
+                  "command": "GET test-key"
+                }
+              ]
+            }
+          },
+          "assertions": [
+            {
+              "assertions": [
+                {
+                  "path": "response.status",
+                  "operator": "eq",
+                  "value": 200
+                },
+                {
+                  "path": "response.body.queryResults[0][0].result",
+                  "operator": "eq",
+                  "value": "hello-world"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

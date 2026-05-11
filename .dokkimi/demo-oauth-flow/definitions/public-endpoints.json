@@ -1,0 +1,96 @@
+{
+  "name": "public-endpoints",
+  "description": "Tests unauthenticated public endpoints — no OAuth mocking needed",
+  "items": [
+    { "$ref": "../shared/api-service.json" },
+    {
+      "$ref": "../shared/postgres-db.json",
+      "initFilePath": "../init-files/schema.sql"
+    }
+  ],
+  "tests": [
+    {
+      "name": "Health check",
+      "steps": [
+        {
+          "name": "GET /health returns ok",
+          "action": {
+            "type": "httpRequest",
+            "method": "GET",
+            "url": "api-service/health"
+          },
+          "assertions": [
+            {
+              "assertions": [
+                { "path": "response.status", "operator": "eq", "value": 200 },
+                {
+                  "path": "response.body.status",
+                  "operator": "eq",
+                  "value": "ok"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "List published posts",
+      "description": "Public feed returns only published posts, not drafts",
+      "steps": [
+        {
+          "name": "GET /api/posts",
+          "action": {
+            "type": "httpRequest",
+            "method": "GET",
+            "url": "api-service/api/posts"
+          },
+          "assertions": [
+            {
+              "assertions": [
+                { "path": "response.status", "operator": "eq", "value": 200 },
+                {
+                  "path": "response.body.posts",
+                  "operator": "type",
+                  "value": "array"
+                },
+                {
+                  "path": "response.body.posts",
+                  "operator": "length",
+                  "value": 2
+                }
+              ]
+            },
+            {
+              "service": "api-service",
+              "consoleAssertions": [
+                {
+                  "message": {
+                    "operator": "contains",
+                    "value": "Fetching published posts"
+                  },
+                  "count": { "operator": "gte", "value": 1 }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "Verify 3 total posts in DB (1 draft excluded from API)",
+          "action": {
+            "type": "dbQuery",
+            "database": "postgres-db",
+            "query": "SELECT COUNT(*) as total FROM posts"
+          },
+          "assertions": [
+            {
+              "assertions": [
+                { "path": "data[0].total", "operator": "eq", "value": 3 }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

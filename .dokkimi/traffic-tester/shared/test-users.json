@@ -1,0 +1,6 @@
+{
+  "defaultUserName": "Alice",
+  "defaultUserEmail": "alice@example.com",
+  "secondUserName": "Bob",
+  "secondUserEmail": "bob@example.com"
+}

@@ -1,0 +1,229 @@
+name: ct-standalone
+description: Control Tower in isolation — runs lifecycle, namespace instances, and log query endpoints
+items:
+  - $ref: ../shared/control-tower.yaml
+  - $ref: ../shared/postgres-db.json
+  - $ref: ../shared/mock-k8s-api.yaml
+  - $ref: ../shared/mock-posthog.yaml
+tests:
+  - name: Health check
+    steps:
+      - name: CT health endpoint returns 200
+        action:
+          type: httpRequest
+          method: GET
+          url: control-tower/health
+        assertions:
+          - assertions:
+              - path: response.status
+                operator: eq
+                value: 200
+  - name: Run creation and lifecycle
+    steps:
+      - name: Create a run with one definition
+        action:
+          type: httpRequest
+          method: POST
+          url: control-tower/runs
+          headers:
+            Content-Type: application/json
+          body:
+            definitions:
+              - test-def
+        extract:
+          runId: $.body.runId
+          instanceId: $.body.instances[0].id
+        assertions:
+          - assertions:
+              - path: response.status
+                operator: in
+                value:
+                  - 200
+                  - 201
+              - path: response.body.runId
+                operator: exists
+              - path: response.body.instances
+                operator: length
+                value: 1
+              - path: response.body.instances[0].name
+                operator: eq
+                value: test-def
+              - path: response.body.instances[0].status
+                operator: eq
+                value: PENDING
+      - name: Get run status
+        action:
+          type: httpRequest
+          method: GET
+          url: 'control-tower/runs/{{runId}}/status'
+        assertions:
+          - assertions:
+              - path: response.status
+                operator: eq
+                value: 200
+              - path: response.body.runId
+                operator: eq
+                value: '{{runId}}'
+              - path: response.body.status
+                operator: exists
+              - path: response.body.instances
+                operator: length
+                value: 1
+      - name: Get latest run matches created run
+        action:
+          type: httpRequest
+          method: GET
+          url: control-tower/runs/latest
+        assertions:
+          - assertions:
+              - path: response.status
+                operator: eq
+                value: 200
+              - path: response.body.runId
+                operator: eq
+                value: '{{runId}}'
+      - name: Stop the current run
+        action:
+          type: httpRequest
+          method: POST
+          url: control-tower/runs/stop
+        assertions:
+          - assertions:
+              - path: response.status
+                operator: in
+                value:
+                  - 200
+                  - 201
+              - path: response.body.runId
+                operator: eq
+                value: '{{runId}}'
+              - path: response.body.status
+                operator: eq
+                value: CANCELLED
+      - name: Verify run is cancelled
+        action:
+          type: httpRequest
+          method: GET
+          url: 'control-tower/runs/{{runId}}/status'
+        assertions:
+          - assertions:
+              - path: response.status
+                operator: eq
+                value: 200
+              - path: response.body.status
+                operator: eq
+                value: CANCELLED
+      - name: Delete the run
+        action:
+          type: httpRequest
+          method: DELETE
+          url: 'control-tower/runs/{{runId}}'
+        assertions:
+          - assertions:
+              - path: response.status
+                operator: eq
+                value: 200
+              - path: response.body.status
+                operator: eq
+                value: DELETED
+      - name: Confirm run is gone
+        action:
+          type: httpRequest
+          method: GET
+          url: 'control-tower/runs/{{runId}}/status'
+        assertions:
+          - assertions:
+              - path: response.status
+                operator: in
+                value:
+                  - 404
+                  - 500
+  - name: Namespace instances endpoint
+    steps:
+      - name: List all instances returns empty or array
+        action:
+          type: httpRequest
+          method: GET
+          url: control-tower/namespaces/instances
+        assertions:
+          - assertions:
+              - path: response.status
+                operator: eq
+                value: 200
+              - path: response.body
+                operator: type
+                value: array
+  - name: Log query endpoints return empty results for unknown instance
+    variables:
+      fakeInstanceId: 00000000-0000-0000-0000-000000000000
+    steps:
+      - name: Parallel requests
+        action:
+          type: parallel
+          actions:
+            - type: httpRequest
+              method: GET
+              url: 'control-tower/logs/http/instance/{{fakeInstanceId}}'
+            - type: httpRequest
+              method: GET
+              url: 'control-tower/logs/console/instance/{{fakeInstanceId}}'
+            - type: httpRequest
+              method: GET
+              url: 'control-tower/logs/database/instance/{{fakeInstanceId}}'
+            - type: httpRequest
+              method: GET
+              url: 'control-tower/logs/test-execution/instance/{{fakeInstanceId}}'
+            - type: httpRequest
+              method: GET
+              url: 'control-tower/logs/assertion-results/instance/{{fakeInstanceId}}'
+  - name: Log ingestion endpoints (absorbed from LPS)
+    variables:
+      instanceId: inst-standalone-1
+      instanceItemId: inst-item-standalone-1
+    steps:
+      - name: Parallel requests
+        action:
+          type: parallel
+          actions:
+            - type: httpRequest
+              method: POST
+              url: control-tower/logs/http
+              headers:
+                Content-Type: application/json
+              body:
+                instanceId: '{{instanceId}}'
+                instanceItemId: '{{instanceItemId}}'
+                method: POST
+                url: /api/orders
+                statusCode: 201
+                origin: api-gateway
+                target: order-service
+            - type: httpRequest
+              method: POST
+              url: control-tower/logs/console
+              headers:
+                Content-Type: application/json
+              body:
+                instanceId: '{{instanceId}}'
+                instanceItemId: '{{instanceItemId}}'
+                log: '[INFO] standalone log line'
+  - name: Test completion endpoint (absorbed from TVS)
+    variables:
+      instanceId: inst-standalone-2
+    steps:
+      - name: POST /test-complete returns 202 accepted
+        action:
+          type: httpRequest
+          method: POST
+          url: control-tower/test-complete
+          headers:
+            Content-Type: application/json
+          body:
+            testRunId: '{{instanceId}}'
+            status: success
+            message: No-op completion for standalone test
+        assertions:
+          - assertions:
+              - path: response.status
+                operator: eq
+                value: 202

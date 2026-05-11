@@ -1,0 +1,10 @@
+type: MOCK
+name: mock-posthog
+description: Mock PostHog telemetry endpoint — absorbs capture calls from services
+mockTarget: us.i.posthog.com
+mockPath: /*
+mockResponseStatus: 200
+mockResponseHeaders:
+  Content-Type: application/json
+mockResponseBody:
+  status: 1

@@ -1,0 +1,375 @@
+{
+  "name": "advanced-assertions",
+  "description": "Coverage for underused assertion operators: ne, gt, lt, matches, notContains, notExists, in, notIn, arrayContains, arrayNotContains, notEmpty, and responseTime",
+  "config": {
+    "timeoutSeconds": 120
+  },
+  "items": [
+    {
+      "$ref": "../shared/service-a.yaml"
+    },
+    {
+      "$ref": "../shared/service-b.json"
+    },
+    {
+      "$ref": "../shared/postgres.yaml"
+    }
+  ],
+  "tests": [
+    {
+      "name": "Numeric comparison operators on response fields",
+      "variables": {
+        "expectedName": "Alice"
+      },
+      "steps": [
+        {
+          "name": "Query users and assert with gt, lt, gte, lte",
+          "action": {
+            "type": "dbQuery",
+            "database": "postgres-db",
+            "query": "SELECT COUNT(*) as user_count FROM users"
+          },
+          "assertions": [
+            {
+              "assertions": [
+                {
+                  "path": "success",
+                  "operator": "eq",
+                  "value": true
+                },
+                {
+                  "path": "data[0].user_count",
+                  "operator": "gt",
+                  "value": 0
+                },
+                {
+                  "path": "data[0].user_count",
+                  "operator": "gte",
+                  "value": 2
+                },
+                {
+                  "path": "data[0].user_count",
+                  "operator": "lt",
+                  "value": 1000
+                },
+                {
+                  "path": "data[0].user_count",
+                  "operator": "lte",
+                  "value": 100
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "Query a specific user and use ne, notExists, notEmpty",
+          "action": {
+            "type": "dbQuery",
+            "database": "postgres-db",
+            "query": "SELECT * FROM users WHERE name = '{{expectedName}}'"
+          },
+          "assertions": [
+            {
+              "assertions": [
+                {
+                  "path": "success",
+                  "operator": "eq",
+                  "value": true
+                },
+                {
+                  "path": "data[0].name",
+                  "operator": "ne",
+                  "value": "Bob"
+                },
+                {
+                  "path": "data[0].email",
+                  "operator": "notEmpty"
+                },
+                {
+                  "path": "data[0].email",
+                  "operator": "notContains",
+                  "value": "bob"
+                },
+                {
+                  "path": "error",
+                  "operator": "isEmpty"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Regex matching on response fields",
+      "steps": [
+        {
+          "name": "Query users and validate email format with matches",
+          "action": {
+            "type": "dbQuery",
+            "database": "postgres-db",
+            "query": "SELECT * FROM users ORDER BY id LIMIT 2"
+          },
+          "assertions": [
+            {
+              "assertions": [
+                {
+                  "path": "data[0].email",
+                  "operator": "matches",
+                  "value": "^[a-z]+@example\\.com$"
+                },
+                {
+                  "path": "data[1].email",
+                  "operator": "matches",
+                  "value": "^[a-z]+@example\\.com$"
+                },
+                {
+                  "path": "data[0].name",
+                  "operator": "matches",
+                  "value": "^[A-Z][a-z]+$"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Array operators: in, notIn, arrayContains, arrayNotContains",
+      "steps": [
+        {
+          "name": "Service-a returns an array and we validate with array operators",
+          "action": {
+            "type": "httpRequest",
+            "method": "POST",
+            "url": "service-a/array-response",
+            "headers": {
+              "Content-Type": "application/json"
+            },
+            "body": {
+              "response": {
+                "value": {
+                  "tags": ["production", "critical", "v2"],
+                  "priority": "high",
+                  "region": "us-east-1"
+                }
+              }
+            }
+          },
+          "assertions": [
+            {
+              "assertions": [
+                {
+                  "path": "response.status",
+                  "operator": "eq",
+                  "value": 200
+                },
+                {
+                  "path": "response.body.priority",
+                  "operator": "in",
+                  "value": ["low", "medium", "high", "critical"]
+                },
+                {
+                  "path": "response.body.priority",
+                  "operator": "notIn",
+                  "value": ["none", "unknown"]
+                },
+                {
+                  "path": "response.body.region",
+                  "operator": "in",
+                  "value": ["us-east-1", "us-west-2", "eu-west-1"]
+                },
+                {
+                  "path": "response.body.tags",
+                  "operator": "arrayContains",
+                  "value": "critical"
+                },
+                {
+                  "path": "response.body.tags",
+                  "operator": "arrayNotContains",
+                  "value": "deprecated"
+                },
+                {
+                  "path": "response.body.tags",
+                  "operator": "length",
+                  "value": 3
+                },
+                {
+                  "path": "response.body.tags",
+                  "operator": "notEmpty"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Response time assertions on HTTP calls",
+      "steps": [
+        {
+          "name": "Direct call should be fast",
+          "action": {
+            "type": "httpRequest",
+            "method": "GET",
+            "url": "service-a/health"
+          },
+          "assertions": [
+            {
+              "assertions": [
+                {
+                  "path": "response.status",
+                  "operator": "eq",
+                  "value": 200
+                },
+                {
+                  "path": "responseTime",
+                  "operator": "lt",
+                  "value": 5000
+                },
+                {
+                  "path": "responseTime",
+                  "operator": "gte",
+                  "value": 0
+                },
+                {
+                  "path": "responseTime",
+                  "operator": "type",
+                  "value": "number"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "Inter-service call response time is captured",
+          "action": {
+            "type": "httpRequest",
+            "method": "POST",
+            "url": "service-a/forward",
+            "headers": {
+              "Content-Type": "application/json"
+            },
+            "body": {
+              "requests": [
+                {
+                  "baseURL": "http://service-b",
+                  "url": "/timed",
+                  "method": "GET",
+                  "data": {
+                    "response": {
+                      "value": {
+                        "ok": true
+                      }
+                    }
+                  }
+                }
+              ]
+            }
+          },
+          "assertions": [
+            {
+              "assertions": [
+                {
+                  "path": "responseTime",
+                  "operator": "lt",
+                  "value": 10000
+                }
+              ]
+            },
+            {
+              "match": {
+                "origin": "service-a",
+                "url": "service-b/timed"
+              },
+              "count": {
+                "operator": "eq",
+                "value": 1
+              },
+              "assertions": [
+                {
+                  "path": "response.status",
+                  "operator": "eq",
+                  "value": 200
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Type checking assertions",
+      "steps": [
+        {
+          "name": "Validate response field types",
+          "action": {
+            "type": "httpRequest",
+            "method": "POST",
+            "url": "service-a/type-check",
+            "headers": {
+              "Content-Type": "application/json"
+            },
+            "body": {
+              "response": {
+                "value": {
+                  "stringField": "hello",
+                  "numberField": 42,
+                  "boolField": true,
+                  "arrayField": [1, 2, 3],
+                  "objectField": {
+                    "nested": true
+                  },
+                  "nullField": null
+                }
+              }
+            }
+          },
+          "assertions": [
+            {
+              "assertions": [
+                {
+                  "path": "response.body.stringField",
+                  "operator": "type",
+                  "value": "string"
+                },
+                {
+                  "path": "response.body.numberField",
+                  "operator": "type",
+                  "value": "number"
+                },
+                {
+                  "path": "response.body.boolField",
+                  "operator": "type",
+                  "value": "boolean"
+                },
+                {
+                  "path": "response.body.arrayField",
+                  "operator": "type",
+                  "value": "array"
+                },
+                {
+                  "path": "response.body.objectField",
+                  "operator": "type",
+                  "value": "object"
+                },
+                {
+                  "path": "response.body.nullField",
+                  "operator": "isEmpty"
+                },
+                {
+                  "path": "response.body.missingField",
+                  "operator": "notExists"
+                },
+                {
+                  "path": "response.body.stringField",
+                  "operator": "exists"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

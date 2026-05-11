@@ -1,0 +1,42 @@
+# Dokkimi
+
+> Dokkimi is a developer tool for testing microservices the way they actually run. It spins up isolated Kubernetes sandboxes, intercepts inter-service HTTP traffic, seeds databases, mocks external APIs, and runs assertions on real network calls — without requiring any code changes to your services.
+
+Dokkimi is for backend and platform engineers who are frustrated with the gap between unit tests (which mock away the interesting parts) and staging environments (which drift from reality). Each test run gets its own Kubernetes namespace with dedicated services and databases, so there is no shared state and no cross-test interference. Tests are defined declaratively in a `.dokkimi/` folder and executed via the `dokkimi` CLI.
+
+Key capabilities:
+- Isolated per-run Kubernetes namespaces with dedicated services and databases
+- Interceptor sidecars that capture every HTTP request between services for assertion
+- Mocking of outbound calls to third-party APIs (Stripe, Twilio, etc.)
+- Database seeding for Postgres, MySQL, MongoDB, and Redis via SQL or JS scripts
+- Parallel step and test execution
+- Zero code changes to services — sidecars, routing, DNS, and cleanup are handled automatically
+
+Install: `npm install -g dokkimi`. Requires Node.js 20+, Docker, and a local Kubernetes cluster (Docker Desktop, Rancher Desktop, or minikube).
+
+## Docs
+
+- [Getting Started](https://dokkimi.com/docs): install, prerequisites, scaffold, and run your first test
+- [Project Structure](https://dokkimi.com/docs/project-structure): layout of the `.dokkimi/` folder
+- [Services](https://dokkimi.com/docs/services): defining the services that make up a test topology
+- [Databases](https://dokkimi.com/docs/databases): Postgres, MySQL, MongoDB, Redis seeding
+- [Tests and Steps](https://dokkimi.com/docs/tests-and-steps): structuring test definitions and step groups
+- [Actions](https://dokkimi.com/docs/actions): the actions a test step can perform (HTTP calls, console logs, etc.)
+- [Assertions](https://dokkimi.com/docs/assertions): asserting on intercepted requests, responses, headers, logs, and DB state
+- [Variables](https://dokkimi.com/docs/variables): hardcoded variables and runtime extraction with `{{variable}}` interpolation
+- [Mocks](https://dokkimi.com/docs/mocks): intercepting outbound calls to external APIs
+- [Refs](https://dokkimi.com/docs/refs): referencing shared definitions across files
+- [CLI Reference](https://dokkimi.com/docs/cli): all `dokkimi` commands (`run`, `init`, `doctor`, `inspect`, ...)
+- [AI Integration](https://dokkimi.com/docs/ai-integration): using Dokkimi with AI coding assistants
+
+## Blog
+
+- [Why we built Dokkimi](https://dokkimi.com/blog/why-we-built-dokkimi): the motivation behind the project
+- [Getting started with Dokkimi](https://dokkimi.com/blog/getting-started-with-dokkimi): walkthrough of a first test
+- [How traffic interception works](https://dokkimi.com/blog/how-traffic-interception-works): the interceptor sidecar architecture
+
+## Optional
+
+- [Pricing](https://dokkimi.com/#pricing)
+- [Features overview](https://dokkimi.com/#features)
+- [How it works](https://dokkimi.com/#how-it-works)

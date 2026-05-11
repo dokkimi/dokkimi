@@ -1,0 +1,134 @@
+{
+  "name": "healthcheck-ct",
+  "description": "Boot Control Tower and verify health endpoint responds, plus confirm absorbed modules (log-processing, test-validation, cluster-watcher) are wired.",
+  "items": [
+    {
+      "$ref": "../shared/control-tower.yaml"
+    },
+    {
+      "$ref": "../shared/postgres-db.json"
+    },
+    {
+      "$ref": "../shared/mock-k8s-api.yaml"
+    },
+    {
+      "$ref": "../shared/mock-posthog.yaml"
+    }
+  ],
+  "tests": [
+    {
+      "name": "Control Tower health check",
+      "steps": [
+        {
+          "name": "GET /health returns 200",
+          "action": {
+            "type": "httpRequest",
+            "method": "GET",
+            "url": "control-tower/health"
+          },
+          "assertions": [
+            {
+              "assertions": [
+                {
+                  "path": "response.status",
+                  "operator": "eq",
+                  "value": 200
+                },
+                {
+                  "path": "response.body.service",
+                  "operator": "eq",
+                  "value": "control-tower"
+                },
+                {
+                  "path": "response.body.checks.kubernetes.status",
+                  "operator": "eq",
+                  "value": "healthy"
+                },
+                {
+                  "path": "response.body.checks.database.status",
+                  "operator": "eq",
+                  "value": "healthy"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Absorbed LPS endpoints still exercised",
+      "variables": {
+        "instanceId": "hc-inst-1",
+        "instanceItemId": "hc-item-1"
+      },
+      "steps": [
+        {
+          "name": "POST /logs/http is accepted",
+          "action": {
+            "type": "httpRequest",
+            "method": "POST",
+            "url": "control-tower/logs/http",
+            "headers": {
+              "Content-Type": "application/json"
+            },
+            "body": {
+              "instanceId": "{{instanceId}}",
+              "instanceItemId": "{{instanceItemId}}",
+              "method": "GET",
+              "url": "/api/health-check",
+              "statusCode": 200,
+              "origin": "healthcheck",
+              "target": "control-tower"
+            }
+          },
+          "assertions": [
+            {
+              "assertions": [
+                {
+                  "path": "response.status",
+                  "operator": "in",
+                  "value": [200, 201]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Absorbed TVS endpoint still exercised",
+      "variables": {
+        "instanceId": "hc-inst-2"
+      },
+      "steps": [
+        {
+          "name": "POST /test-complete returns 202",
+          "action": {
+            "type": "httpRequest",
+            "method": "POST",
+            "url": "control-tower/test-complete",
+            "headers": {
+              "Content-Type": "application/json"
+            },
+            "body": {
+              "testRunId": "{{instanceId}}",
+              "status": "success",
+              "message": "healthcheck smoke"
+            }
+          },
+          "assertions": [
+            {
+              "assertions": [
+                {
+                  "path": "response.status",
+                  "operator": "eq",
+                  "value": 202
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

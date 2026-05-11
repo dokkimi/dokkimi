@@ -1,0 +1,5 @@
+{
+  "type": "DATABASE",
+  "name": "postgres-db",
+  "database": "postgres"
+}

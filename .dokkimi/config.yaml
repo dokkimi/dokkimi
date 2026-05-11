@@ -1,0 +1,8 @@
+dokkimi: 0.1.0
+env:
+  REGISTRY: ghcr.io/dokkimi
+  TRAFFIC_TESTER_TAG: latest
+  CT_TAG: latest
+  LPS_TAG: latest
+  TVS_TAG: latest
+  CWS_TAG: latest

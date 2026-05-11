@@ -1,0 +1,8 @@
+type: SERVICE
+name: crash-on-start
+image: node:20-alpine
+port: 3000
+healthCheck: /health
+env:
+  - name: NODE_OPTIONS
+    value: '--require /nonexistent-file.js'

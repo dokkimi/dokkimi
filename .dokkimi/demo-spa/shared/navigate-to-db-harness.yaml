@@ -1,0 +1,6 @@
+name: Navigate to DB Query Harness
+description: Visit the home page and switch to the DB Query Harness tab.
+steps:
+  - visit: /
+  - click: "[data-testid='tab-db']"
+  - waitFor: "[data-testid='scenario-db']"

@@ -36,7 +36,7 @@ yarn add -D dokkimi
 
 ## Prerequisites
 
-- Node.js 22+
+- Node.js 20+
 - Docker Desktop with Kubernetes enabled
 - kubectl
 
@@ -77,6 +77,7 @@ items:
 tests:
   - name: Publish a post through the UI
     steps:
+      # Drive the browser through the publish flow
       - name: Create and publish a post
         action:
           type: ui
@@ -90,6 +91,7 @@ tests:
             - waitFor: '[data-testid="success-toast"]'
             - screenshot: post-published
         assertions:
+          # Verify the API call went through correctly
           - match:
               origin: web-app
               method: POST
@@ -99,6 +101,7 @@ tests:
                 operator: eq
                 value: 201
 
+      # Confirm it was persisted
       - name: Verify post in database
         action:
           type: dbQuery
@@ -113,7 +116,7 @@ tests:
 
 This single definition spins up a web app, API gateway, post service, Postgres database, and an Auth0 mock — then drives a browser through the publish flow, asserts on the inter-service HTTP call, and verifies the data was written to the database.
 
-Services are defined as shared fragments and referenced with `$ref` — write once, reuse across all your test definitions.
+Services are defined as shared fragments and referenced with `$ref` — write once, reuse across all your test definitions. Refs are recursive: a fragment can `$ref` another fragment, building up inheritance chains with overrides at each level.
 
 ```yaml
 # .dokkimi/shared/api-gateway.yaml
@@ -160,19 +163,6 @@ Dokkimi definitions are designed for coding agents. Let Claude, Cursor, or Copil
 - **`dokkimi dump`** — exports a complete JSON snapshot of your last run (traffic logs, test results, assertions, errors) formatted for LLM context. Paste it into your AI tool to debug failures without manually digging through logs.
 - **1,000+ line reference spec** — the full definition reference (`dokkimi-instructions.md`) is automatically available to your AI agent, covering every field, type, and pattern.
 
-## Development
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) for how to set up the dev environment and submit changes.
-
-```bash
-git clone https://github.com/dokkimi/dokkimi.git
-cd dokkimi
-yarn install
-yarn dev:cli    # Start Control Tower + CLI in watch mode
-```
-
-Full architecture doc: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
-
 ## Documentation
 
 - [Website](https://dokkimi.com)
@@ -184,4 +174,4 @@ Full reference for writing `.dokkimi/` definition files: `~/.dokkimi/dokkimi-ins
 
 ## License
 
-[Elastic License 2.0](LICENSE) — free to use, modify, and distribute. Cannot be offered as a managed service.
+Elastic License 2.0 — free to use, modify, and distribute. Cannot be offered as a managed service.

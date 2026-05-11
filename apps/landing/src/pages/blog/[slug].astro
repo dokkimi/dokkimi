@@ -1,0 +1,90 @@
+---
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import Nav from '../../components/Nav.astro';
+import Footer from '../../components/Footer.astro';
+import { getCollection, render } from 'astro:content';
+
+export async function getStaticPaths() {
+  const posts = await getCollection('blog');
+  return posts.map((post) => ({
+    params: { slug: post.data.slug },
+    props: { post },
+  }));
+}
+
+const { post } = Astro.props;
+const { Content } = await render(post);
+---
+
+<BaseLayout title={`${post.data.title} — Dokkimi`} description={post.data.description}>
+  <Nav />
+  <main class="container article">
+    <header>
+      <time datetime={post.data.date}>
+        {new Date(post.data.date).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}
+      </time>
+      <h1>{post.data.title}</h1>
+    </header>
+    <div class="prose">
+      <Content />
+    </div>
+  </main>
+  <Footer />
+</BaseLayout>
+
+<style>
+  .article {
+    padding: 120px 0 0;
+    max-width: 720px;
+  }
+
+  time {
+    font-size: 0.85rem;
+    color: var(--color-text-muted);
+  }
+
+  h1 {
+    font-size: 2.25rem;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    margin: 12px 0 48px;
+    line-height: 1.2;
+  }
+
+  .prose :global(h2) {
+    font-size: 1.4rem;
+    font-weight: 600;
+    margin: 40px 0 16px;
+  }
+
+  .prose :global(h3) {
+    font-size: 1.15rem;
+    font-weight: 600;
+    margin: 32px 0 12px;
+  }
+
+  .prose :global(p) {
+    margin-bottom: 16px;
+    color: var(--color-text-muted);
+    line-height: 1.75;
+  }
+
+  .prose :global(ul),
+  .prose :global(ol) {
+    padding-left: 20px;
+    margin-bottom: 16px;
+    color: var(--color-text-muted);
+  }
+
+  .prose :global(li) {
+    margin-bottom: 6px;
+  }
+
+  .prose :global(a) {
+    color: var(--color-primary-soft);
+  }
+
+  .prose :global(a:hover) {
+    color: var(--color-accent);
+  }
+</style>

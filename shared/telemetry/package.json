@@ -1,0 +1,21 @@
+{
+  "name": "@dokkimi/telemetry",
+  "version": "0.3.7",
+  "description": "Shared telemetry module for Dokkimi CLI and services",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch --preserveWatchOutput",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@dokkimi/config": "workspace:*",
+    "@dokkimi/platform": "workspace:*",
+    "posthog-node": "^5.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^25.6.2",
+    "typescript": "^6.0.3"
+  }
+}

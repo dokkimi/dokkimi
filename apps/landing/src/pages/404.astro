@@ -1,0 +1,51 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import Nav from '../components/Nav.astro';
+import Footer from '../components/Footer.astro';
+---
+
+<BaseLayout title="404 — Dokkimi" description="Page not found.">
+  <Nav />
+  <main class="container not-found">
+    <h1>404</h1>
+    <p>This page doesn't exist.</p>
+    <a href="/" class="back-link">Back to home</a>
+  </main>
+  <Footer />
+</BaseLayout>
+
+<style>
+  .not-found {
+    padding: 200px 0 var(--section-spacing);
+    text-align: center;
+  }
+
+  h1 {
+    font-size: 4rem;
+    font-weight: 700;
+    letter-spacing: -0.03em;
+    margin-bottom: 12px;
+    color: var(--color-text-muted);
+  }
+
+  p {
+    font-size: 1.1rem;
+    color: var(--color-text-muted);
+    margin-bottom: 32px;
+  }
+
+  .back-link {
+    font-size: 0.95rem;
+    font-weight: 500;
+    padding: 12px 24px;
+    border: 1px solid var(--color-border);
+    border-radius: 8px;
+    color: var(--color-text);
+    transition: all 0.2s;
+  }
+
+  .back-link:hover {
+    border-color: var(--color-primary);
+    color: var(--color-primary-soft);
+  }
+</style>

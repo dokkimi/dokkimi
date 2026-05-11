@@ -1,0 +1,6 @@
+type: SERVICE
+name: traffic-tester
+description: Generic HTTP/DB action service — executes queries and requests on behalf of the UI
+image: ghcr.io/dokkimi/traffic-tester:0.1.0
+port: 4000
+healthCheck: /health

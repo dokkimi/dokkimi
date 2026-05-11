@@ -1,0 +1,192 @@
+{
+  "name": "custom-responses-and-logging",
+  "description": "Custom response status/headers, pre/post request logging, and empty body edge case",
+  "config": {
+    "timeoutSeconds": 60
+  },
+  "items": [
+    {
+      "$ref": "../shared/service-a.yaml"
+    }
+  ],
+  "tests": [
+    {
+      "name": "Custom status code and headers",
+      "steps": [
+        {
+          "name": "Service returns custom status 201 with custom headers",
+          "action": {
+            "type": "httpRequest",
+            "method": "POST",
+            "url": "service-a/custom-response",
+            "headers": {
+              "Content-Type": "application/json"
+            },
+            "body": {
+              "response": {
+                "status": 201,
+                "headers": {
+                  "X-Custom-Header": "custom-value",
+                  "X-Request-Id": "req-12345"
+                },
+                "value": {
+                  "created": true,
+                  "id": "item-001"
+                }
+              }
+            }
+          },
+          "assertions": [
+            {
+              "assertions": [
+                {
+                  "path": "response.status",
+                  "operator": "eq",
+                  "value": 201
+                },
+                {
+                  "path": "response.header.x-custom-header",
+                  "operator": "eq",
+                  "value": "custom-value"
+                },
+                {
+                  "path": "response.header.x-request-id",
+                  "operator": "eq",
+                  "value": "req-12345"
+                },
+                {
+                  "path": "response.body.created",
+                  "operator": "eq",
+                  "value": true
+                },
+                {
+                  "path": "response.body.id",
+                  "operator": "eq",
+                  "value": "item-001"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Pre-request and post-request logging",
+      "steps": [
+        {
+          "name": "Service-a logs before and after processing",
+          "action": {
+            "type": "httpRequest",
+            "method": "POST",
+            "url": "service-a/log-test",
+            "headers": {
+              "Content-Type": "application/json"
+            },
+            "body": {
+              "preRequestLogs": [
+                "PRE: Starting request processing",
+                "PRE: Initializing handlers"
+              ],
+              "postRequestLogs": [
+                "POST: Request complete",
+                "POST: Cleanup done"
+              ],
+              "response": {
+                "value": {
+                  "logged": true
+                }
+              }
+            }
+          },
+          "assertions": [
+            {
+              "assertions": [
+                {
+                  "path": "response.status",
+                  "operator": "eq",
+                  "value": 200
+                },
+                {
+                  "path": "response.body.logged",
+                  "operator": "eq",
+                  "value": true
+                }
+              ]
+            },
+            {
+              "service": "service-a",
+              "consoleAssertions": [
+                {
+                  "message": {
+                    "operator": "contains",
+                    "value": "PRE: Starting request processing"
+                  },
+                  "count": {
+                    "operator": "gte",
+                    "value": 1
+                  }
+                },
+                {
+                  "message": {
+                    "operator": "contains",
+                    "value": "POST: Request complete"
+                  },
+                  "count": {
+                    "operator": "gte",
+                    "value": 1
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Empty body returns default response",
+      "steps": [
+        {
+          "name": "POST with empty body",
+          "action": {
+            "type": "httpRequest",
+            "method": "POST",
+            "url": "service-a/empty",
+            "headers": {
+              "Content-Type": "application/json"
+            },
+            "body": {}
+          },
+          "assertions": [
+            {
+              "assertions": [
+                {
+                  "path": "response.status",
+                  "operator": "eq",
+                  "value": 200
+                },
+                {
+                  "path": "response.body.queryResults",
+                  "operator": "type",
+                  "value": "array"
+                },
+                {
+                  "path": "response.body.queryResults",
+                  "operator": "isEmpty"
+                },
+                {
+                  "path": "response.body.results",
+                  "operator": "type",
+                  "value": "array"
+                },
+                {
+                  "path": "response.body.results",
+                  "operator": "isEmpty"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

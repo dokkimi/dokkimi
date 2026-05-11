@@ -1,0 +1,85 @@
+---
+import DocsLayout from '../../layouts/DocsLayout.astro';
+import CodeBlock from '../../components/CodeBlock.astro';
+---
+
+<DocsLayout title="Services — Dokkimi Docs" description="Define containerized services with interceptor sidecars for traffic capture.">
+  <h1>Services</h1>
+  <p class="subtitle">Define containerized services deployed with interceptor sidecars for traffic capture.</p>
+
+  <h2>Required fields</h2>
+  <table>
+    <thead>
+      <tr><th>Field</th><th>Type</th><th>Description</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>type</code></td><td><code>"SERVICE"</code></td><td>Item type</td></tr>
+      <tr><td><code>name</code></td><td>string</td><td>Unique name (1-63 chars, lowercase alphanumeric + hyphens, must start/end with alphanumeric). Used as DNS hostname.</td></tr>
+      <tr><td><code>port</code></td><td>integer</td><td>Port the service listens on (1-65535)</td></tr>
+      <tr><td><code>healthCheck</code></td><td>string</td><td>HTTP path for health checks (e.g., <code>/health</code>)</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Optional fields</h2>
+  <table>
+    <thead>
+      <tr><th>Field</th><th>Type</th><th>Default</th><th>Description</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>description</code></td><td>string</td><td>—</td><td>Human-readable description (max 500 chars)</td></tr>
+      <tr><td><code>image</code></td><td>string</td><td>—</td><td>Docker image URI (e.g., <code>my-service:latest</code>)</td></tr>
+      <tr><td><code>uiPath</code></td><td>string</td><td>—</td><td>URL path to service's UI (e.g., <code>/</code>) — enables "Open UI" button</td></tr>
+      <tr><td><code>debugPort</code></td><td>integer</td><td>—</td><td>Remote debugging port (e.g., 9229 for Node.js <code>--inspect</code>)</td></tr>
+      <tr><td><code>env</code></td><td>array</td><td>—</td><td>Environment variables (see below)</td></tr>
+      <tr><td><code>minCpu</code></td><td>number</td><td>—</td><td>Minimum CPU cores (e.g., 0.25)</td></tr>
+      <tr><td><code>minMemory</code></td><td>number</td><td>—</td><td>Minimum memory in MB</td></tr>
+      <tr><td><code>maxCpu</code></td><td>number</td><td>—</td><td>Maximum CPU cores</td></tr>
+      <tr><td><code>maxMemory</code></td><td>number</td><td>—</td><td>Maximum memory in MB</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Environment variables</h2>
+  <p>Environment variables use an array of objects with <code>name</code> and <code>value</code> fields — not a flat key-value object:</p>
+  <CodeBlock code={`"env": [
+  { "name": "DATABASE_URL", "value": "postgresql://dokkimi:dokkimi@postgres-db:5432/dokkimi" },
+  { "name": "REDIS_URL", "value": "redis://:dokkimi@redis-cache:6379" },
+  { "name": "NODE_ENV", "value": "test" }
+]`} lang="json" />
+
+  <h2>Full example</h2>
+  <CodeBlock code={`{
+  "type": "SERVICE",
+  "name": "api-gateway",
+  "image": "api-gateway:latest",
+  "port": 3000,
+  "healthCheck": "/health",
+  "uiPath": "/",
+  "debugPort": 9229,
+  "env": [
+    { "name": "DATABASE_URL", "value": "postgresql://dokkimi:dokkimi@postgres-db:5432/dokkimi" },
+    { "name": "REDIS_URL", "value": "redis://:dokkimi@redis-cache:6379" },
+    { "name": "USER_SERVICE_URL", "value": "http://user-service:3000" },
+    { "name": "NODE_ENV", "value": "test" }
+  ],
+  "minCpu": 0.25,
+  "minMemory": 256,
+  "maxCpu": 1,
+  "maxMemory": 1024
+}`} lang="json" />
+
+  <h2>DNS and inter-service communication</h2>
+  <p>Service names are DNS hostnames within the namespace. Use the <code>name</code> of another item as the hostname when one service connects to another. For example, if you have a database item named <code>postgres-db</code>, your service connects to it at <code>postgres-db:5432</code>.</p>
+
+  <h2>Naming rules</h2>
+  <p>Item names must be lowercase, alphanumeric with hyphens, start and end with an alphanumeric character, and be 1-63 characters long. They're used as Kubernetes DNS names.</p>
+  <p>Pattern: <code>^[a-z0-9][a-z0-9-]*[a-z0-9]$</code></p>
+  <ul>
+    <li>Good: <code>my-service</code>, <code>api-gateway</code>, <code>user-svc</code></li>
+    <li>Bad: <code>MyService</code>, <code>my_service</code>, <code>-start-with-dash</code></li>
+  </ul>
+
+  <div class="nav-links">
+    <a href="/docs/project-structure">← Project Structure</a>
+    <a href="/docs/databases">Databases →</a>
+  </div>
+</DocsLayout>

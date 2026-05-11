@@ -1,0 +1,242 @@
+---
+
+---
+
+<section class="coverage">
+  <div class="container">
+    <h2 class="section-heading">Unmatched Coverage</h2>
+    <p class="section-subtitle">Most tools only cover a slice. Dokkimi covers the whole picture.</p>
+    <div class="tool-buttons">
+      <button class="tool-btn active" data-tool="dokkimi">Dokkimi</button>
+      <button class="tool-btn" data-tool="cypress">Cypress / Playwright</button>
+      <button class="tool-btn" data-tool="testcontainers">Testcontainers</button>
+      <button class="tool-btn" data-tool="postman">Postman / Bruno</button>
+      <button class="tool-btn" data-tool="jest">Jest / Vitest</button>
+    </div>
+    <div class="diagram-wrapper">
+      <svg viewBox="0 0 800 290" xmlns="http://www.w3.org/2000/svg" class="diagram" data-active-tool="dokkimi">
+        <defs>
+          <marker id="arrow-dim" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+            <path d="M 0 0 L 10 5 L 0 10 z" fill="var(--color-border)" class="arrow-marker dim-marker" />
+          </marker>
+          <marker id="arrow-lit" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+            <path d="M 0 0 L 10 5 L 0 10 z" fill="var(--color-primary)" class="arrow-marker lit-marker" />
+          </marker>
+        </defs>
+
+        <!-- Service boxes -->
+        <g class="node" data-node="fe">
+          <rect x="40" y="120" width="140" height="70" rx="10" />
+          <text x="110" y="162">Browser / FE</text>
+        </g>
+        <g class="node" data-node="be">
+          <rect x="280" y="120" width="140" height="70" rx="10" />
+          <text x="350" y="162">API / Backend</text>
+        </g>
+        <g class="node" data-node="ext">
+          <rect x="530" y="30" width="160" height="70" rx="10" />
+          <text x="610" y="72">External API</text>
+        </g>
+        <g class="node" data-node="db">
+          <rect x="530" y="210" width="160" height="70" rx="10" />
+          <text x="610" y="252">Database</text>
+        </g>
+
+        <!-- Arrows -->
+        <g class="arrow" data-arrow="fe-be">
+          <line x1="180" y1="155" x2="280" y2="155" marker-end="url(#arrow-dim)" />
+        </g>
+        <g class="arrow" data-arrow="be-ext">
+          <line x1="420" y1="140" x2="530" y2="65" marker-end="url(#arrow-dim)" />
+        </g>
+        <g class="arrow" data-arrow="be-db">
+          <line x1="420" y1="170" x2="530" y2="245" marker-end="url(#arrow-dim)" />
+        </g>
+
+      </svg>
+      <p class="coverage-label-text"></p>
+    </div>
+  </div>
+</section>
+
+<style>
+  .coverage {
+    padding: var(--section-spacing) 0;
+    background: var(--color-bg-soft);
+  }
+
+  .tool-buttons {
+    display: flex;
+    justify-content: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-bottom: 32px;
+  }
+
+  .tool-btn {
+    padding: 8px 20px;
+    border: 1px solid var(--color-border);
+    border-radius: 6px;
+    background: transparent;
+    color: var(--color-text-muted);
+    font-size: 0.9rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+    font-family: var(--font-sans);
+  }
+
+  .tool-btn:hover {
+    border-color: var(--color-primary);
+    color: var(--color-text);
+  }
+
+  .tool-btn.active {
+    background: var(--color-primary);
+    border-color: var(--color-primary);
+    color: white;
+  }
+
+  .diagram-wrapper {
+    max-width: 700px;
+    margin: 0 auto;
+  }
+
+  .diagram {
+    width: 100%;
+    height: auto;
+  }
+
+  /* Default dimmed state */
+  .node rect {
+    fill: var(--color-bg-soft);
+    stroke: var(--color-border);
+    stroke-width: 1.5;
+    transition: all 0.3s;
+  }
+
+  .node text {
+    fill: var(--color-text-muted);
+    font-family: var(--font-sans);
+    font-size: 14px;
+    text-anchor: middle;
+    transition: all 0.3s;
+  }
+
+  .arrow line {
+    stroke: var(--color-border);
+    stroke-width: 2;
+    transition: all 0.3s;
+  }
+
+  /* Highlighted state */
+  .node.lit rect {
+    fill: rgba(14, 165, 233, 0.15);
+    stroke: var(--color-primary);
+    stroke-width: 2;
+  }
+
+  .node.lit text {
+    fill: var(--color-text);
+  }
+
+  .arrow.lit line {
+    stroke: var(--color-primary);
+    stroke-width: 2.5;
+    marker-end: url(#arrow-lit);
+  }
+
+
+  /* Dimmed state (when something else is highlighted) */
+  .node.dim rect {
+    fill: var(--color-bg-soft);
+    stroke: var(--color-border);
+    opacity: 0.3;
+  }
+
+  .node.dim text {
+    opacity: 0.3;
+  }
+
+  .arrow.dim line {
+    opacity: 0.15;
+  }
+
+  .arrow.dim line {
+    marker-end: url(#arrow-dim);
+  }
+
+  .coverage-label-text {
+    color: var(--color-text-muted);
+    font-size: 1.05rem;
+    font-style: italic;
+    text-align: center;
+    margin-top: 24px;
+    min-height: 3em;
+    transition: all 0.3s;
+  }
+</style>
+
+<script>
+  const tools: Record<string, { nodes: string[]; arrows: string[]; label: string }> = {
+    dokkimi: {
+      nodes: ['fe', 'be', 'ext', 'db'],
+      arrows: ['fe-be', 'be-ext', 'be-db'],
+      label: 'Full coverage of UI interactions, http traffic between all services and external APIs, including all database interactions.',
+    },
+    cypress: {
+      nodes: ['fe'],
+      arrows: ['fe-be'],
+      label: 'Tests the browser and its requests, but can\'t see what happens after the backend.',
+    },
+    testcontainers: {
+      nodes: ['be', 'db'],
+      arrows: ['be-db'],
+      label: 'Spins up isolated containers for the backend and database, but no real frontend or external APIs.',
+    },
+    postman: {
+      nodes: ['be'],
+      arrows: ['fe-be'],
+      label: 'Sends requests to the API and validates responses, but no browser, database, or downstream visibility.',
+    },
+    jest: {
+      nodes: ['be'],
+      arrows: [],
+      label: 'Unit tests individual functions in isolation — no real services, network, or database.',
+    },
+  };
+
+  const allNodes = document.querySelectorAll('.node');
+  const allArrows = document.querySelectorAll('.arrow');
+  const labelEl = document.querySelector('.coverage-label-text');
+  const buttons = document.querySelectorAll<HTMLButtonElement>('.tool-btn');
+
+  function activate(toolName: string) {
+    const tool = tools[toolName];
+    if (!tool) return;
+
+    buttons.forEach((b) => b.classList.toggle('active', b.dataset.tool === toolName));
+
+    allNodes.forEach((n) => {
+      const id = (n as HTMLElement).dataset.node!;
+      const isLit = tool.nodes.includes(id);
+      n.classList.toggle('lit', isLit);
+      n.classList.toggle('dim', !isLit);
+    });
+
+    allArrows.forEach((a) => {
+      const id = (a as HTMLElement).dataset.arrow!;
+      const isLit = tool.arrows.includes(id);
+      a.classList.toggle('lit', isLit);
+      a.classList.toggle('dim', !isLit);
+    });
+
+    if (labelEl) labelEl.textContent = tool.label;
+  }
+
+  buttons.forEach((btn) => {
+    btn.addEventListener('click', () => activate(btn.dataset.tool!));
+  });
+
+  activate('dokkimi');
+</script>

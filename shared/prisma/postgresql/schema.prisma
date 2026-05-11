@@ -1,0 +1,315 @@
+// PostgreSQL variant of the Dokkimi Prisma schema
+// Used for cloud/container deployments (Docker images)
+// Keep models in sync with schema.sqlite.prisma (CLI/local variant)
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ============================================
+// ENUMS
+// ============================================
+
+enum InstanceStatus {
+  PENDING
+  STARTING
+  RUNNING
+  STOPPING
+  TERMINATING
+  STOPPED
+  FAILED
+}
+
+enum ItemStatus {
+  PENDING
+  STARTING
+  RUNNING
+  STOPPING
+  STOPPED
+  CRASHED
+}
+
+enum TestStatus {
+  PENDING
+  RUNNING
+  PASSED
+  FAILED
+  CANCELLED
+}
+
+enum ReadinessStatus {
+  READY
+  NOT_READY
+  UNKNOWN
+}
+
+enum LogLevel {
+  INFO
+  WARN
+  ERROR
+  DEBUG
+}
+
+// ============================================
+// RUN (groups instances from a single invocation)
+// ============================================
+
+enum RunStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+model Run {
+  id          String    @id @default(uuid())
+  status      RunStatus @default(PENDING)
+  createdAt   DateTime  @default(now())
+  completedAt DateTime?
+  cancelledAt DateTime?
+
+  instances NamespaceInstance[]
+
+  @@index([status])
+  @@map("runs")
+}
+
+// ============================================
+// NAMESPACE INSTANCE (execution)
+// ============================================
+
+// A running (or completed) execution of a namespace
+model NamespaceInstance {
+  id     String         @id @default(uuid())
+  name   String // Definition name (e.g. "api-tests")
+  status InstanceStatus @default(PENDING)
+  k8sNamespace       String? // Actual K8s namespace name
+  startedAt          DateTime?
+  stoppedAt          DateTime?
+
+  // Test execution (populated if definition had tests)
+  testStatus      TestStatus?
+  testResults     Json?
+  testCompletedAt DateTime?
+  errorMessage    String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Run grouping
+  runId String?
+
+  // Relations
+  run               Run?                 @relation(fields: [runId], references: [id], onDelete: Cascade)
+  items             InstanceItem[]
+  httpLogs          HttpLog[]
+  consoleLogs       ConsoleLog[]
+  databaseLogs      DatabaseLog[]
+  testExecutionLogs TestExecutionLog[]
+  assertionResults  AssertionResult[]
+  artifacts         Artifact[]
+
+  @@index([runId])
+  @@index([status])
+  @@index([testStatus])
+  @@index([createdAt])
+  @@map("namespace_instances")
+}
+
+// Runtime state for each item in a running instance
+model InstanceItem {
+  id                   String          @id @default(uuid())
+  instanceId           String
+  itemDefinitionName   String // Matches item name in definition
+  status               ItemStatus      @default(PENDING)
+  readinessStatus      ReadinessStatus @default(UNKNOWN)
+  readinessLastChecked DateTime?
+  k8sName              String? // Actual K8s resource name
+  createdAt            DateTime        @default(now())
+  updatedAt            DateTime        @updatedAt
+
+  // Relations
+  instance NamespaceInstance @relation(fields: [instanceId], references: [id], onDelete: Cascade)
+
+  @@index([instanceId])
+  @@index([itemDefinitionName])
+  @@index([status])
+  @@map("instance_items")
+}
+
+// ============================================
+// RUNTIME DATA (logs, metrics)
+// ============================================
+
+// HTTP request/response logs
+model HttpLog {
+  id                String    @id @default(uuid())
+  instanceId        String?   // Which instance
+  instanceItemId    String?   // Which item made/received request
+  method            String
+  url               String
+  statusCode        Int?
+  requestBody       Json?
+  responseBody      Json?
+  requestHeaders    Json?
+  responseHeaders   Json?
+  origin            String?   // Service name making request
+  target            String?   // Target hostname
+  targetId          String?   // Target's instanceItemId
+  isMocked          Boolean?
+  requestSentAt     DateTime? // When the request was sent
+  responseReceivedAt DateTime? // When the response was received
+  timestamp        DateTime  @default(now())
+
+  // Relations
+  instance NamespaceInstance? @relation(fields: [instanceId], references: [id], onDelete: Cascade)
+
+  @@index([instanceId])
+  @@index([instanceItemId])
+  @@index([timestamp])
+  @@index([instanceId, timestamp]) // For timestamp window queries
+  @@index([origin, target])
+  @@index([isMocked])
+  @@map("http_logs")
+}
+
+// Console logs from services
+model ConsoleLog {
+  id             String   @id @default(uuid())
+  instanceId     String?
+  instanceItemId String?
+  level          LogLevel
+  message        String
+  timestamp      DateTime @default(now())
+
+  // Relations
+  instance NamespaceInstance? @relation(fields: [instanceId], references: [id], onDelete: Cascade)
+
+  @@index([instanceId])
+  @@index([instanceItemId])
+  @@index([timestamp])
+  @@index([level])
+  @@map("console_logs")
+}
+
+// Database query logs
+model DatabaseLog {
+  id             String   @id @default(uuid())
+  instanceId     String?
+  instanceItemId String? // Database instance item ID
+  databaseType   String // "postgresql", "mysql", "mongodb"
+  databaseName   String // Database service name
+  query          String // The query that was executed
+  params         Json? // Query parameters (if any)
+  success        Boolean // Whether query succeeded
+  data           Json? // Query results (rows/data)
+  rowsAffected   Int? // For write queries
+  error          String? // Error message if failed
+  duration       Int? // Query duration in milliseconds
+  timestamp      DateTime @default(now())
+
+  // Relations
+  instance NamespaceInstance? @relation(fields: [instanceId], references: [id], onDelete: Cascade)
+
+  @@index([instanceId])
+  @@index([instanceItemId])
+  @@index([databaseName])
+  @@index([timestamp])
+  @@index([databaseType])
+  @@map("database_logs")
+}
+
+// Test execution logs
+model TestExecutionLog {
+  id             String   @id @default(uuid())
+  instanceId     String // NamespaceInstance ID (same as testRunId)
+  eventType      String // Event type (enum)
+  message        String // Human-readable message
+  stepIndex      Int? // Sequential step index (when applicable)
+  subActionIndex Int? // Sub-action index within a parallel or UI step (when applicable)
+  subStepIndex   Int? // Sub-step index for UI actions (0-based; nth entry in action.steps[])
+  actionType     String? // For UI sub-steps: the sub-step kind (visit/click/type/waitFor/extract/screenshot)
+  selector       String? // For UI sub-steps: the CSS selector (when applicable)
+  duration       Int? // Duration in milliseconds (for *_COMPLETED events)
+  error          String? // Error message (if network/transport error)
+  errorType      String? // Error type (if error occurred)
+  variables      Json     @default("{}") // Variable state snapshot at this point in execution
+  timestamp      DateTime @default(now())
+
+  // Relations
+  instance NamespaceInstance? @relation(fields: [instanceId], references: [id], onDelete: Cascade)
+
+  @@index([instanceId])
+  @@index([eventType])
+  @@index([timestamp])
+  @@index([stepIndex, subActionIndex]) // For correlating requests
+  @@index([instanceId, timestamp]) // For windowing downstream logs into UI sub-steps
+  @@map("test_execution_logs")
+}
+
+// ============================================
+// TEST VALIDATION MODELS
+// ============================================
+
+// Assertion validation results
+model AssertionResult {
+  id             String   @id @default(uuid())
+  instanceId     String
+  requestId      String?
+  stepIndex      Int
+  assertionIndex Int
+  assertionType  String
+  passed         Boolean
+  expected       Json?
+  actual         Json?
+  error          String?
+  path           String?
+  operator       String?
+  blockIndex     Int?
+  resultKind     String?
+  timestamp      DateTime @default(now())
+
+  // Relations
+  instance NamespaceInstance? @relation(fields: [instanceId], references: [id], onDelete: Cascade)
+
+  @@index([instanceId])
+  @@map("assertion_results")
+}
+
+// ============================================
+// ARTIFACT MODELS
+// ============================================
+
+// Binary outputs from UI tests (screenshots, visual diffs, failure HTML).
+// Path convention: instances/<instanceId>/artifacts/<type>/<filename>
+// Filename: <name>.<ext> when name is set; <stepIndex>.<subStepIndex>-failure.<ext> otherwise.
+model Artifact {
+  id           String   @id @default(uuid())
+  instanceId   String
+  stepIndex    Int
+  subStepIndex Int
+  type         String // 'screenshot' | 'diff' | 'html'
+  name         String? // user-supplied name; null for failure captures
+  uri          String // path under instances/<instanceId>/artifacts/...
+  // Set only on visualMatch CAPTURE rows (type='screenshot' produced by a
+  // visualMatch sub-step) after CT's post-run diff job finishes:
+  //   'pass'        — diff under threshold; capture stays for context, no diff emitted
+  //   'fail'        — diff above threshold; matching diff/<name>.png artifact also persisted
+  //   'no-baseline' — first run for this name; capture awaits user approval
+  // Null for explicit screenshots, debug captures, and any pre-job-completion state.
+  verdict      String?
+  createdAt    DateTime @default(now())
+
+  // Relations
+  instance NamespaceInstance? @relation(fields: [instanceId], references: [id], onDelete: Cascade)
+
+  @@index([instanceId])
+  @@index([instanceId, type])
+  @@index([instanceId, verdict])
+  @@map("artifacts")
+}

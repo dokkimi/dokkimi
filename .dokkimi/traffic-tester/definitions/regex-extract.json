@@ -1,0 +1,445 @@
+{
+  "name": "regex-extract",
+  "description": "Tests regex extraction from response values — extracting substrings via capture groups",
+  "config": {
+    "timeoutSeconds": 60
+  },
+  "items": [
+    {
+      "$ref": "../shared/service-a.yaml"
+    },
+    {
+      "$ref": "../shared/service-b.json"
+    },
+    {
+      "$ref": "../shared/postgres.yaml"
+    }
+  ],
+  "tests": [
+    {
+      "name": "Extract UUID from a structured log message",
+      "variables": {
+        "pgConnStr": "postgresql://dokkimi:dokkimi@postgres-db:5432/dokkimi"
+      },
+      "steps": [
+        {
+          "name": "Service returns a response with an embedded correlation ID",
+          "action": {
+            "type": "httpRequest",
+            "method": "POST",
+            "url": "service-a/custom-response",
+            "headers": {
+              "Content-Type": "application/json"
+            },
+            "body": {
+              "response": {
+                "value": {
+                  "message": "Order created successfully correlation_id=abc-123-def-456 at 2024-01-15T10:30:00Z",
+                  "status": "ok"
+                }
+              }
+            }
+          },
+          "extract": {
+            "correlationId": {
+              "path": "$.body.message",
+              "pattern": "correlation_id=([a-z0-9-]+)"
+            },
+            "timestamp": {
+              "path": "$.body.message",
+              "pattern": "(\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z)",
+              "group": 1
+            }
+          },
+          "assertions": [
+            {
+              "assertions": [
+                {
+                  "path": "response.status",
+                  "operator": "eq",
+                  "value": 200
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "Use extracted correlation ID in a follow-up request",
+          "action": {
+            "type": "httpRequest",
+            "method": "POST",
+            "url": "service-a/custom-response",
+            "headers": {
+              "Content-Type": "application/json"
+            },
+            "body": {
+              "response": {
+                "value": {
+                  "lookupResult": "Found order for correlation_id={{correlationId}}",
+                  "ts": "{{timestamp}}"
+                }
+              }
+            }
+          },
+          "assertions": [
+            {
+              "assertions": [
+                {
+                  "path": "response.status",
+                  "operator": "eq",
+                  "value": 200
+                },
+                {
+                  "path": "response.body.lookupResult",
+                  "operator": "eq",
+                  "value": "Found order for correlation_id=abc-123-def-456"
+                },
+                {
+                  "path": "response.body.ts",
+                  "operator": "eq",
+                  "value": "2024-01-15T10:30:00Z"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Extract resource ID from Location header",
+      "steps": [
+        {
+          "name": "Service returns a Location header with an embedded numeric ID",
+          "action": {
+            "type": "httpRequest",
+            "method": "POST",
+            "url": "service-a/custom-response",
+            "headers": {
+              "Content-Type": "application/json"
+            },
+            "body": {
+              "response": {
+                "status": 201,
+                "headers": {
+                  "Location": "/api/v2/resources/98765/details"
+                },
+                "value": {
+                  "created": true
+                }
+              }
+            }
+          },
+          "extract": {
+            "resourceId": {
+              "path": "$.headers.location",
+              "pattern": "/resources/(\\d+)"
+            }
+          },
+          "assertions": [
+            {
+              "assertions": [
+                {
+                  "path": "response.status",
+                  "operator": "eq",
+                  "value": 201
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "Use the extracted resource ID in a subsequent request",
+          "action": {
+            "type": "httpRequest",
+            "method": "POST",
+            "url": "service-a/custom-response",
+            "headers": {
+              "Content-Type": "application/json"
+            },
+            "body": {
+              "response": {
+                "value": {
+                  "resource": "{{resourceId}}",
+                  "found": true
+                }
+              }
+            }
+          },
+          "assertions": [
+            {
+              "assertions": [
+                {
+                  "path": "response.status",
+                  "operator": "eq",
+                  "value": 200
+                },
+                {
+                  "path": "response.body.resource",
+                  "operator": "eq",
+                  "value": "98765"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Extract multiple groups from the same field across steps",
+      "steps": [
+        {
+          "name": "Service returns a version string",
+          "action": {
+            "type": "httpRequest",
+            "method": "POST",
+            "url": "service-a/custom-response",
+            "headers": {
+              "Content-Type": "application/json"
+            },
+            "body": {
+              "response": {
+                "value": {
+                  "version": "service-a/3.14.159-beta+build.2024"
+                }
+              }
+            }
+          },
+          "extract": {
+            "majorVersion": {
+              "path": "$.body.version",
+              "pattern": "(\\d+)\\.\\d+\\.\\d+",
+              "group": 1
+            },
+            "minorVersion": {
+              "path": "$.body.version",
+              "pattern": "\\d+\\.(\\d+)\\.\\d+",
+              "group": 1
+            },
+            "patchVersion": {
+              "path": "$.body.version",
+              "pattern": "\\d+\\.\\d+\\.(\\d+)",
+              "group": 1
+            },
+            "fullVersion": {
+              "path": "$.body.version",
+              "pattern": "(\\d+\\.\\d+\\.\\d+)",
+              "group": 0
+            }
+          },
+          "assertions": [
+            {
+              "assertions": [
+                {
+                  "path": "response.status",
+                  "operator": "eq",
+                  "value": 200
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "Verify all extracted version parts",
+          "action": {
+            "type": "httpRequest",
+            "method": "POST",
+            "url": "service-a/custom-response",
+            "headers": {
+              "Content-Type": "application/json"
+            },
+            "body": {
+              "response": {
+                "value": {
+                  "major": "{{majorVersion}}",
+                  "minor": "{{minorVersion}}",
+                  "patch": "{{patchVersion}}",
+                  "full": "{{fullVersion}}"
+                }
+              }
+            }
+          },
+          "assertions": [
+            {
+              "assertions": [
+                {
+                  "path": "response.body.major",
+                  "operator": "eq",
+                  "value": "3"
+                },
+                {
+                  "path": "response.body.minor",
+                  "operator": "eq",
+                  "value": "14"
+                },
+                {
+                  "path": "response.body.patch",
+                  "operator": "eq",
+                  "value": "159"
+                },
+                {
+                  "path": "response.body.full",
+                  "operator": "eq",
+                  "value": "3.14.159"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Regex extract from DB query result",
+      "variables": {
+        "pgConnStr": "postgresql://dokkimi:dokkimi@postgres-db:5432/dokkimi"
+      },
+      "steps": [
+        {
+          "name": "Query a user and extract first name from full email",
+          "action": {
+            "type": "dbQuery",
+            "database": "postgres-db",
+            "query": "SELECT * FROM users WHERE name = 'Alice' LIMIT 1"
+          },
+          "extract": {
+            "emailLocalPart": {
+              "path": "$.data[0].email",
+              "pattern": "^([^@]+)@"
+            }
+          },
+          "assertions": [
+            {
+              "assertions": [
+                {
+                  "path": "success",
+                  "operator": "eq",
+                  "value": true
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "Use extracted email local part",
+          "action": {
+            "type": "httpRequest",
+            "method": "POST",
+            "url": "service-a/custom-response",
+            "headers": {
+              "Content-Type": "application/json"
+            },
+            "body": {
+              "response": {
+                "value": {
+                  "greeting": "Hello, {{emailLocalPart}}"
+                }
+              }
+            }
+          },
+          "assertions": [
+            {
+              "assertions": [
+                {
+                  "path": "response.status",
+                  "operator": "eq",
+                  "value": 200
+                },
+                {
+                  "path": "response.body.greeting",
+                  "operator": "contains",
+                  "value": "Hello, "
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Regex extract with group 0 (full match)",
+      "steps": [
+        {
+          "name": "Service returns an auth-style string in the response body",
+          "action": {
+            "type": "httpRequest",
+            "method": "POST",
+            "url": "service-a/custom-response",
+            "headers": {
+              "Content-Type": "application/json"
+            },
+            "body": {
+              "response": {
+                "value": {
+                  "auth": "Bearer eyJhbGciOiJSUzI1NiJ9.test.signature",
+                  "metadata": "request processed at 2024-03-15 by node-7"
+                }
+              }
+            }
+          },
+          "extract": {
+            "jwtToken": {
+              "path": "$.body.auth",
+              "pattern": "Bearer (.+)",
+              "group": 1
+            },
+            "nodeId": {
+              "path": "$.body.metadata",
+              "pattern": "(node-\\d+)",
+              "group": 0
+            }
+          },
+          "assertions": [
+            {
+              "assertions": [
+                {
+                  "path": "response.status",
+                  "operator": "eq",
+                  "value": 200
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "Verify extracted values",
+          "action": {
+            "type": "httpRequest",
+            "method": "POST",
+            "url": "service-a/custom-response",
+            "headers": {
+              "Content-Type": "application/json"
+            },
+            "body": {
+              "response": {
+                "value": {
+                  "token": "{{jwtToken}}",
+                  "node": "{{nodeId}}"
+                }
+              }
+            }
+          },
+          "assertions": [
+            {
+              "assertions": [
+                {
+                  "path": "response.status",
+                  "operator": "eq",
+                  "value": 200
+                },
+                {
+                  "path": "response.body.token",
+                  "operator": "eq",
+                  "value": "eyJhbGciOiJSUzI1NiJ9.test.signature"
+                },
+                {
+                  "path": "response.body.node",
+                  "operator": "eq",
+                  "value": "node-7"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

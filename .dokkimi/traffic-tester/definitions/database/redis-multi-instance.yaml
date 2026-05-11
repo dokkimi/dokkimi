@@ -1,0 +1,145 @@
+name: redis-multi-instance
+description: |
+  Two independent Redis instances in the same namespace. Validates that
+  the wire protocol proxy, K8s Service routing, health checks, and
+  test-agent connection management all work correctly when multiple
+  Redis databases coexist. Each instance has its own keyspace.
+config:
+  timeoutSeconds: 120
+items:
+  - type: DATABASE
+    name: cache-db
+    database: redis
+  - type: DATABASE
+    name: session-db
+    database: redis
+tests:
+  - name: Each instance has an independent keyspace
+    steps:
+      - name: Parallel requests
+        action:
+          type: parallel
+          actions:
+            - type: dbQuery
+              database: cache-db
+              query: SET shared-key cache-value
+            - type: dbQuery
+              database: session-db
+              query: SET shared-key session-value
+      - name: Parallel requests
+        action:
+          type: parallel
+          actions:
+            - type: dbQuery
+              database: cache-db
+              query: GET shared-key
+            - type: dbQuery
+              database: session-db
+              query: GET shared-key
+  - name: Key in one instance does not exist in the other
+    steps:
+      - name: SET a key only in cache-db
+        action:
+          type: dbQuery
+          database: cache-db
+          query: SET cache-only-key exclusive
+        assertions:
+          - assertions:
+              - path: success
+                operator: eq
+                value: true
+      - name: GET from session-db returns empty
+        action:
+          type: dbQuery
+          database: session-db
+          query: GET cache-only-key
+        assertions:
+          - assertions:
+              - path: success
+                operator: eq
+                value: true
+              - path: data
+                operator: length
+                value: 0
+
+  - name: Parallel writes to both instances
+    steps:
+      - name: Parallel requests
+        action:
+          type: parallel
+          actions:
+            - type: dbQuery
+              database: cache-db
+              query: SET par-key alpha
+            - type: dbQuery
+              database: session-db
+              query: SET par-key beta
+  - name: Read back from both instances after writes
+    steps:
+      - name: Parallel requests
+        action:
+          type: parallel
+          actions:
+            - type: dbQuery
+              database: cache-db
+              query: GET par-key
+            - type: dbQuery
+              database: session-db
+              query: GET par-key
+  - name: Different data structures per instance
+    steps:
+      - name: Parallel requests
+        action:
+          type: parallel
+          actions:
+            - type: dbQuery
+              database: cache-db
+              query: HSET user:1 name Alice role admin
+            - type: dbQuery
+              database: session-db
+              query: LPUSH recent-sessions sess-c sess-b sess-a
+      - name: Parallel requests
+        action:
+          type: parallel
+          actions:
+            - type: dbQuery
+              database: cache-db
+              query: HGETALL user:1
+            - type: dbQuery
+              database: session-db
+              query: LRANGE recent-sessions 0 -1
+  - name: DEL in one instance does not affect the other
+    steps:
+      - name: Parallel requests
+        action:
+          type: parallel
+          actions:
+            - type: dbQuery
+              database: cache-db
+              query: SET del-test present
+            - type: dbQuery
+              database: session-db
+              query: SET del-test present
+      - name: DEL from cache-db only
+        action:
+          type: dbQuery
+          database: cache-db
+          query: DEL del-test
+        assertions:
+          - assertions:
+              - path: success
+                operator: eq
+                value: true
+              - path: data[0].value
+                operator: eq
+                value: 1
+      - name: Parallel requests
+        action:
+          type: parallel
+          actions:
+            - type: dbQuery
+              database: cache-db
+              query: GET del-test
+            - type: dbQuery
+              database: session-db
+              query: GET del-test

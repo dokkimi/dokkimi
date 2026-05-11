@@ -1,0 +1,223 @@
+{
+  "name": "traffic-hopping",
+  "description": "Validates multi-hop inter-service traffic. Each hop must be captured independently by the interceptor with the correct origin/target, including when the same service appears more than once in the chain, and the deepest response value must propagate all the way back to the test agent.",
+  "config": {
+    "timeoutSeconds": 120
+  },
+  "items": [
+    {
+      "$ref": "../shared/service-a.yaml"
+    },
+    {
+      "$ref": "../shared/service-b.json"
+    },
+    {
+      "$ref": "../shared/service-c.yaml"
+    }
+  ],
+  "tests": [
+    {
+      "name": "Four-hop bouncing chain (A -> B -> C -> A -> B)",
+      "description": "test-agent triggers service-a, which triggers a chain of four inter-service hops that bounces back through service-a a second time. Verifies the interceptor captures each hop with the correct origin/target, that service-a is correctly recorded as origin twice (hop1->b and hop4->b), and that the response from the deepest hop bubbles back up through every wrapper.",
+      "steps": [
+        {
+          "name": "Trigger 4-hop bouncing chain starting at service-a",
+          "action": {
+            "type": "httpRequest",
+            "method": "POST",
+            "url": "service-a/start-hop-chain",
+            "headers": {
+              "Content-Type": "application/json"
+            },
+            "body": {
+              "requests": [
+                {
+                  "baseURL": "http://service-b",
+                  "url": "/hop1-b",
+                  "method": "POST",
+                  "data": {
+                    "requests": [
+                      {
+                        "baseURL": "http://service-c",
+                        "url": "/hop2-c",
+                        "method": "POST",
+                        "data": {
+                          "requests": [
+                            {
+                              "baseURL": "http://service-a",
+                              "url": "/hop3-a",
+                              "method": "POST",
+                              "data": {
+                                "requests": [
+                                  {
+                                    "baseURL": "http://service-b",
+                                    "url": "/hop4-b",
+                                    "method": "POST",
+                                    "data": {
+                                      "response": {
+                                        "status": 200,
+                                        "value": {
+                                          "deepest": true,
+                                          "hop": 4,
+                                          "finalHandler": "service-b"
+                                        }
+                                      }
+                                    }
+                                  }
+                                ]
+                              }
+                            }
+                          ]
+                        }
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          },
+          "assertions": [
+            {
+              "assertions": [
+                {
+                  "path": "response.status",
+                  "operator": "eq",
+                  "value": 200
+                },
+                {
+                  "path": "response.body.results[0].results[0].results[0].results[0].deepest",
+                  "operator": "eq",
+                  "value": true
+                },
+                {
+                  "path": "response.body.results[0].results[0].results[0].results[0].hop",
+                  "operator": "eq",
+                  "value": 4
+                },
+                {
+                  "path": "response.body.results[0].results[0].results[0].results[0].finalHandler",
+                  "operator": "eq",
+                  "value": "service-b"
+                }
+              ]
+            },
+            {
+              "match": {
+                "origin": "service-a",
+                "method": "POST",
+                "url": "service-b/hop1-b"
+              },
+              "count": {
+                "operator": "eq",
+                "value": 1
+              },
+              "assertions": [
+                {
+                  "path": "response.status",
+                  "operator": "eq",
+                  "value": 200
+                }
+              ]
+            },
+            {
+              "match": {
+                "origin": "service-b",
+                "method": "POST",
+                "url": "service-c/hop2-c"
+              },
+              "count": {
+                "operator": "eq",
+                "value": 1
+              },
+              "assertions": [
+                {
+                  "path": "response.status",
+                  "operator": "eq",
+                  "value": 200
+                }
+              ]
+            },
+            {
+              "match": {
+                "origin": "service-c",
+                "method": "POST",
+                "url": "service-a/hop3-a"
+              },
+              "count": {
+                "operator": "eq",
+                "value": 1
+              },
+              "assertions": [
+                {
+                  "path": "response.status",
+                  "operator": "eq",
+                  "value": 200
+                }
+              ]
+            },
+            {
+              "match": {
+                "origin": "service-a",
+                "method": "POST",
+                "url": "service-b/hop4-b"
+              },
+              "count": {
+                "operator": "eq",
+                "value": 1
+              },
+              "assertions": [
+                {
+                  "path": "response.status",
+                  "operator": "eq",
+                  "value": 200
+                },
+                {
+                  "path": "response.body.deepest",
+                  "operator": "eq",
+                  "value": true
+                },
+                {
+                  "path": "response.body.hop",
+                  "operator": "eq",
+                  "value": 4
+                },
+                {
+                  "path": "response.body.finalHandler",
+                  "operator": "eq",
+                  "value": "service-b"
+                }
+              ]
+            },
+            {
+              "match": {
+                "origin": "service-a"
+              },
+              "count": {
+                "operator": "eq",
+                "value": 2
+              }
+            },
+            {
+              "match": {
+                "origin": "service-b"
+              },
+              "count": {
+                "operator": "eq",
+                "value": 1
+              }
+            },
+            {
+              "match": {
+                "origin": "service-c"
+              },
+              "count": {
+                "operator": "eq",
+                "value": 1
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

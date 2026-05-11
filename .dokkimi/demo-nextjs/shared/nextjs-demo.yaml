@@ -1,0 +1,18 @@
+type: SERVICE
+name: nextjs-demo
+description: Next.js 15 demo app — bookmarks feed, country dropdown, OAuth flow
+image: ghcr.io/dokkimi/nextjs-demo:0.1.0
+port: 3000
+healthCheck: /api/bookmarks
+uiPath: /
+env:
+  - name: DATABASE_URL
+    value: postgresql://dokkimi:dokkimi@postgres-db:5432/dokkimi
+  - name: OAUTH_CLIENT_ID
+    value: demo-client-id
+  - name: OAUTH_CLIENT_SECRET
+    value: demo-client-secret
+  - name: OAUTH_REDIRECT_URI
+    value: https://nextjs-demo/api/auth/callback
+  - name: SESSION_SECRET
+    value: dokkimi-test-session-secret

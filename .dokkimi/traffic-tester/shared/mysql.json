@@ -1,0 +1,7 @@
+{
+  "type": "DATABASE",
+  "name": "mysql-db",
+  "description": "Shared MySQL database",
+  "database": "mysql",
+  "initFilePath": "../init-files/init-mysql.sql"
+}

@@ -1,0 +1,8 @@
+type: SERVICE
+name: crash-loop
+image: node:20-alpine
+port: 3000
+healthCheck: /health
+env:
+  - name: NODE_OPTIONS
+    value: '-e process.exit(1)'

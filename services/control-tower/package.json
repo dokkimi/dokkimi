@@ -1,0 +1,102 @@
+{
+  "name": "control-tower",
+  "version": "0.3.7",
+  "description": "",
+  "author": "",
+  "private": true,
+  "license": "Elastic-2.0",
+  "scripts": {
+    "build": "nest build",
+    "start": "nest start",
+    "start:dev": "nest start --watch",
+    "start:debug": "nest start --debug --watch",
+    "start:prod": "node dist/main",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:cov": "jest --coverage",
+    "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
+    "test:e2e": "jest --config ./test/jest-e2e.json",
+    "prisma:generate": "prisma generate --schema=../../shared/prisma/sqlite/schema.prisma",
+    "prisma:migrate": "prisma migrate dev --config=../../shared/prisma/prisma.config.ts",
+    "prisma:deploy": "prisma migrate deploy --config=../../shared/prisma/prisma.config.ts",
+    "prisma:studio": "prisma studio --config=../../shared/prisma/prisma.config.ts"
+  },
+  "dependencies": {
+    "@dokkimi/config": "workspace:*",
+    "@dokkimi/definition-validator": "workspace:*",
+    "@dokkimi/platform": "workspace:*",
+    "@dokkimi/telemetry": "workspace:*",
+    "@kubernetes/client-node": "^1.4.0",
+    "@nestjs/axios": "^4.0.1",
+    "@nestjs/common": "^11.1.19",
+    "@nestjs/config": "^4.0.4",
+    "@nestjs/core": "^11.1.19",
+    "@nestjs/platform-express": "^11.1.19",
+    "@nestjs/throttler": "^6.5.0",
+    "@prisma/adapter-libsql": "^7.8.0",
+    "@prisma/adapter-pg": "^7.8.0",
+    "@prisma/client": "^7.8.0",
+    "axios": "^1.16.0",
+    "class-transformer": "^0.5.1",
+    "class-validator": "^0.15.1",
+    "dotenv": "^17.4.2",
+    "multer": "^2.1.1",
+    "node-forge": "^1.4.0",
+    "pg": "^8.20.0",
+    "pixelmatch": "^7.2.0",
+    "pngjs": "^7.0.0",
+    "prisma": "^7.8.0",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.2",
+    "uuid": "^14.0.0"
+  },
+  "devDependencies": {
+    "@nestjs/cli": "^11.0.21",
+    "@nestjs/schematics": "^11.1.0",
+    "@nestjs/testing": "^11.1.19",
+    "@types/express": "^5.0.6",
+    "@types/jest": "^30.0.0",
+    "@types/multer": "^2.1.0",
+    "@types/node": "^25.6.2",
+    "@types/pg": "^8.20.0",
+    "@types/pngjs": "^6.0.5",
+    "@types/supertest": "^7.2.0",
+    "jest": "^30.4.1",
+    "source-map-support": "^0.5.21",
+    "supertest": "^7.2.2",
+    "ts-jest": "^29.4.9",
+    "ts-loader": "^9.5.7",
+    "ts-node": "^10.9.2",
+    "tsconfig-paths": "^4.2.0",
+    "typescript": "^6.0.3"
+  },
+  "jest": {
+    "moduleFileExtensions": [
+      "js",
+      "json",
+      "ts"
+    ],
+    "rootDir": "src",
+    "testRegex": ".*\\.spec\\.ts$",
+    "transform": {
+      "^.+\\.(t|j)s$": "ts-jest"
+    },
+    "transformIgnorePatterns": [
+      "node_modules/(?!pixelmatch/)"
+    ],
+    "moduleNameMapper": {
+      "^@kubernetes/client-node$": "<rootDir>/__mocks__/@kubernetes/client-node.ts"
+    },
+    "collectCoverageFrom": [
+      "**/*.(t|j)s"
+    ],
+    "coveragePathIgnorePatterns": [
+      "\\.module\\.ts$"
+    ],
+    "coverageDirectory": "../coverage",
+    "testEnvironment": "node",
+    "setupFilesAfterEnv": [
+      "<rootDir>/test-setup.ts"
+    ]
+  }
+}

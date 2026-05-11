@@ -1,0 +1,193 @@
+---
+import DocsLayout from '../../layouts/DocsLayout.astro';
+import CodeBlock from '../../components/CodeBlock.astro';
+---
+
+<DocsLayout title="Actions — Dokkimi Docs" description="HTTP requests, database queries, and wait actions for test steps.">
+  <h1>Actions</h1>
+  <p class="subtitle">Each test step executes one action: an HTTP request, a database query, a UI interaction, or a wait.</p>
+
+  <h2>HTTP Request</h2>
+  <CodeBlock code={`{
+  "action": {
+    "type": "httpRequest",
+    "method": "POST",
+    "url": "api-gateway/api/users",
+    "headers": {
+      "Authorization": "Bearer {{token}}",
+      "Content-Type": "application/json"
+    },
+    "body": {
+      "name": "{{userName}}",
+      "email": "{{email}}"
+    }
+  }
+}`} lang="json" />
+
+  <table>
+    <thead>
+      <tr><th>Field</th><th>Type</th><th>Required</th><th>Description</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>type</code></td><td><code>"httpRequest"</code></td><td>Yes</td><td>Action type</td></tr>
+      <tr><td><code>method</code></td><td>enum</td><td>Yes</td><td><code>GET</code>, <code>POST</code>, <code>PUT</code>, <code>DELETE</code>, <code>PATCH</code>, <code>HEAD</code>, <code>OPTIONS</code></td></tr>
+      <tr><td><code>url</code></td><td>string</td><td>Yes</td><td><code>service-name/path</code> format — service name resolves to internal DNS</td></tr>
+      <tr><td><code>headers</code></td><td>object</td><td>No</td><td>Request headers (values support <code>&#123;&#123;variables&#125;&#125;</code>)</td></tr>
+      <tr><td><code>body</code></td><td>any JSON</td><td>No</td><td>Request body (string values support <code>&#123;&#123;variables&#125;&#125;</code>)</td></tr>
+    </tbody>
+  </table>
+
+  <div class="callout">
+    <p><strong>Use service names, not ports.</strong> The <code>url</code> field uses the format <code>service-name/path</code> — just the item name and the route. Dokkimi handles DNS and port resolution internally. Don't include ports, protocols, or hostnames.</p>
+  </div>
+
+  <p>For example, if your service item is named <code>api-gateway</code> and listens on port 3000:</p>
+  <CodeBlock code={`// Correct
+"url": "api-gateway/api/users"
+
+// Wrong — don't include ports or protocols
+"url": "http://api-gateway:3000/api/users"`} lang="javascript" />
+
+  <h3>Parallel actions</h3>
+  <p>Use the <code>parallel</code> action type to execute multiple actions simultaneously within a single step:</p>
+  <CodeBlock code={`{
+  "name": "Create both orders",
+  "action": {
+    "type": "parallel",
+    "actions": [
+      { "type": "httpRequest", "method": "POST", "url": "api-gateway/api/orders", "body": { "item": "widget" } },
+      { "type": "httpRequest", "method": "POST", "url": "api-gateway/api/orders", "body": { "item": "gadget" } }
+    ]
+  }
+}`} lang="json" />
+  <p>All actions within <code>parallel</code> fire at the same time. Use this to test concurrent access patterns or to speed up independent setup steps. See <a href="/docs/tests-and-steps">Tests &amp; Steps</a> for more on parallel vs sequential execution.</p>
+
+  <h2>Database Query</h2>
+
+  <h3>SQL databases (Postgres, MySQL)</h3>
+  <CodeBlock code={`{
+  "action": {
+    "type": "dbQuery",
+    "database": "postgres-db",
+    "query": "SELECT * FROM users WHERE email = '{{email}}'"
+  }
+}`} lang="json" />
+
+  <h3>MongoDB</h3>
+  <p>For MongoDB, the <code>query</code> field must be a JSON string with a specific structure:</p>
+  <CodeBlock code={`{
+  "action": {
+    "type": "dbQuery",
+    "database": "mongo-db",
+    "query": "{\\"operation\\":\\"findOne\\",\\"collection\\":\\"orders\\",\\"filter\\":{\\"orderId\\":\\"ORD-001\\"}}"
+  }
+}`} lang="json" />
+
+  <p>Supported MongoDB operations:</p>
+  <table>
+    <thead>
+      <tr><th>Operation</th><th>Required fields</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>find</code>, <code>findOne</code></td><td><code>collection</code>, <code>filter</code></td></tr>
+      <tr><td><code>insertOne</code></td><td><code>collection</code>, <code>document</code></td></tr>
+      <tr><td><code>insertMany</code></td><td><code>collection</code>, <code>documents</code></td></tr>
+      <tr><td><code>updateOne</code>, <code>updateMany</code></td><td><code>collection</code>, <code>filter</code>, <code>update</code></td></tr>
+      <tr><td><code>deleteOne</code>, <code>deleteMany</code></td><td><code>collection</code>, <code>filter</code></td></tr>
+    </tbody>
+  </table>
+
+  <table>
+    <thead>
+      <tr><th>Field</th><th>Type</th><th>Required</th><th>Description</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>type</code></td><td><code>"dbQuery"</code></td><td>Yes</td><td>Action type</td></tr>
+      <tr><td><code>database</code></td><td>string</td><td>Yes</td><td>Name of a DATABASE item in the definition</td></tr>
+      <tr><td><code>query</code></td><td>string</td><td>Yes</td><td>SQL query or MongoDB command JSON (supports <code>&#123;&#123;variables&#125;&#125;</code>)</td></tr>
+    </tbody>
+  </table>
+
+  <h2>UI Action</h2>
+  <p>Drive a real Chromium browser to test user-facing flows. When a definition contains UI actions, Dokkimi automatically attaches a headless Chromium sidecar to the test pod.</p>
+  <CodeBlock code={`{
+  "action": {
+    "type": "ui",
+    "url": "http://web-app:3000/posts/new",
+    "subSteps": [
+      { "action": "waitForSelector", "selector": "[data-testid=\\"post-form\\"]" },
+      { "action": "fill", "selector": "#title", "value": "My new post" },
+      { "action": "fill", "selector": "#body", "value": "Post content here." },
+      { "action": "click", "selector": "[data-testid=\\"publish-btn\\"]" },
+      { "action": "waitForSelector", "selector": "[data-testid=\\"success-toast\\"]" },
+      { "action": "screenshot", "name": "post-published" }
+    ]
+  }
+}`} lang="json" />
+
+  <table>
+    <thead>
+      <tr><th>Field</th><th>Type</th><th>Required</th><th>Description</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>type</code></td><td><code>"ui"</code></td><td>Yes</td><td>Action type</td></tr>
+      <tr><td><code>url</code></td><td>string</td><td>Yes</td><td>The URL to navigate to. Use <code>http://service-name:port/path</code> format.</td></tr>
+      <tr><td><code>subSteps</code></td><td>array</td><td>Yes</td><td>Ordered list of browser interactions to perform.</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Available sub-steps</h3>
+  <table>
+    <thead>
+      <tr><th>Sub-step</th><th>Fields</th><th>Description</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>click</code></td><td><code>selector</code></td><td>Click an element.</td></tr>
+      <tr><td><code>fill</code></td><td><code>selector</code>, <code>value</code></td><td>Clear a field and type a value.</td></tr>
+      <tr><td><code>type</code></td><td><code>selector</code>, <code>value</code></td><td>Type text without clearing first.</td></tr>
+      <tr><td><code>select</code></td><td><code>selector</code>, <code>value</code></td><td>Select an option from a dropdown.</td></tr>
+      <tr><td><code>hover</code></td><td><code>selector</code></td><td>Hover over an element.</td></tr>
+      <tr><td><code>waitForSelector</code></td><td><code>selector</code></td><td>Wait until an element appears in the DOM.</td></tr>
+      <tr><td><code>screenshot</code></td><td><code>name</code></td><td>Capture a screenshot. Used for visual regression testing.</td></tr>
+      <tr><td><code>scroll</code></td><td><code>x</code>, <code>y</code></td><td>Scroll the page by the given offset.</td></tr>
+      <tr><td><code>key</code></td><td><code>key</code></td><td>Press a keyboard key (e.g. <code>Enter</code>, <code>Escape</code>).</td></tr>
+      <tr><td><code>upload</code></td><td><code>selector</code>, <code>files</code></td><td>Upload files to a file input.</td></tr>
+      <tr><td><code>drag</code></td><td><code>source</code>, <code>target</code></td><td>Drag from one element to another.</td></tr>
+      <tr><td><code>extract</code></td><td><code>selector</code>, <code>attribute</code>, <code>variable</code></td><td>Extract a value from the page into a variable.</td></tr>
+      <tr><td><code>viewport</code></td><td><code>width</code>, <code>height</code></td><td>Set browser viewport dimensions (pixels). Persists across subsequent UI actions until changed.</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Visual regression with screenshots</h3>
+  <p>Screenshots captured during a test run are saved as artifacts. To enable visual regression testing, add <code>match: true</code> to the screenshot sub-step:</p>
+  <CodeBlock code={`{ "action": "screenshot", "name": "checkout-page", "match": true }`} lang="json" />
+  <p>When <code>match: true</code> is set, Dokkimi compares the capture against a baseline stored in <code>.dokkimi/&lt;project&gt;/baselines/</code>. If no baseline exists yet (first run), or if the diff exceeds the threshold, it appears as a pending baseline. Review and approve pending baselines with <code>dokkimi baselines</code>.</p>
+
+  <div class="callout">
+    <p><strong>Use <code>data-testid</code> selectors.</strong> CSS class selectors break when you restyle. Test IDs are stable and make your intent clear.</p>
+  </div>
+
+  <h2>Wait</h2>
+  <p>Pause execution for a specified duration. Useful for waiting for async operations to complete.</p>
+  <CodeBlock code={`{
+  "action": {
+    "type": "wait",
+    "durationMs": 2000
+  }
+}`} lang="json" />
+
+  <table>
+    <thead>
+      <tr><th>Field</th><th>Type</th><th>Required</th><th>Description</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>type</code></td><td><code>"wait"</code></td><td>Yes</td><td>Action type</td></tr>
+      <tr><td><code>durationMs</code></td><td>integer</td><td>Yes</td><td>Duration to wait in milliseconds</td></tr>
+    </tbody>
+  </table>
+
+  <div class="nav-links">
+    <a href="/docs/tests-and-steps">← Tests &amp; Steps</a>
+    <a href="/docs/variables">Variables →</a>
+  </div>
+</DocsLayout>

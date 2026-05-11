@@ -1,0 +1,80 @@
+name: Dokkimi Run Tests
+description: Install k3s, set up a single-node Kubernetes cluster, and run Dokkimi integration tests.
+branding:
+  icon: check-circle
+  color: blue
+inputs:
+  tests:
+    description: Path to .dokkimi/ directory or a specific definition file
+    required: true
+  max-parallel:
+    description: Maximum concurrent test namespaces
+    default: '6'
+  max-booting:
+    description: Maximum namespaces booting simultaneously
+    default: '2'
+  timeout:
+    description: HTTP request timeout in milliseconds
+    default: '30000'
+  viewport-width:
+    description: Default browser viewport width for UI tests
+    default: '1280'
+  viewport-height:
+    description: Default browser viewport height for UI tests
+    default: '720'
+  dokkimi-version:
+    description: Dokkimi CLI version to install
+    default: latest
+
+runs:
+  using: composite
+  steps:
+    - name: Free disk space
+      shell: bash
+      run: |
+        sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/share/powershell
+        docker builder prune -af
+
+    - name: Install k3s
+      shell: bash
+      run: |
+        curl -sfL https://get.k3s.io | \
+          INSTALL_K3S_EXEC="--docker --disable=traefik --write-kubeconfig-mode=644" sh -
+        export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
+        until kubectl get nodes | grep -q ' Ready'; do sleep 2; done
+        echo "KUBECONFIG=/etc/rancher/k3s/k3s.yaml" >> $GITHUB_ENV
+        NODE_IP=$(kubectl get node -o jsonpath='{.items[0].status.addresses[?(@.type=="InternalIP")].address}')
+        echo "CONTROL_TOWER_HOST=$NODE_IP" >> $GITHUB_ENV
+
+    - name: Pull external images
+      shell: bash
+      run: |
+        docker pull busybox:1.37
+        docker pull fluent/fluent-bit:3.2
+        docker pull andyshinn/dnsmasq:2.83
+
+    - name: Install Dokkimi CLI
+      shell: bash
+      run: |
+        if [ "${{ inputs.dokkimi-version }}" = "latest" ]; then
+          npm install -g dokkimi
+        else
+          npm install -g dokkimi@${{ inputs.dokkimi-version }}
+        fi
+
+    - name: Run tests
+      shell: bash
+      env:
+        DOKKIMI_MAX_CONCURRENT_NAMESPACES: ${{ inputs.max-parallel }}
+        DOKKIMI_MAX_BOOTING_NAMESPACES: ${{ inputs.max-booting }}
+        DOKKIMI_HTTP_TIMEOUT: ${{ inputs.timeout }}
+        DOKKIMI_DEFAULT_VIEWPORT_WIDTH: ${{ inputs.viewport-width }}
+        DOKKIMI_DEFAULT_VIEWPORT_HEIGHT: ${{ inputs.viewport-height }}
+      run: dokkimi run ${{ inputs.tests }} --ci
+
+    - name: Cleanup
+      if: always()
+      shell: bash
+      run: |
+        dokkimi clean 2>/dev/null || true
+        /usr/local/bin/k3s-uninstall.sh || true

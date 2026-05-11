@@ -1,0 +1,67 @@
+# Binaries for programs and plugins
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test binary, built with `go test -c`
+*.test
+
+# Output of the go coverage tool
+*.out
+coverage.out
+coverage.html
+
+# Dependency directories
+vendor/
+
+# Go workspace file
+go.work
+go.work.sum
+
+# IDE and editor files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Build artifacts
+dist/
+build/
+bin/
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Logs
+*.log
+logs/
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Compiled binary (if you want to ignore it)
+interceptor
+interceptor.exe
+
+# Air (live reload tool) tmp directory
+tmp/
+
+# Delve debugger
+__debug_bin
+
+# Local test files
+*_test_local.go
+
+# Test scripts (keep these, but ignore any local test outputs)
+# test-*.sh files should be committed
+
+# Documentation build outputs (if any)
+docs/_build/

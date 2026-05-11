@@ -1,0 +1,114 @@
+---
+import DocsLayout from '../../layouts/DocsLayout.astro';
+import CodeBlock from '../../components/CodeBlock.astro';
+---
+
+<DocsLayout title="Project Structure — Dokkimi Docs" description="How the .dokkimi/ folder is organized and how Dokkimi detects file types.">
+  <h1>Project Structure</h1>
+  <p class="subtitle">How the <code>.dokkimi/</code> folder is organized.</p>
+
+  <h2>The .dokkimi/ folder</h2>
+  <p>The only requirement is that a <code>.dokkimi/</code> folder exists at your repo root. You can organize files inside however you want — there are no required subfolder conventions. All <code>**/*.json</code> and <code>**/*.yaml</code> / <code>**/*.yml</code> files inside <code>.dokkimi/</code> are scanned. You can use JSON or YAML interchangeably for definitions and shared fragments.</p>
+  <p>A common convention:</p>
+  <CodeBlock code={`.dokkimi/
+├── config.yaml            # Project-level config (optional)
+├── definitions/           # Runnable definition files
+├── shared/                # Shared item fragments (referenced via $ref)
+└── init-files/            # Database init scripts (SQL, JS)`} lang="bash" />
+
+  <h2>Two file types</h2>
+  <p>Dokkimi distinguishes file types by their JSON shape, not by folder or naming convention:</p>
+
+  <h3>Runnable definition</h3>
+  <p>Has top-level <code>name</code> (string) + <code>items</code> (array):</p>
+  <CodeBlock code={`{
+  "name": "my-test-suite",
+  "config": { "timeoutSeconds": 300 },
+  "variables": { ... },
+  "items": [ ... ],
+  "tests": [ ... ]
+}`} lang="json" />
+
+  <h3>Shared fragment</h3>
+  <p>Any JSON file that does NOT have both <code>name</code> + <code>items</code>. Typically a single item object:</p>
+  <CodeBlock code={`{
+  "type": "DATABASE",
+  "name": "postgres-db",
+  "database": "postgres"
+}`} lang="json" />
+  <p>Fragments are not runnable on their own — they exist to be referenced via <a href="/docs/refs"><code>$ref</code></a> from runnable definitions.</p>
+
+  <h2>Definition config block</h2>
+  <p>The optional <code>config</code> object in a definition holds run-level settings:</p>
+  <CodeBlock code={`{
+  "name": "my-test-suite",
+  "config": {
+    "timeoutSeconds": 300,
+    "browser": {
+      "version": "148.0.7778.56"
+    }
+  },
+  "items": [ ... ],
+  "tests": [ ... ]
+}`} lang="json" />
+  <table>
+    <thead>
+      <tr><th>Field</th><th>Type</th><th>Required</th><th>Default</th><th>Description</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>timeoutSeconds</code></td><td>integer</td><td>No</td><td><code>300</code></td><td>Timeout for the entire run in seconds</td></tr>
+      <tr><td><code>browser.version</code></td><td>string</td><td>No</td><td><code>"148.0.7778.56"</code></td><td>Chrome version tag. Changing this requires regenerating visual baselines.</td></tr>
+    </tbody>
+  </table>
+  <p>The <code>config</code> block is entirely optional — omit it to use defaults. The <code>browser</code> block is ignored when the definition contains no UI actions.</p>
+
+  <h2>Config file</h2>
+  <p>The <code>.dokkimi/</code> folder can contain a project-level config file: <code>config.yaml</code>, <code>config.yml</code>, or <code>config.json</code> (first match wins). This file is not a definition — it's loaded separately by name.</p>
+  <CodeBlock code={`dokkimi: 0.1.0
+env:
+  REGISTRY: ghcr.io/dokkimi
+  IMAGE_TAG: v1.2.3
+  STRIPE_TEST_KEY: sk_test_abc123`} lang="yaml" />
+
+  <table>
+    <thead>
+      <tr><th>Field</th><th>Type</th><th>Description</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>dokkimi</code></td><td>string</td><td>Target Dokkimi version. The CLI warns if your installed version is older.</td></tr>
+      <tr><td><code>env</code></td><td>object</td><td>Flat <code>string → string</code> map of build-time values. Keys must be alphanumeric + underscores.</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Build-time interpolation: $&#123;&#123;VAR&#125;&#125;</h3>
+  <p>Any string value in a definition or shared fragment can reference a config env variable with <code>$&#123;&#123;VAR&#125;&#125;</code>. These are resolved at build time by the definition resolver, before the definition is sent to Control Tower.</p>
+  <CodeBlock code={`{
+  "type": "SERVICE",
+  "name": "my-service",
+  "image": "\${{REGISTRY}}/my-service:\${{IMAGE_TAG}}",
+  "port": 3000,
+  "healthCheck": "/health"
+}`} lang="json" />
+  <p>After resolution, the image becomes <code>ghcr.io/dokkimi/my-service:v1.2.3</code>.</p>
+
+  <div class="callout">
+    <p><strong>$&#123;&#123;VAR&#125;&#125; vs &#123;&#123;VAR&#125;&#125;</strong> — These are different systems. <code>$&#123;&#123;VAR&#125;&#125;</code> is resolved at build time from the config file. <code>&#123;&#123;VAR&#125;&#125;</code> is resolved at runtime from test <a href="/docs/variables">variables</a>. If a <code>$&#123;&#123;VAR&#125;&#125;</code> reference doesn't match any key in <code>env</code>, the resolver errors.</p>
+  </div>
+
+  <h2>.dokignore</h2>
+  <p>You can create a <code>.dokkimi/.dokignore</code> file to exclude files from cloud/CI test runs. It uses the same syntax as <code>.gitignore</code>:</p>
+  <CodeBlock code={`# Ignore experimental definitions
+experiments/
+
+# Ignore a specific file
+definitions/broken-test.json
+
+# Ignore all files matching a pattern
+**/wip-*.json`} lang="bash" />
+  <p>Paths are relative to the <code>.dokkimi/</code> directory. Ignored files are still valid for local runs — <code>.dokignore</code> only affects cloud/CI pipelines.</p>
+
+  <div class="nav-links">
+    <a href="/docs/ai-integration">← AI Integration</a>
+    <a href="/docs/services">Services →</a>
+  </div>
+</DocsLayout>

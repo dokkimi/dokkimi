@@ -1,0 +1,72 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Yarn 4
+.yarn/cache
+.yarn/install-state.gz
+.yarn/unplugged
+.yarn/build-state.yml
+.yarn/*.log
+!.yarn/releases
+!.yarn/plugins
+
+# Testing
+coverage/
+
+# Production
+dist/
+build/
+*.local
+
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Environment variables
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# Go binaries
+services/test-agent/test-agent
+services/interceptor/interceptor
+services/db-proxy/postgres/postgres
+services/db-proxy/mysql/mysql
+services/db-proxy/mongo/mongo
+services/db-proxy/redis/redis
+
+# VSCode extension packaging
+*.vsix
+
+# npm publish staging
+.publish-staging/
+
+# Claude Code
+.claude/settings.json
+.claude/settings.local.json
+

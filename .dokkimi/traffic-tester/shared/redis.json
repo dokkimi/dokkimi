@@ -1,0 +1,6 @@
+{
+  "type": "DATABASE",
+  "name": "redis-db",
+  "description": "Shared Redis database",
+  "database": "redis"
+}

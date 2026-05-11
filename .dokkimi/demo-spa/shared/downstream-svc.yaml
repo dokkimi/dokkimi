@@ -1,0 +1,6 @@
+type: SERVICE
+name: downstream-svc
+description: Second traffic-tester instance — used as the inner hop in UI-driven chained call demos
+image: ghcr.io/dokkimi/traffic-tester:0.1.0
+port: 4000
+healthCheck: /health

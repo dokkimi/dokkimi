@@ -1,0 +1,413 @@
+{
+  "name": "http-methods-and-errors",
+  "description": "Coverage for PUT, DELETE, PATCH methods, error status codes (4xx/5xx), and request body/header self-assertions",
+  "config": {
+    "timeoutSeconds": 120
+  },
+  "items": [
+    {
+      "$ref": "../shared/service-a.yaml"
+    },
+    {
+      "$ref": "../shared/service-b.json"
+    }
+  ],
+  "tests": [
+    {
+      "name": "PUT request updates a resource",
+      "steps": [
+        {
+          "name": "Service-a sends PUT to service-b",
+          "action": {
+            "type": "httpRequest",
+            "method": "POST",
+            "url": "service-a/forward",
+            "headers": {
+              "Content-Type": "application/json"
+            },
+            "body": {
+              "requests": [
+                {
+                  "baseURL": "http://service-b",
+                  "url": "/update-resource",
+                  "method": "PUT",
+                  "data": {
+                    "response": {
+                      "value": {
+                        "updated": true,
+                        "version": 2
+                      }
+                    }
+                  }
+                }
+              ]
+            }
+          },
+          "assertions": [
+            {
+              "assertions": [
+                {
+                  "path": "response.status",
+                  "operator": "eq",
+                  "value": 200
+                },
+                {
+                  "path": "response.body.results[0].updated",
+                  "operator": "eq",
+                  "value": true
+                },
+                {
+                  "path": "response.body.results[0].version",
+                  "operator": "type",
+                  "value": "number"
+                }
+              ]
+            },
+            {
+              "match": {
+                "origin": "service-a",
+                "method": "PUT",
+                "url": "service-b/update-resource"
+              },
+              "count": {
+                "operator": "eq",
+                "value": 1
+              },
+              "assertions": [
+                {
+                  "path": "request.method",
+                  "operator": "eq",
+                  "value": "PUT"
+                },
+                {
+                  "path": "response.status",
+                  "operator": "eq",
+                  "value": 200
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "DELETE request removes a resource",
+      "steps": [
+        {
+          "name": "Service-a sends DELETE to service-b",
+          "action": {
+            "type": "httpRequest",
+            "method": "POST",
+            "url": "service-a/forward",
+            "headers": {
+              "Content-Type": "application/json"
+            },
+            "body": {
+              "requests": [
+                {
+                  "baseURL": "http://service-b",
+                  "url": "/delete-resource/item-42",
+                  "method": "DELETE",
+                  "data": {
+                    "response": {
+                      "status": 204,
+                      "value": null
+                    }
+                  }
+                }
+              ]
+            }
+          },
+          "assertions": [
+            {
+              "assertions": [
+                {
+                  "path": "response.status",
+                  "operator": "eq",
+                  "value": 200
+                }
+              ]
+            },
+            {
+              "match": {
+                "origin": "service-a",
+                "method": "DELETE",
+                "url": "service-b/delete-resource/item-42"
+              },
+              "count": {
+                "operator": "eq",
+                "value": 1
+              },
+              "assertions": [
+                {
+                  "path": "response.status",
+                  "operator": "eq",
+                  "value": 204
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "PATCH request partially updates a resource",
+      "steps": [
+        {
+          "name": "Service-a sends PATCH to service-b",
+          "action": {
+            "type": "httpRequest",
+            "method": "POST",
+            "url": "service-a/forward",
+            "headers": {
+              "Content-Type": "application/json"
+            },
+            "body": {
+              "requests": [
+                {
+                  "baseURL": "http://service-b",
+                  "url": "/patch-resource",
+                  "method": "PATCH",
+                  "data": {
+                    "response": {
+                      "value": {
+                        "patched": true,
+                        "field": "name",
+                        "newValue": "updated-name"
+                      }
+                    }
+                  }
+                }
+              ]
+            }
+          },
+          "assertions": [
+            {
+              "assertions": [
+                {
+                  "path": "response.status",
+                  "operator": "eq",
+                  "value": 200
+                },
+                {
+                  "path": "response.body.results[0].patched",
+                  "operator": "eq",
+                  "value": true
+                },
+                {
+                  "path": "response.body.results[0].newValue",
+                  "operator": "ne",
+                  "value": "old-name"
+                }
+              ]
+            },
+            {
+              "match": {
+                "origin": "service-a",
+                "method": "PATCH",
+                "url": "service-b/patch-resource"
+              },
+              "count": {
+                "operator": "eq",
+                "value": 1
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Service returns 404 Not Found",
+      "steps": [
+        {
+          "name": "Request to a non-existent path returns 404",
+          "action": {
+            "type": "httpRequest",
+            "method": "POST",
+            "url": "service-a/error-response",
+            "headers": {
+              "Content-Type": "application/json"
+            },
+            "body": {
+              "response": {
+                "status": 404,
+                "value": {
+                  "error": "Not Found",
+                  "message": "Resource does not exist"
+                }
+              }
+            }
+          },
+          "assertions": [
+            {
+              "assertions": [
+                {
+                  "path": "response.status",
+                  "operator": "eq",
+                  "value": 404
+                },
+                {
+                  "path": "response.body.error",
+                  "operator": "eq",
+                  "value": "Not Found"
+                },
+                {
+                  "path": "response.body.message",
+                  "operator": "contains",
+                  "value": "does not exist"
+                },
+                {
+                  "path": "response.body.message",
+                  "operator": "notContains",
+                  "value": "server error"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Service returns 422 Unprocessable Entity",
+      "steps": [
+        {
+          "name": "Invalid input returns 422 with validation errors",
+          "action": {
+            "type": "httpRequest",
+            "method": "POST",
+            "url": "service-a/error-response",
+            "headers": {
+              "Content-Type": "application/json"
+            },
+            "body": {
+              "response": {
+                "status": 422,
+                "value": {
+                  "error": "Validation Failed",
+                  "details": [
+                    {
+                      "field": "email",
+                      "message": "Invalid email format"
+                    },
+                    {
+                      "field": "age",
+                      "message": "Must be a positive number"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "assertions": [
+            {
+              "assertions": [
+                {
+                  "path": "response.status",
+                  "operator": "eq",
+                  "value": 422
+                },
+                {
+                  "path": "response.status",
+                  "operator": "gte",
+                  "value": 400
+                },
+                {
+                  "path": "response.status",
+                  "operator": "lt",
+                  "value": 500
+                },
+                {
+                  "path": "response.body.details",
+                  "operator": "type",
+                  "value": "array"
+                },
+                {
+                  "path": "response.body.details",
+                  "operator": "length",
+                  "value": 2
+                },
+                {
+                  "path": "response.body.details[0].field",
+                  "operator": "in",
+                  "value": ["email", "age", "name"]
+                },
+                {
+                  "path": "response.body.details[1].field",
+                  "operator": "eq",
+                  "value": "age"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Service returns 500 Internal Server Error",
+      "stopOnFailure": false,
+      "steps": [
+        {
+          "name": "Trigger a 500 error and verify error structure",
+          "action": {
+            "type": "httpRequest",
+            "method": "POST",
+            "url": "service-a/error-response",
+            "headers": {
+              "Content-Type": "application/json"
+            },
+            "body": {
+              "preRequestLogs": ["ERROR: Something went wrong in service-a"],
+              "response": {
+                "status": 500,
+                "value": {
+                  "error": "Internal Server Error",
+                  "requestId": "req-err-001"
+                }
+              }
+            }
+          },
+          "assertions": [
+            {
+              "assertions": [
+                {
+                  "path": "response.status",
+                  "operator": "eq",
+                  "value": 500
+                },
+                {
+                  "path": "response.body.requestId",
+                  "operator": "exists"
+                },
+                {
+                  "path": "response.body.requestId",
+                  "operator": "notEmpty"
+                },
+                {
+                  "path": "response.body.requestId",
+                  "operator": "matches",
+                  "value": "^req-err-\\d+$"
+                }
+              ]
+            },
+            {
+              "service": "service-a",
+              "consoleAssertions": [
+                {
+                  "level": "ERROR",
+                  "message": {
+                    "operator": "contains",
+                    "value": "Something went wrong"
+                  },
+                  "count": {
+                    "operator": "gte",
+                    "value": 1
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

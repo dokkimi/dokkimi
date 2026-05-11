@@ -1,0 +1,5 @@
+# Compiled Go binaries
+db-proxy-mongo
+db-proxy-mysql
+db-proxy-postgres
+db-proxy-redis

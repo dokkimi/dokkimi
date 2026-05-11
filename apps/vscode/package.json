@@ -1,0 +1,81 @@
+{
+  "name": "dokkimi-vscode",
+  "displayName": "Dokkimi",
+  "description": "Dokkimi definition file authoring support — autocomplete, validation, and snippets for .dokkimi/ definition files.",
+  "version": "0.3.7",
+  "publisher": "dokkimi",
+  "icon": "icon.png",
+  "engines": {
+    "vscode": "^1.118.0"
+  },
+  "categories": [
+    "Testing",
+    "Snippets",
+    "Linters"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "extensionDependencies": [
+    "redhat.vscode-yaml"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "jsonValidation": [
+      {
+        "fileMatch": [
+          "**/.dokkimi/**/*.json",
+          "!**/.dokkimi/config.json"
+        ],
+        "url": "./src/schema/dokkimi.schema.json"
+      },
+      {
+        "fileMatch": "**/.dokkimi/config.json",
+        "url": "./src/schema/dokkimi-config.schema.json"
+      }
+    ],
+    "yamlValidation": [
+      {
+        "fileMatch": [
+          "**/.dokkimi/**/*.yaml",
+          "**/.dokkimi/**/*.yml",
+          "!**/.dokkimi/config.yaml",
+          "!**/.dokkimi/config.yml"
+        ],
+        "url": "./src/schema/dokkimi.schema.json"
+      },
+      {
+        "fileMatch": [
+          "**/.dokkimi/config.yaml",
+          "**/.dokkimi/config.yml"
+        ],
+        "url": "./src/schema/dokkimi-config.schema.json"
+      }
+    ],
+    "commands": [
+      {
+        "command": "dokkimi.runFile",
+        "title": "Dokkimi: Run Definition"
+      }
+    ],
+    "snippets": [
+      {
+        "language": "json",
+        "path": "./src/snippets/dokkimi.json"
+      }
+    ]
+  },
+  "scripts": {
+    "build": "esbuild ./src/extension.ts --bundle --outfile=dist/extension.js --external:vscode --format=cjs --platform=node --main-fields=module,main",
+    "watch": "yarn build --watch",
+    "lint": "eslint src --ext ts",
+    "package": "yarn build && vsce package --no-dependencies --allow-missing-repository --skip-license"
+  },
+  "devDependencies": {
+    "@types/node": "^25.6.2",
+    "@types/vscode": "^1.118.0",
+    "@vscode/vsce": "^3.9.1",
+    "esbuild": "^0.28.0",
+    "typescript": "^6.0.3"
+  }
+}

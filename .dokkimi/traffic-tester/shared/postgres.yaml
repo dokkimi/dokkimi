@@ -1,0 +1,5 @@
+type: DATABASE
+name: postgres-db
+description: Shared PostgreSQL database — reference with $ref from definitions
+database: postgres
+initFilePath: ../init-files/init.sql

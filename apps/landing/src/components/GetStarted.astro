@@ -1,0 +1,124 @@
+---
+
+---
+
+<section id="get-started" class="get-started">
+  <div class="container">
+    <p class="section-subtitle">Install Dokkimi and run your first test in minutes.</p>
+    <div class="install-options">
+      <div class="install-cmd">
+        <code>brew install dokkimi/tap/dokkimi</code>
+        <button class="copy-btn" aria-label="Copy command" data-copy="brew install dokkimi/tap/dokkimi">
+          <svg class="icon-copy" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+          <svg class="icon-check" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+        </button>
+      </div>
+      <span class="install-or">or</span>
+      <div class="install-cmd">
+        <code>npm install -g dokkimi</code>
+        <button class="copy-btn" aria-label="Copy command" data-copy="npm install -g dokkimi">
+          <svg class="icon-copy" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+          <svg class="icon-check" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+        </button>
+      </div>
+    </div>
+  </div>
+</section>
+
+<style>
+  .get-started {
+    padding: 0 0 var(--section-spacing);
+  }
+
+  .get-started .section-subtitle {
+    font-size: 1.25rem;
+    font-weight: 600;
+  }
+
+  .install-options {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .install-or {
+    font-size: 1.1rem;
+    color: var(--color-text-muted);
+  }
+
+  .install-cmd {
+    display: inline-flex;
+    align-items: center;
+    gap: 16px;
+    background: var(--color-bg-soft);
+    border: 1px solid var(--color-border);
+    border-radius: 8px;
+    padding: 12px 12px 12px 24px;
+  }
+
+  .install-cmd code {
+    font-size: 1rem;
+    background: none;
+    padding: 0;
+    color: var(--color-accent);
+    white-space: nowrap;
+  }
+
+  .copy-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    background: transparent;
+    border: none;
+    border-radius: 6px;
+    color: var(--color-text-muted);
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s;
+  }
+
+  .copy-btn:hover {
+    background: rgba(255, 255, 255, 0.06);
+    color: var(--color-text);
+  }
+
+  .copy-btn .icon-check {
+    display: none;
+    color: var(--color-primary);
+  }
+
+  .copy-btn.copied .icon-copy {
+    display: none;
+  }
+
+  .copy-btn.copied .icon-check {
+    display: block;
+  }
+
+  @media (max-width: 768px) {
+    .install-cmd {
+      min-width: 0;
+      width: 100%;
+      justify-content: center;
+    }
+  }
+</style>
+
+<script>
+  document.querySelectorAll<HTMLButtonElement>('.copy-btn').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const text = btn.dataset.copy;
+      if (!text) return;
+      try {
+        await navigator.clipboard.writeText(text);
+        btn.classList.add('copied');
+        setTimeout(() => btn.classList.remove('copied'), 1500);
+      } catch {
+        // Clipboard API not available
+      }
+    });
+  });
+</script>

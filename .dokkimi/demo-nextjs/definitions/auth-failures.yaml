@@ -1,0 +1,32 @@
+name: auth-failures
+description: |
+  Two cheap negative-path tests that don't need the OAuth chain to fire,
+  so they skip the mocks and drive directly with httpRequest:
+    1. GET /api/auth/callback without a code/state — must 400.
+    2. POST /api/bookmarks without a session cookie — must 401.
+  Together these cover the two boundary conditions on the auth surface
+  that the happy-path UI tests don't exercise.
+config:
+  timeoutSeconds: 60
+items:
+  - $ref: ../shared/nextjs-demo.yaml
+  - $ref: ../shared/postgres.yaml
+tests:
+  - name: Auth boundaries — bare callback rejects, unauthenticated write rejects
+    steps:
+      - name: Parallel requests
+        action:
+          type: parallel
+          actions:
+            - type: httpRequest
+              method: GET
+              url: nextjs-demo/api/auth/callback
+            - type: httpRequest
+              method: POST
+              url: nextjs-demo/api/bookmarks
+              headers:
+                Content-Type: application/json
+              body:
+                title: Should never persist
+                url: https://example.com/nope
+                country: US

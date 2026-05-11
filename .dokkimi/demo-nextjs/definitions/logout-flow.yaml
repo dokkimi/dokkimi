@@ -1,0 +1,90 @@
+name: logout-flow
+description: |
+  Sign in via OAuth, click the dashboard's Sign-Out button, then prove the
+  session was actually cleared by trying to visit /dashboard again — it
+  should redirect to /login because the session cookie is gone. Asserts
+  the POST to /api/auth/logout (303 redirect to /), and that a follow-up
+  visit to /dashboard lands on the login page rather than rendering the
+  signed-in card.
+config:
+  timeoutSeconds: 180
+items:
+  - $ref: ../shared/nextjs-demo.yaml
+  - $ref: ../shared/postgres.yaml
+  - $ref: ../shared/mock-google-authorize.yaml
+  - $ref: ../shared/mock-google-token.yaml
+  - $ref: ../shared/mock-google-userinfo.yaml
+tests:
+  - name: After sign-out the dashboard becomes inaccessible and redirects to login
+    steps:
+      - name: Sign in with Google to obtain a session
+        action:
+          type: ui
+          target: nextjs-demo
+          steps:
+            - $ref: ../shared/login-flow.yaml
+            - screenshot:
+                name: dashboard-pre-logout
+                selector: "[data-testid='dashboard-page']"
+                match: true
+      - name: Click Sign Out and land on the home feed
+        action:
+          type: ui
+          target: nextjs-demo
+          steps:
+            - click: "[data-testid='logout-button']"
+            - waitFor: "[data-testid='home-page']"
+            - waitFor:
+                selector: "[data-testid='bookmark-list']"
+                text: Zimbabwe Daily
+            - screenshot:
+                name: home-after-logout
+                selector: "[data-testid='bookmark-list']"
+                match: true
+            - extract:
+                postLogoutUrl:
+                  from: url
+                  part: pathname
+        assertions:
+          - match:
+              method: POST
+              url: nextjs-demo/api/auth/logout
+            count:
+              operator: eq
+              value: 1
+            assertions:
+              - path: response.status
+                operator: eq
+                value: 303
+          - assertions:
+              - path: $.extracted.postLogoutUrl
+                operator: eq
+                value: /
+      - name: Visiting /dashboard after sign-out redirects to /login
+        action:
+          type: ui
+          target: nextjs-demo
+          steps:
+            - visit: /dashboard
+            - waitFor: "[data-testid='login-page']"
+            - extract:
+                finalPath:
+                  from: url
+                  part: pathname
+                loginButtonExists:
+                  from: exists
+                  selector: "[data-testid='login-google-button']"
+                dashboardCardExists:
+                  from: exists
+                  selector: "[data-testid='dashboard-page']"
+        assertions:
+          - assertions:
+              - path: $.extracted.finalPath
+                operator: eq
+                value: /login
+              - path: $.extracted.loginButtonExists
+                operator: eq
+                value: 'true'
+              - path: $.extracted.dashboardCardExists
+                operator: eq
+                value: 'false'

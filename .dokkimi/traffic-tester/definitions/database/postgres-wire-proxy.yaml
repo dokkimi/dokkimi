@@ -1,0 +1,240 @@
+name: postgres-wire-proxy
+description: |
+  Validates the PostgreSQL wire protocol proxy end-to-end: typed results
+  (integers, booleans, NULLs), DML operations (INSERT, UPDATE, DELETE),
+  empty result sets, parameterised queries with multiple positional args,
+  and error handling for invalid SQL.
+config:
+  timeoutSeconds: 90
+items:
+  - $ref: ../../shared/postgres.yaml
+tests:
+  - name: SELECT returns typed integer id
+    steps:
+      - name: Fetch Alice and verify id is numeric
+        action:
+          type: dbQuery
+          database: postgres-db
+          query: "SELECT id, name FROM users WHERE name = 'Alice'"
+        assertions:
+          - assertions:
+              - path: success
+                operator: eq
+                value: true
+              - path: data[0].id
+                operator: type
+                value: number
+              - path: data[0].id
+                operator: eq
+                value: 1
+              - path: data[0].name
+                operator: eq
+                value: Alice
+
+  - name: SELECT with no matching rows returns empty data
+    steps:
+      - name: Query for a user that does not exist
+        action:
+          type: dbQuery
+          database: postgres-db
+          query: "SELECT * FROM users WHERE name = 'Nonexistent'"
+        assertions:
+          - assertions:
+              - path: success
+                operator: eq
+                value: true
+              - path: data
+                operator: length
+                value: 0
+
+  - name: COUNT returns a numeric value
+    steps:
+      - name: Count all users
+        action:
+          type: dbQuery
+          database: postgres-db
+          query: 'SELECT COUNT(*)::int AS total FROM users'
+        assertions:
+          - assertions:
+              - path: success
+                operator: eq
+                value: true
+              - path: data[0].total
+                operator: type
+                value: number
+              - path: data[0].total
+                operator: gte
+                value: 2
+
+  - name: INSERT RETURNING gives back the new row
+    steps:
+      - name: Insert Eve and get her row back
+        action:
+          type: dbQuery
+          database: postgres-db
+          query: "INSERT INTO users (email, name) VALUES ('eve@example.com', 'Eve') RETURNING id, email, name"
+        extract:
+          eveId: '$.data[0].id'
+        assertions:
+          - assertions:
+              - path: success
+                operator: eq
+                value: true
+              - path: data[0].name
+                operator: eq
+                value: Eve
+              - path: data[0].email
+                operator: eq
+                value: eve@example.com
+              - path: data[0].id
+                operator: type
+                value: number
+
+  - name: UPDATE affects rows and read-back confirms change
+    steps:
+      - name: Update Bob email
+        action:
+          type: dbQuery
+          database: postgres-db
+          query: "UPDATE users SET email = 'bob.updated@example.com' WHERE name = 'Bob'"
+        assertions:
+          - assertions:
+              - path: success
+                operator: eq
+                value: true
+              - path: rowsAffected
+                operator: eq
+                value: 1
+      - name: Verify Bob email changed
+        action:
+          type: dbQuery
+          database: postgres-db
+          query: "SELECT email FROM users WHERE name = 'Bob'"
+        assertions:
+          - assertions:
+              - path: success
+                operator: eq
+                value: true
+              - path: data[0].email
+                operator: eq
+                value: bob.updated@example.com
+
+  - name: DELETE removes rows
+    steps:
+      - name: Insert a temporary user
+        action:
+          type: dbQuery
+          database: postgres-db
+          query: "INSERT INTO users (email, name) VALUES ('temp@example.com', 'Temp')"
+        assertions:
+          - assertions:
+              - path: success
+                operator: eq
+                value: true
+      - name: Delete the temporary user
+        action:
+          type: dbQuery
+          database: postgres-db
+          query: "DELETE FROM users WHERE email = 'temp@example.com'"
+        assertions:
+          - assertions:
+              - path: success
+                operator: eq
+                value: true
+              - path: rowsAffected
+                operator: eq
+                value: 1
+      - name: Confirm deletion
+        action:
+          type: dbQuery
+          database: postgres-db
+          query: "SELECT * FROM users WHERE email = 'temp@example.com'"
+        assertions:
+          - assertions:
+              - path: success
+                operator: eq
+                value: true
+              - path: data
+                operator: length
+                value: 0
+
+  - name: Parameterised query with two positional args
+    steps:
+      - name: Range query with $1 and $2
+        action:
+          type: dbQuery
+          database: postgres-db
+          query: 'SELECT name FROM users WHERE id >= $1 AND id <= $2 ORDER BY id'
+          params:
+            '1': '1'
+            '2': '2'
+        assertions:
+          - assertions:
+              - path: success
+                operator: eq
+                value: true
+              - path: data
+                operator: length
+                value: 2
+              - path: data[0].name
+                operator: eq
+                value: Alice
+              - path: data[1].name
+                operator: eq
+                value: Bob
+
+  - name: NULL values are returned correctly
+    steps:
+      - name: Select an expression that returns NULL
+        action:
+          type: dbQuery
+          database: postgres-db
+          query: "SELECT NULL AS nullable_col, 'present' AS non_null_col"
+        assertions:
+          - assertions:
+              - path: success
+                operator: eq
+                value: true
+              - path: data[0].nullable_col
+                operator: isEmpty
+              - path: data[0].non_null_col
+                operator: eq
+                value: present
+
+  - name: Boolean expressions return proper types
+    steps:
+      - name: Select boolean true and false
+        action:
+          type: dbQuery
+          database: postgres-db
+          query: 'SELECT true AS flag_true, false AS flag_false'
+        assertions:
+          - assertions:
+              - path: success
+                operator: eq
+                value: true
+              - path: data[0].flag_true
+                operator: eq
+                value: true
+              - path: data[0].flag_true
+                operator: type
+                value: boolean
+              - path: data[0].flag_false
+                operator: eq
+                value: false
+
+  - name: Invalid SQL returns error
+    steps:
+      - name: Run a broken query
+        action:
+          type: dbQuery
+          database: postgres-db
+          query: 'SELECT * FROM nonexistent_table_xyz'
+        assertions:
+          - assertions:
+              - path: success
+                operator: eq
+                value: false
+              - path: error
+                operator: contains
+                value: nonexistent_table_xyz

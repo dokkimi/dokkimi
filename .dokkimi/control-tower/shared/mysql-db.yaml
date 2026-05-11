@@ -1,0 +1,5 @@
+type: DATABASE
+name: mysql-db
+description: MySQL database for cross-engine testing scenarios
+database: mysql
+initFilePath: ../init-files/schema-mysql.sql

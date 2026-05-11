@@ -1,0 +1,121 @@
+---
+const features = [
+  {
+    title: 'E2E UI Testing',
+    description: 'Drive a real browser alongside your services. Click, type, navigate, and assert on what the user sees.',
+    color: '#0ea5e9',
+    icon: '<svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>',
+  },
+  {
+    title: 'Visual Regression',
+    description: 'Screenshot any step, diff against baselines. Catch visual regressions before they ship.',
+    color: '#e879f9',
+    icon: '<svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>',
+  },
+  {
+    title: 'Traffic Interception',
+    description: 'Capture every HTTP call between services. Assert on exactly what was sent and received.',
+    color: '#fbbf24',
+    icon: '<svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>',
+  },
+  {
+    title: 'Mock External APIs',
+    description: 'Intercept calls to external APIs such as Stripe, Auth0, Twilio, and more. Return controlled responses. No test accounts needed.',
+    color: '#34d399',
+    icon: '<svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 20V10"/><path d="M12 20V4"/><path d="M6 20v-6"/></svg>',
+  },
+  {
+    title: 'Isolated Environments',
+    description: 'Every test run gets its own namespace with dedicated services, databases, and browser. No shared state. No corrupted tests.',
+    color: '#f87171',
+    icon: '<svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>',
+  },
+  {
+    title: 'Database Seeding & Queries',
+    description: 'Seed Postgres, MySQL, MongoDB, or Redis before tests with custom data. Query directly in assertions to verify content.',
+    color: '#fb923c',
+    icon: '<svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>',
+  },
+  {
+    title: 'AI Agent Integrated',
+    description: 'Dokkimi definitions are designed for coding agents. Let Claude, Cursor, or Copilot write and debug your tests.',
+    color: '#a78bfa',
+    icon: '<svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="10" rx="2"/><circle cx="12" cy="5" r="2"/><path d="M12 7v4"/><line x1="8" y1="16" x2="8" y2="16"/><line x1="16" y1="16" x2="16" y2="16"/><path d="M9 7L5 11"/><path d="M15 7l4 4"/></svg>',
+  },
+  {
+    title: 'Zero Code Changes',
+    description: 'Your services run unmodified. Dokkimi wires up sidecars, routing, DNS, browser, and cleanup.',
+    color: '#2dd4bf',
+    icon: '<svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>',
+  },
+];
+---
+
+<section id="features" class="features">
+  <div class="container">
+    <h2 class="section-heading">Why Dokkimi?</h2>
+    <p class="section-subtitle">
+      Unit tests mock away the interesting parts. Staging environments drift from reality.
+      Dokkimi gives you production-like environments on demand.
+    </p>
+    <div class="grid">
+      {features.map((f) => (
+        <div class="card" style={`border-top: 2px solid ${f.color};`}>
+          <div class="card-header">
+            <div class="card-icon" style={`color: ${f.color};`} set:html={f.icon} />
+            <h3 style={`color: ${f.color};`}>{f.title}</h3>
+          </div>
+          <p>{f.description}</p>
+        </div>
+      ))}
+    </div>
+  </div>
+</section>
+
+<style>
+  .features {
+    padding: var(--section-spacing) 0;
+  }
+
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 24px;
+  }
+
+  .card {
+    background: var(--color-bg-soft);
+    border: 1px solid var(--color-border);
+    border-radius: 12px;
+    padding: 32px;
+  }
+
+  .card-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 8px;
+  }
+
+  .card-icon {
+    flex-shrink: 0;
+    display: flex;
+  }
+
+  .card h3 {
+    font-size: 1.1rem;
+    font-weight: 600;
+  }
+
+  .card p {
+    font-size: 0.925rem;
+    color: var(--color-text-muted);
+    line-height: 1.6;
+  }
+
+  @media (max-width: 768px) {
+    .grid {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>

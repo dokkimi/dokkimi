@@ -1,0 +1,63 @@
+---
+import DocsLayout from '../../layouts/DocsLayout.astro';
+import CodeBlock from '../../components/CodeBlock.astro';
+---
+
+<DocsLayout title="Getting Started — Dokkimi Docs" description="Install Dokkimi and run your first microservice integration test.">
+  <h1>Getting Started</h1>
+  <p class="subtitle">Install Dokkimi and run your first test in minutes.</p>
+
+  <h2>Prerequisites</h2>
+  <p>You need three things on your machine:</p>
+  <ul>
+    <li><strong>Node.js 20+</strong></li>
+    <li><strong>Docker + Kubernetes</strong> — Docker Desktop with Kubernetes enabled is the easiest path. Rancher Desktop and minikube also work.</li>
+    <li><strong>kubectl</strong> — configured to talk to your local cluster.</li>
+  </ul>
+
+  <h2>Install</h2>
+  <p>On macOS with <a href="https://brew.sh">Homebrew</a>:</p>
+  <CodeBlock code="brew install dokkimi/tap/dokkimi" lang="bash" />
+  <p>Or via npm (any platform, requires Node.js 20+):</p>
+  <CodeBlock code="npm install -g dokkimi" lang="bash" />
+  <p>Verify your environment is ready:</p>
+  <CodeBlock code="dokkimi doctor" lang="bash" />
+  <p><code>dokkimi doctor</code> checks that Docker is running, Kubernetes is reachable, and your cluster has enough resources. Fix anything it flags before continuing.</p>
+
+  <h2>Scaffold example definitions</h2>
+  <CodeBlock code="dokkimi init" lang="bash" />
+  <p>This creates a <code>.dokkimi/</code> folder with an example topology — a simple API gateway, a backend service, and a Postgres database. See <a href="/docs/project-structure">Project Structure</a> for details on how this folder is organized.</p>
+
+  <h2>Run your first test</h2>
+  <CodeBlock code="dokkimi run" lang="bash" />
+  <p>Dokkimi will:</p>
+  <ol>
+    <li>Create an isolated Kubernetes namespace</li>
+    <li>Deploy your services with interceptor sidecars</li>
+    <li>Seed any databases</li>
+    <li>Attach a Chromium browser (if your test includes UI actions)</li>
+    <li>Wait for readiness checks to pass</li>
+    <li>Execute your test steps — HTTP requests, database queries, and browser interactions</li>
+    <li>Report results, diff screenshots against baselines, and tear everything down</li>
+  </ol>
+  <p>You'll see real-time output as each step executes and assertions pass or fail.</p>
+
+  <h2>Inspect results</h2>
+  <CodeBlock code="dokkimi inspect" lang="bash" />
+  <p>Opens a full-screen interactive TUI showing every HTTP call the interceptor captured, assertion results, console logs, and database queries from the last run. See the <a href="/docs/cli">CLI Reference</a> for all available commands.</p>
+
+  <h2>Next steps</h2>
+  <ul>
+    <li><a href="/docs/project-structure">Project Structure</a> — understand the <code>.dokkimi/</code> folder layout</li>
+    <li><a href="/docs/services">Services</a> — define your own services</li>
+    <li><a href="/docs/databases">Databases</a> — add Postgres, MySQL, MongoDB, or Redis</li>
+    <li><a href="/docs/mocks">Mocks</a> — intercept calls to external APIs</li>
+    <li><a href="/docs/tests-and-steps">Tests &amp; Steps</a> — write test cases</li>
+    <li><a href="/docs/actions">Actions</a> — HTTP requests, database queries, and UI interactions (including visual regression with screenshots)</li>
+  </ul>
+
+  <div class="nav-links">
+    <span></span>
+    <a href="/docs/ai-integration">AI Integration →</a>
+  </div>
+</DocsLayout>

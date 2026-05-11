@@ -1,0 +1,19 @@
+name: pod-logs-crash-on-start
+description: Tests pod log capture when a service crashes immediately on startup
+config:
+  timeoutSeconds: 30
+items:
+  - $ref: ../shared/crash-on-start.yaml
+tests:
+  - name: Should never run (service crashes on start)
+    steps:
+      - name: health check
+        action:
+          type: httpRequest
+          method: GET
+          url: crash-on-start/health
+        assertions:
+          - assertions:
+              - path: response.status
+                operator: eq
+                value: 200

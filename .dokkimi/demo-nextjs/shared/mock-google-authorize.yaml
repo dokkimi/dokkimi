@@ -1,0 +1,13 @@
+type: MOCK
+name: mock-google-authorize
+description: |
+  Catches the browser's redirect to Google's OAuth consent page and 302s
+  straight back to the Next.js callback with a fixed code+state. Skips a
+  real consent UI since the test only cares that the redirect leg fired
+  and that the code makes it back into the callback handler.
+mockMethod: GET
+mockTarget: accounts.google.com
+mockPath: /o/oauth2/v2/auth
+mockResponseStatus: 302
+mockResponseHeaders:
+  Location: https://nextjs-demo/api/auth/callback?code=mock-code-abc123&state=test-state

@@ -1,0 +1,174 @@
+---
+import DocsLayout from '../../layouts/DocsLayout.astro';
+import CodeBlock from '../../components/CodeBlock.astro';
+---
+
+<DocsLayout title="Assertions — Dokkimi Docs" description="Assert on HTTP responses, inter-service traffic, and console logs.">
+  <h1>Assertions</h1>
+  <p class="subtitle">Assert on your step's response, inter-service traffic, and console logs.</p>
+
+  <p>Each step can have an <code>assertions</code> array of blocks. Block type is determined by shape — there are three kinds:</p>
+
+  <h2>Self block</h2>
+  <p>Asserts on the step's own response (HTTP response or DB query result). A self block has no <code>match</code> or <code>service</code> field.</p>
+  <CodeBlock code={`{
+  "assertions": [
+    { "path": "response.status", "operator": "eq", "value": 201 },
+    { "path": "response.body.id", "operator": "exists" },
+    { "path": "response.body.name", "operator": "eq", "value": "{{userName}}" },
+    { "path": "response.header.content-type", "operator": "contains", "value": "application/json" },
+    { "path": "responseTime", "operator": "lt", "value": 500 }
+  ]
+}`} lang="json" />
+
+  <h2>HTTP call block</h2>
+  <p>Asserts on inter-service traffic captured by the interceptor sidecar. Identified by the presence of a <code>match</code> field.</p>
+  <CodeBlock code={`{
+  "match": {
+    "origin": "api-gateway",
+    "method": "POST",
+    "url": "user-service/api/users"
+  },
+  "count": { "operator": "eq", "value": 1 },
+  "assertionScope": "all",
+  "assertions": [
+    { "path": "request.body.email", "operator": "eq", "value": "{{email}}" },
+    { "path": "response.status", "operator": "eq", "value": 201 },
+    { "path": "response.body.id", "operator": "exists" }
+  ]
+}`} lang="json" />
+
+  <h3>Match fields</h3>
+  <p>All optional, all support <code>&#123;&#123;variables&#125;&#125;</code>:</p>
+  <table>
+    <thead>
+      <tr><th>Field</th><th>Description</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>origin</code></td><td>Service name that made the request</td></tr>
+      <tr><td><code>method</code></td><td>HTTP method to match</td></tr>
+      <tr><td><code>url</code></td><td>Target URL: <code>service-name/path</code>, <code>service-name</code>, or <code>/path</code></td></tr>
+    </tbody>
+  </table>
+
+  <h3>assertionScope</h3>
+  <p>Determines which matching traffic entries are validated:</p>
+  <table>
+    <thead>
+      <tr><th>Value</th><th>Behavior</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>all</code> (default)</td><td>All matching entries must pass all assertions</td></tr>
+      <tr><td><code>first</code></td><td>Only the first matching entry is validated</td></tr>
+      <tr><td><code>last</code></td><td>Only the last matching entry is validated</td></tr>
+      <tr><td><code>any</code></td><td>At least one matching entry must pass all assertions</td></tr>
+    </tbody>
+  </table>
+
+  <h3>count</h3>
+  <p>Asserts on the number of matching traffic entries:</p>
+  <CodeBlock code={`"count": { "operator": "eq", "value": 1 }`} lang="json" />
+  <p>Operators: <code>eq</code>, <code>gt</code>, <code>gte</code>, <code>lt</code>, <code>lte</code>. Default: <code>&#123; "operator": "gte", "value": 1 &#125;</code> (at least one match expected).</p>
+
+  <h2>Console log block</h2>
+  <p>Asserts on console output from a specific service during the step's execution. Identified by the presence of a <code>service</code> field.</p>
+  <CodeBlock code={`{
+  "service": "user-service",
+  "consoleAssertions": [
+    {
+      "level": "INFO",
+      "message": { "operator": "contains", "value": "User created" },
+      "count": { "operator": "gte", "value": 1 }
+    },
+    {
+      "level": "ERROR",
+      "count": { "operator": "eq", "value": 0 }
+    },
+    {
+      "message": { "operator": "matches", "value": "Processing order \\\\d+" },
+      "count": { "operator": "gte", "value": 1 }
+    }
+  ]
+}`} lang="json" />
+
+  <h3>ConsoleLogAssertion fields</h3>
+  <table>
+    <thead>
+      <tr><th>Field</th><th>Type</th><th>Required</th><th>Description</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>level</code></td><td>enum</td><td>No</td><td>Filter by log level: <code>INFO</code>, <code>WARN</code>, <code>ERROR</code>, <code>DEBUG</code>. If omitted, matches all levels.</td></tr>
+      <tr><td><code>message</code></td><td>object</td><td>No</td><td>Filter by message content. Has <code>operator</code> (<code>eq</code>, <code>contains</code>, <code>matches</code>) and <code>value</code> (supports <code>&#123;&#123;variables&#125;&#125;</code>).</td></tr>
+      <tr><td><code>count</code></td><td>object</td><td>Yes</td><td>Assert on count of matching logs: <code>&#123; "operator": "eq", "value": 0 &#125;</code></td></tr>
+    </tbody>
+  </table>
+
+  <h2>Assertion paths</h2>
+
+  <h3>HTTP responses (self block or HTTP call block)</h3>
+  <table>
+    <thead>
+      <tr><th>Path</th><th>Description</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>response.status</code></td><td>HTTP status code (integer)</td></tr>
+      <tr><td><code>response.body</code></td><td>Entire response body</td></tr>
+      <tr><td><code>response.body.field</code></td><td>Top-level field in response body</td></tr>
+      <tr><td><code>response.body.nested.field</code></td><td>Nested field (dot notation)</td></tr>
+      <tr><td><code>response.body[0].field</code></td><td>Array element access</td></tr>
+      <tr><td><code>response.header.header-name</code></td><td>Response header (case-insensitive)</td></tr>
+      <tr><td><code>request.method</code></td><td>HTTP method of the request</td></tr>
+      <tr><td><code>request.body</code></td><td>Entire request body</td></tr>
+      <tr><td><code>request.body.field</code></td><td>Field in request body</td></tr>
+      <tr><td><code>request.header.header-name</code></td><td>Request header (case-insensitive)</td></tr>
+      <tr><td><code>responseTime</code></td><td>Response time in milliseconds</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Database query results (self block only)</h3>
+  <table>
+    <thead>
+      <tr><th>Path</th><th>Description</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>success</code></td><td>Boolean — did the query succeed?</td></tr>
+      <tr><td><code>data</code></td><td>Array of result rows</td></tr>
+      <tr><td><code>data[0].column</code></td><td>Specific column from a result row</td></tr>
+      <tr><td><code>rowsAffected</code></td><td>Number of affected rows (integer)</td></tr>
+      <tr><td><code>error</code></td><td>Error message if query failed</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Operators</h2>
+  <table>
+    <thead>
+      <tr><th>Operator</th><th>Value required?</th><th>Value type</th><th>Description</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>eq</code></td><td>Yes</td><td>any</td><td>Exact equality (case-insensitive for strings)</td></tr>
+      <tr><td><code>ne</code></td><td>Yes</td><td>any</td><td>Not equal</td></tr>
+      <tr><td><code>gt</code></td><td>Yes</td><td>number</td><td>Greater than</td></tr>
+      <tr><td><code>gte</code></td><td>Yes</td><td>number</td><td>Greater than or equal</td></tr>
+      <tr><td><code>lt</code></td><td>Yes</td><td>number</td><td>Less than</td></tr>
+      <tr><td><code>lte</code></td><td>Yes</td><td>number</td><td>Less than or equal</td></tr>
+      <tr><td><code>contains</code></td><td>Yes</td><td>string</td><td>Substring match (case-insensitive)</td></tr>
+      <tr><td><code>notContains</code></td><td>Yes</td><td>string</td><td>Substring does NOT match</td></tr>
+      <tr><td><code>matches</code></td><td>Yes</td><td>string (regex)</td><td>Regular expression match</td></tr>
+      <tr><td><code>exists</code></td><td>No</td><td>—</td><td>Value exists (defined and not null)</td></tr>
+      <tr><td><code>notExists</code></td><td>No</td><td>—</td><td>Value does not exist</td></tr>
+      <tr><td><code>in</code></td><td>Yes</td><td>array</td><td>Value is in the given array</td></tr>
+      <tr><td><code>notIn</code></td><td>Yes</td><td>array</td><td>Value is NOT in the given array</td></tr>
+      <tr><td><code>type</code></td><td>Yes</td><td>string</td><td>Type check: <code>string</code>, <code>number</code>, <code>boolean</code>, <code>object</code>, <code>array</code>, <code>null</code></td></tr>
+      <tr><td><code>length</code></td><td>Yes</td><td>number</td><td>Array or string length equals value</td></tr>
+      <tr><td><code>isEmpty</code></td><td>No</td><td>—</td><td>Value is empty/null/undefined/empty array/empty object</td></tr>
+      <tr><td><code>notEmpty</code></td><td>No</td><td>—</td><td>Value is not empty</td></tr>
+      <tr><td><code>arrayContains</code></td><td>Yes</td><td>any</td><td>Array contains the given element</td></tr>
+      <tr><td><code>arrayNotContains</code></td><td>Yes</td><td>any</td><td>Array does NOT contain the given element</td></tr>
+    </tbody>
+  </table>
+
+  <div class="nav-links">
+    <a href="/docs/variables">← Variables</a>
+    <a href="/docs/cli">CLI Reference →</a>
+  </div>
+</DocsLayout>

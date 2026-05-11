@@ -1,0 +1,251 @@
+name: mysql-wire-proxy
+description: |
+  Validates the MySQL wire protocol proxy end-to-end: typed results
+  (integers, decimals, NULLs), DML operations (INSERT, UPDATE, DELETE),
+  empty result sets, parameterised queries with ? placeholders,
+  LAST_INSERT_ID, and error handling for invalid SQL.
+config:
+  timeoutSeconds: 90
+items:
+  - $ref: ../../shared/mysql.json
+tests:
+  - name: SELECT returns typed integer id
+    steps:
+      - name: Fetch Widget and verify id is numeric
+        action:
+          type: dbQuery
+          database: mysql-db
+          query: "SELECT id, name FROM products WHERE name = 'Widget'"
+        assertions:
+          - assertions:
+              - path: success
+                operator: eq
+                value: true
+              - path: data[0].id
+                operator: type
+                value: number
+              - path: data[0].id
+                operator: eq
+                value: 1
+              - path: data[0].name
+                operator: eq
+                value: Widget
+
+  - name: SELECT with no matching rows returns empty data
+    steps:
+      - name: Query for a product that does not exist
+        action:
+          type: dbQuery
+          database: mysql-db
+          query: "SELECT * FROM products WHERE name = 'Nonexistent'"
+        assertions:
+          - assertions:
+              - path: success
+                operator: eq
+                value: true
+              - path: data
+                operator: length
+                value: 0
+
+  - name: COUNT returns a numeric value
+    steps:
+      - name: Count all products
+        action:
+          type: dbQuery
+          database: mysql-db
+          query: 'SELECT COUNT(*) AS total FROM products'
+        assertions:
+          - assertions:
+              - path: success
+                operator: eq
+                value: true
+              - path: data[0].total
+                operator: type
+                value: number
+              - path: data[0].total
+                operator: gte
+                value: 3
+
+  - name: INSERT and verify with LAST_INSERT_ID
+    steps:
+      - name: Insert Thingamajig
+        action:
+          type: dbQuery
+          database: mysql-db
+          query: "INSERT INTO products (name, price, stock) VALUES ('Thingamajig', 14.99, 75)"
+        assertions:
+          - assertions:
+              - path: success
+                operator: eq
+                value: true
+              - path: rowsAffected
+                operator: eq
+                value: 1
+      - name: Read back Thingamajig
+        action:
+          type: dbQuery
+          database: mysql-db
+          query: "SELECT name, price, stock FROM products WHERE name = 'Thingamajig'"
+        assertions:
+          - assertions:
+              - path: success
+                operator: eq
+                value: true
+              - path: data[0].name
+                operator: eq
+                value: Thingamajig
+              - path: data[0].stock
+                operator: type
+                value: number
+              - path: data[0].stock
+                operator: eq
+                value: 75
+
+  - name: UPDATE affects rows and read-back confirms change
+    steps:
+      - name: Update Widget price
+        action:
+          type: dbQuery
+          database: mysql-db
+          query: "UPDATE products SET price = 12.99 WHERE name = 'Widget'"
+        assertions:
+          - assertions:
+              - path: success
+                operator: eq
+                value: true
+              - path: rowsAffected
+                operator: eq
+                value: 1
+      - name: Verify Widget price changed
+        action:
+          type: dbQuery
+          database: mysql-db
+          query: "SELECT price FROM products WHERE name = 'Widget'"
+        assertions:
+          - assertions:
+              - path: success
+                operator: eq
+                value: true
+              - path: data[0].price
+                operator: eq
+                value: 12.99
+
+  - name: DELETE removes rows
+    steps:
+      - name: Insert a temporary product
+        action:
+          type: dbQuery
+          database: mysql-db
+          query: "INSERT INTO products (name, price, stock) VALUES ('TempItem', 1.00, 1)"
+        assertions:
+          - assertions:
+              - path: success
+                operator: eq
+                value: true
+      - name: Delete the temporary product
+        action:
+          type: dbQuery
+          database: mysql-db
+          query: "DELETE FROM products WHERE name = 'TempItem'"
+        assertions:
+          - assertions:
+              - path: success
+                operator: eq
+                value: true
+              - path: rowsAffected
+                operator: eq
+                value: 1
+      - name: Confirm deletion
+        action:
+          type: dbQuery
+          database: mysql-db
+          query: "SELECT * FROM products WHERE name = 'TempItem'"
+        assertions:
+          - assertions:
+              - path: success
+                operator: eq
+                value: true
+              - path: data
+                operator: length
+                value: 0
+
+  - name: Parameterised query with two ? placeholders
+    steps:
+      - name: Range query with two positional args
+        action:
+          type: dbQuery
+          database: mysql-db
+          query: 'SELECT name FROM products WHERE id >= ? AND id <= ? ORDER BY id'
+          params:
+            '1': '1'
+            '2': '2'
+        assertions:
+          - assertions:
+              - path: success
+                operator: eq
+                value: true
+              - path: data
+                operator: length
+                value: 2
+              - path: data[0].name
+                operator: eq
+                value: Widget
+              - path: data[1].name
+                operator: eq
+                value: Gadget
+
+  - name: NULL values are returned correctly
+    steps:
+      - name: Select an expression that returns NULL
+        action:
+          type: dbQuery
+          database: mysql-db
+          query: "SELECT NULL AS nullable_col, 'present' AS non_null_col"
+        assertions:
+          - assertions:
+              - path: success
+                operator: eq
+                value: true
+              - path: data[0].nullable_col
+                operator: isEmpty
+              - path: data[0].non_null_col
+                operator: eq
+                value: present
+
+  - name: Decimal and integer types in one query
+    steps:
+      - name: Mixed numeric types
+        action:
+          type: dbQuery
+          database: mysql-db
+          query: 'SELECT id, name, price, stock FROM products WHERE id = 1'
+        assertions:
+          - assertions:
+              - path: success
+                operator: eq
+                value: true
+              - path: data[0].id
+                operator: type
+                value: number
+              - path: data[0].stock
+                operator: type
+                value: number
+              - path: data[0].price
+                operator: type
+                value: number
+
+  - name: Invalid SQL returns error
+    steps:
+      - name: Run a broken query
+        action:
+          type: dbQuery
+          database: mysql-db
+          query: 'SELECT * FROM nonexistent_table_xyz'
+        assertions:
+          - assertions:
+              - path: success
+                operator: eq
+                value: false
+              - path: error
+                operator: contains
+                value: nonexistent_table_xyz

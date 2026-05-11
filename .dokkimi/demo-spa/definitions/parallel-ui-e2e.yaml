@@ -1,0 +1,56 @@
+name: parallel-ui-e2e
+description: |
+  Drive the DbQueryHarness "Run Parallel" button. A single click fans out to
+  three concurrent fetch() calls — each posts a different query to traffic-
+  tester, all run in parallel, results are aggregated and rendered. Verifies
+  the inter-service traffic shows exactly three independent POSTs and the
+  page reflects the merged result. Exercises parallel API fan-out triggered
+  from one UI action.
+config:
+  timeoutSeconds: 120
+items:
+  - $ref: ../shared/frontend.yaml
+  - $ref: ../shared/traffic-tester.yaml
+  - $ref: ../shared/postgres.yaml
+tests:
+  - name: UI-driven parallel fan-out hits traffic-tester three times
+    steps:
+      - name: Click Run Parallel and wait for the aggregated result
+        action:
+          type: ui
+          target: routing-test-ui
+          steps:
+            - $ref: ../shared/navigate-to-db-harness.yaml
+            - click: "[data-testid='db-run-parallel']"
+            - waitFor: "[data-testid='db-parallel-result']"
+            - extract:
+                usersN:
+                  from: text
+                  selector: "[data-testid='db-parallel-users']"
+                postsN:
+                  from: text
+                  selector: "[data-testid='db-parallel-posts']"
+                pingValue:
+                  from: text
+                  selector: "[data-testid='db-parallel-ping']"
+            - screenshot: parallel-rendered
+        assertions:
+          # All three sub-results landed in the DOM.
+          - assertions:
+              - path: $.extracted.usersN
+                operator: eq
+                value: '3'
+              - path: $.extracted.postsN
+                operator: eq
+                value: '2'
+              - path: $.extracted.pingValue
+                operator: eq
+                value: pong
+          # Three independent POSTs to traffic-tester from one UI action.
+          - match:
+              origin: routing-test-ui
+              method: POST
+              url: traffic-tester/query
+            count:
+              operator: eq
+              value: 3

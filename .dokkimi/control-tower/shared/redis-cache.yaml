@@ -1,0 +1,4 @@
+type: DATABASE
+name: redis-cache
+description: Redis cache for session/queue support
+database: redis

@@ -1,0 +1,30 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import Nav from '../components/Nav.astro';
+import Hero from '../components/Hero.astro';
+import Features from '../components/Features.astro';
+import HowItWorks from '../components/HowItWorks.astro';
+import GetStarted from '../components/GetStarted.astro';
+import BuiltForAI from '../components/BuiltForAI.astro';
+import Coverage from '../components/Coverage.astro';
+import LearnMore from '../components/LearnMore.astro';
+import Pricing from '../components/Pricing.astro';
+import Subscribe from '../components/Subscribe.astro';
+import Footer from '../components/Footer.astro';
+---
+
+<BaseLayout title="Dokkimi — Integration, E2E & Visual Regression Testing" description="The only testing framework that does integration, E2E, and visual regression testing. All without a staging environment. Isolated Kubernetes sandboxes, traffic interception, browser automation, and screenshot diffing.">
+  <Nav />
+  <main>
+    <Hero />
+    <GetStarted />
+    <BuiltForAI />
+    <Features />
+    <Coverage />
+    <HowItWorks />
+    <LearnMore />
+    <Pricing />
+    <Subscribe />
+  </main>
+  <Footer />
+</BaseLayout>

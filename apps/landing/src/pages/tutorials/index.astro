@@ -1,0 +1,93 @@
+---
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import Nav from '../../components/Nav.astro';
+import Footer from '../../components/Footer.astro';
+import { getCollection } from 'astro:content';
+
+const tutorials = await getCollection('tutorials');
+const sortedTutorials = tutorials.sort(
+  (a, b) => new Date(b.data.date).getTime() - new Date(a.data.date).getTime()
+);
+---
+
+<BaseLayout title="Tutorials — Dokkimi" description="Step-by-step guides for testing microservices with Dokkimi.">
+  <Nav />
+  <main class="container tutorials">
+    <h1>Tutorials</h1>
+    <p class="subtitle">Step-by-step guides for real-world testing scenarios.</p>
+    {sortedTutorials.length === 0 && (
+      <p class="empty">No tutorials yet. Check back soon.</p>
+    )}
+    <div class="posts">
+      {sortedTutorials.map((tutorial) => (
+        <a href={`/tutorials/${tutorial.data.slug}`} class="post-card">
+          <time datetime={tutorial.data.date}>{new Date(tutorial.data.date).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</time>
+          <h2>{tutorial.data.title}</h2>
+          <p>{tutorial.data.description}</p>
+        </a>
+      ))}
+    </div>
+  </main>
+  <Footer />
+</BaseLayout>
+
+<style>
+  .tutorials {
+    padding: 120px 0 0;
+  }
+
+  h1 {
+    font-size: 2.5rem;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    margin-bottom: 8px;
+  }
+
+  .subtitle {
+    color: var(--color-text-muted);
+    font-size: 1.05rem;
+    margin-bottom: 48px;
+  }
+
+  .empty {
+    color: var(--color-text-muted);
+    font-size: 1.05rem;
+  }
+
+  .posts {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .post-card {
+    display: block;
+    padding: 28px 32px;
+    background: var(--color-bg-soft);
+    border: 1px solid var(--color-border);
+    border-radius: 12px;
+    transition: border-color 0.2s;
+  }
+
+  .post-card:hover {
+    border-color: var(--color-primary);
+  }
+
+  time {
+    font-size: 0.8rem;
+    color: var(--color-text-muted);
+  }
+
+  .post-card h2 {
+    font-size: 1.25rem;
+    font-weight: 600;
+    margin: 8px 0 6px;
+    color: var(--color-text);
+  }
+
+  .post-card p {
+    font-size: 0.925rem;
+    color: var(--color-text-muted);
+    line-height: 1.5;
+  }
+</style>
