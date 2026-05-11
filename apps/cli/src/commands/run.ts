@@ -109,7 +109,7 @@ export async function run(args: string[]): Promise<void> {
     (a) => !a.startsWith('-') && !a.startsWith('--timeout'),
   );
 
-  const config = loadConfig(undefined, { ci: ciMode });
+  const config = loadConfig();
   const ctUrl = buildServiceUrl(config.services.controlTower);
 
   let abort: AbortController | null = null;

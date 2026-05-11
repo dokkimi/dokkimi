@@ -61,6 +61,8 @@ timeouts:
   metricsInterval: 10000
 
 # Database defaults (for namespace agent)
+# These are intentionally weak — they apply only to ephemeral databases
+# inside isolated Kubernetes namespaces that are destroyed after each test run.
 database:
   defaultUser: dokkimi
   defaultPassword: dokkimi
@@ -78,6 +80,14 @@ logging:
   format: json
   level: info
   actions: true
+
+# Telemetry (anonymous usage analytics via PostHog)
+# The API key is injected at publish time. To test telemetry locally,
+# add your own PostHog key here or set DOKKIMI_POSTHOG_API_KEY.
+# Set enabled: false or run `dokkimi config` to opt out.
+telemetry:
+  posthogApiKey:
+  posthogHost: https://us.i.posthog.com
 
 # API Keys (for service-to-service authentication)
 apiKeys: {}

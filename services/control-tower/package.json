@@ -4,7 +4,7 @@
   "description": "",
   "author": "",
   "private": true,
-  "license": "UNLICENSED",
+  "license": "Elastic-2.0",
   "scripts": {
     "build": "nest build",
     "start": "nest start",

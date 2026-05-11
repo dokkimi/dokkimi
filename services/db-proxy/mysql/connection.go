@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	shared "dokkimi.com/db-proxy-shared"
+	shared "github.com/dokkimi/dokkimi/services/db-proxy/shared"
 )
 
 // pendingQuery tracks a query waiting for its response

@@ -1,4 +1,4 @@
-module dokkimi.com/test-agent
+module github.com/dokkimi/dokkimi/services/test-agent
 
 go 1.26.0
 

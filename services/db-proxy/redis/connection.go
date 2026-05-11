@@ -7,7 +7,7 @@ import (
 	"net"
 	"time"
 
-	shared "dokkimi.com/db-proxy-shared"
+	shared "github.com/dokkimi/dokkimi/services/db-proxy/shared"
 )
 
 // pendingCommand tracks a command waiting for its response from upstream

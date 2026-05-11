@@ -114,6 +114,9 @@ jobs:
     name: Integration Tests
     runs-on: ubuntu-latest
     needs: build-and-test
+    env:
+      DOKKIMI_MAX_CONCURRENT_NAMESPACES: 3
+      DOKKIMI_MAX_BOOTING_NAMESPACES: 1
     steps:
       - uses: actions/checkout@v5
 

@@ -3,6 +3,7 @@ import * as crypto from 'crypto';
 import { spawn } from 'child_process';
 import { PostHog } from 'posthog-node';
 import {
+  getConfig,
   getTelemetryPrefs,
   setTelemetryPrefs,
   TelemetryPrefs,
@@ -13,9 +14,21 @@ import { execSilent } from '@dokkimi/platform';
 // Constants
 // ---------------------------------------------------------------------------
 
-const POSTHOG_API_KEY = 'phc_qRHhgna4UJzsZ47Vr3yf4aRQ4mSD9ykqyN5kDtoigSJp';
-const POSTHOG_HOST = 'https://us.i.posthog.com';
 const SHUTDOWN_TIMEOUT_MS = 2000;
+
+function getPosthogConfig(): { apiKey: string; host: string } | null {
+  try {
+    const cfg = getConfig();
+    const apiKey = cfg.telemetry?.posthogApiKey;
+    const host = cfg.telemetry?.posthogHost;
+    if (apiKey && host) {
+      return { apiKey, host };
+    }
+  } catch {
+    // Config not loaded yet — telemetry disabled
+  }
+  return null;
+}
 
 function loadDokkimiVersion(): string {
   try {
@@ -38,6 +51,8 @@ let distinctId: string | null = null;
 let enabled = false;
 let baseProperties: Record<string, unknown> = {};
 let detachedMode = false;
+let posthogApiKey: string | null = null;
+let posthogHost: string | null = null;
 let pendingEvents: Array<{
   event: string;
   properties: Record<string, unknown>;
@@ -228,11 +243,19 @@ export function initTelemetry(options: TelemetryOptions = {}): void {
       return;
     }
 
+    const posthogCfg = getPosthogConfig();
+    if (!posthogCfg) {
+      enabled = false;
+      return;
+    }
+    posthogApiKey = posthogCfg.apiKey;
+    posthogHost = posthogCfg.host;
+
     detachedMode = options.detachedFlush === true;
 
     if (!detachedMode) {
-      client = new PostHog(POSTHOG_API_KEY, {
-        host: POSTHOG_HOST,
+      client = new PostHog(posthogApiKey, {
+        host: posthogHost,
         flushAt: 10,
         flushInterval: 5000,
         requestTimeout: 3000,
@@ -310,14 +333,14 @@ export async function shutdownTelemetry(): Promise<void> {
 }
 
 function flushDetached(): void {
-  if (!distinctId || pendingEvents.length === 0) {
+  if (!distinctId || !posthogApiKey || pendingEvents.length === 0) {
     pendingEvents = [];
     return;
   }
   try {
     const payload = JSON.stringify({
-      apiKey: POSTHOG_API_KEY,
-      host: POSTHOG_HOST,
+      apiKey: posthogApiKey,
+      host: posthogHost,
       distinctId,
       events: pendingEvents,
     });

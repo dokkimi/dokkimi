@@ -10,7 +10,7 @@ import (
 	"syscall"
 	"time"
 
-	shared "dokkimi.com/db-proxy-shared"
+	shared "github.com/dokkimi/dokkimi/services/db-proxy/shared"
 	_ "github.com/go-sql-driver/mysql"
 )
 

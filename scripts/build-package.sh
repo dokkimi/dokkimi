@@ -113,9 +113,12 @@ if ! head -1 "$CLI_ENTRY" | grep -q '^#!/'; then
 fi
 chmod +x "$CLI_ENTRY"
 
-# Config
-mkdir -p "$STAGE_DIR/config/environments"
-cp config/environments/desktop.yaml "$STAGE_DIR/config/environments/"
+# Config (inject PostHog telemetry key for published builds)
+mkdir -p "$STAGE_DIR/config"
+cp config/config.yaml "$STAGE_DIR/config/config.yaml"
+sed -i '' \
+  -e 's|posthogApiKey:.*|posthogApiKey: phc_qRHhgna4UJzsZ47Vr3yf4aRQ4mSD9ykqyN5kDtoigSJp|' \
+  "$STAGE_DIR/config/config.yaml"
 
 # Postinstall script
 mkdir -p "$STAGE_DIR/scripts"

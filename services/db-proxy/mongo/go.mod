@@ -1,13 +1,13 @@
-module dokkimi.com/db-proxy-mongo
+module github.com/dokkimi/dokkimi/services/db-proxy/mongo
 
 go 1.25
 
 require (
-	dokkimi.com/db-proxy-shared v0.0.0
+	github.com/dokkimi/dokkimi/services/db-proxy/shared v0.0.0
 	go.mongodb.org/mongo-driver/v2 v2.2.0
 )
 
-replace dokkimi.com/db-proxy-shared => ../shared
+replace github.com/dokkimi/dokkimi/services/db-proxy/shared => ../shared
 
 require (
 	github.com/golang/snappy v1.0.0 // indirect

@@ -20,7 +20,7 @@ RUN go mod tidy
 ARG VERSION=dev
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
     go build \
-      -ldflags="-s -w -X dokkimi.com/db-proxy-shared.Version=${VERSION}" \
+      -ldflags="-s -w -X github.com/dokkimi/dokkimi/services/db-proxy/shared.Version=${VERSION}" \
       -trimpath \
       -o /build/db-proxy-postgres \
       .

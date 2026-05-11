@@ -54,6 +54,11 @@ lerna-debug.log*
 
 # Go binaries
 services/test-agent/test-agent
+services/interceptor/interceptor
+services/db-proxy/postgres/postgres
+services/db-proxy/mysql/mysql
+services/db-proxy/mongo/mongo
+services/db-proxy/redis/redis
 
 # VSCode extension packaging
 *.vsix

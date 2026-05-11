@@ -22,7 +22,7 @@ export class ConfigLoader {
    * Load configuration from YAML file
    * Must be called during application startup before any services initialize
    */
-  public load(configPath?: string, options?: { ci?: boolean }): DokkimiConfig {
+  public load(configPath?: string): DokkimiConfig {
     if (this.config) {
       return this.config;
     }
@@ -56,10 +56,7 @@ export class ConfigLoader {
       );
     }
 
-    this.config = this.applyEnvOverrides(
-      this.expandTildePaths(rawConfig),
-      options?.ci,
-    );
+    this.config = this.applyEnvOverrides(this.expandTildePaths(rawConfig));
     return this.config;
   }
 
@@ -126,11 +123,7 @@ export class ConfigLoader {
    * Only HOST overrides are supported — Kubernetes auto-injects <SERVICE>_PORT env vars
    * in tcp:// URL format which would corrupt numeric port values.
    */
-  private applyEnvOverrides(
-    config: DokkimiConfig,
-    ci?: boolean,
-  ): DokkimiConfig {
-    const isCI = ci || !!process.env.CI;
+  private applyEnvOverrides(config: DokkimiConfig): DokkimiConfig {
     if (process.env.DATABASE_URL) {
       config.database.url = process.env.DATABASE_URL;
     }
@@ -151,18 +144,26 @@ export class ConfigLoader {
       config.kubernetes.maxConcurrentNamespaces = Number(
         process.env.DOKKIMI_MAX_CONCURRENT_NAMESPACES,
       );
-    } else if (isCI) {
-      config.kubernetes.maxConcurrentNamespaces = 3;
     }
     if (process.env.DOKKIMI_MAX_BOOTING_NAMESPACES) {
       config.kubernetes.maxBootingNamespaces = Number(
         process.env.DOKKIMI_MAX_BOOTING_NAMESPACES,
       );
-    } else if (isCI) {
-      config.kubernetes.maxBootingNamespaces = 1;
     }
     if (process.env.DOKKIMI_HTTP_TIMEOUT) {
       config.timeouts.httpRequest = Number(process.env.DOKKIMI_HTTP_TIMEOUT);
+    }
+    if (process.env.DOKKIMI_POSTHOG_API_KEY) {
+      if (!config.telemetry) {
+        config.telemetry = {};
+      }
+      config.telemetry.posthogApiKey = process.env.DOKKIMI_POSTHOG_API_KEY;
+    }
+    if (process.env.DOKKIMI_POSTHOG_HOST) {
+      if (!config.telemetry) {
+        config.telemetry = {};
+      }
+      config.telemetry.posthogHost = process.env.DOKKIMI_POSTHOG_HOST;
     }
     if (process.env.DOKKIMI_CIRCUIT_BREAKER_TIMEOUT) {
       if (!config.circuitBreaker) {
@@ -215,8 +216,8 @@ export class ConfigLoader {
 }
 
 // Convenience exports
-export const loadConfig = (configPath?: string, options?: { ci?: boolean }) =>
-  ConfigLoader.getInstance().load(configPath, options);
+export const loadConfig = (configPath?: string) =>
+  ConfigLoader.getInstance().load(configPath);
 
 export const getConfig = () => ConfigLoader.getInstance().getConfig();
 

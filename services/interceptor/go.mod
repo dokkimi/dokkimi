@@ -1,4 +1,4 @@
-module dokkimi.com/interceptor
+module github.com/dokkimi/dokkimi/services/interceptor
 
 go 1.26.0
 

@@ -5,7 +5,7 @@ import (
 	"net"
 	"time"
 
-	shared "dokkimi.com/db-proxy-shared"
+	shared "github.com/dokkimi/dokkimi/services/db-proxy/shared"
 )
 
 type Proxy struct {

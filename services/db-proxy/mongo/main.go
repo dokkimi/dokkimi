@@ -9,7 +9,7 @@ import (
 	"syscall"
 	"time"
 
-	shared "dokkimi.com/db-proxy-shared"
+	shared "github.com/dokkimi/dokkimi/services/db-proxy/shared"
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo"
 	"go.mongodb.org/mongo-driver/v2/mongo/options"

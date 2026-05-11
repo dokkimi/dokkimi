@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-// Version is set at build time via -ldflags "-X dokkimi.com/db-proxy-shared.Version=..."
+// Version is set at build time via -ldflags "-X github.com/dokkimi/dokkimi/services/db-proxy/shared.Version=..."
 var Version = "dev"
 
 // LoadConfig loads configuration from environment variables

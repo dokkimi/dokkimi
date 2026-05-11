@@ -61,6 +61,11 @@ export interface DokkimiConfig {
     actions: boolean;
   };
 
+  telemetry?: {
+    posthogApiKey?: string;
+    posthogHost?: string;
+  };
+
   apiKeys: Record<string, never>;
 
   browser?: {

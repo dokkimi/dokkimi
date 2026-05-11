@@ -1,10 +1,10 @@
-module dokkimi.com/db-proxy-postgres
+module github.com/dokkimi/dokkimi/services/db-proxy/postgres
 
 go 1.25
 
 require (
-	dokkimi.com/db-proxy-shared v0.0.0
+	github.com/dokkimi/dokkimi/services/db-proxy/shared v0.0.0
 	github.com/lib/pq v1.12.3
 )
 
-replace dokkimi.com/db-proxy-shared => ../shared
+replace github.com/dokkimi/dokkimi/services/db-proxy/shared => ../shared

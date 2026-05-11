@@ -9,7 +9,7 @@ import (
 	"syscall"
 	"time"
 
-	shared "dokkimi.com/db-proxy-shared"
+	shared "github.com/dokkimi/dokkimi/services/db-proxy/shared"
 	"github.com/redis/go-redis/v9"
 )
 
