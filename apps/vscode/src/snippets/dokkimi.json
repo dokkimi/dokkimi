@@ -1,0 +1,446 @@
+{
+  "Dokkimi: New Definition": {
+    "prefix": "dok-definition",
+    "description": "Create a new runnable definition file with name, items, and tests",
+    "body": [
+      "{",
+      "  \"name\": \"${1:my-test-suite}\",",
+      "  \"description\": \"${2:Description of what this definition tests}\",",
+      "  \"config\": { \"timeoutSeconds\": ${3:300} },",
+      "  \"items\": [",
+      "    $0",
+      "  ],",
+      "  \"tests\": []",
+      "}"
+    ]
+  },
+
+  "Dokkimi: New Definition with Variables": {
+    "prefix": "dok-definition-vars",
+    "description": "Create a definition with shared variables inherited by all tests",
+    "body": [
+      "{",
+      "  \"name\": \"${1:my-test-suite}\",",
+      "  \"description\": \"${2:Description of what this definition tests}\",",
+      "  \"config\": { \"timeoutSeconds\": ${3:300} },",
+      "  \"variables\": {",
+      "    \"${4:connStr}\": \"${5:postgresql://user:pass@db:5432/mydb}\"",
+      "  },",
+      "  \"items\": [",
+      "    $0",
+      "  ],",
+      "  \"tests\": []",
+      "}"
+    ]
+  },
+
+  "Dokkimi: New Definition with Variable $ref": {
+    "prefix": "dok-definition-vars-ref",
+    "description": "Create a definition with variables loaded from a shared file",
+    "body": [
+      "{",
+      "  \"name\": \"${1:my-test-suite}\",",
+      "  \"description\": \"${2:Description of what this definition tests}\",",
+      "  \"config\": { \"timeoutSeconds\": ${3:300} },",
+      "  \"variables\": {",
+      "    \"\\$ref\": \"${4:../shared/vars.json}\"",
+      "  },",
+      "  \"items\": [",
+      "    $0",
+      "  ],",
+      "  \"tests\": []",
+      "}"
+    ]
+  },
+
+  "Dokkimi: SERVICE Item": {
+    "prefix": "dok-service",
+    "description": "Add a SERVICE item (containerized application)",
+    "body": [
+      "{",
+      "  \"type\": \"SERVICE\",",
+      "  \"name\": \"${1:my-service}\",",
+      "  \"description\": \"${2:Service description}\",",
+      "  \"image\": \"${3:my-service:latest}\",",
+      "  \"port\": ${4:3000},",
+      "  \"healthCheck\": \"${5:/health}\"",
+      "}"
+    ]
+  },
+
+  "Dokkimi: SERVICE Item with Env": {
+    "prefix": "dok-service-env",
+    "description": "Add a SERVICE item with environment variables",
+    "body": [
+      "{",
+      "  \"type\": \"SERVICE\",",
+      "  \"name\": \"${1:my-service}\",",
+      "  \"description\": \"${2:Service description}\",",
+      "  \"image\": \"${3:my-service:latest}\",",
+      "  \"port\": ${4:3000},",
+      "  \"healthCheck\": \"${5:/health}\",",
+      "  \"env\": [",
+      "    { \"name\": \"${6:DATABASE_URL}\", \"value\": \"${7:postgresql://postgres:postgres@db:5432/mydb}\" }",
+      "  ]",
+      "}"
+    ]
+  },
+
+  "Dokkimi: SERVICE Item with Build": {
+    "prefix": "dok-service-build",
+    "description": "Add a SERVICE item with local Docker build config",
+    "body": [
+      "{",
+      "  \"type\": \"SERVICE\",",
+      "  \"name\": \"${1:my-service}\",",
+      "  \"description\": \"${2:Service description}\",",
+      "  \"image\": \"${1:my-service}:local\",",
+      "  \"port\": ${3:3000},",
+      "  \"healthCheck\": \"${4:/health}\",",
+      "  \"build\": {",
+      "    \"context\": \"${5:../../services/my-service}\"",
+      "  }",
+      "}"
+    ]
+  },
+
+  "Dokkimi: DATABASE Item (Postgres)": {
+    "prefix": "dok-postgres",
+    "description": "Add a PostgreSQL DATABASE item",
+    "body": [
+      "{",
+      "  \"type\": \"DATABASE\",",
+      "  \"name\": \"${1:postgres-db}\",",
+      "  \"description\": \"${2:PostgreSQL database}\",",
+      "  \"database\": \"postgres\",",
+      "  \"version\": \"${3:15}\",",
+      "  \"initFilePath\": \"${4:init.sql}\"",
+      "}"
+    ]
+  },
+
+  "Dokkimi: DATABASE Item (MongoDB)": {
+    "prefix": "dok-mongo",
+    "description": "Add a MongoDB DATABASE item",
+    "body": [
+      "{",
+      "  \"type\": \"DATABASE\",",
+      "  \"name\": \"${1:mongo-db}\",",
+      "  \"description\": \"${2:MongoDB database}\",",
+      "  \"database\": \"mongodb\",",
+      "  \"version\": \"${3:7}\",",
+      "  \"initFilePath\": \"${4:init.js}\"",
+      "}"
+    ]
+  },
+
+  "Dokkimi: DATABASE Item (Redis)": {
+    "prefix": "dok-redis",
+    "description": "Add a Redis DATABASE item",
+    "body": [
+      "{",
+      "  \"type\": \"DATABASE\",",
+      "  \"name\": \"${1:redis-cache}\",",
+      "  \"description\": \"${2:Redis cache}\",",
+      "  \"database\": \"redis\",",
+      "  \"version\": \"${3:7-alpine}\"",
+      "}"
+    ]
+  },
+
+  "Dokkimi: DATABASE Item (MySQL)": {
+    "prefix": "dok-mysql",
+    "description": "Add a MySQL DATABASE item",
+    "body": [
+      "{",
+      "  \"type\": \"DATABASE\",",
+      "  \"name\": \"${1:mysql-db}\",",
+      "  \"description\": \"${2:MySQL database}\",",
+      "  \"database\": \"mysql\",",
+      "  \"version\": \"${3:8}\",",
+      "  \"initFilePath\": \"${4:init.sql}\"",
+      "}"
+    ]
+  },
+
+  "Dokkimi: MOCK Item": {
+    "prefix": "dok-mock",
+    "description": "Add a MOCK item (intercept outbound HTTP requests)",
+    "body": [
+      "{",
+      "  \"type\": \"MOCK\",",
+      "  \"name\": \"${1:mock-external-api}\",",
+      "  \"description\": \"${2:Mock for external API}\",",
+      "  \"mockMethod\": \"${3|GET,POST,PUT,DELETE,PATCH,*|}\",",
+      "  \"mockOrigin\": \"${4:*}\",",
+      "  \"mockTarget\": \"${5:api.example.com}\",",
+      "  \"mockPath\": \"${6:/v1/endpoint}\",",
+      "  \"mockResponseStatus\": ${7:200},",
+      "  \"mockResponseBody\": ${8:{}}",
+      "}"
+    ]
+  },
+
+  "Dokkimi: $ref (Item Reference)": {
+    "prefix": "dok-ref",
+    "description": "Reference a shared item fragment with optional overrides",
+    "body": [
+      "{",
+      "  \"\\$ref\": \"${1:../shared/item.json}\"${2:,",
+      "  \"${3:fieldToOverride}\": \"${4:overrideValue}\"}",
+      "}"
+    ]
+  },
+
+  "Dokkimi: $ref Multi (Item from multiple fragments)": {
+    "prefix": "dok-ref-multi",
+    "description": "Compose an item from multiple shared fragments, merged left-to-right",
+    "body": [
+      "{",
+      "  \"\\$ref\": [",
+      "    \"${1:../shared/base-service.json}\",",
+      "    \"${2:../shared/overrides.json}\"",
+      "  ]${3:,",
+      "  \"${4:fieldToOverride}\": \"${5:overrideValue}\"}",
+      "}"
+    ]
+  },
+
+  "Dokkimi: Variable $ref (shared variables)": {
+    "prefix": "dok-vars-ref",
+    "description": "Load variables from a shared file with optional inline overrides",
+    "body": [
+      "\"variables\": {",
+      "  \"\\$ref\": \"${1:../shared/vars.json}\"${2:,",
+      "  \"${3:localOverride}\": \"${4:value}\"}",
+      "}"
+    ]
+  },
+
+  "Dokkimi: Variable $ref Multi (merge multiple files)": {
+    "prefix": "dok-vars-ref-multi",
+    "description": "Load variables from multiple shared files, merged left-to-right",
+    "body": [
+      "\"variables\": {",
+      "  \"\\$ref\": [",
+      "    \"${1:../shared/db-vars.json}\",",
+      "    \"${2:../shared/service-urls.json}\"",
+      "  ]${3:,",
+      "  \"${4:localOverride}\": \"${5:value}\"}",
+      "}"
+    ]
+  },
+
+  "Dokkimi: Action $ref (reusable action)": {
+    "prefix": "dok-action-ref",
+    "description": "Reference a shared action fragment with optional inline overrides",
+    "body": [
+      "\"action\": {",
+      "  \"\\$ref\": \"${1:../shared/action.yaml}\"${2:,",
+      "  \"${3:body}\": ${4:\\{\\}}}",
+      "}"
+    ]
+  },
+
+  "Dokkimi: Action Fragment File": {
+    "prefix": "dok-action-fragment",
+    "description": "Create a shared action fragment file (httpRequest, dbQuery, ui, or wait)",
+    "body": [
+      "{",
+      "  \"name\": \"${1:My Action}\",",
+      "  \"description\": \"${2:What this action does}\",",
+      "  \"action\": {",
+      "    \"type\": \"${3|httpRequest,dbQuery,ui,wait|}\",",
+      "    $0",
+      "  }",
+      "}"
+    ]
+  },
+
+  "Dokkimi: UI Sub-step Fragment File": {
+    "prefix": "dok-step-fragment",
+    "description": "Create a shared UI sub-step fragment file (e.g., a login flow)",
+    "body": [
+      "{",
+      "  \"name\": \"${1:Login Flow}\",",
+      "  \"description\": \"${2:Signs in via OAuth mock}\",",
+      "  \"steps\": [",
+      "    { \"visit\": \"${3:/login}\" },",
+      "    { \"click\": \"${4:[data-testid='login-btn']}\" },",
+      "    { \"waitFor\": \"${5:[data-testid='dashboard']}\" }",
+      "  ]",
+      "}"
+    ]
+  },
+
+  "Dokkimi: UI Sub-step $ref": {
+    "prefix": "dok-substep-ref",
+    "description": "Reference a shared UI sub-step fragment inside a UI action's steps array",
+    "body": ["{ \"\\$ref\": \"${1:../shared/login-flow.yaml}\" }"]
+  },
+
+  "Dokkimi: Test Definition": {
+    "prefix": "dok-test",
+    "description": "Create a test definition with step groups",
+    "body": [
+      "{",
+      "  \"name\": \"${1:My Test Suite}\",",
+      "  \"timeoutSeconds\": ${2:300},",
+      "  \"steps\": [",
+      "    [",
+      "      {",
+      "        \"name\": \"${3:Step 1}\",",
+      "        \"action\": {",
+      "          \"type\": \"httpRequest\",",
+      "          \"method\": \"${4|GET,POST,PUT,DELETE,PATCH|}\",",
+      "          \"url\": \"${5:service-name/path}\"",
+      "        },",
+      "        \"assertions\": [",
+      "          {",
+      "            \"assertions\": [",
+      "              { \"path\": \"response.status\", \"operator\": \"eq\", \"value\": ${6:200} }",
+      "            ]",
+      "          }",
+      "        ]",
+      "      }",
+      "    ]",
+      "  ]",
+      "}"
+    ]
+  },
+
+  "Dokkimi: Test Step (HTTP Request)": {
+    "prefix": "dok-step-http",
+    "description": "Add an HTTP request test step with assertions",
+    "body": [
+      "{",
+      "  \"name\": \"${1:Step name}\",",
+      "  \"action\": {",
+      "    \"type\": \"httpRequest\",",
+      "    \"method\": \"${2|GET,POST,PUT,DELETE,PATCH|}\",",
+      "    \"url\": \"${3:service-name/path}\"${4:,",
+      "    \"body\": ${5:{}}}",
+      "  },",
+      "  \"assertions\": [",
+      "    {",
+      "      \"assertions\": [",
+      "        { \"path\": \"response.status\", \"operator\": \"eq\", \"value\": ${6:200} }",
+      "      ]",
+      "    }",
+      "  ]",
+      "}"
+    ]
+  },
+
+  "Dokkimi: Test Step (DB Query)": {
+    "prefix": "dok-step-db",
+    "description": "Add a database query test step",
+    "body": [
+      "{",
+      "  \"name\": \"${1:Query database}\",",
+      "  \"action\": {",
+      "    \"type\": \"dbQuery\",",
+      "    \"database\": \"${2:postgres-db}\",",
+      "    \"query\": \"${3:SELECT * FROM users}\"",
+      "  },",
+      "  \"assertions\": [",
+      "    {",
+      "      \"assertions\": [",
+      "        { \"path\": \"success\", \"operator\": \"eq\", \"value\": true }",
+      "      ]",
+      "    }",
+      "  ]",
+      "}"
+    ]
+  },
+
+  "Dokkimi: Test Step (Wait)": {
+    "prefix": "dok-step-wait",
+    "description": "Add a wait step (pause before next group)",
+    "body": [
+      "{",
+      "  \"name\": \"${1:Wait for async processing}\",",
+      "  \"action\": {",
+      "    \"type\": \"wait\",",
+      "    \"durationMs\": ${2:2000}",
+      "  }",
+      "}"
+    ]
+  },
+
+  "Dokkimi: Assertion Block (Self)": {
+    "prefix": "dok-assert-self",
+    "description": "Assert on the step's own HTTP response",
+    "body": [
+      "{",
+      "  \"assertions\": [",
+      "    { \"path\": \"response.status\", \"operator\": \"eq\", \"value\": ${1:200} }${2:,",
+      "    { \"path\": \"response.body.${3:field}\", \"operator\": \"${4|eq,ne,exists,notExists,contains,matches|}\", \"value\": ${5:\"expected\"} \\}}",
+      "  ]",
+      "}"
+    ]
+  },
+
+  "Dokkimi: Assertion Block (HTTP Call)": {
+    "prefix": "dok-assert-traffic",
+    "description": "Assert on observed inter-service HTTP traffic",
+    "body": [
+      "{",
+      "  \"match\": {",
+      "    \"origin\": \"${1:source-service}\",",
+      "    \"method\": \"${2|GET,POST,PUT,DELETE,PATCH|}\",",
+      "    \"url\": \"${3:target-service/path}\"",
+      "  },",
+      "  \"count\": { \"operator\": \"${4|eq,gte,lte,gt,lt|}\", \"value\": ${5:1} },",
+      "  \"assertions\": [",
+      "    { \"path\": \"response.status\", \"operator\": \"eq\", \"value\": ${6:200} }",
+      "  ]",
+      "}"
+    ]
+  },
+
+  "Dokkimi: Assertion Block (Console Log)": {
+    "prefix": "dok-assert-logs",
+    "description": "Assert on a service's console log output",
+    "body": [
+      "{",
+      "  \"service\": \"${1:service-name}\",",
+      "  \"consoleAssertions\": [",
+      "    {",
+      "      \"level\": \"${2|INFO,WARN,ERROR,DEBUG|}\",",
+      "      \"message\": { \"operator\": \"${3|contains,eq,matches|}\", \"value\": \"${4:expected message}\" },",
+      "      \"count\": { \"operator\": \"${5|gte,eq,lte,gt,lt|}\", \"value\": ${6:1} }",
+      "    }",
+      "  ]",
+      "}"
+    ]
+  },
+
+  "Dokkimi: Variable Extraction": {
+    "prefix": "dok-extract",
+    "description": "Extract variables from a step's response for use in subsequent steps",
+    "body": [
+      "\"extract\": {",
+      "  \"${1:variableName}\": \"\\$.${2:body.id}\"",
+      "}"
+    ]
+  },
+
+  "Dokkimi: Regex Variable Extraction": {
+    "prefix": "dok-extract-regex",
+    "description": "Extract a variable using regex on a response value",
+    "body": [
+      "\"${1:variableName}\": {",
+      "  \"path\": \"\\$.${2:body.field}\",",
+      "  \"pattern\": \"${3:pattern}\",",
+      "  \"group\": ${4:1}",
+      "}"
+    ]
+  },
+
+  "Dokkimi: Environment Variable": {
+    "prefix": "dok-env",
+    "description": "Add an environment variable entry",
+    "body": ["{ \"name\": \"${1:ENV_VAR}\", \"value\": \"${2:value}\" }"]
+  }
+}

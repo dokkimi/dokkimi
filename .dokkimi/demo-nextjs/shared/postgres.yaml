@@ -1,0 +1,5 @@
+type: DATABASE
+name: postgres-db
+description: Postgres seeded with users + bookmarks for the nextjs-demo fixture
+database: postgres
+initFilePath: ../init-files/init.sql

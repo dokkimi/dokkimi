@@ -1,0 +1,17 @@
+{
+  "name": "@dokkimi/landing",
+  "type": "module",
+  "version": "0.3.6",
+  "private": true,
+  "scripts": {
+    "dev": "astro dev",
+    "build": "astro build",
+    "preview": "astro preview",
+    "astro": "astro"
+  },
+  "dependencies": {
+    "@astrojs/sitemap": "^3.7.2",
+    "@vercel/analytics": "^2.0.1",
+    "astro": "^6.3.1"
+  }
+}

@@ -1,0 +1,52 @@
+{
+  "name": "dokkimi",
+  "version": "0.1.0",
+  "description": "CLI for managing isolated Kubernetes sandboxes for microservice testing",
+  "bin": {
+    "dokkimi": "apps/cli/dist/bin/dokkimi.js"
+  },
+  "workspaces": [],
+  "_dokkimi_root": true,
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "keywords": [
+    "testing",
+    "microservices",
+    "kubernetes",
+    "k8s",
+    "integration-testing",
+    "e2e",
+    "end-to-end",
+    "sandbox",
+    "traffic",
+    "mock",
+    "docker",
+    "devops",
+    "api-testing",
+    "cli",
+    "test-automation"
+  ],
+  "license": "Elastic-2.0",
+  "overrides": {
+    "lodash": "4.18.1",
+    "glob": "^11.0.0"
+  },
+  "os": ["darwin", "linux", "win32"],
+  "scripts": {
+    "postinstall": "node scripts/postinstall.js"
+  },
+  "files": [
+    "apps/cli/dist/",
+    "services/control-tower/dist/",
+    "services/control-tower/package.json",
+    "shared/prisma/sqlite/schema.prisma",
+    "shared/prisma/prisma.config.ts",
+    "shared/prisma/migrations/",
+    "shared/docs/",
+    "config/config.yaml",
+    "scripts/postinstall.js",
+    "README.md",
+    "LICENSE"
+  ]
+}

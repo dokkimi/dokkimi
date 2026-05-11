@@ -1,0 +1,36 @@
+{
+  "name": "@dokkimi/definition-resolver",
+  "version": "0.3.6",
+  "description": "Shared definition discovery, $ref resolution, init file reading, and validation for CLI and Electron",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch --preserveWatchOutput",
+    "clean": "rm -rf dist",
+    "test": "jest"
+  },
+  "dependencies": {
+    "@dokkimi/definition-validator": "workspace:*",
+    "minimatch": "^10.2.5"
+  },
+  "devDependencies": {
+    "@types/jest": "^30.0.0",
+    "@types/node": "^25.6.2",
+    "jest": "^30.4.1",
+    "ts-jest": "^29.4.9",
+    "typescript": "^6.0.3"
+  },
+  "jest": {
+    "moduleFileExtensions": [
+      "js",
+      "json",
+      "ts"
+    ],
+    "rootDir": ".",
+    "testRegex": ".*\\.spec\\.ts$",
+    "transform": {
+      "^.+\\.ts$": "ts-jest"
+    }
+  }
+}

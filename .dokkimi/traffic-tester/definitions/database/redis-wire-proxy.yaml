@@ -1,0 +1,279 @@
+name: redis-wire-proxy
+description: |
+  Validates the Redis wire protocol proxy end-to-end: SET/GET with typed
+  results, non-existent keys, INCR for numeric values, DEL for key removal,
+  hash operations (HSET/HGETALL), list operations (LPUSH/LRANGE),
+  and error handling for invalid commands.
+config:
+  timeoutSeconds: 90
+items:
+  - $ref: ../../shared/redis.json
+tests:
+  - name: SET and GET a string key
+    steps:
+      - name: SET a key
+        action:
+          type: dbQuery
+          database: redis-db
+          query: SET wire-test-key hello-world
+        assertions:
+          - assertions:
+              - path: success
+                operator: eq
+                value: true
+              - path: data[0].value
+                operator: eq
+                value: OK
+      - name: GET the key back
+        action:
+          type: dbQuery
+          database: redis-db
+          query: GET wire-test-key
+        assertions:
+          - assertions:
+              - path: success
+                operator: eq
+                value: true
+              - path: data[0].value
+                operator: eq
+                value: hello-world
+
+  - name: GET non-existent key returns empty data
+    steps:
+      - name: Query for a key that does not exist
+        action:
+          type: dbQuery
+          database: redis-db
+          query: GET nonexistent-key-xyz
+        assertions:
+          - assertions:
+              - path: success
+                operator: eq
+                value: true
+              - path: data
+                operator: length
+                value: 0
+
+  - name: INCR returns a numeric value
+    steps:
+      - name: SET a counter to 10
+        action:
+          type: dbQuery
+          database: redis-db
+          query: SET counter 10
+        assertions:
+          - assertions:
+              - path: success
+                operator: eq
+                value: true
+      - name: INCR the counter
+        action:
+          type: dbQuery
+          database: redis-db
+          query: INCR counter
+        assertions:
+          - assertions:
+              - path: success
+                operator: eq
+                value: true
+              - path: data[0].value
+                operator: eq
+                value: 11
+              - path: data[0].value
+                operator: type
+                value: number
+
+  - name: SET then overwrite and verify
+    steps:
+      - name: SET initial value
+        action:
+          type: dbQuery
+          database: redis-db
+          query: SET overwrite-key original
+        assertions:
+          - assertions:
+              - path: success
+                operator: eq
+                value: true
+      - name: Overwrite with new value
+        action:
+          type: dbQuery
+          database: redis-db
+          query: SET overwrite-key updated
+        assertions:
+          - assertions:
+              - path: success
+                operator: eq
+                value: true
+      - name: Verify new value
+        action:
+          type: dbQuery
+          database: redis-db
+          query: GET overwrite-key
+        assertions:
+          - assertions:
+              - path: success
+                operator: eq
+                value: true
+              - path: data[0].value
+                operator: eq
+                value: updated
+
+  - name: DEL removes keys
+    steps:
+      - name: SET a temporary key
+        action:
+          type: dbQuery
+          database: redis-db
+          query: SET temp-key to-be-deleted
+        assertions:
+          - assertions:
+              - path: success
+                operator: eq
+                value: true
+      - name: DEL the key
+        action:
+          type: dbQuery
+          database: redis-db
+          query: DEL temp-key
+        assertions:
+          - assertions:
+              - path: success
+                operator: eq
+                value: true
+              - path: data[0].value
+                operator: eq
+                value: 1
+              - path: data[0].value
+                operator: type
+                value: number
+      - name: Confirm key is gone
+        action:
+          type: dbQuery
+          database: redis-db
+          query: GET temp-key
+        assertions:
+          - assertions:
+              - path: success
+                operator: eq
+                value: true
+              - path: data
+                operator: length
+                value: 0
+
+  - name: Hash operations with HSET and HGETALL
+    steps:
+      - name: HSET multiple fields
+        action:
+          type: dbQuery
+          database: redis-db
+          query: HSET user:1 name Alice email alice@example.com age 30
+        assertions:
+          - assertions:
+              - path: success
+                operator: eq
+                value: true
+      - name: HGETALL returns key-value pairs
+        action:
+          type: dbQuery
+          database: redis-db
+          query: HGETALL user:1
+        assertions:
+          - assertions:
+              - path: success
+                operator: eq
+                value: true
+              - path: data[0].name
+                operator: eq
+                value: Alice
+              - path: data[0].email
+                operator: eq
+                value: alice@example.com
+              - path: data[0].age
+                operator: eq
+                value: '30'
+
+  - name: List operations with LPUSH and LRANGE
+    steps:
+      - name: LPUSH items onto a list
+        action:
+          type: dbQuery
+          database: redis-db
+          query: LPUSH mylist c b a
+        assertions:
+          - assertions:
+              - path: success
+                operator: eq
+                value: true
+              - path: data[0].value
+                operator: type
+                value: number
+              - path: data[0].value
+                operator: eq
+                value: 3
+      - name: LRANGE to read the full list
+        action:
+          type: dbQuery
+          database: redis-db
+          query: LRANGE mylist 0 -1
+        assertions:
+          - assertions:
+              - path: success
+                operator: eq
+                value: true
+              - path: data
+                operator: length
+                value: 3
+              - path: data[0].value
+                operator: eq
+                value: a
+              - path: data[1].value
+                operator: eq
+                value: b
+              - path: data[2].value
+                operator: eq
+                value: c
+
+  - name: SET with variable extraction and read-back
+    steps:
+      - name: SET a key and extract the value
+        action:
+          type: dbQuery
+          database: redis-db
+          query: SET extracted-key my-extracted-value
+        assertions:
+          - assertions:
+              - path: success
+                operator: eq
+                value: true
+      - name: GET the key back
+        action:
+          type: dbQuery
+          database: redis-db
+          query: GET extracted-key
+        extract:
+          extractedVal: '$.data[0].value'
+        assertions:
+          - assertions:
+              - path: success
+                operator: eq
+                value: true
+              - path: data[0].value
+                operator: eq
+                value: my-extracted-value
+
+  - name: Invalid command returns error
+    steps:
+      - name: Run a nonexistent Redis command
+        action:
+          type: dbQuery
+          database: redis-db
+          query: NOTAREALCOMMAND arg1 arg2
+        assertions:
+          - assertions:
+              - path: success
+                operator: eq
+                value: false
+              - path: error
+                operator: contains
+                value: unknown command

@@ -1,0 +1,195 @@
+---
+import DocsLayout from '../../layouts/DocsLayout.astro';
+import CodeBlock from '../../components/CodeBlock.astro';
+---
+
+<DocsLayout title="CLI Reference — Dokkimi Docs" description="Complete reference for all dokkimi CLI commands.">
+  <h1>CLI Reference</h1>
+  <p class="subtitle">Complete reference for all <code>dokkimi</code> CLI commands.</p>
+
+  <h2>Commands overview</h2>
+  <table>
+    <thead>
+      <tr><th>Command</th><th>Description</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>dokkimi init</code></td><td>Scaffold a <code>.dokkimi/</code> folder with example files</td></tr>
+      <tr><td><code>dokkimi validate [path]</code></td><td>Validate definition files without running</td></tr>
+      <tr><td><code>dokkimi run [target]</code></td><td>Run definition(s) and stream live results</td></tr>
+      <tr><td><code>dokkimi inspect [path]</code></td><td>Interactively inspect results from the last run</td></tr>
+      <tr><td><code>dokkimi dump [path]</code></td><td>Output raw JSON data dump for debugging</td></tr>
+      <tr><td><code>dokkimi baselines</code></td><td>Review and approve pending visual baselines</td></tr>
+      <tr><td><code>dokkimi doctor</code></td><td>Run environment pre-flight checks</td></tr>
+      <tr><td><code>dokkimi status</code></td><td>Show service and instance status</td></tr>
+      <tr><td><code>dokkimi clean</code></td><td>Stop all instances and clean up resources</td></tr>
+      <tr><td><code>dokkimi config</code></td><td>View and edit Dokkimi settings</td></tr>
+      <tr><td><code>dokkimi version</code></td><td>Show installed version</td></tr>
+    </tbody>
+  </table>
+
+  <h2>dokkimi run</h2>
+  <p>Resolves definitions, submits them, and streams live status. Exits with code 0 if all pass, 1 if any fail.</p>
+
+  <h3>Target argument</h3>
+  <p>The target is flexible, similar to Jest:</p>
+  <CodeBlock code={`# Path-based targets
+dokkimi run                          # .dokkimi/ in cwd (or nearest parent)
+dokkimi run /path/to/project         # Finds /path/to/project/.dokkimi/
+dokkimi run .dokkimi/                # Explicit .dokkimi/ directory
+dokkimi run .dokkimi/auth-tests      # Only definitions in that subfolder
+dokkimi run .dokkimi/auth.json       # A specific definition file
+
+# Pattern-based targets (matches file names/paths within .dokkimi/)
+dokkimi run auth                     # Substring match
+dokkimi run "auth/**"                # Glob pattern
+dokkimi run "auth.*service"          # Regex pattern`} lang="bash" />
+
+  <h3>Watch mode</h3>
+  <CodeBlock code={`dokkimi run --watch
+dokkimi run auth --watch`} lang="bash" />
+  <p>Watches <code>.dokkimi/**/*.&#123;json,yml,yaml&#125;</code> for changes (500ms debounce).</p>
+  <p>Keyboard controls:</p>
+  <ul>
+    <li><code>r</code> — re-run all</li>
+    <li><code>f</code> — re-run failed only</li>
+    <li><code>i</code> — inspect results (available after run completes)</li>
+    <li><code>b</code> — review baselines (shown when visual baselines are pending)</li>
+    <li><code>q</code> — quit</li>
+  </ul>
+
+  <h3>Post-run inspect prompt</h3>
+  <p>After a run completes (TTY only, non-watch), the CLI prompts: <code>Press i to inspect results, or any other key to exit...</code>. In CI/non-TTY environments, this is skipped.</p>
+
+  <h2>dokkimi inspect</h2>
+  <p>Full-screen interactive TUI for drilling into test results and traffic logs. Uses the terminal's alternate screen buffer.</p>
+
+  <h3>Navigation</h3>
+  <ul>
+    <li>Arrow keys + Enter to navigate menus</li>
+    <li>ESC or <code>q</code> to go back</li>
+    <li>Ctrl+C to exit</li>
+  </ul>
+
+  <h3>Per-definition drill-down</h3>
+  <ul>
+    <li><strong>Raw Definition</strong> — opens the definition JSON in your editor</li>
+    <li><strong>Test Logs</strong> — timestamps, events, errors</li>
+    <li><strong>Items</strong> — item status and console logs per service/database/mock</li>
+    <li><strong>Test Steps</strong> — drill into each test and individual step</li>
+  </ul>
+
+  <h3>Per-step detail view</h3>
+  <ul>
+    <li>Raw Step Definition</li>
+    <li>Test Logs (scoped to the step)</li>
+    <li>Assertions (pass/fail with expected vs actual)</li>
+    <li>Variables (before/after the step)</li>
+    <li>HTTP Traffic (inter-service calls during the step)</li>
+    <li>DB Queries (database operations during the step)</li>
+    <li>Console Logs (per-service stdout/stderr during the step)</li>
+  </ul>
+  <p>Selecting a log item opens it as a temp file in your <code>$EDITOR</code> (defaults to <code>code</code>).</p>
+
+  <h2>dokkimi baselines</h2>
+  <p>Interactive TUI for reviewing and approving pending visual baselines from the last run. Uses the alternate screen buffer.</p>
+  <p>When a test definition includes <code>screenshot</code> sub-steps with <code>match: true</code>, Dokkimi compares captures against baselines stored in <code>.dokkimi/&lt;project&gt;/baselines/</code>. New captures (no baseline yet) and failed diffs appear as pending baselines.</p>
+
+  <h3>Navigation</h3>
+  <p>Three-level drill-down: tests → baselines → detail.</p>
+  <ul>
+    <li>Arrow keys + Enter to navigate</li>
+    <li><code>y</code> / <code>a</code> ��� approve a baseline (writes the file immediately)</li>
+    <li><code>s</code> — skip a baseline (marks as skipped, no file written)</li>
+    <li><code>o</code> / →  / Enter — open images in your editor (detail view)</li>
+    <li><code>A</code> — approve all baselines at the current level</li>
+    <li>ESC / <code>q</code> / ← to go back</li>
+  </ul>
+  <p>Approved baselines are written to <code>.dokkimi/&lt;project&gt;/baselines/</code>. Commit the changes to git so they travel with the test definitions.</p>
+  <p>Also accessible via the <code>b</code> key after a run completes (when pending baselines are detected).</p>
+
+  <h2>dokkimi dump</h2>
+  <p>Outputs a complete JSON data dump of the last run — designed for piping to LLMs or scripts.</p>
+  <CodeBlock code={`dokkimi dump                             # Output to stdout
+dokkimi dump -o run-dump.json            # Write to file (streams, low memory)
+dokkimi dump --failed -o failures.json   # Only failed instances
+dokkimi dump .dokkimi/auth.json -o out.json  # Specific definitions only`} lang="bash" />
+
+  <h3>Options</h3>
+  <table>
+    <thead>
+      <tr><th>Option</th><th>Description</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>-o, --output &lt;file&gt;</code></td><td>Write to file instead of stdout (streams instance-by-instance)</td></tr>
+      <tr><td><code>--failed</code></td><td>Only include instances that failed</td></tr>
+      <tr><td><code>[path]</code></td><td>Filter to definitions matching a file or folder</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Output structure</h3>
+  <CodeBlock code={`{
+  "runId": "...",
+  "status": "COMPLETED|FAILED",
+  "createdAt": "...",
+  "completedAt": "...",
+  "instances": [
+    {
+      "name": "definition-name",
+      "status": "...",
+      "testStatus": "PASSED|FAILED|null",
+      "errorMessage": "...|null",
+      "definition": { ... },
+      "items": [ ... ],
+      "testExecutionLogs": [ ... ],
+      "assertionResults": [ ... ],
+      "httpLogs": [ ... ],
+      "databaseLogs": [ ... ],
+      "consoleLogs": [ ... ]
+    }
+  ]
+}`} lang="json" />
+
+  <h2>dokkimi doctor</h2>
+  <p>Checks your environment is ready to run tests:</p>
+  <ul>
+    <li>Node.js version (20+ required)</li>
+    <li>Docker daemon is running</li>
+    <li>Kubernetes cluster is reachable</li>
+    <li>Cluster has sufficient resources</li>
+    <li>Dokkimi internal components are deployed</li>
+  </ul>
+  <p>Each check reports pass, warn, or fail with a fix suggestion.</p>
+
+  <h2>dokkimi validate</h2>
+  <CodeBlock code={`dokkimi validate                  # Validate all definitions
+dokkimi validate .dokkimi/auth.json  # Validate a specific file`} lang="bash" />
+  <p>Checks that all <code>$ref</code> paths resolve, schemas are valid, and naming rules are followed — without deploying anything.</p>
+
+  <h2>Other commands</h2>
+
+  <h3>dokkimi init</h3>
+  <p>Scaffolds a <code>.dokkimi/</code> folder with example definitions, shared fragments, and init scripts.</p>
+
+  <h3>dokkimi status</h3>
+  <p>Shows the current state of Dokkimi services and any running test instances.</p>
+
+  <h3>dokkimi clean</h3>
+  <p>Stops all running instances, destroys their namespaces, and cleans up cluster resources.</p>
+
+  <h3>dokkimi config</h3>
+  <p>Interactive settings editor. Opens a full-screen menu with three categories:</p>
+  <ul>
+    <li><strong>Concurrency</strong> — max parallel namespaces and max booting namespaces</li>
+    <li><strong>Kubernetes context</strong> — select which context Dokkimi uses from your kubeconfig file</li>
+    <li><strong>Telemetry</strong> — enable or disable anonymous usage telemetry</li>
+  </ul>
+  <p>Settings are saved to <code>~/.dokkimi/config.json</code>. After making changes, you can reboot Dokkimi services immediately or exit with a reminder to run <code>dokkimi reboot</code>.</p>
+
+  <h3>dokkimi version</h3>
+  <p>Prints the installed version (e.g., <code>v0.1.0</code>).</p>
+
+  <div class="nav-links">
+    <a href="/docs/assertions">← Assertions</a>
+    <span></span>
+  </div>
+</DocsLayout>

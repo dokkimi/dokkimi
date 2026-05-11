@@ -1,0 +1,143 @@
+---
+
+---
+
+<section id="pricing" class="pricing">
+  <div class="container">
+    <h2 class="section-heading">Pricing</h2>
+    <p class="section-subtitle">
+      Free to run locally and in CI. Cloud pricing coming soon.
+    </p>
+    <div class="grid">
+      <div class="card">
+        <div class="card-header">
+          <h3>Community</h3>
+          <div class="price">Free</div>
+        </div>
+        <ul>
+          <li>Run on your machine with Docker + Kubernetes</li>
+          <li>Unlimited test definitions and runs</li>
+          <li>E2E UI testing with headless Chromium</li>
+          <li>Visual regression with screenshot diffing</li>
+          <li>Traffic interception, mocks, and database assertions</li>
+          <li>CI/CD with the GitHub Action</li>
+          <li>CLI + AI agent integration</li>
+        </ul>
+        <a href="/docs" class="card-cta">Get started</a>
+      </div>
+      <div class="card featured">
+        <div class="card-header">
+          <h3>Dokkimi Cloud</h3>
+          <div class="price">Coming soon</div>
+        </div>
+        <ul>
+          <li>Zero infrastructure — no k3s, no cluster setup</li>
+          <li>Fast parallel execution across dedicated VMs</li>
+          <li>Test results dashboard and history</li>
+          <li>Flaky test detection and regression tracking</li>
+          <li>Visual baseline management UI</li>
+        </ul>
+        <a href="#subscribe" class="card-cta">Join the waitlist</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<style>
+  .pricing {
+    padding: var(--section-spacing) 0;
+    background: var(--color-bg-soft);
+  }
+
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 24px;
+    max-width: 720px;
+    margin: 0 auto;
+  }
+
+  .card {
+    background: var(--color-bg-soft);
+    border: 1px solid var(--color-border);
+    border-radius: 12px;
+    padding: 36px;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .card.featured {
+    border-color: var(--color-primary);
+  }
+
+  .card-header {
+    margin-bottom: 24px;
+  }
+
+  .card-header h3 {
+    font-size: 1.25rem;
+    font-weight: 600;
+    margin-bottom: 8px;
+  }
+
+  .price {
+    font-size: 2rem;
+    font-weight: 700;
+    color: var(--color-accent);
+  }
+
+  .featured .price {
+    color: var(--color-primary-soft);
+  }
+
+  ul {
+    list-style: none;
+    flex: 1;
+    margin-bottom: 28px;
+  }
+
+  li {
+    font-size: 0.9rem;
+    color: var(--color-text-muted);
+    padding: 8px 0;
+    border-bottom: 1px solid var(--color-border);
+  }
+
+  li:last-child {
+    border-bottom: none;
+  }
+
+  .card-cta {
+    display: block;
+    text-align: center;
+    padding: 12px;
+    border: 1px solid var(--color-border);
+    border-radius: 8px;
+    font-weight: 500;
+    font-size: 0.925rem;
+    color: var(--color-text);
+    transition: all 0.2s;
+  }
+
+  .card-cta:hover {
+    border-color: var(--color-primary);
+    color: var(--color-primary-soft);
+  }
+
+  .featured .card-cta {
+    background: var(--color-primary);
+    border-color: var(--color-primary);
+  }
+
+  .featured .card-cta:hover {
+    background: var(--color-primary-soft);
+    border-color: var(--color-primary-soft);
+    color: white;
+  }
+
+  @media (max-width: 640px) {
+    .grid {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>

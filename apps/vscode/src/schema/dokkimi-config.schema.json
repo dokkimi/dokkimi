@@ -1,0 +1,22 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "dokkimi": {
+      "type": "string",
+      "description": "Target Dokkimi version (e.g., '0.1.0'). The CLI warns if this is newer than the installed version.",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+"
+    },
+    "env": {
+      "type": "object",
+      "description": "Build-time variables. Referenced via ${{KEY}} in definition files. Keys must be alphanumeric (letters, digits, underscores).",
+      "additionalProperties": {
+        "oneOf": [{ "type": "string" }, { "type": "number" }]
+      },
+      "propertyNames": {
+        "pattern": "^\\w+$"
+      }
+    }
+  }
+}

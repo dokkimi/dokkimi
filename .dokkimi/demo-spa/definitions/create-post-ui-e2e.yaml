@@ -1,0 +1,69 @@
+name: create-post-ui-e2e
+description: |
+  Fill the Create Post form in the DB Query Harness, submit, and verify the
+  full chain: UI click → HTTP POST to traffic-tester → INSERT into postgres.
+  Extracts the new post id from the rendered success message and then reads
+  it back from the DB via a separate step to confirm the row persisted.
+config:
+  timeoutSeconds: 240
+items:
+  - $ref: ../shared/frontend.yaml
+  - $ref: ../shared/traffic-tester.yaml
+  - $ref: ../shared/postgres.yaml
+tests:
+  - name: Create post via UI and verify DB row
+    variables:
+      pgConnStr: postgresql://dokkimi:dokkimi@postgres-db:5432/dokkimi
+      postTitle: End-to-end via Dokkimi
+      postBody: Created from the DbQueryHarness UI scenario
+    steps:
+      - name: Open the DB tab, fill form, submit
+        action:
+          type: ui
+          target: routing-test-ui
+          steps:
+            - $ref: ../shared/navigate-to-db-harness.yaml
+            - click: "[data-testid='db-create-title']"
+            - type:
+                selector: "[data-testid='db-create-title']"
+                text: '{{postTitle}}'
+            - type:
+                selector: "[data-testid='db-create-body']"
+                text: '{{postBody}}'
+            - click: "[data-testid='db-create-submit']"
+            - waitFor: "[data-testid='db-create-success']"
+            - extract:
+                newPostId:
+                  from: attribute
+                  selector: "[data-testid='db-create-success']"
+                  name: data-post-id
+            - screenshot: post-created
+        assertions:
+          - match:
+              method: POST
+              url: traffic-tester/query
+            assertions:
+              - path: response.status
+                operator: eq
+                value: 200
+              - path: request.body.queries[0].command
+                operator: contains
+                value: 'INSERT INTO posts'
+              - path: request.body.queries[0].command
+                operator: contains
+                value: '{{postTitle}}'
+      - name: Verify the post row exists in postgres
+        action:
+          type: dbQuery
+          database: postgres-db
+          query: 'SELECT id::text AS id, title FROM posts WHERE id = $1::int'
+          params:
+            '1': '{{newPostId}}'
+        assertions:
+          - assertions:
+              - path: $.data[0].id
+                operator: eq
+                value: '{{newPostId}}'
+              - path: $.data[0].title
+                operator: eq
+                value: '{{postTitle}}'

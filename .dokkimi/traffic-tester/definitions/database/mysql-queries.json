@@ -1,0 +1,194 @@
+{
+  "name": "mysql-queries",
+  "description": "MySQL integration — query and insert via service-a, verify via direct dbQuery",
+  "config": {
+    "timeoutSeconds": 120
+  },
+  "items": [
+    {
+      "$ref": "../../shared/service-a.yaml"
+    },
+    {
+      "$ref": "../../shared/mysql.json"
+    }
+  ],
+  "tests": [
+    {
+      "name": "Query seeded products via direct dbQuery",
+      "steps": [
+        {
+          "name": "Query all seeded products from MySQL",
+          "action": {
+            "type": "dbQuery",
+            "database": "mysql-db",
+            "query": "SELECT * FROM products ORDER BY id"
+          },
+          "assertions": [
+            {
+              "assertions": [
+                {
+                  "path": "success",
+                  "operator": "eq",
+                  "value": true
+                },
+                {
+                  "path": "data",
+                  "operator": "length",
+                  "value": 3
+                },
+                {
+                  "path": "data[0].name",
+                  "operator": "eq",
+                  "value": "Widget"
+                },
+                {
+                  "path": "data[1].name",
+                  "operator": "eq",
+                  "value": "Gadget"
+                },
+                {
+                  "path": "data[2].name",
+                  "operator": "eq",
+                  "value": "Doohickey"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Query seeded products via service",
+      "variables": {
+        "mysqlConnStr": "mysql://dokkimi:dokkimi@mysql-db:3306/dokkimi"
+      },
+      "steps": [
+        {
+          "name": "Query seeded products from MySQL through service-a",
+          "action": {
+            "type": "httpRequest",
+            "method": "POST",
+            "url": "service-a/query",
+            "headers": {
+              "Content-Type": "application/json"
+            },
+            "body": {
+              "queries": [
+                {
+                  "databaseType": "mysql",
+                  "connectionString": "{{mysqlConnStr}}",
+                  "command": "SELECT * FROM products ORDER BY id"
+                }
+              ]
+            }
+          },
+          "assertions": [
+            {
+              "assertions": [
+                {
+                  "path": "response.status",
+                  "operator": "eq",
+                  "value": 200
+                },
+                {
+                  "path": "response.body.queryResults",
+                  "operator": "type",
+                  "value": "array"
+                },
+                {
+                  "path": "response.body.queryResults[0][0].result[0].name",
+                  "operator": "eq",
+                  "value": "Widget"
+                },
+                {
+                  "path": "response.body.queryResults[0][0].result[1].name",
+                  "operator": "eq",
+                  "value": "Gadget"
+                },
+                {
+                  "path": "response.body.queryResults[0][0].result[2].name",
+                  "operator": "eq",
+                  "value": "Doohickey"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Insert and read back via service",
+      "variables": {
+        "mysqlConnStr": "mysql://dokkimi:dokkimi@mysql-db:3306/dokkimi",
+        "newProduct": "Thingamabob"
+      },
+      "steps": [
+        {
+          "name": "Insert a new product via service-a",
+          "action": {
+            "type": "httpRequest",
+            "method": "POST",
+            "url": "service-a/insert",
+            "headers": {
+              "Content-Type": "application/json"
+            },
+            "body": {
+              "queries": [
+                {
+                  "databaseType": "mysql",
+                  "connectionString": "{{mysqlConnStr}}",
+                  "command": "INSERT INTO products (name, price, stock) VALUES ('{{newProduct}}', 15.50, 75)"
+                }
+              ]
+            }
+          },
+          "assertions": [
+            {
+              "assertions": [
+                {
+                  "path": "response.status",
+                  "operator": "eq",
+                  "value": 200
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "Verify inserted product via direct DB query",
+          "action": {
+            "type": "dbQuery",
+            "database": "mysql-db",
+            "query": "SELECT name, price, stock FROM products WHERE name = 'Thingamabob'"
+          },
+          "assertions": [
+            {
+              "assertions": [
+                {
+                  "path": "success",
+                  "operator": "eq",
+                  "value": true
+                },
+                {
+                  "path": "data[0].name",
+                  "operator": "eq",
+                  "value": "Thingamabob"
+                },
+                {
+                  "path": "data[0].price",
+                  "operator": "eq",
+                  "value": 15.5
+                },
+                {
+                  "path": "data[0].stock",
+                  "operator": "eq",
+                  "value": 75
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

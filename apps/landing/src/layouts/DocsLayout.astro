@@ -1,0 +1,377 @@
+---
+import '../styles/global.css';
+import Nav from '../components/Nav.astro';
+import Footer from '../components/Footer.astro';
+import Analytics from '@vercel/analytics/astro';
+
+interface Props {
+  title: string;
+  description?: string;
+}
+
+const { title, description = 'Dokkimi documentation' } = Astro.props;
+
+const sections = [
+  { href: '/docs', label: 'Getting Started' },
+  { href: '/docs/ai-integration', label: 'AI Integration' },
+  { href: '/docs/project-structure', label: 'Project Structure' },
+  { href: '/docs/services', label: 'Services' },
+  { href: '/docs/databases', label: 'Databases' },
+  { href: '/docs/mocks', label: 'Mocks' },
+  { href: '/docs/refs', label: 'References ($ref)' },
+  { href: '/docs/tests-and-steps', label: 'Tests & Steps' },
+  { href: '/docs/actions', label: 'Actions' },
+  { href: '/docs/variables', label: 'Variables' },
+  { href: '/docs/assertions', label: 'Assertions' },
+  { href: '/docs/ci', label: 'CI Pipeline' },
+  { href: '/docs/cli', label: 'CLI Reference' },
+];
+
+const currentPath = Astro.url.pathname.replace(/\/$/, '') || '/docs';
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content={description} />
+    <meta name="generator" content={Astro.generator} />
+
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content={Astro.url.href} />
+    <meta property="og:image" content="https://dokkimi.com/og-image.png" />
+
+    <link rel="icon" href="/logo-teal.png" type="image/png" />
+    <link rel="preload" href="/logo-teal.png" as="image" />
+
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+
+    <title>{title}</title>
+  </head>
+  <body>
+    <Nav />
+    <div class="docs-layout">
+      <button class="sidebar-toggle" aria-label="Toggle docs sidebar">Menu</button>
+      <aside class="sidebar">
+        <div class="sidebar-inner">
+          <div class="search-box">
+            <input type="text" id="docs-search" placeholder="Search docs..." autocomplete="off" />
+          </div>
+          <nav class="sidebar-nav">
+            {sections.map((s) => (
+              <a
+                href={s.href}
+                class:list={['sidebar-link', { active: currentPath === s.href.replace(/\/$/, '') }]}
+              >
+                {s.label}
+              </a>
+            ))}
+          </nav>
+        </div>
+      </aside>
+      <main class="docs-content">
+        <slot />
+      </main>
+    </div>
+    <Footer />
+
+    <script>
+      const searchInput = document.getElementById('docs-search') as HTMLInputElement;
+      const links = document.querySelectorAll('.sidebar-link');
+
+      searchInput?.addEventListener('input', () => {
+        const query = searchInput.value.toLowerCase().trim();
+        links.forEach((link) => {
+          const text = link.textContent?.toLowerCase() || '';
+          (link as HTMLElement).style.display = !query || text.includes(query) ? '' : 'none';
+        });
+      });
+
+      const sidebar = document.querySelector('.sidebar');
+      const toggle = document.querySelector('.sidebar-toggle');
+
+      toggle?.addEventListener('click', () => {
+        sidebar?.classList.toggle('open');
+      });
+
+      // Close sidebar when a link is clicked (mobile)
+      links.forEach((link) => {
+        link.addEventListener('click', () => {
+          sidebar?.classList.remove('open');
+        });
+      });
+    </script>
+    <Analytics />
+  </body>
+</html>
+
+<style>
+  .docs-layout {
+    display: flex;
+    max-width: 1280px;
+    margin: 0 auto;
+    padding: 80px 24px 0;
+    min-height: 100vh;
+    position: relative;
+  }
+
+  .sidebar {
+    position: sticky;
+    top: 80px;
+    width: 240px;
+    flex-shrink: 0;
+    height: calc(100vh - 80px);
+    overflow-y: auto;
+    padding: 24px 0;
+    scrollbar-width: none;
+  }
+
+  .sidebar::-webkit-scrollbar {
+    display: none;
+  }
+
+  .sidebar-inner {
+    padding-right: 24px;
+    border-right: 1px solid var(--color-border);
+  }
+
+  .search-box {
+    margin-bottom: 20px;
+  }
+
+  .search-box input {
+    width: 100%;
+    padding: 8px 12px;
+    background: var(--color-bg-soft);
+    border: 1px solid var(--color-border);
+    border-radius: 6px;
+    color: var(--color-text);
+    font-family: var(--font-sans);
+    font-size: 0.85rem;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+
+  .search-box input::placeholder {
+    color: var(--color-text-muted);
+  }
+
+  .search-box input:focus {
+    border-color: var(--color-primary);
+  }
+
+  .sidebar-nav {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .sidebar-link {
+    display: block;
+    padding: 8px 12px;
+    font-size: 0.875rem;
+    color: var(--color-text-muted);
+    border-radius: 6px;
+    transition: all 0.15s;
+  }
+
+  .sidebar-link:hover {
+    color: var(--color-text);
+    background: var(--color-bg-soft);
+  }
+
+  .sidebar-link.active {
+    color: var(--color-primary-soft);
+    background: var(--color-bg-muted);
+    font-weight: 500;
+  }
+
+  .docs-content {
+    flex: 1;
+    min-width: 0;
+    padding: 24px 0 80px 48px;
+    max-width: 800px;
+  }
+
+  .sidebar-toggle {
+    display: none;
+  }
+
+  @media (max-width: 900px) {
+    .sidebar {
+      display: none;
+      position: fixed;
+      top: 64px;
+      left: 0;
+      right: 0;
+      width: 100%;
+      height: auto;
+      max-height: calc(100vh - 64px);
+      z-index: 50;
+      background: var(--color-bg);
+      border-bottom: 1px solid var(--color-border);
+      padding: 16px 24px;
+    }
+
+    .sidebar.open {
+      display: block;
+    }
+
+    .sidebar-inner {
+      border-right: none;
+      padding-right: 0;
+    }
+
+    .sidebar-toggle {
+      display: block;
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      z-index: 51;
+      padding: 10px 20px;
+      background: var(--color-primary);
+      color: white;
+      border: none;
+      border-radius: 8px;
+      font-family: var(--font-sans);
+      font-size: 0.875rem;
+      font-weight: 500;
+      cursor: pointer;
+    }
+
+    .docs-content {
+      padding-left: 0;
+    }
+  }
+</style>
+
+<style is:global>
+  /* Docs content styling */
+  .docs-content h1 {
+    font-size: 2.25rem;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    margin-bottom: 8px;
+    line-height: 1.2;
+  }
+
+  .docs-content .subtitle {
+    font-size: 1.05rem;
+    color: var(--color-text-muted);
+    margin-bottom: 48px;
+  }
+
+  .docs-content h2 {
+    font-size: 1.5rem;
+    font-weight: 600;
+    margin: 48px 0 16px;
+    padding-top: 16px;
+    border-top: 1px solid var(--color-border);
+  }
+
+  .docs-content h2:first-of-type {
+    border-top: none;
+    margin-top: 0;
+  }
+
+  .docs-content h3 {
+    font-size: 1.15rem;
+    font-weight: 600;
+    margin: 32px 0 12px;
+  }
+
+  .docs-content h4 {
+    font-size: 1rem;
+    font-weight: 600;
+    margin: 24px 0 8px;
+  }
+
+  .docs-content p {
+    margin-bottom: 16px;
+    color: var(--color-text-muted);
+    line-height: 1.75;
+    font-size: 0.925rem;
+  }
+
+  .docs-content ul,
+  .docs-content ol {
+    padding-left: 20px;
+    margin-bottom: 16px;
+  }
+
+  .docs-content li {
+    margin-bottom: 6px;
+    color: var(--color-text-muted);
+    font-size: 0.925rem;
+    line-height: 1.6;
+  }
+
+  .docs-content table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 24px;
+    font-size: 0.875rem;
+  }
+
+  .docs-content th {
+    text-align: left;
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--color-text-muted);
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--color-border);
+    white-space: nowrap;
+  }
+
+  .docs-content td {
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--color-border);
+    color: var(--color-text-muted);
+    vertical-align: top;
+  }
+
+  .docs-content td:first-child {
+    color: var(--color-text);
+    white-space: nowrap;
+  }
+
+  .docs-content pre {
+    margin-bottom: 24px;
+  }
+
+  .docs-content .callout {
+    background: var(--color-bg-muted);
+    border-left: 3px solid var(--color-primary);
+    padding: 16px 20px;
+    border-radius: 0 8px 8px 0;
+    margin-bottom: 24px;
+  }
+
+  .docs-content .callout p {
+    margin-bottom: 0;
+  }
+
+  .docs-content .callout strong {
+    color: var(--color-text);
+  }
+
+  .docs-content .nav-links {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 64px;
+    padding-top: 24px;
+    border-top: 1px solid var(--color-border);
+  }
+
+  .docs-content .nav-links a {
+    font-size: 0.9rem;
+    font-weight: 500;
+  }
+</style>

@@ -1,0 +1,90 @@
+---
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import Nav from '../../components/Nav.astro';
+import Footer from '../../components/Footer.astro';
+import { getCollection, render } from 'astro:content';
+
+export async function getStaticPaths() {
+  const tutorials = await getCollection('tutorials');
+  return tutorials.map((tutorial) => ({
+    params: { slug: tutorial.data.slug },
+    props: { tutorial },
+  }));
+}
+
+const { tutorial } = Astro.props;
+const { Content } = await render(tutorial);
+---
+
+<BaseLayout title={`${tutorial.data.title} — Dokkimi`} description={tutorial.data.description}>
+  <Nav />
+  <main class="container article">
+    <header>
+      <time datetime={tutorial.data.date}>
+        {new Date(tutorial.data.date).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}
+      </time>
+      <h1>{tutorial.data.title}</h1>
+    </header>
+    <div class="prose">
+      <Content />
+    </div>
+  </main>
+  <Footer />
+</BaseLayout>
+
+<style>
+  .article {
+    padding: 120px 0 0;
+    max-width: 720px;
+  }
+
+  time {
+    font-size: 0.85rem;
+    color: var(--color-text-muted);
+  }
+
+  h1 {
+    font-size: 2.25rem;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    margin: 12px 0 48px;
+    line-height: 1.2;
+  }
+
+  .prose :global(h2) {
+    font-size: 1.4rem;
+    font-weight: 600;
+    margin: 40px 0 16px;
+  }
+
+  .prose :global(h3) {
+    font-size: 1.15rem;
+    font-weight: 600;
+    margin: 32px 0 12px;
+  }
+
+  .prose :global(p) {
+    margin-bottom: 16px;
+    color: var(--color-text-muted);
+    line-height: 1.75;
+  }
+
+  .prose :global(ul),
+  .prose :global(ol) {
+    padding-left: 20px;
+    margin-bottom: 16px;
+    color: var(--color-text-muted);
+  }
+
+  .prose :global(li) {
+    margin-bottom: 6px;
+  }
+
+  .prose :global(a) {
+    color: var(--color-primary-soft);
+  }
+
+  .prose :global(a:hover) {
+    color: var(--color-accent);
+  }
+</style>

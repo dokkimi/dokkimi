@@ -1,0 +1,375 @@
+import {
+  ConflictException,
+  Injectable,
+  Logger,
+  NotFoundException,
+  OnApplicationBootstrap,
+} from '@nestjs/common';
+import { PrismaService } from '../prisma/prisma.service';
+import { TelemetryService } from '../telemetry/telemetry.service';
+import { InstanceStatus, RunStatus } from '@prisma/client';
+import { RunStorageService } from '../storage/run-storage.service';
+import { SubmitInstanceDto } from './dto/submit-instance.dto';
+import { NamespaceLifecycleService } from '../namespace-lifecycle/namespace-lifecycle.service';
+import {
+  RegistryCredentialsService,
+  type RegistryCredential,
+} from '../namespace-lifecycle/registry-credentials.service';
+import { HealthService } from '../health/health.service';
+import { RunCleanupService } from './run-cleanup.service';
+import { DeploymentSchedulerService } from './deployment-scheduler.service';
+import {
+  stripInitFileContent,
+  toDeployableDefinition,
+} from './definition-converter';
+
+@Injectable()
+export class RunsService implements OnApplicationBootstrap {
+  private readonly logger = new Logger(RunsService.name);
+
+  async onApplicationBootstrap() {
+    try {
+      await this.cleanup.recoverOrphanedRuns();
+    } catch (error) {
+      this.logger.warn(
+        `Failed to recover orphaned runs on startup: ${error instanceof Error ? error.message : error}`,
+      );
+    }
+  }
+
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly runStorage: RunStorageService,
+    private readonly lifecycle: NamespaceLifecycleService,
+    private readonly registryCredentials: RegistryCredentialsService,
+    private readonly healthService: HealthService,
+    private readonly telemetry: TelemetryService,
+    private readonly cleanup: RunCleanupService,
+    private readonly scheduler: DeploymentSchedulerService,
+  ) {}
+
+  async createRun(
+    definitionNames: string[],
+    credentials?: RegistryCredential[],
+  ) {
+    if (credentials?.length) {
+      const health = await this.healthService.getHealthStatus();
+      if (
+        health.checks.kubernetes.status === 'unhealthy' ||
+        health.checks.kubernetes.status === 'degraded'
+      ) {
+        throw new Error(
+          'Kubernetes cluster is not reachable. Run `dokkimi status` to check connectivity.',
+        );
+      }
+    }
+
+    const activeRun = await this.prisma.run.findFirst({
+      where: { status: { in: [RunStatus.PENDING, RunStatus.RUNNING] } },
+      select: { id: true },
+    });
+    if (activeRun) {
+      throw new ConflictException(
+        `A run is already in progress (${activeRun.id}). Stop it with \`dokkimi run --stop\` or wait for it to finish.`,
+      );
+    }
+
+    await this.cleanup.teardownExistingRuns();
+
+    const run = await this.prisma.run.create({
+      data: {
+        status: RunStatus.PENDING,
+        instances: {
+          create: definitionNames.map((name) => ({
+            name,
+            status: InstanceStatus.PENDING,
+          })),
+        },
+      },
+      include: {
+        instances: true,
+      },
+    });
+
+    if (credentials?.length) {
+      try {
+        await this.registryCredentials.createRunSecret(run.id, credentials);
+      } catch (err) {
+        await this.prisma.run.delete({ where: { id: run.id } });
+        throw err;
+      }
+    }
+
+    this.logger.log(
+      `Created run ${run.id} with ${run.instances.length} instance stubs`,
+    );
+
+    this.telemetry.track('ct_run_created', {
+      instance_count: run.instances.length,
+      has_registry_credentials: (credentials?.length ?? 0) > 0,
+    });
+
+    return {
+      runId: run.id,
+      instances: run.instances.map((inst) => ({
+        id: inst.id,
+        name: inst.name,
+        status: inst.status,
+      })),
+    };
+  }
+
+  async submitInstance(
+    runId: string,
+    instanceId: string,
+    dto: SubmitInstanceDto,
+  ) {
+    const run = await this.prisma.run.findUnique({ where: { id: runId } });
+    if (!run) {
+      throw new NotFoundException(`Run ${runId} not found`);
+    }
+
+    const instance = await this.prisma.namespaceInstance.findUnique({
+      where: { id: instanceId },
+    });
+    if (!instance || instance.runId !== runId) {
+      throw new NotFoundException(
+        `Instance ${instanceId} not found in run ${runId}`,
+      );
+    }
+
+    if (instance.status !== InstanceStatus.PENDING) {
+      this.logger.log(
+        `Instance ${instanceId} already ${instance.status}, skipping`,
+      );
+      return { instanceId, status: instance.status };
+    }
+
+    const { definition } = dto;
+
+    const snapshotDefinition = stripInitFileContent(definition);
+
+    await this.prisma.client.$transaction(async (tx) => {
+      for (const item of definition.items) {
+        await tx.instanceItem.create({
+          data: {
+            instanceId,
+            itemDefinitionName: item.name,
+          },
+        });
+      }
+
+      if (run.status === RunStatus.PENDING) {
+        await tx.run.update({
+          where: { id: runId },
+          data: { status: RunStatus.RUNNING },
+        });
+      }
+    });
+
+    await this.runStorage.writeDefinition(instanceId, snapshotDefinition);
+
+    const deployableDefinition = toDeployableDefinition(definition);
+    await this.runStorage.writeInitFiles(
+      instanceId,
+      deployableDefinition.items,
+    );
+
+    const def = definition as unknown as Record<string, unknown>;
+    const defItems = (def.items as any[]) || [];
+    const defTests = (def.tests as any[]) || [];
+
+    const itemTypes = { service: 0, database: 0, mock: 0 };
+    for (const item of defItems) {
+      const type = (item.type || '').toUpperCase();
+      if (type === 'SERVICE') {
+        itemTypes.service++;
+      } else if (type === 'DATABASE') {
+        itemTypes.database++;
+      } else if (type === 'MOCK') {
+        itemTypes.mock++;
+      }
+    }
+
+    let totalStepCount = 0;
+    let hasExtract = false;
+    for (const test of defTests) {
+      const steps = test.steps as any[] | undefined;
+      if (!Array.isArray(steps)) {
+        continue;
+      }
+      totalStepCount += steps.length;
+      for (const step of steps) {
+        if (step.extract) {
+          hasExtract = true;
+        }
+      }
+    }
+
+    this.telemetry.track('ct_instance_submitted', {
+      item_count: definition.items.length,
+      item_types: itemTypes,
+      has_tests: defTests.length > 0,
+      test_count: defTests.length,
+      total_step_count: totalStepCount,
+      has_init_files: defItems.some((i: any) => i.initFiles),
+      has_extract: hasExtract,
+    });
+
+    return { instanceId, status: 'PENDING' };
+  }
+
+  async getLatestRun() {
+    const run = await this.prisma.run.findFirst({
+      orderBy: { createdAt: 'desc' },
+      include: { instances: true },
+    });
+
+    if (!run) {
+      return null;
+    }
+
+    return {
+      runId: run.id,
+      status: run.status,
+      createdAt: run.createdAt,
+      completedAt: run.completedAt,
+      instances: run.instances.map((inst) => ({
+        id: inst.id,
+        name: inst.name,
+        status: inst.status,
+        testStatus: inst.testStatus,
+        errorMessage: inst.errorMessage,
+      })),
+    };
+  }
+
+  async getRunStatus(runId: string) {
+    const run = await this.prisma.run.findUnique({
+      where: { id: runId },
+      include: {
+        instances: {
+          include: { items: true },
+        },
+      },
+    });
+
+    if (!run) {
+      throw new NotFoundException(`Run ${runId} not found`);
+    }
+
+    if (run.status === RunStatus.PENDING || run.status === RunStatus.RUNNING) {
+      this.scheduler.deployPendingInstances(runId).catch((err) => {
+        this.logger.error(
+          `Failed to deploy pending instances for run ${runId}:`,
+          err,
+        );
+      });
+    }
+
+    return {
+      runId: run.id,
+      status: run.status,
+      createdAt: run.createdAt,
+      completedAt: run.completedAt,
+      cancelledAt: run.cancelledAt,
+      instances: run.instances.map((inst) => ({
+        id: inst.id,
+        name: inst.name,
+        status: inst.status,
+        testStatus: inst.testStatus,
+        errorMessage: inst.errorMessage,
+      })),
+    };
+  }
+
+  async stopCurrentRun() {
+    const activeRun = await this.prisma.run.findFirst({
+      where: {
+        status: { in: [RunStatus.PENDING, RunStatus.RUNNING] },
+      },
+      orderBy: { createdAt: 'desc' },
+      include: { instances: true },
+    });
+
+    if (!activeRun) {
+      this.logger.log('No active run to stop');
+      return { status: 'NO_ACTIVE_RUN' };
+    }
+
+    await this.cleanup.stopInstances(activeRun.instances);
+
+    await this.prisma.run.update({
+      where: { id: activeRun.id },
+      data: {
+        status: RunStatus.CANCELLED,
+        cancelledAt: new Date(),
+      },
+    });
+
+    await this.registryCredentials
+      .deleteRunSecret(activeRun.id)
+      .catch((err) => {
+        this.logger.warn(
+          `Failed to delete registry secret for run ${activeRun.id}: ${err}`,
+        );
+      });
+
+    this.logger.log(`Stopped run ${activeRun.id}`);
+    this.telemetry.track('ct_run_stopped', {
+      instances_stopped: activeRun.instances.length,
+    });
+    return { runId: activeRun.id, status: 'CANCELLED' };
+  }
+
+  async deleteRun(runId: string) {
+    const run = await this.prisma.run.findUnique({
+      where: { id: runId },
+      include: { instances: true },
+    });
+
+    if (!run) {
+      throw new NotFoundException(`Run ${runId} not found`);
+    }
+
+    await this.cleanup.stopInstances(run.instances);
+
+    await this.prisma.run.delete({ where: { id: runId } });
+
+    for (const instance of run.instances) {
+      await this.runStorage.deleteInstance(instance.id);
+    }
+
+    await this.registryCredentials.deleteRunSecret(runId).catch((err) => {
+      this.logger.warn(
+        `Failed to delete registry secret for run ${runId}: ${err}`,
+      );
+    });
+
+    this.logger.log(`Deleted run ${runId}`);
+    return { runId, status: 'DELETED' };
+  }
+
+  async handleValidationComplete(
+    instanceId: string,
+    passed: boolean,
+    error?: string,
+  ) {
+    await this.prisma.namespaceInstance.update({
+      where: { id: instanceId },
+      data: {
+        testStatus: passed ? 'PASSED' : 'FAILED',
+        testCompletedAt: new Date(),
+        errorMessage: error ?? null,
+      },
+    });
+
+    this.lifecycle.stopInstance(instanceId).catch((err) => {
+      this.logger.error(`Failed to stop instance ${instanceId}:`, err);
+    });
+  }
+
+  async handleInstancesStopped(runIds: string[]) {
+    return this.scheduler.handleInstancesStopped(runIds);
+  }
+}

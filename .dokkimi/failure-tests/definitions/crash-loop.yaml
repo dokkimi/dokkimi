@@ -1,0 +1,19 @@
+name: pod-logs-crash-loop
+description: Tests pod log capture for crash loops (previous + current container logs)
+config:
+  timeoutSeconds: 30
+items:
+  - $ref: ../shared/crash-loop.yaml
+tests:
+  - name: Should never run (service crash-loops)
+    steps:
+      - name: health check
+        action:
+          type: httpRequest
+          method: GET
+          url: crash-loop/health
+        assertions:
+          - assertions:
+              - path: response.status
+                operator: eq
+                value: 200

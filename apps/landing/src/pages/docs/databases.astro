@@ -1,0 +1,137 @@
+---
+import DocsLayout from '../../layouts/DocsLayout.astro';
+import CodeBlock from '../../components/CodeBlock.astro';
+---
+
+<DocsLayout title="Databases — Dokkimi Docs" description="Add Postgres, MySQL, MongoDB, or Redis instances to your test environment.">
+  <h1>Databases</h1>
+  <p class="subtitle">Add managed database instances to your test environment with automatic provisioning and seed scripts.</p>
+
+  <h2>Required fields</h2>
+  <table>
+    <thead>
+      <tr><th>Field</th><th>Type</th><th>Description</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>type</code></td><td><code>"DATABASE"</code></td><td>Item type</td></tr>
+      <tr><td><code>name</code></td><td>string</td><td>Unique name (1-63 chars). Used as DNS hostname for service connections.</td></tr>
+      <tr><td><code>database</code></td><td>enum</td><td><code>"postgres"</code>, <code>"mysql"</code>, <code>"mongodb"</code>, or <code>"redis"</code></td></tr>
+    </tbody>
+  </table>
+
+  <h2>Optional fields</h2>
+  <table>
+    <thead>
+      <tr><th>Field</th><th>Type</th><th>Default</th><th>Description</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>description</code></td><td>string</td><td>—</td><td>Human-readable description (max 500 chars)</td></tr>
+      <tr><td><code>version</code></td><td>string</td><td>per engine</td><td>Database image version tag (e.g. <code>"16"</code> for postgres:16). See defaults in engine details below.</td></tr>
+      <tr><td><code>dbName</code></td><td>string</td><td><code>dokkimi</code></td><td>Database/schema name</td></tr>
+      <tr><td><code>dbUser</code></td><td>string</td><td><code>dokkimi</code></td><td>Database username</td></tr>
+      <tr><td><code>dbPassword</code></td><td>string</td><td><code>dokkimi</code></td><td>Database password</td></tr>
+      <tr><td><code>initFilePath</code></td><td>string</td><td>—</td><td>Relative path to a single init script</td></tr>
+      <tr><td><code>initFilePaths</code></td><td>string[]</td><td>—</td><td>Relative paths to multiple init scripts (executed in order). Use one or the other, not both.</td></tr>
+      <tr><td><code>minCpu</code></td><td>number</td><td>—</td><td>Minimum CPU cores</td></tr>
+      <tr><td><code>minMemory</code></td><td>number</td><td>—</td><td>Minimum memory in MB</td></tr>
+      <tr><td><code>maxCpu</code></td><td>number</td><td>—</td><td>Maximum CPU cores</td></tr>
+      <tr><td><code>maxMemory</code></td><td>number</td><td>—</td><td>Maximum memory in MB</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Engine details</h2>
+  <table>
+    <thead>
+      <tr><th>Engine</th><th>Default version</th><th>Default image</th><th>Port</th><th>Default connection string</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>postgres</code></td><td><code>15</code></td><td>postgres:15</td><td>5432</td><td><code>postgresql://dokkimi:dokkimi@&#123;name&#125;:5432/dokkimi</code></td></tr>
+      <tr><td><code>mysql</code></td><td><code>8</code></td><td>mysql:8</td><td>3306</td><td><code>mysql://dokkimi:dokkimi@&#123;name&#125;:3306/dokkimi</code></td></tr>
+      <tr><td><code>mongodb</code></td><td><code>7</code></td><td>mongo:7</td><td>27017</td><td><code>mongodb://dokkimi:dokkimi@&#123;name&#125;:27017/dokkimi?authSource=admin</code></td></tr>
+      <tr><td><code>redis</code></td><td><code>7</code></td><td>redis:7-alpine</td><td>6379</td><td><code>redis://:dokkimi@&#123;name&#125;:6379</code></td></tr>
+    </tbody>
+  </table>
+  <p>Use the <code>version</code> field to pin a specific database version (e.g. <code>"version": "16"</code> produces <code>postgres:16</code>). The version string is used verbatim as the image tag — for Redis, that means <code>"version": "7"</code> produces <code>redis:7</code> (Debian-based); use <code>"7-alpine"</code> for the smaller Alpine variant.</p>
+
+  <h2>Examples</h2>
+
+  <h3>PostgreSQL</h3>
+  <CodeBlock code={`{
+  "type": "DATABASE",
+  "name": "postgres-db",
+  "database": "postgres",
+  "dbName": "myapp",
+  "dbUser": "appuser",
+  "dbPassword": "secret",
+  "initFilePath": "../init-files/schema.sql"
+}`} lang="json" />
+
+  <h3>MySQL</h3>
+  <CodeBlock code={`{
+  "type": "DATABASE",
+  "name": "mysql-db",
+  "database": "mysql",
+  "initFilePaths": ["../init-files/schema.sql", "../init-files/seed.sql"]
+}`} lang="json" />
+
+  <h3>MongoDB</h3>
+  <CodeBlock code={`{
+  "type": "DATABASE",
+  "name": "mongo-db",
+  "database": "mongodb",
+  "initFilePath": "../init-files/init.js"
+}`} lang="json" />
+
+  <h3>Redis</h3>
+  <CodeBlock code={`{
+  "type": "DATABASE",
+  "name": "redis-cache",
+  "database": "redis"
+}`} lang="json" />
+
+  <h2>Connection strings</h2>
+  <p>Use the database item's <code>name</code> as the hostname. The connection string format varies by engine. With the defaults (<code>dbUser: dokkimi</code>, <code>dbPassword: dokkimi</code>, <code>dbName: dokkimi</code>):</p>
+
+  <h3>PostgreSQL</h3>
+  <CodeBlock code="postgresql://dokkimi:dokkimi@postgres-db:5432/dokkimi" lang="bash" />
+
+  <h3>MySQL</h3>
+  <CodeBlock code="mysql://dokkimi:dokkimi@mysql-db:3306/dokkimi" lang="bash" />
+
+  <h3>MongoDB</h3>
+  <CodeBlock code="mongodb://dokkimi:dokkimi@mongo-db:27017/dokkimi?authSource=admin" lang="bash" />
+  <div class="callout">
+    <p><strong>MongoDB requires <code>?authSource=admin</code>.</strong> Dokkimi creates MongoDB users as root users that authenticate against the <code>admin</code> database. Without this parameter, authentication will fail.</p>
+  </div>
+
+  <h3>Redis</h3>
+  <CodeBlock code="redis://:dokkimi@redis-cache:6379" lang="bash" />
+  <p>Note the <code>://:password@</code> format — Redis has no username, just a password.</p>
+
+  <p>If you customize <code>dbUser</code>, <code>dbPassword</code>, or <code>dbName</code>, substitute those values in the connection string accordingly.</p>
+
+  <h2>Init script readiness</h2>
+  <p>For MongoDB, Dokkimi guarantees that all init scripts have fully executed before tests begin. It injects a small sentinel script that runs after your init files, and the database is only marked as ready once the sentinel is confirmed. This eliminates flaky failures caused by tests starting before seeded data is available.</p>
+  <div class="callout">
+    <p><strong>Reserved database name:</strong> The <code>dokkimi_internal</code> database is reserved for Dokkimi's internal readiness checks. Do not use this name in your init scripts or application code.</p>
+  </div>
+
+  <h2>Connecting services to databases</h2>
+  <p>Pass the connection string to your service via environment variables:</p>
+  <CodeBlock code={`{
+  "type": "SERVICE",
+  "name": "my-service",
+  "port": 3000,
+  "healthCheck": "/health",
+  "env": [
+    { "name": "DATABASE_URL", "value": "postgresql://dokkimi:dokkimi@postgres-db:5432/dokkimi" },
+    { "name": "REDIS_URL", "value": "redis://:dokkimi@redis-cache:6379" },
+    { "name": "MONGO_URL", "value": "mongodb://dokkimi:dokkimi@mongo-db:27017/dokkimi?authSource=admin" }
+  ]
+}`} lang="json" />
+
+  <div class="nav-links">
+    <a href="/docs/services">← Services</a>
+    <a href="/docs/mocks">Mocks →</a>
+  </div>
+</DocsLayout>

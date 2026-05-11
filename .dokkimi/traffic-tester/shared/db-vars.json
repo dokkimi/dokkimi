@@ -1,0 +1,4 @@
+{
+  "pgConnStr": "postgresql://dokkimi:dokkimi@postgres-db:5432/dokkimi",
+  "redisConnStr": "redis://:dokkimi@redis-db:6379"
+}

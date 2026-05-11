@@ -1,0 +1,105 @@
+name: oauth-token-failure
+description: |
+  OAuth flow where the token-exchange endpoint returns 401 instead of
+  issuing a token. Browser still completes authorize → callback, but the
+  callback's server-side fetch to oauth2.googleapis.com fails. The
+  callback handler catches the error and 303s back to /login?error=
+  oauth_failed; tests assert the user lands on the login page with the
+  error banner visible, that the userinfo leg never fired, and that no
+  session cookie was set (a follow-up /dashboard visit still redirects
+  to /login).
+config:
+  timeoutSeconds: 180
+items:
+  - $ref: ../shared/nextjs-demo.yaml
+  - $ref: ../shared/postgres.yaml
+  - $ref: ../shared/mock-google-authorize.yaml
+  - type: MOCK
+    name: mock-google-token-failure
+    description: Token exchange always fails with invalid_grant.
+    mockMethod: POST
+    mockOrigin: nextjs-demo
+    mockTarget: oauth2.googleapis.com
+    mockPath: /token
+    mockResponseStatus: 401
+    mockResponseHeaders:
+      Content-Type: application/json
+    mockResponseBody:
+      error: invalid_grant
+      error_description: Authorization code expired or already used.
+tests:
+  - name: Token exchange failure surfaces an error banner and leaves the user signed out
+    steps:
+      - name: Click sign-in and follow the chain to the failure page
+        action:
+          type: ui
+          target: nextjs-demo
+          steps:
+            - visit: /login
+            - click: "[data-testid='login-google-button']"
+            - waitFor: "[data-testid='oauth-error']"
+            - screenshot:
+                name: login-with-error-banner
+                selector: "[data-testid='login-page']"
+                match: true
+            - extract:
+                errorPath:
+                  from: url
+                  part: pathname
+                errorQuery:
+                  from: url
+                  part: search
+        assertions:
+          - assertions:
+              - path: $.extracted.errorPath
+                operator: eq
+                value: /login
+              - path: $.extracted.errorQuery
+                operator: contains
+                value: error=oauth_failed
+          - match:
+              method: GET
+              url: accounts.google.com/o/oauth2/v2/auth
+            count:
+              operator: eq
+              value: 1
+          - match:
+              origin: nextjs-demo
+              method: POST
+              url: oauth2.googleapis.com/token
+            count:
+              operator: eq
+              value: 1
+            assertions:
+              - path: response.status
+                operator: eq
+                value: 401
+          - match:
+              origin: nextjs-demo
+              method: GET
+              url: www.googleapis.com/oauth2/v3/userinfo
+            count:
+              operator: eq
+              value: 0
+      - name: Dashboard remains inaccessible after the failed sign-in
+        action:
+          type: ui
+          target: nextjs-demo
+          steps:
+            - visit: /dashboard
+            - waitFor: "[data-testid='login-page']"
+            - extract:
+                finalPath:
+                  from: url
+                  part: pathname
+                dashboardCardExists:
+                  from: exists
+                  selector: "[data-testid='dashboard-page']"
+        assertions:
+          - assertions:
+              - path: $.extracted.finalPath
+                operator: eq
+                value: /login
+              - path: $.extracted.dashboardCardExists
+                operator: eq
+                value: 'false'

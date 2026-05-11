@@ -1,0 +1,40 @@
+name: failure-ui-timeline
+description: |
+  Deliberately submits the Create Post form with an empty title. The FE's
+  client-side validation blocks submission and renders an inline error. The
+  test verifies the error DOM is present and that NO HTTP POST to
+  traffic-tester was made. Primary purpose: exercise the UI timeline's
+  failure-and-empty-child-list rendering so the CLI's formatter has a real
+  case to walk through with `dokkimi inspect`.
+config:
+  timeoutSeconds: 120
+items:
+  - $ref: ../shared/frontend.yaml
+  - $ref: ../shared/traffic-tester.yaml
+tests:
+  - name: Empty title shows validation error and fires no backend call
+    steps:
+      - name: Submit with empty title
+        action:
+          type: ui
+          target: routing-test-ui
+          steps:
+            - $ref: ../shared/navigate-to-db-harness.yaml
+            - click: "[data-testid='db-create-submit']"
+            - waitFor: "[data-testid='db-error-create']"
+            - extract:
+                errorText:
+                  from: text
+                  selector: "[data-testid='db-error-create']"
+            - screenshot: validation-error
+        assertions:
+          - assertions:
+              - path: $.extracted.errorText
+                operator: contains
+                value: title is required
+          - match:
+              method: POST
+              url: traffic-tester/query
+            count:
+              operator: eq
+              value: 0

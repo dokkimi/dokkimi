@@ -1,0 +1,147 @@
+---
+import { Code } from 'astro:components';
+
+const yaml = `# .dokkimi/blog/definitions/publish-post.yaml
+name: author-publish-flow
+items:
+  - $ref: ../shared/web-app.yaml
+  - $ref: ../shared/api-gateway.yaml
+  - $ref: ../shared/post-service.yaml
+  - $ref: ../shared/postgres-db.yaml
+  - $ref: ../shared/mock-auth0-jwks.yaml
+
+tests:
+  - name: Publish a new post
+    steps:
+      # Drive the browser through the publish flow
+      - action:
+          type: ui
+          url: http://web-app:3000/posts/new
+          subSteps:
+            - action: type
+              selector: '#title'
+              value: 'My new post'
+            - action: click
+              selector: '[data-testid="publish-btn"]'
+            - action: waitForSelector
+              selector: '[data-testid="success-toast"]'
+            - action: screenshot
+              name: post-published
+        assertions:
+          # Verify the API call went through correctly
+          - match:
+              origin: web-app
+              method: POST
+              url: api-gateway/v1/posts
+            assertions:
+              - path: response.status
+                operator: eq
+                value: 201
+
+      # Query the database directly to verify
+      - action:
+          type: dbQuery
+          database: postgres-db
+          query: "SELECT title FROM posts WHERE title = 'My new post'"
+        assertions:
+          - assertions:
+              - path: data.length
+                operator: eq
+                value: 1`;
+---
+
+<section id="how-it-works" class="how-it-works">
+  <div class="container">
+    <h2 class="section-heading">How It Works</h2>
+    <p class="section-subtitle">
+      Define your services, databases, and tests in simple YAML/JSON. Dokkimi handles the rest.
+    </p>
+    <div class="example">
+      <Code code={yaml} lang="yaml" theme="tokyo-night" />
+      <div class="steps">
+        <div class="step">
+          <span class="step-num">1</span>
+          <div>
+            <strong>Define</strong>
+            <p>Declare services, databases, mocks, and UI flows in YAML. Reference shared fragments with <code>$ref</code>.</p>
+          </div>
+        </div>
+        <div class="step">
+          <span class="step-num">2</span>
+          <div>
+            <strong>Run</strong>
+            <p><code>dokkimi run</code> deploys everything into an isolated K8s namespace — services, database, browser, and all.</p>
+          </div>
+        </div>
+        <div class="step">
+          <span class="step-num">3</span>
+          <div>
+            <strong>Assert Everywhere</strong>
+            <p>Assert on HTTP traffic between services, query the database directly, and diff screenshots against baselines for visual regression detection.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<style>
+  .how-it-works {
+    padding: var(--section-spacing) 0;
+  }
+
+  .example {
+    display: grid;
+    grid-template-columns: 1fr 360px;
+    gap: 48px;
+    align-items: start;
+  }
+
+  .steps {
+    display: flex;
+    flex-direction: column;
+    gap: 32px;
+    padding-top: 8px;
+  }
+
+  .step {
+    display: flex;
+    gap: 16px;
+    align-items: flex-start;
+  }
+
+  .step-num {
+    flex-shrink: 0;
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--color-primary);
+    color: white;
+    font-weight: 600;
+    font-size: 0.875rem;
+    border-radius: 50%;
+  }
+
+  .step strong {
+    display: block;
+    margin-bottom: 4px;
+  }
+
+  .step p {
+    font-size: 0.9rem;
+    color: var(--color-text-muted);
+    line-height: 1.6;
+  }
+
+  @media (max-width: 900px) {
+    .example {
+      grid-template-columns: 1fr;
+    }
+
+    .steps {
+      order: -1;
+    }
+  }
+</style>

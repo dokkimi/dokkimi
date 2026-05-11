@@ -1,0 +1,286 @@
+{
+  "name": "mongodb-advanced",
+  "description": "Coverage for MongoDB operations beyond find — updateOne, deleteOne, insertOne with variable extraction and verification",
+  "config": {
+    "timeoutSeconds": 120
+  },
+  "items": [
+    {
+      "$ref": "../../shared/service-a.yaml"
+    },
+    {
+      "$ref": "../../shared/mongo.yaml"
+    }
+  ],
+  "tests": [
+    {
+      "name": "Insert a new order, query it, update it, then verify",
+      "variables": {
+        "newOrderId": "ORD-100",
+        "customerEmail": "charlie@example.com"
+      },
+      "steps": [
+        {
+          "name": "Insert a new order into MongoDB",
+          "action": {
+            "type": "dbQuery",
+            "database": "mongo-db",
+            "query": "{\"operation\":\"insertOne\",\"collection\":\"orders\",\"document\":{\"orderId\":\"{{newOrderId}}\",\"customer\":\"{{customerEmail}}\",\"items\":[{\"sku\":\"Thingamajig\",\"qty\":5,\"price\":14.99}],\"total\":74.95,\"status\":\"pending\"}}"
+          },
+          "assertions": [
+            {
+              "assertions": [
+                {
+                  "path": "success",
+                  "operator": "eq",
+                  "value": true
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "Query the inserted order",
+          "action": {
+            "type": "dbQuery",
+            "database": "mongo-db",
+            "query": "{\"operation\":\"findOne\",\"collection\":\"orders\",\"filter\":{\"orderId\":\"{{newOrderId}}\"}}"
+          },
+          "assertions": [
+            {
+              "assertions": [
+                {
+                  "path": "success",
+                  "operator": "eq",
+                  "value": true
+                },
+                {
+                  "path": "data[0].orderId",
+                  "operator": "eq",
+                  "value": "{{newOrderId}}"
+                },
+                {
+                  "path": "data[0].customer",
+                  "operator": "eq",
+                  "value": "{{customerEmail}}"
+                },
+                {
+                  "path": "data[0].status",
+                  "operator": "eq",
+                  "value": "pending"
+                },
+                {
+                  "path": "data[0].total",
+                  "operator": "gt",
+                  "value": 50
+                },
+                {
+                  "path": "data[0].items",
+                  "operator": "type",
+                  "value": "array"
+                },
+                {
+                  "path": "data[0].items",
+                  "operator": "length",
+                  "value": 1
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "Update the order status to completed",
+          "action": {
+            "type": "dbQuery",
+            "database": "mongo-db",
+            "query": "{\"operation\":\"updateOne\",\"collection\":\"orders\",\"filter\":{\"orderId\":\"{{newOrderId}}\"},\"update\":{\"$set\":{\"status\":\"completed\"}}}"
+          },
+          "assertions": [
+            {
+              "assertions": [
+                {
+                  "path": "success",
+                  "operator": "eq",
+                  "value": true
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "Verify the update was applied",
+          "action": {
+            "type": "dbQuery",
+            "database": "mongo-db",
+            "query": "{\"operation\":\"findOne\",\"collection\":\"orders\",\"filter\":{\"orderId\":\"{{newOrderId}}\"}}"
+          },
+          "assertions": [
+            {
+              "assertions": [
+                {
+                  "path": "success",
+                  "operator": "eq",
+                  "value": true
+                },
+                {
+                  "path": "data[0].status",
+                  "operator": "eq",
+                  "value": "completed"
+                },
+                {
+                  "path": "data[0].status",
+                  "operator": "ne",
+                  "value": "pending"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Delete an order and verify it is gone",
+      "variables": {
+        "targetOrderId": "ORD-002"
+      },
+      "steps": [
+        {
+          "name": "Verify the order exists before deletion",
+          "action": {
+            "type": "dbQuery",
+            "database": "mongo-db",
+            "query": "{\"operation\":\"findOne\",\"collection\":\"orders\",\"filter\":{\"orderId\":\"{{targetOrderId}}\"}}"
+          },
+          "assertions": [
+            {
+              "assertions": [
+                {
+                  "path": "success",
+                  "operator": "eq",
+                  "value": true
+                },
+                {
+                  "path": "data[0].orderId",
+                  "operator": "eq",
+                  "value": "{{targetOrderId}}"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "Delete the order",
+          "action": {
+            "type": "dbQuery",
+            "database": "mongo-db",
+            "query": "{\"operation\":\"deleteOne\",\"collection\":\"orders\",\"filter\":{\"orderId\":\"{{targetOrderId}}\"}}"
+          },
+          "assertions": [
+            {
+              "assertions": [
+                {
+                  "path": "success",
+                  "operator": "eq",
+                  "value": true
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "Verify the order no longer exists",
+          "action": {
+            "type": "dbQuery",
+            "database": "mongo-db",
+            "query": "{\"operation\":\"find\",\"collection\":\"orders\",\"filter\":{\"orderId\":\"{{targetOrderId}}\"}}"
+          },
+          "assertions": [
+            {
+              "assertions": [
+                {
+                  "path": "success",
+                  "operator": "eq",
+                  "value": true
+                },
+                {
+                  "path": "data",
+                  "operator": "isEmpty"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Query seeded data with variable extraction",
+      "steps": [
+        {
+          "name": "Find completed orders and extract customer email",
+          "action": {
+            "type": "dbQuery",
+            "database": "mongo-db",
+            "query": "{\"operation\":\"find\",\"collection\":\"orders\",\"filter\":{\"status\":\"completed\"}}"
+          },
+          "extract": {
+            "completedCustomer": "$.data[0].customer",
+            "completedOrderId": "$.data[0].orderId"
+          },
+          "assertions": [
+            {
+              "assertions": [
+                {
+                  "path": "success",
+                  "operator": "eq",
+                  "value": true
+                },
+                {
+                  "path": "data",
+                  "operator": "notEmpty"
+                },
+                {
+                  "path": "data[0].status",
+                  "operator": "eq",
+                  "value": "completed"
+                },
+                {
+                  "path": "data[0].customer",
+                  "operator": "matches",
+                  "value": "^.+@example\\.com$"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "Use extracted customer to find all their orders",
+          "action": {
+            "type": "dbQuery",
+            "database": "mongo-db",
+            "query": "{\"operation\":\"find\",\"collection\":\"orders\",\"filter\":{\"customer\":\"{{completedCustomer}}\"}}"
+          },
+          "assertions": [
+            {
+              "assertions": [
+                {
+                  "path": "success",
+                  "operator": "eq",
+                  "value": true
+                },
+                {
+                  "path": "data",
+                  "operator": "notEmpty"
+                },
+                {
+                  "path": "data[0].orderId",
+                  "operator": "eq",
+                  "value": "{{completedOrderId}}"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

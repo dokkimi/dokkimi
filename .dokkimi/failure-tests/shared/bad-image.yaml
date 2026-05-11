@@ -1,0 +1,5 @@
+type: SERVICE
+name: bad-image
+image: ghcr.io/dokkimi/does-not-exist:v999
+port: 3000
+healthCheck: /health

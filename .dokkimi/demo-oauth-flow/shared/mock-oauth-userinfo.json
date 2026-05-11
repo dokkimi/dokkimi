@@ -1,0 +1,16 @@
+{
+  "type": "MOCK",
+  "name": "mock-oauth-userinfo",
+  "description": "Mocks the OAuth provider's userinfo endpoint — returns user profile for the access token",
+  "mockMethod": "GET",
+  "mockTarget": "auth.provider.com",
+  "mockPath": "/userinfo",
+  "mockResponseStatus": 200,
+  "mockResponseHeaders": { "Content-Type": "application/json" },
+  "mockResponseBody": {
+    "sub": "oauth_user_bob",
+    "email": "bob@example.com",
+    "name": "Bob Smith",
+    "email_verified": true
+  }
+}

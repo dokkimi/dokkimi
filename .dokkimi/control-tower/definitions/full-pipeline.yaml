@@ -1,0 +1,274 @@
+name: full-pipeline
+description: >-
+  End-to-end pipeline targeting the single Control Tower service — log ingestion,
+  log query, test completion handling, and database writes all flow through one
+  process after the service consolidation.
+items:
+  - $ref: ../shared/control-tower.yaml
+  - $ref: ../shared/postgres-db.json
+  - $ref: ../shared/mysql-db.yaml
+  - $ref: ../shared/redis-cache.yaml
+  - $ref: ../shared/mock-k8s-api.yaml
+  - $ref: ../shared/mock-posthog.yaml
+tests:
+  - name: Control Tower healthy
+    steps:
+      - name: CT health
+        action:
+          type: httpRequest
+          method: GET
+          url: control-tower/health
+        assertions:
+          - assertions:
+              - path: response.status
+                operator: eq
+                value: 200
+  - name: Full e2e flow — CT runs + log ingestion + test completion
+    timeoutSeconds: 90
+    steps:
+      - name: 'CT: Create a run'
+        action:
+          type: httpRequest
+          method: POST
+          url: control-tower/runs
+          headers:
+            Content-Type: application/json
+          body:
+            definitions:
+              - full-pipeline
+        extract:
+          runId: $.body.runId
+          instanceId: $.body.instances[0].id
+        assertions:
+          - assertions:
+              - path: response.status
+                operator: in
+                value:
+                  - 200
+                  - 201
+              - path: response.body.runId
+                operator: exists
+      - name: Parallel requests
+        action:
+          type: parallel
+          actions:
+            - type: httpRequest
+              method: POST
+              url: control-tower/logs/http
+              headers:
+                Content-Type: application/json
+              body:
+                instanceId: '{{instanceId}}'
+                instanceItemId: '{{instanceId}}'
+                method: POST
+                url: /api/checkout
+                statusCode: 200
+                origin: gateway
+                target: checkout-service
+                requestBody:
+                  cart:
+                    - item-1
+                    - item-2
+                responseBody:
+                  orderId: ORD-999
+                  total: 59.99
+            - type: httpRequest
+              method: POST
+              url: control-tower/logs/console
+              headers:
+                Content-Type: application/json
+              body:
+                instanceId: '{{instanceId}}'
+                instanceItemId: '{{instanceId}}'
+                log: '[INFO] Checkout completed for order ORD-999'
+            - type: httpRequest
+              method: POST
+              url: control-tower/logs/database
+              headers:
+                Content-Type: application/json
+              body:
+                instanceId: '{{instanceId}}'
+                instanceItemId: '{{instanceId}}'
+                databaseType: postgresql
+                databaseName: postgres-db
+                query: INSERT INTO orders (id, total) VALUES ('ORD-999', 59.99)
+                success: true
+                rowsAffected: 1
+                duration: 8
+      - name: Wait for CT to persist all logs
+        action:
+          type: wait
+          durationMs: 1500
+      - name: Parallel requests
+        action:
+          type: parallel
+          actions:
+            - type: httpRequest
+              method: GET
+              url: control-tower/logs/http/instance/{{instanceId}}
+            - type: httpRequest
+              method: GET
+              url: control-tower/logs/console/instance/{{instanceId}}
+            - type: httpRequest
+              method: GET
+              url: control-tower/logs/database/instance/{{instanceId}}
+      - name: 'CT: Process test completion'
+        action:
+          type: httpRequest
+          method: POST
+          url: control-tower/test-complete
+          headers:
+            Content-Type: application/json
+          body:
+            testRunId: '{{instanceId}}'
+            status: success
+            partial: false
+            stepExecutions:
+              - stepIndex: 0
+                startTime: '2026-01-01T00:00:00.000Z'
+                endTime: '2026-01-01T00:00:01.000Z'
+        assertions:
+          - assertions:
+              - path: response.status
+                operator: eq
+                value: 202
+      - name: Verify complete data in shared database
+        action:
+          type: dbQuery
+          database: postgres-db
+          query: >-
+            SELECT (SELECT COUNT(*) FROM http_logs WHERE "instanceId" = '{{instanceId}}') as http_count, (SELECT
+            COUNT(*) FROM console_logs WHERE "instanceId" = '{{instanceId}}') as console_count, (SELECT COUNT(*)
+            FROM database_logs WHERE "instanceId" = '{{instanceId}}') as db_count
+        assertions:
+          - assertions:
+              - path: success
+                operator: eq
+                value: true
+              - path: data[0].http_count
+                operator: gte
+                value: 1
+              - path: data[0].console_count
+                operator: gte
+                value: 1
+              - path: data[0].db_count
+                operator: gte
+                value: 1
+  - name: MySQL cross-engine database verification
+    steps:
+      - name: Parallel requests
+        action:
+          type: parallel
+          actions:
+            - type: dbQuery
+              database: mysql-db
+              query: SELECT * FROM service_registry ORDER BY service_name
+            - type: dbQuery
+              database: postgres-db
+              query: SELECT * FROM namespace_instances WHERE id = 'inst-1'
+      - name: Write to MySQL audit log
+        action:
+          type: dbQuery
+          database: mysql-db
+          query: >-
+            INSERT INTO audit_log (id, action, entity_type, entity_id, details) VALUES ('audit-e2e', 'E2E_TEST',
+            'PIPELINE', 'full-pipeline', '{"test": true}')
+        assertions:
+          - assertions:
+              - path: success
+                operator: eq
+                value: true
+      - name: Read back from MySQL
+        action:
+          type: dbQuery
+          database: mysql-db
+          query: SELECT * FROM audit_log WHERE id = 'audit-e2e'
+        assertions:
+          - assertions:
+              - path: success
+                operator: eq
+                value: true
+              - path: data
+                operator: length
+                value: 1
+              - path: data[0].action
+                operator: eq
+                value: E2E_TEST
+              - path: data[0].entity_type
+                operator: eq
+                value: PIPELINE
+  - name: Redis cache operations
+    steps:
+      - name: Set a value in Redis
+        action:
+          type: dbQuery
+          database: redis-cache
+          query: SET pipeline-test-key pipeline-running
+        assertions:
+          - assertions:
+              - path: success
+                operator: eq
+                value: true
+      - name: Get value back from Redis
+        action:
+          type: dbQuery
+          database: redis-cache
+          query: GET pipeline-test-key
+        assertions:
+          - assertions:
+              - path: success
+                operator: eq
+                value: true
+  - name: Concurrent load — parallel log ingestion
+    variables:
+      instanceId: inst-1
+    steps:
+      - name: Parallel requests
+        action:
+          type: parallel
+          actions:
+            - type: httpRequest
+              method: POST
+              url: control-tower/logs/http
+              headers:
+                Content-Type: application/json
+              body:
+                instanceId: '{{instanceId}}'
+                instanceItemId: inst-item-1
+                method: GET
+                url: /api/load-test-1
+                statusCode: 200
+            - type: httpRequest
+              method: POST
+              url: control-tower/logs/http
+              headers:
+                Content-Type: application/json
+              body:
+                instanceId: '{{instanceId}}'
+                instanceItemId: inst-item-1
+                method: GET
+                url: /api/load-test-2
+                statusCode: 200
+            - type: httpRequest
+              method: POST
+              url: control-tower/logs/http
+              headers:
+                Content-Type: application/json
+              body:
+                instanceId: '{{instanceId}}'
+                instanceItemId: inst-item-1
+                method: GET
+                url: /api/load-test-3
+                statusCode: 200
+            - type: httpRequest
+              method: POST
+              url: control-tower/logs/console
+              headers:
+                Content-Type: application/json
+              body:
+                instanceId: '{{instanceId}}'
+                instanceItemId: inst-item-1
+                log: '[INFO] Concurrent ingestion test'
+            - type: httpRequest
+              method: GET
+              url: control-tower/health

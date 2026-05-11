@@ -1,0 +1,7 @@
+{
+  "type": "DATABASE",
+  "name": "postgres-db",
+  "description": "Primary PostgreSQL database for Dokkimi platform services (Prisma)",
+  "database": "postgres",
+  "initFilePath": "../init-files/schema.sql"
+}

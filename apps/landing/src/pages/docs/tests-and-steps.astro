@@ -1,0 +1,100 @@
+---
+import DocsLayout from '../../layouts/DocsLayout.astro';
+import CodeBlock from '../../components/CodeBlock.astro';
+---
+
+<DocsLayout title="Tests & Steps — Dokkimi Docs" description="Structure test cases with sequential steps and parallel actions.">
+  <h1>Tests &amp; Steps</h1>
+  <p class="subtitle">Structure test cases with sequential steps and parallel actions.</p>
+
+  <h2>Test structure</h2>
+  <p>Tests are defined in the top-level <code>tests</code> array. Each test is independent and contains a flat list of steps that run sequentially.</p>
+  <CodeBlock code={`{
+  "name": "my-test-suite",
+  "items": [ ... ],
+  "tests": [
+    {
+      "name": "Create and fetch a user",
+      "variables": { "email": "test@example.com" },
+      "steps": [
+        { "name": "Step 1", ... },
+        { "name": "Step 2", ... }
+      ]
+    }
+  ]
+}`} lang="json" />
+
+  <h2>Sequential and parallel execution</h2>
+  <p>Steps are a flat array and run sequentially, one after another. When you need concurrent execution, use the <code>parallel</code> action type to run multiple actions simultaneously within a single step:</p>
+  <CodeBlock code={`"steps": [
+  {
+    "name": "Create both users in parallel",
+    "action": {
+      "type": "parallel",
+      "actions": [
+        { "type": "httpRequest", "method": "POST", "url": "api-gateway/api/users", "body": { "name": "User A" } },
+        { "type": "httpRequest", "method": "POST", "url": "api-gateway/api/users", "body": { "name": "User B" } }
+      ]
+    }
+  },
+  {
+    "name": "List all users",
+    "action": { "type": "httpRequest", "method": "GET", "url": "api-gateway/api/users" }
+  }
+]`} lang="json" />
+
+  <h2>TestDefinition fields</h2>
+  <table>
+    <thead>
+      <tr><th>Field</th><th>Type</th><th>Required</th><th>Default</th><th>Description</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>name</code></td><td>string</td><td>Yes</td><td>—</td><td>Name of the test</td></tr>
+      <tr><td><code>description</code></td><td>string</td><td>No</td><td>—</td><td>What the test verifies</td></tr>
+      <tr><td><code>timeoutSeconds</code></td><td>integer</td><td>No</td><td>—</td><td>Timeout for entire test</td></tr>
+      <tr><td><code>stopOnFailure</code></td><td>boolean</td><td>No</td><td><code>true</code></td><td>Stop subsequent steps when any assertion fails</td></tr>
+      <tr><td><code>variables</code></td><td>object</td><td>No</td><td>—</td><td>Test-level variables (overrides definition-level). Supports <a href="/docs/refs"><code>$ref</code></a>.</td></tr>
+      <tr><td><code>steps</code></td><td>array</td><td>Yes</td><td>—</td><td>Sequential list of test steps</td></tr>
+    </tbody>
+  </table>
+
+  <h2>TestStep fields</h2>
+  <table>
+    <thead>
+      <tr><th>Field</th><th>Type</th><th>Required</th><th>Default</th><th>Description</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>name</code></td><td>string</td><td>No</td><td>—</td><td>Step name</td></tr>
+      <tr><td><code>description</code></td><td>string</td><td>No</td><td>—</td><td>Step description</td></tr>
+      <tr><td><code>action</code></td><td>object</td><td>Yes</td><td>—</td><td>Action to execute (see <a href="/docs/actions">Actions</a>)</td></tr>
+      <tr><td><code>extract</code></td><td>object</td><td>No</td><td>—</td><td>Extract variables from response (see <a href="/docs/variables">Variables</a>)</td></tr>
+      <tr><td><code>assertions</code></td><td>array</td><td>No</td><td>—</td><td>Assertion blocks (see <a href="/docs/assertions">Assertions</a>)</td></tr>
+      <tr><td><code>stopOnFailure</code></td><td>boolean</td><td>No</td><td><code>true</code></td><td>Stop test when assertions in this step fail</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Definition-level variables</h2>
+  <p>The definition file itself can have a top-level <code>variables</code> field alongside <code>name</code>, <code>items</code>, and <code>tests</code>. These are shared across all tests in the definition. Test-level variables override definition-level variables with the same key.</p>
+  <CodeBlock code={`{
+  "name": "my-suite",
+  "variables": {
+    "baseEmail": "test@example.com"
+  },
+  "items": [ ... ],
+  "tests": [
+    {
+      "name": "Test 1",
+      "variables": {
+        "baseEmail": "override@example.com"
+      },
+      "steps": [ ... ]
+    }
+  ]
+}`} lang="json" />
+  <p>See <a href="/docs/variables">Variables</a> for full details on interpolation, extraction, and scoping.</p>
+
+  <div class="nav-links">
+    <a href="/docs/refs">← References ($ref)</a>
+    <a href="/docs/actions">Actions →</a>
+  </div>
+</DocsLayout>

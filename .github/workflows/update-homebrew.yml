@@ -1,0 +1,83 @@
+name: Sync Homebrew Tap
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'Formula/dokkimi.rb'
+    tags:
+      - 'brew-v*'
+
+jobs:
+  sync-formula:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout dokkimi
+        uses: actions/checkout@v4
+
+      - name: Extract version from formula
+        id: fversion
+        run: |
+          VERSION=$(grep -oE 'dokkimi-[0-9]+\.[0-9]+\.[0-9]+\.tgz' Formula/dokkimi.rb | head -1 | sed -E 's/dokkimi-([0-9.]+)\.tgz/\1/')
+          if [ -z "$VERSION" ]; then
+            echo "Could not extract version from Formula/dokkimi.rb"
+            exit 1
+          fi
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "Formula references dokkimi@${VERSION}"
+
+      - name: Verify formula matches tag version
+        if: startsWith(github.ref, 'refs/tags/brew-v')
+        env:
+          FORMULA_VERSION: ${{ steps.fversion.outputs.version }}
+        run: |
+          TAG_VERSION="${GITHUB_REF_NAME#brew-v}"
+          if [ "$FORMULA_VERSION" != "$TAG_VERSION" ]; then
+            echo "Tag is brew-v${TAG_VERSION} but Formula references v${FORMULA_VERSION}."
+            echo "Commit the formula bump before tagging."
+            exit 1
+          fi
+
+      - name: Check if npm has this version
+        id: npmcheck
+        env:
+          VERSION: ${{ steps.fversion.outputs.version }}
+        run: |
+          if npm view "dokkimi@${VERSION}" version >/dev/null 2>&1; then
+            echo "sync=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "dokkimi@${VERSION} is not on npm yet — skipping sync."
+            echo "The sync will run again when publish-package.sh pushes the brew-v${VERSION} tag."
+            echo "sync=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout tap repo
+        if: steps.npmcheck.outputs.sync == 'true'
+        uses: actions/checkout@v4
+        with:
+          repository: dokkimi/homebrew-tap
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          path: tap
+
+      - name: Copy formula to tap
+        if: steps.npmcheck.outputs.sync == 'true'
+        run: cp Formula/dokkimi.rb tap/Formula/dokkimi.rb
+
+      - name: Commit and push to tap
+        if: steps.npmcheck.outputs.sync == 'true'
+        working-directory: tap
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git diff --quiet Formula/dokkimi.rb; then
+            echo "Tap already in sync — nothing to commit"
+            exit 0
+          fi
+          git add Formula/dokkimi.rb
+          if [[ "$GITHUB_REF" == refs/tags/brew-v* ]]; then
+            VERSION="${GITHUB_REF_NAME#brew-v}"
+            git commit -m "bump dokkimi to v${VERSION}"
+          else
+            git commit -m "sync dokkimi formula from main@${GITHUB_SHA:0:7}"
+          fi
+          git push

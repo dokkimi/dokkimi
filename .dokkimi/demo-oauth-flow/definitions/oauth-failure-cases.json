@@ -1,0 +1,126 @@
+{
+  "name": "oauth-failure-cases",
+  "description": "Tests how the service handles OAuth provider failures — uses mocks that return errors instead of success responses",
+  "items": [
+    { "$ref": "../shared/api-service.json" },
+    {
+      "$ref": "../shared/postgres-db.json",
+      "initFilePath": "../init-files/schema.sql"
+    },
+    {
+      "type": "MOCK",
+      "name": "mock-oauth-token-rejected",
+      "description": "Simulates the OAuth provider rejecting an invalid authorization code",
+      "mockMethod": "POST",
+      "mockTarget": "auth.provider.com",
+      "mockPath": "/oauth/token",
+      "mockResponseStatus": 400,
+      "mockResponseHeaders": { "Content-Type": "application/json" },
+      "mockResponseBody": {
+        "error": "invalid_grant",
+        "error_description": "The authorization code has expired or is invalid."
+      }
+    },
+    {
+      "type": "MOCK",
+      "name": "mock-oauth-userinfo-noop",
+      "description": "Userinfo mock that should never be called (token exchange fails first)",
+      "mockMethod": "GET",
+      "mockTarget": "auth.provider.com",
+      "mockPath": "/userinfo",
+      "mockResponseStatus": 200,
+      "mockResponseHeaders": { "Content-Type": "application/json" },
+      "mockResponseBody": {
+        "sub": "should-not-reach",
+        "email": "nope@example.com",
+        "name": "Nope"
+      }
+    }
+  ],
+  "tests": [
+    {
+      "name": "Token exchange failure returns 500 and creates no user",
+      "description": "When the OAuth provider rejects the code, our service should fail gracefully without creating a user",
+      "steps": [
+        {
+          "name": "Callback with rejected code",
+          "action": {
+            "type": "httpRequest",
+            "method": "GET",
+            "url": "api-service/auth/callback?code=expired_code&state=test"
+          },
+          "assertions": [
+            {
+              "assertions": [
+                { "path": "response.status", "operator": "eq", "value": 500 },
+                {
+                  "path": "response.body.message",
+                  "operator": "eq",
+                  "value": "Authentication failed"
+                }
+              ]
+            },
+            {
+              "match": {
+                "origin": "api-service",
+                "method": "POST",
+                "url": "auth.provider.com/oauth/token"
+              },
+              "count": { "operator": "eq", "value": 1 },
+              "assertions": [
+                { "path": "response.status", "operator": "eq", "value": 400 },
+                {
+                  "path": "response.body.error",
+                  "operator": "eq",
+                  "value": "invalid_grant"
+                }
+              ]
+            },
+            {
+              "match": {
+                "origin": "api-service",
+                "method": "GET",
+                "url": "auth.provider.com/userinfo"
+              },
+              "count": { "operator": "eq", "value": 0 }
+            },
+            {
+              "service": "api-service",
+              "consoleAssertions": [
+                {
+                  "message": {
+                    "operator": "contains",
+                    "value": "Token exchange failed"
+                  },
+                  "count": { "operator": "gte", "value": 1 }
+                },
+                {
+                  "message": {
+                    "operator": "contains",
+                    "value": "OAuth callback failed"
+                  },
+                  "count": { "operator": "gte", "value": 1 }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "No user was created in the database",
+          "action": {
+            "type": "dbQuery",
+            "database": "postgres-db",
+            "query": "SELECT COUNT(*) as count FROM users WHERE oauth_id != 'oauth_user_alice'"
+          },
+          "assertions": [
+            {
+              "assertions": [
+                { "path": "data[0].count", "operator": "eq", "value": 0 }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

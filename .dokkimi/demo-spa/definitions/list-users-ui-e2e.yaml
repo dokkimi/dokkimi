@@ -1,0 +1,62 @@
+name: list-users-ui-e2e
+description: |
+  Drive the DB Query Harness UI to list seeded users, extract names from the
+  rendered list, and assert the backend HTTP call reached traffic-tester with
+  the expected SELECT query. Exercises the UI → HTTP correlation half of the
+  timeline; the DB query it triggers produces the HTTP correlation log.
+config:
+  timeoutSeconds: 180
+items:
+  - $ref: ../shared/frontend.yaml
+  - $ref: ../shared/traffic-tester.yaml
+  - $ref: ../shared/postgres.yaml
+tests:
+  - name: List users shows seeded names and fires a SELECT
+    variables:
+      pgConnStr: postgresql://dokkimi:dokkimi@postgres-db:5432/dokkimi
+    steps:
+      - name: Switch to DB Query Harness and list users
+        action:
+          type: ui
+          target: routing-test-ui
+          steps:
+            - $ref: ../shared/navigate-to-db-harness.yaml
+            - click: "[data-testid='db-list-users']"
+            - waitFor: "[data-testid='db-users-list']"
+            - extract:
+                aliceName:
+                  from: text
+                  selector: "[data-testid='db-user-name-1']"
+                bobName:
+                  from: text
+                  selector: "[data-testid='db-user-name-2']"
+            # Smoke test for the screenshot+match flow. First run yields
+            # verdict=no-baseline (surfaces under `dokkimi baselines pending`);
+            # after `dokkimi baselines approve users-list`, subsequent runs
+            # diff against `.dokkimi/namespace-routing-test/baselines/users-list.png`.
+            # Presence of the `match` block (even empty) is what enables the
+            # post-run diff; without it this would be a pure evidence capture.
+            - screenshot:
+                name: users-list
+                selector: "[data-testid='db-users-list']"
+                match: true
+        assertions:
+          - match:
+              method: POST
+              url: traffic-tester/query
+            assertions:
+              - path: response.status
+                operator: eq
+                value: 200
+              - path: request.body.queries[0].databaseType
+                operator: eq
+                value: postgres
+              - path: request.body.queries[0].command
+                operator: contains
+                value: SELECT
+              - path: request.body.queries[0].command
+                operator: contains
+                value: users
+              - path: response.body.queryResults[0][0].result[0].name
+                operator: eq
+                value: Alice

@@ -1,0 +1,110 @@
+name: mixed-operations
+description: Combined HTTP requests, database queries, and logging in a single action — plus parallel multi-engine queries
+config:
+  timeoutSeconds: 120
+items:
+  - $ref: ../../shared/service-a.yaml
+  - $ref: ../../shared/service-b.json
+  - $ref: ../../shared/postgres.yaml
+  - $ref: ../../shared/mysql.json
+  - $ref: ../../shared/redis.json
+tests:
+  - name: Parallel queries across multiple database engines
+    variables:
+      pgConnStr: postgresql://dokkimi:dokkimi@postgres-db:5432/dokkimi
+      mysqlConnStr: mysql://dokkimi:dokkimi@mysql-db:3306/dokkimi
+      redisConnStr: redis://:dokkimi@redis-db:6379
+    steps:
+      - name: Execute Postgres, MySQL, and Redis queries in parallel
+        action:
+          type: httpRequest
+          method: POST
+          url: service-a/multi-query
+          headers:
+            Content-Type: application/json
+          body:
+            queries:
+              - databaseType: postgres
+                connectionString: '{{pgConnStr}}'
+                command: SELECT COUNT(*) AS user_count FROM users
+              - databaseType: mysql
+                connectionString: '{{mysqlConnStr}}'
+                command: SELECT COUNT(*) AS product_count FROM products
+              - databaseType: redis
+                connectionString: '{{redisConnStr}}'
+                command: SET parallel-test "works"
+        assertions:
+          - assertions:
+              - path: response.status
+                operator: eq
+                value: 200
+              - path: response.body.queryResults
+                operator: length
+                value: 3
+  - name: Mixed HTTP call and database queries with logging
+    variables:
+      pgConnStr: postgresql://dokkimi:dokkimi@postgres-db:5432/dokkimi
+      redisConnStr: redis://:dokkimi@redis-db:6379
+    steps:
+      - name: Execute HTTP call and DB queries together
+        action:
+          type: httpRequest
+          method: POST
+          url: service-a/mixed
+          headers:
+            Content-Type: application/json
+          body:
+            preRequestLogs:
+              - 'MIXED: Starting combined operation'
+            requests:
+              - baseURL: http://service-b
+                url: /ping
+                method: POST
+                data:
+                  response:
+                    value:
+                      pong: true
+            queries:
+              - databaseType: postgres
+                connectionString: '{{pgConnStr}}'
+                command: SELECT COUNT(*) AS cnt FROM users
+              - databaseType: redis
+                connectionString: '{{redisConnStr}}'
+                command: SET mixed-test "combined"
+            postRequestLogs:
+              - 'MIXED: Operation complete'
+        assertions:
+          - assertions:
+              - path: response.status
+                operator: eq
+                value: 200
+              - path: response.body.results
+                operator: length
+                value: 1
+              - path: response.body.results[0].pong
+                operator: eq
+                value: true
+              - path: response.body.queryResults
+                operator: length
+                value: 2
+          - match:
+              origin: service-a
+              method: POST
+              url: service-b/ping
+            count:
+              operator: eq
+              value: 1
+          - service: service-a
+            consoleAssertions:
+              - message:
+                  operator: contains
+                  value: 'MIXED: Starting combined operation'
+                count:
+                  operator: gte
+                  value: 1
+              - message:
+                  operator: contains
+                  value: 'MIXED: Operation complete'
+                count:
+                  operator: gte
+                  value: 1

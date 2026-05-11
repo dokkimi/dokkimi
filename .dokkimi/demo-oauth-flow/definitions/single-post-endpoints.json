@@ -1,0 +1,118 @@
+{
+  "name": "single-post-endpoints",
+  "description": "Tests GET /api/posts/:id — fetching individual posts by ID, including published, draft, and non-existent posts",
+  "items": [
+    { "$ref": "../shared/api-service.json" },
+    {
+      "$ref": "../shared/postgres-db.json",
+      "initFilePath": "../init-files/schema.sql"
+    }
+  ],
+  "variables": {
+    "publishedPostId": "b1b2c3d4-0000-0000-0000-000000000001",
+    "draftPostId": "b1b2c3d4-0000-0000-0000-000000000003"
+  },
+  "tests": [
+    {
+      "name": "Fetch a published post by ID",
+      "steps": [
+        {
+          "name": "GET /api/posts/:id for a published post",
+          "action": {
+            "type": "httpRequest",
+            "method": "GET",
+            "url": "api-service/api/posts/{{publishedPostId}}"
+          },
+          "assertions": [
+            {
+              "assertions": [
+                { "path": "response.status", "operator": "eq", "value": 200 },
+                {
+                  "path": "response.body.id",
+                  "operator": "eq",
+                  "value": "{{publishedPostId}}"
+                },
+                {
+                  "path": "response.body.title",
+                  "operator": "eq",
+                  "value": "Getting Started with Microservices"
+                },
+                {
+                  "path": "response.body.published",
+                  "operator": "eq",
+                  "value": true
+                },
+                {
+                  "path": "response.body.author.name",
+                  "operator": "eq",
+                  "value": "Alice Johnson"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Draft posts are accessible by direct ID",
+      "description": "GET /api/posts/:id does not filter by published — drafts are accessible if you know the ID. The public feed (GET /api/posts) is what hides them.",
+      "steps": [
+        {
+          "name": "GET /api/posts/:id for a draft post",
+          "action": {
+            "type": "httpRequest",
+            "method": "GET",
+            "url": "api-service/api/posts/{{draftPostId}}"
+          },
+          "assertions": [
+            {
+              "assertions": [
+                { "path": "response.status", "operator": "eq", "value": 200 },
+                {
+                  "path": "response.body.id",
+                  "operator": "eq",
+                  "value": "{{draftPostId}}"
+                },
+                {
+                  "path": "response.body.published",
+                  "operator": "eq",
+                  "value": false
+                },
+                {
+                  "path": "response.body.title",
+                  "operator": "eq",
+                  "value": "Draft: Advanced Patterns"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Non-existent post returns 404",
+      "steps": [
+        {
+          "name": "GET /api/posts/:id for a fake ID",
+          "action": {
+            "type": "httpRequest",
+            "method": "GET",
+            "url": "api-service/api/posts/00000000-0000-0000-0000-000000000000"
+          },
+          "assertions": [
+            {
+              "assertions": [
+                { "path": "response.status", "operator": "eq", "value": 404 },
+                {
+                  "path": "response.body.message",
+                  "operator": "eq",
+                  "value": "Post not found"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

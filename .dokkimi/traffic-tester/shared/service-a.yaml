@@ -1,0 +1,2 @@
+$ref: ./base-service.yaml
+name: service-a

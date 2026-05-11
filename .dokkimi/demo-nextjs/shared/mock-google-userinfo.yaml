@@ -1,0 +1,18 @@
+type: MOCK
+name: mock-google-userinfo
+description: |
+  Server-to-server userinfo lookup. The `sub` value matches the seeded
+  user in init.sql so the upsertUser call hits the existing row instead
+  of creating a new one — keeps the bookmarks FK chain intact.
+mockMethod: GET
+mockOrigin: nextjs-demo
+mockTarget: www.googleapis.com
+mockPath: /oauth2/v3/userinfo
+mockResponseStatus: 200
+mockResponseHeaders:
+  Content-Type: application/json
+mockResponseBody:
+  sub: google-oauth-12345
+  email: alice@example.com
+  name: Alice Anderson
+  picture: https://example.com/alice.jpg

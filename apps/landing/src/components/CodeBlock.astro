@@ -1,0 +1,69 @@
+---
+import { Code } from 'astro:components';
+
+interface Props {
+  code: string;
+  lang?: string;
+}
+
+const { code: rawCode, lang = 'json' } = Astro.props;
+
+// Trim and dedent: remove common leading whitespace from all lines
+const trimmed = rawCode.trim();
+const lines = trimmed.split('\n');
+const indents = lines.filter(l => l.trim().length > 0).map(l => l.match(/^(\s*)/)?.[1].length ?? 0);
+const minIndent = indents.length > 0 ? Math.min(...indents) : 0;
+const code = minIndent > 0 ? lines.map(l => l.slice(minIndent)).join('\n') : trimmed;
+---
+
+<div class="code-block">
+  <button class="copy-btn" aria-label="Copy code">Copy</button>
+  <Code code={code.trim()} lang={lang} theme="github-dark-default" />
+</div>
+
+<style>
+  .code-block {
+    position: relative;
+    margin-bottom: 24px;
+  }
+
+  .copy-btn {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    padding: 4px 10px;
+    font-size: 0.75rem;
+    font-family: var(--font-sans);
+    color: var(--color-text-muted);
+    background: var(--color-bg-muted);
+    border: 1px solid var(--color-border);
+    border-radius: 4px;
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity 0.15s, color 0.15s, border-color 0.15s;
+    z-index: 1;
+  }
+
+  .code-block:hover .copy-btn {
+    opacity: 1;
+  }
+
+  .copy-btn:hover {
+    color: var(--color-text);
+    border-color: var(--color-primary);
+  }
+</style>
+
+<script>
+  document.querySelectorAll('.code-block').forEach((block) => {
+    const btn = block.querySelector('.copy-btn');
+    const code = block.querySelector('code');
+    btn?.addEventListener('click', async () => {
+      if (code) {
+        await navigator.clipboard.writeText(code.textContent || '');
+        btn.textContent = 'Copied!';
+        setTimeout(() => (btn.textContent = 'Copy'), 1500);
+      }
+    });
+  });
+</script>

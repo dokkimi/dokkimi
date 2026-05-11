@@ -1,0 +1,7 @@
+type: SERVICE
+name: routing-test-ui
+description: React UI fixture with routing + DB query scenarios
+image: ghcr.io/dokkimi/demo-spa:0.3.1
+port: 80
+healthCheck: /
+uiPath: /

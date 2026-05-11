@@ -1,0 +1,98 @@
+name: postgres-multi-instance
+description: |
+  Two independent PostgreSQL instances in the same namespace, each with
+  its own schema and seed data. Validates that the wire protocol proxy,
+  K8s Service routing, health checks, and test-agent connection pooling
+  all work correctly when multiple postgres databases coexist.
+config:
+  timeoutSeconds: 120
+items:
+  - type: DATABASE
+    name: users-db
+    database: postgres
+    initFilePath: ../../init-files/init.sql
+  - type: DATABASE
+    name: orders-db
+    database: postgres
+    initFilePath: ../../init-files/init-postgres-orders.sql
+tests:
+  - name: Each instance has its own schema
+    steps:
+      - name: Parallel requests
+        action:
+          type: parallel
+          actions:
+            - type: dbQuery
+              database: users-db
+              query: 'SELECT COUNT(*)::int AS cnt FROM users'
+            - type: dbQuery
+              database: orders-db
+              query: 'SELECT COUNT(*)::int AS cnt FROM orders'
+  - name: users table does not exist in orders-db
+    steps:
+      - name: Query users table on orders-db should fail
+        action:
+          type: dbQuery
+          database: orders-db
+          query: 'SELECT * FROM users'
+        assertions:
+          - assertions:
+              - path: success
+                operator: eq
+                value: false
+              - path: error
+                operator: contains
+                value: users
+
+  - name: orders table does not exist in users-db
+    steps:
+      - name: Query orders table on users-db should fail
+        action:
+          type: dbQuery
+          database: users-db
+          query: 'SELECT * FROM orders'
+        assertions:
+          - assertions:
+              - path: success
+                operator: eq
+                value: false
+              - path: error
+                operator: contains
+                value: orders
+
+  - name: Parallel writes to both instances
+    steps:
+      - name: Parallel requests
+        action:
+          type: parallel
+          actions:
+            - type: dbQuery
+              database: users-db
+              query: "INSERT INTO users (email, name) VALUES ('dave@example.com', 'Dave') RETURNING id, name"
+            - type: dbQuery
+              database: orders-db
+              query: "INSERT INTO orders (customer_name, total_cents, status) VALUES ('Dave', 3500, 'pending') RETURNING id, customer_name"
+  - name: Read back from both instances after writes
+    steps:
+      - name: Parallel requests
+        action:
+          type: parallel
+          actions:
+            - type: dbQuery
+              database: users-db
+              query: "SELECT name, email FROM users WHERE email = 'dave@example.com'"
+            - type: dbQuery
+              database: orders-db
+              query: "SELECT customer_name, total_cents, status FROM orders WHERE customer_name = 'Dave'"
+  - name: Typed results from both instances
+    steps:
+      - name: Parallel requests
+        action:
+          type: parallel
+          actions:
+            - type: dbQuery
+              database: users-db
+              query: 'SELECT id, name FROM users WHERE id = 1'
+            - type: dbQuery
+              database: orders-db
+              query: 'SELECT id, total_cents FROM orders WHERE id = 1'

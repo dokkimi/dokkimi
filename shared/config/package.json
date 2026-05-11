@@ -1,0 +1,20 @@
+{
+  "name": "@dokkimi/config",
+  "version": "0.3.6",
+  "description": "Centralized configuration for Dokkimi platform",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch --preserveWatchOutput",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "js-yaml": "^4.1.1"
+  },
+  "devDependencies": {
+    "@types/js-yaml": "^4.0.9",
+    "@types/node": "^25.6.2",
+    "typescript": "^6.0.3"
+  }
+}

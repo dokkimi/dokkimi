@@ -1,0 +1,90 @@
+# Service endpoints (all required, no defaults)
+services:
+  controlTower:
+    protocol: http
+    host: localhost
+    port: 19001
+
+  interceptor:
+    port: 80
+
+  testAgent:
+    port: 80
+
+  chromium:
+    port: 9222
+
+# Cluster watcher poll intervals (in-process module inside Control Tower)
+clusterWatcher:
+  idlePollIntervalMs: 1000
+  activePollIntervalMs: 1000
+
+# Frontend configuration
+frontend:
+  vite:
+    protocol: http
+    host: localhost
+    port: 5173
+
+# Kubernetes configuration
+kubernetes:
+  dnsIP: 10.96.0.10
+  namespacePrefix: dokkimi
+  maxConcurrentNamespaces: 6
+  maxBootingNamespaces: 2
+
+# Network configuration
+network:
+  dns:
+    nameserver: 127.0.0.1
+  proxy:
+    noProxy: localhost,127.0.0.1
+
+# External services
+external:
+  helm:
+    installDocs: https://helm.sh/docs/intro/install/
+
+browser:
+  defaultViewportWidth: 1280
+  defaultViewportHeight: 720
+
+# Circuit breaker for Kubernetes API calls (milliseconds)
+circuitBreaker:
+  timeout: 10000
+  errorThresholdPercentage: 75
+  resetTimeout: 30000
+
+# Timeouts (milliseconds)
+timeouts:
+  httpRequest: 30000
+  metricsInterval: 10000
+
+# Database defaults (for namespace agent)
+database:
+  defaultUser: dokkimi
+  defaultPassword: dokkimi
+  defaultName: dokkimi
+  # Dokkimi app database URL (SQLite for local, override with DATABASE_URL for cloud)
+  url: file:~/.dokkimi/dokkimi.db
+
+# Storage paths
+storage:
+  dir: ~/.dokkimi/storage
+  initFilesDir: ~/.dokkimi/init-files
+
+# Logging configuration
+logging:
+  format: json
+  level: info
+  actions: true
+
+# API Keys (for service-to-service authentication)
+apiKeys: {}
+
+# CORS configuration
+cors:
+  origins:
+    - http://localhost:5173
+    - http://localhost:3000
+  allowAnyLocalhost: true

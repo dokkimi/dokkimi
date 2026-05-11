@@ -1,0 +1,222 @@
+{
+  "name": "mock-external-apis",
+  "description": "Mock external API integrations — successful responses, error responses, and delayed webhooks",
+  "config": {
+    "timeoutSeconds": 120
+  },
+  "items": [
+    {
+      "$ref": "../shared/service-a.yaml"
+    },
+    {
+      "$ref": "../shared/service-b.json"
+    },
+    {
+      "type": "MOCK",
+      "name": "mock-external-api-success",
+      "mockMethod": "GET",
+      "mockTarget": "api.example.com",
+      "mockPath": "/v1/data",
+      "mockResponseStatus": 200,
+      "mockResponseHeaders": {
+        "Content-Type": "application/json"
+      },
+      "mockResponseBody": {
+        "id": "ext-001",
+        "value": "mocked-response"
+      }
+    },
+    {
+      "type": "MOCK",
+      "name": "mock-external-api-failure",
+      "mockMethod": "POST",
+      "mockTarget": "api.example.com",
+      "mockPath": "/v1/submit",
+      "mockResponseStatus": 500,
+      "mockResponseHeaders": {
+        "Content-Type": "application/json"
+      },
+      "mockResponseBody": {
+        "error": "Internal Server Error"
+      }
+    },
+    {
+      "type": "MOCK",
+      "name": "mock-webhook",
+      "mockMethod": "POST",
+      "mockTarget": "hooks.example.com",
+      "mockPath": "/webhook",
+      "mockDelayMs": 200,
+      "mockResponseStatus": 202,
+      "mockResponseBody": {
+        "accepted": true
+      }
+    }
+  ],
+  "tests": [
+    {
+      "name": "Successful GET to mocked external API",
+      "steps": [
+        {
+          "name": "Service-a calls mocked external API",
+          "action": {
+            "type": "httpRequest",
+            "method": "POST",
+            "url": "service-a/external-call",
+            "headers": {
+              "Content-Type": "application/json"
+            },
+            "body": {
+              "requests": [
+                {
+                  "baseURL": "http://api.example.com",
+                  "url": "/v1/data",
+                  "method": "GET",
+                  "data": {}
+                }
+              ]
+            }
+          },
+          "assertions": [
+            {
+              "assertions": [
+                {
+                  "path": "response.status",
+                  "operator": "eq",
+                  "value": 200
+                },
+                {
+                  "path": "response.body.results[0].id",
+                  "operator": "eq",
+                  "value": "ext-001"
+                },
+                {
+                  "path": "response.body.results[0].value",
+                  "operator": "eq",
+                  "value": "mocked-response"
+                }
+              ]
+            },
+            {
+              "match": {
+                "origin": "service-a",
+                "url": "api.example.com/v1/data"
+              },
+              "count": {
+                "operator": "eq",
+                "value": 1
+              },
+              "assertions": [
+                {
+                  "path": "response.status",
+                  "operator": "eq",
+                  "value": 200
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Error response from mocked external API",
+      "steps": [
+        {
+          "name": "Service-a calls mocked external API that returns 500",
+          "action": {
+            "type": "httpRequest",
+            "method": "POST",
+            "url": "service-a/external-fail",
+            "headers": {
+              "Content-Type": "application/json"
+            },
+            "body": {
+              "requests": [
+                {
+                  "baseURL": "http://api.example.com",
+                  "url": "/v1/submit",
+                  "method": "POST",
+                  "data": {}
+                }
+              ]
+            }
+          },
+          "assertions": [
+            {
+              "assertions": [
+                {
+                  "path": "response.status",
+                  "operator": "eq",
+                  "value": 200
+                },
+                {
+                  "path": "response.body.results[0].status",
+                  "operator": "eq",
+                  "value": 500
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Webhook mock with artificial delay",
+      "steps": [
+        {
+          "name": "Service-b calls mocked webhook endpoint",
+          "action": {
+            "type": "httpRequest",
+            "method": "POST",
+            "url": "service-b/webhook",
+            "headers": {
+              "Content-Type": "application/json"
+            },
+            "body": {
+              "requests": [
+                {
+                  "baseURL": "http://hooks.example.com",
+                  "url": "/webhook",
+                  "method": "POST",
+                  "data": {}
+                }
+              ]
+            }
+          },
+          "assertions": [
+            {
+              "assertions": [
+                {
+                  "path": "response.status",
+                  "operator": "eq",
+                  "value": 200
+                },
+                {
+                  "path": "response.body.results[0].accepted",
+                  "operator": "eq",
+                  "value": true
+                },
+                {
+                  "path": "responseTime",
+                  "operator": "gte",
+                  "value": 200
+                }
+              ]
+            },
+            {
+              "match": {
+                "origin": "service-b",
+                "method": "POST",
+                "url": "hooks.example.com/webhook"
+              },
+              "count": {
+                "operator": "eq",
+                "value": 1
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

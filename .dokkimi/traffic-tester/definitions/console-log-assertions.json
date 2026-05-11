@@ -1,0 +1,343 @@
+{
+  "name": "console-log-assertions",
+  "description": "Coverage for console log assertions: level filtering (INFO, WARN, ERROR, DEBUG), regex matching, zero-error checks, and multi-service logging",
+  "config": {
+    "timeoutSeconds": 120
+  },
+  "items": [
+    {
+      "$ref": "../shared/service-a.yaml"
+    },
+    {
+      "$ref": "../shared/service-b.json"
+    },
+    {
+      "$ref": "../shared/service-c.yaml"
+    }
+  ],
+  "tests": [
+    {
+      "name": "Log level filtering across INFO, WARN, ERROR",
+      "steps": [
+        {
+          "name": "Service-a emits logs at different levels",
+          "action": {
+            "type": "httpRequest",
+            "method": "POST",
+            "url": "service-a/multi-level-logs",
+            "headers": {
+              "Content-Type": "application/json"
+            },
+            "body": {
+              "preRequestLogs": [
+                "INFO: Processing request batch-001",
+                "DEBUG: Loaded 3 handlers",
+                "WARN: Deprecated API version used",
+                "INFO: Request batch-001 processed successfully"
+              ],
+              "response": {
+                "value": {
+                  "processed": true
+                }
+              }
+            }
+          },
+          "assertions": [
+            {
+              "assertions": [
+                {
+                  "path": "response.status",
+                  "operator": "eq",
+                  "value": 200
+                }
+              ]
+            },
+            {
+              "service": "service-a",
+              "consoleAssertions": [
+                {
+                  "level": "INFO",
+                  "message": {
+                    "operator": "contains",
+                    "value": "batch-001"
+                  },
+                  "count": {
+                    "operator": "gte",
+                    "value": 1
+                  }
+                },
+                {
+                  "level": "WARN",
+                  "message": {
+                    "operator": "contains",
+                    "value": "Deprecated"
+                  },
+                  "count": {
+                    "operator": "eq",
+                    "value": 1
+                  }
+                },
+                {
+                  "level": "DEBUG",
+                  "count": {
+                    "operator": "gte",
+                    "value": 1
+                  }
+                },
+                {
+                  "level": "ERROR",
+                  "count": {
+                    "operator": "eq",
+                    "value": 0
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Regex matching on console log messages",
+      "steps": [
+        {
+          "name": "Service-a emits structured log lines",
+          "action": {
+            "type": "httpRequest",
+            "method": "POST",
+            "url": "service-a/structured-logs",
+            "headers": {
+              "Content-Type": "application/json"
+            },
+            "body": {
+              "preRequestLogs": [
+                "REQ-12345: Started processing user order",
+                "REQ-12345: Validated 3 items in cart",
+                "REQ-12345: Total calculated: $49.97"
+              ],
+              "response": {
+                "value": {
+                  "requestId": "REQ-12345"
+                }
+              }
+            }
+          },
+          "assertions": [
+            {
+              "assertions": [
+                {
+                  "path": "response.status",
+                  "operator": "eq",
+                  "value": 200
+                }
+              ]
+            },
+            {
+              "service": "service-a",
+              "consoleAssertions": [
+                {
+                  "message": {
+                    "operator": "matches",
+                    "value": "REQ-\\d+: Started"
+                  },
+                  "count": {
+                    "operator": "gte",
+                    "value": 1
+                  }
+                },
+                {
+                  "message": {
+                    "operator": "matches",
+                    "value": "Validated \\d+ items"
+                  },
+                  "count": {
+                    "operator": "eq",
+                    "value": 1
+                  }
+                },
+                {
+                  "message": {
+                    "operator": "matches",
+                    "value": "Total calculated: \\$\\d+\\.\\d{2}"
+                  },
+                  "count": {
+                    "operator": "gte",
+                    "value": 1
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Multi-service console log assertions",
+      "steps": [
+        {
+          "name": "Service-a calls service-b and service-c, all emit logs",
+          "action": {
+            "type": "httpRequest",
+            "method": "POST",
+            "url": "service-a/fan-out-with-logs",
+            "headers": {
+              "Content-Type": "application/json"
+            },
+            "body": {
+              "preRequestLogs": [
+                "ORCHESTRATOR: Dispatching to service-b and service-c"
+              ],
+              "requests": [
+                {
+                  "baseURL": "http://service-b",
+                  "url": "/log-handler",
+                  "method": "POST",
+                  "data": {
+                    "preRequestLogs": ["HANDLER-B: Received dispatch"],
+                    "response": {
+                      "value": {
+                        "handler": "b"
+                      }
+                    },
+                    "postRequestLogs": ["HANDLER-B: Completed"]
+                  }
+                },
+                {
+                  "baseURL": "http://service-c",
+                  "url": "/log-handler",
+                  "method": "POST",
+                  "data": {
+                    "preRequestLogs": ["HANDLER-C: Received dispatch"],
+                    "response": {
+                      "value": {
+                        "handler": "c"
+                      }
+                    },
+                    "postRequestLogs": ["HANDLER-C: Completed"]
+                  }
+                }
+              ],
+              "postRequestLogs": ["ORCHESTRATOR: All dispatches completed"]
+            }
+          },
+          "assertions": [
+            {
+              "assertions": [
+                {
+                  "path": "response.status",
+                  "operator": "eq",
+                  "value": 200
+                },
+                {
+                  "path": "response.body.results",
+                  "operator": "length",
+                  "value": 2
+                }
+              ]
+            },
+            {
+              "service": "service-a",
+              "consoleAssertions": [
+                {
+                  "message": {
+                    "operator": "contains",
+                    "value": "ORCHESTRATOR: Dispatching"
+                  },
+                  "count": {
+                    "operator": "eq",
+                    "value": 1
+                  }
+                },
+                {
+                  "message": {
+                    "operator": "contains",
+                    "value": "ORCHESTRATOR: All dispatches completed"
+                  },
+                  "count": {
+                    "operator": "eq",
+                    "value": 1
+                  }
+                },
+                {
+                  "level": "ERROR",
+                  "count": {
+                    "operator": "eq",
+                    "value": 0
+                  }
+                }
+              ]
+            },
+            {
+              "service": "service-b",
+              "consoleAssertions": [
+                {
+                  "message": {
+                    "operator": "contains",
+                    "value": "HANDLER-B: Received dispatch"
+                  },
+                  "count": {
+                    "operator": "gte",
+                    "value": 1
+                  }
+                },
+                {
+                  "message": {
+                    "operator": "contains",
+                    "value": "HANDLER-B: Completed"
+                  },
+                  "count": {
+                    "operator": "gte",
+                    "value": 1
+                  }
+                }
+              ]
+            },
+            {
+              "service": "service-c",
+              "consoleAssertions": [
+                {
+                  "message": {
+                    "operator": "contains",
+                    "value": "HANDLER-C: Received dispatch"
+                  },
+                  "count": {
+                    "operator": "gte",
+                    "value": 1
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Zero-error check across all services",
+      "steps": [
+        {
+          "name": "Simple health checks produce no errors",
+          "action": {
+            "type": "parallel",
+            "actions": [
+              {
+                "type": "httpRequest",
+                "method": "GET",
+                "url": "service-a/health"
+              },
+              {
+                "type": "httpRequest",
+                "method": "GET",
+                "url": "service-b/health"
+              },
+              {
+                "type": "httpRequest",
+                "method": "GET",
+                "url": "service-c/health"
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,110 @@
+name: oauth-login-flow
+description: |
+  Drives the complete authorization-code OAuth flow end to end. The browser
+  starts at /login, clicks "Sign in with Google", and is redirected to the
+  real Google authorize URL — the namespace interceptor catches that
+  hostname and the configured MOCK 302s straight back to /api/auth/callback
+  with a fixed code+state. The callback handler then exchanges the code
+  server-side at oauth2.googleapis.com and looks up the user at
+  www.googleapis.com (both intercepted) before redirecting to /dashboard.
+  Asserts traffic on every leg and the rendered user identity at the end.
+config:
+  timeoutSeconds: 180
+items:
+  - $ref: ../shared/nextjs-demo.yaml
+  - $ref: ../shared/postgres.yaml
+  - $ref: ../shared/mock-google-authorize.yaml
+  - $ref: ../shared/mock-google-token.yaml
+  - $ref: ../shared/mock-google-userinfo.yaml
+tests:
+  - name: Sign-in with Google round-trips through three external endpoints and lands on the dashboard
+    steps:
+      - name: Click sign-in and follow the OAuth redirect chain to the dashboard
+        action:
+          type: ui
+          target: nextjs-demo
+          steps:
+            - visit: /login
+            - waitFor: "[data-testid='login-page']"
+            # Baseline the unauthenticated login card before any
+            # interaction. Stable: no dynamic content, no error banner.
+            - screenshot:
+                name: login-page-initial
+                selector: "[data-testid='login-page']"
+                match: true
+            - click: "[data-testid='login-google-button']"
+            - waitFor: "[data-testid='dashboard-page']"
+            - extract:
+                signedInName:
+                  from: text
+                  selector: "[data-testid='dashboard-user-name']"
+                signedInEmail:
+                  from: text
+                  selector: "[data-testid='dashboard-user-email']"
+            # Visual regression on the signed-in dashboard. The seeded
+            # user is deterministic (Alice Anderson via the userinfo
+            # mock + the matching INSERT in init.sql), so the dashboard
+            # card is a stable baseline target. First run returns
+            # `no-baseline`; review with `dokkimi baselines pending` and
+            # accept via `dokkimi baselines approve dashboard-signed-in`.
+            - screenshot:
+                name: dashboard-signed-in
+                selector: "[data-testid='dashboard-page']"
+                match: true
+        assertions:
+          # 1. Self-block: dashboard rendered the values returned by the
+          # mocked userinfo endpoint.
+          - assertions:
+              - path: $.extracted.signedInName
+                operator: eq
+                value: Alice Anderson
+              - path: $.extracted.signedInEmail
+                operator: eq
+                value: alice@example.com
+          # 2. Browser-initiated authorize redirect (caught by interceptor).
+          - match:
+              method: GET
+              url: accounts.google.com/o/oauth2/v2/auth
+            count:
+              operator: eq
+              value: 1
+            assertions:
+              - path: response.status
+                operator: eq
+                value: 302
+              - path: response.header.location
+                operator: contains
+                value: /api/auth/callback?code=mock-code-abc123
+          # 3. Server-side code-exchange call from Next.js.
+          - match:
+              origin: nextjs-demo
+              method: POST
+              url: oauth2.googleapis.com/token
+            count:
+              operator: eq
+              value: 1
+            assertions:
+              - path: response.status
+                operator: eq
+                value: 200
+              - path: request.body
+                operator: contains
+                value: code=mock-code-abc123
+              - path: request.body
+                operator: contains
+                value: grant_type=authorization_code
+          # 4. Server-side userinfo lookup using the access token.
+          - match:
+              origin: nextjs-demo
+              method: GET
+              url: www.googleapis.com/oauth2/v3/userinfo
+            count:
+              operator: eq
+              value: 1
+            assertions:
+              - path: response.status
+                operator: eq
+                value: 200
+              - path: request.header.authorization
+                operator: eq
+                value: Bearer mock-access-token-xyz

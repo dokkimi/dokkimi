@@ -1,0 +1,116 @@
+name: create-bookmark-end-to-end
+description: |
+  Full authenticated CRUD path — sign in via OAuth, navigate to the new-
+  bookmark form, exercise the country dropdown (which has ~200 entries
+  and requires inner scrolling to reach Zimbabwe), submit, and assert
+  both the POST traffic and the inserted DB row via a follow-up SELECT.
+  Combines the dropdown-scroll case with FE→BE traffic capture and a
+  DB-side assertion driven by a real dbQuery action.
+config:
+  timeoutSeconds: 180
+items:
+  - $ref: ../shared/nextjs-demo.yaml
+  - $ref: ../shared/postgres.yaml
+  - $ref: ../shared/mock-google-authorize.yaml
+  - $ref: ../shared/mock-google-token.yaml
+  - $ref: ../shared/mock-google-userinfo.yaml
+tests:
+  - name: Authenticated user creates a bookmark for Zimbabwe via the scrollable dropdown
+    variables:
+      bookmarkTitle: Zimbabwe Daily News
+      bookmarkUrl: https://example.com/zw-news
+      countryCode: ZW
+    steps:
+      - name: Sign in with Google to obtain a session cookie
+        action:
+          type: ui
+          target: nextjs-demo
+          steps:
+            - $ref: ../shared/login-flow.yaml
+      - name: Use the country dropdown and submit the bookmark form
+        action:
+          type: ui
+          target: nextjs-demo
+          steps:
+            - visit: /bookmarks/new
+            - waitFor: "[data-testid='new-bookmark-page']"
+            - screenshot:
+                name: new-bookmark-form-empty
+                selector: "[data-testid='new-bookmark-page']"
+                match: true
+            - type:
+                selector: "[data-testid='bookmark-title-input']"
+                text: '{{bookmarkTitle}}'
+            - type:
+                selector: "[data-testid='bookmark-url-input']"
+                text: '{{bookmarkUrl}}'
+            - click: "[data-testid='country-dropdown-trigger']"
+            - waitFor: "[data-testid='country-dropdown-list']"
+            - screenshot:
+                name: country-dropdown-open
+                selector: "[data-testid='country-dropdown-list']"
+                match: true
+            - extract:
+                countryListCount:
+                  from: count
+                  selector: "[data-testid='country-dropdown-list'] li"
+            - scroll: "[data-testid='country-option-{{countryCode}}']"
+            - click: "[data-testid='country-option-{{countryCode}}']"
+            - waitFor:
+                selector: "[data-testid='country-dropdown-trigger']"
+                text: Zimbabwe
+            - extract:
+                selectedCountry:
+                  from: value
+                  selector: "[data-testid='country-value']"
+            - click: "[data-testid='bookmark-submit']"
+            - waitFor: "[data-testid='home-page']"
+            - waitFor:
+                selector: "[data-testid='bookmark-list']"
+                text: '{{bookmarkTitle}}'
+            - screenshot:
+                name: home-feed-after-submission
+                selector: "[data-testid='bookmark-list']"
+                match: true
+        assertions:
+          - assertions:
+              - path: $.extracted.countryListCount
+                operator: gte
+                value: 180
+              - path: $.extracted.selectedCountry
+                operator: eq
+                value: '{{countryCode}}'
+          - match:
+              method: POST
+              url: nextjs-demo/api/bookmarks
+            count:
+              operator: eq
+              value: 1
+            assertions:
+              - path: response.status
+                operator: eq
+                value: 303
+              - path: request.body
+                operator: contains
+                value: country={{countryCode}}
+      - name: Verify the bookmark row was inserted with the chosen country
+        action:
+          type: dbQuery
+          database: postgres-db
+          query: SELECT title, url, country FROM bookmarks WHERE country = $1 ORDER BY id DESC LIMIT 1
+          params:
+            '1': '{{countryCode}}'
+        assertions:
+          - assertions:
+              - path: success
+                operator: eq
+                value: true
+              - path: data[0].country
+                operator: eq
+                value: '{{countryCode}}'
+              - path: data[0].title
+                operator: eq
+                value: '{{bookmarkTitle}}'
+              - path: data[0].url
+                operator: eq
+                value: '{{bookmarkUrl}}'

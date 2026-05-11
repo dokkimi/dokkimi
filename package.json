@@ -1,0 +1,69 @@
+{
+  "name": "dokkimi",
+  "version": "0.3.6",
+  "private": true,
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/dokkimi/dokkimi.git"
+  },
+  "homepage": "https://dokkimi.com",
+  "bugs": {
+    "url": "https://github.com/dokkimi/dokkimi/issues"
+  },
+  "workspaces": [
+    "apps/cli",
+    "apps/vscode",
+    "apps/landing",
+    "services/*",
+    "shared/config",
+    "shared/definition-validator",
+    "shared/definition-resolver",
+    "shared/platform",
+    "shared/service-manager",
+    "shared/telemetry"
+  ],
+  "scripts": {
+    "dev:cli": "yarn workspace @dokkimi/cli dev",
+    "dev:landing": "yarn workspace @dokkimi/landing dev",
+    "link": "cd apps/cli && npm link",
+    "unlink": "cd apps/cli && npm unlink",
+    "package:vscode": "yarn workspace @dokkimi/definition-validator build && yarn workspace dokkimi-vscode package",
+    "build": "yarn build:shared && yarn build:services && yarn build:apps",
+    "build:shared": "yarn workspace @dokkimi/config build && yarn workspace @dokkimi/platform build && yarn workspace @dokkimi/telemetry build && yarn workspace @dokkimi/definition-validator build && yarn workspace @dokkimi/definition-resolver build && yarn workspace @dokkimi/service-manager build",
+    "build:services": "yarn workspaces foreach --all --include 'services/*' run build",
+    "build:apps": "yarn workspaces foreach --all --include 'apps/*' run build",
+    "build:all": "yarn workspaces foreach --all --topological run build",
+    "test": "yarn workspaces foreach --all run test",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write \"**/*.{ts,tsx,js,jsx,mjs,cjs,json,md,yml,yaml}\"",
+    "format:check": "prettier --check \"**/*.{ts,tsx,js,jsx,mjs,cjs,json,md,yml,yaml}\"",
+    "prepare": "husky",
+    "postinstall": "node node_modules/prisma/build/index.js generate --schema=shared/prisma/sqlite/schema.prisma"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.3.0",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-prettier": "^5.5.5",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "globals": "^17.6.0",
+    "husky": "^9.1.7",
+    "lint-staged": "^17.0.2",
+    "prettier": "^3.8.3",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.59.2"
+  },
+  "engines": {
+    "node": ">=22.12.0",
+    "yarn": ">=4.0.0"
+  },
+  "packageManager": "yarn@4.12.0",
+  "lint-staged": {
+    "*.{ts,tsx,js,jsx,mjs,cjs}": [
+      "eslint --fix",
+      "prettier --write"
+    ],
+    "*.{json,md,yml,yaml}": "prettier --write"
+  }
+}

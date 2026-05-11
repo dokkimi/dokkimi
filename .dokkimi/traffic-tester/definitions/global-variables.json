@@ -1,0 +1,206 @@
+{
+  "name": "global-variables",
+  "description": "Demonstrates definition-level variables — shared connection strings declared once, inherited by all tests",
+  "config": {
+    "timeoutSeconds": 120
+  },
+  "items": [
+    {
+      "$ref": "../shared/service-a.yaml"
+    },
+    {
+      "$ref": "../shared/service-b.json"
+    },
+    {
+      "$ref": "../shared/postgres.yaml"
+    },
+    {
+      "$ref": "../shared/redis.json"
+    }
+  ],
+  "variables": {
+    "pgConnStr": "postgresql://dokkimi:dokkimi@postgres-db:5432/dokkimi",
+    "redisConnStr": "redis://:dokkimi@redis-db:6379"
+  },
+  "tests": [
+    {
+      "name": "Query user — inherits pgConnStr from definition",
+      "variables": {
+        "expectedName": "Alice"
+      },
+      "steps": [
+        {
+          "name": "Look up Alice from the database",
+          "action": {
+            "type": "dbQuery",
+            "database": "postgres-db",
+            "query": "SELECT * FROM users WHERE name = '{{expectedName}}' LIMIT 1"
+          },
+          "extract": {
+            "userId": "$.data[0].id",
+            "userName": "$.data[0].name"
+          },
+          "assertions": [
+            {
+              "assertions": [
+                {
+                  "path": "success",
+                  "operator": "eq",
+                  "value": true
+                },
+                {
+                  "path": "data[0].name",
+                  "operator": "eq",
+                  "value": "{{expectedName}}"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Insert and cache user — inherits both pgConnStr and redisConnStr",
+      "variables": {
+        "newUserName": "Diana",
+        "newUserEmail": "diana@example.com"
+      },
+      "steps": [
+        {
+          "name": "Insert a new user via service-a",
+          "action": {
+            "type": "httpRequest",
+            "method": "POST",
+            "url": "service-a/insert-user",
+            "headers": {
+              "Content-Type": "application/json"
+            },
+            "body": {
+              "queries": [
+                {
+                  "databaseType": "postgres",
+                  "connectionString": "{{pgConnStr}}",
+                  "command": "INSERT INTO users (email, name) VALUES ('{{newUserEmail}}', '{{newUserName}}') RETURNING *"
+                }
+              ]
+            }
+          },
+          "extract": {
+            "insertedId": "$.body.queryResults[0][0].result[0].id"
+          },
+          "assertions": [
+            {
+              "assertions": [
+                {
+                  "path": "response.status",
+                  "operator": "eq",
+                  "value": 200
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "Cache user in Redis",
+          "action": {
+            "type": "httpRequest",
+            "method": "POST",
+            "url": "service-a/cache-user",
+            "headers": {
+              "Content-Type": "application/json"
+            },
+            "body": {
+              "queries": [
+                {
+                  "databaseType": "redis",
+                  "connectionString": "{{redisConnStr}}",
+                  "command": "SET user:{{newUserEmail}} {{insertedId}}"
+                }
+              ]
+            }
+          },
+          "assertions": [
+            {
+              "assertions": [
+                {
+                  "path": "response.status",
+                  "operator": "eq",
+                  "value": 200
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "Verify user exists in Postgres via direct DB query",
+          "action": {
+            "type": "dbQuery",
+            "database": "postgres-db",
+            "query": "SELECT * FROM users WHERE id = {{insertedId}}"
+          },
+          "assertions": [
+            {
+              "assertions": [
+                {
+                  "path": "success",
+                  "operator": "eq",
+                  "value": true
+                },
+                {
+                  "path": "data[0].name",
+                  "operator": "eq",
+                  "value": "{{newUserName}}"
+                },
+                {
+                  "path": "data[0].email",
+                  "operator": "eq",
+                  "value": "{{newUserEmail}}"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Test-level variable overrides definition-level",
+      "variables": {
+        "pgConnStr": "postgresql://custom:custom@postgres-db:5432/custom_db",
+        "lookupEmail": "bob@example.com"
+      },
+      "steps": [
+        {
+          "name": "Uses overridden pgConnStr for this test only",
+          "action": {
+            "type": "httpRequest",
+            "method": "POST",
+            "url": "service-a/insert-user",
+            "headers": {
+              "Content-Type": "application/json"
+            },
+            "body": {
+              "queries": [
+                {
+                  "databaseType": "postgres",
+                  "connectionString": "{{pgConnStr}}",
+                  "command": "SELECT * FROM users WHERE email = '{{lookupEmail}}'"
+                }
+              ]
+            }
+          },
+          "assertions": [
+            {
+              "assertions": [
+                {
+                  "path": "response.status",
+                  "operator": "eq",
+                  "value": 200
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

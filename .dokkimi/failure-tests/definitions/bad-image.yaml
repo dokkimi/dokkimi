@@ -1,0 +1,19 @@
+name: pod-logs-bad-image
+description: Tests pod log capture for image pull failures (should show ErrImagePull)
+config:
+  timeoutSeconds: 30
+items:
+  - $ref: ../shared/bad-image.yaml
+tests:
+  - name: Should never run (image does not exist)
+    steps:
+      - name: health check
+        action:
+          type: httpRequest
+          method: GET
+          url: bad-image/health
+        assertions:
+          - assertions:
+              - path: response.status
+                operator: eq
+                value: 200

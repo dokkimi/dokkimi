@@ -1,0 +1,24 @@
+name: health-checks
+description: Smoke tests — verify all traffic-tester instances are up and responding
+config:
+  timeoutSeconds: 60
+items:
+  - $ref: ../shared/service-a.yaml
+  - $ref: ../shared/service-b.json
+  - $ref: ../shared/service-c.yaml
+tests:
+  - name: Health check returns OK
+    steps:
+      - name: Parallel requests
+        action:
+          type: parallel
+          actions:
+            - type: httpRequest
+              method: GET
+              url: service-a/health
+            - type: httpRequest
+              method: GET
+              url: service-b/health
+            - type: httpRequest
+              method: GET
+              url: service-c/health

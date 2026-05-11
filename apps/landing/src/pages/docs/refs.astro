@@ -1,0 +1,152 @@
+---
+import DocsLayout from '../../layouts/DocsLayout.astro';
+import CodeBlock from '../../components/CodeBlock.astro';
+---
+
+<DocsLayout title="References ($ref) — Dokkimi Docs" description="Share and reuse items, variables, and UI action steps across test files with $ref.">
+  <h1>References ($ref)</h1>
+  <p class="subtitle">Share and reuse items, variables, and UI action steps across test files.</p>
+
+  <h2>Basic usage</h2>
+  <p>Items can reference shared fragments using <code>$ref</code> with a relative path:</p>
+  <CodeBlock code={`{
+  "items": [
+    { "$ref": "../shared/api-gateway.json" },
+    { "$ref": "../shared/postgres-db.json" }
+  ]
+}`} lang="json" />
+  <p>The path is relative to the file containing the <code>$ref</code>. At resolution time, Dokkimi replaces the <code>$ref</code> with the full contents of the referenced file.</p>
+
+  <h2>Overriding fields</h2>
+  <p>Additional fields are shallow-merged as overrides on top of the fragment:</p>
+  <CodeBlock code={`{
+  "items": [
+    {
+      "$ref": "../shared/postgres.json",
+      "initFilePath": "../init-files/users-seed.sql"
+    }
+  ]
+}`} lang="json" />
+  <p>The fragment's fields are used as the base, and inline fields override them.</p>
+
+  <div class="callout">
+    <p><strong>Don't override <code>name</code></strong> on a <code>$ref</code> unless you intentionally want a second instance with a different name. The fragment already has a <code>name</code> — overriding it creates a differently-named copy.</p>
+  </div>
+
+  <h2>Multi-ref</h2>
+  <p><code>$ref</code> can also be an array of paths. Fragments are resolved and merged left-to-right, with later files overriding earlier ones. Inline fields still win over all fragments:</p>
+  <CodeBlock code={`{
+  "items": [
+    {
+      "$ref": ["../shared/base-service.json", "../shared/staging-overrides.json"],
+      "env": ["...$ref.env", { "name": "EXTRA", "value": "inline-wins" }]
+    }
+  ]
+}`} lang="json" />
+
+  <h2>Array spreading</h2>
+  <p>To extend an array field from the fragment instead of replacing it, use <code>"...$ref.&lt;path&gt;"</code> as an element in the override array:</p>
+  <CodeBlock code={`{
+  "$ref": "../shared/my-service.json",
+  "env": ["...$ref.env", { "name": "EXTRA_VAR", "value": "123" }]
+}`} lang="json" />
+  <p>The <code>"...$ref.env"</code> marker is replaced with the fragment's <code>env</code> array. Position controls order — entries before the marker are prepended, entries after are appended. If the path doesn't resolve to an array, the marker expands to nothing.</p>
+  <p>The path supports dot notation for nested fields (e.g., <code>"...$ref.some.nested.array"</code>).</p>
+
+  <h2>$ref for variables</h2>
+  <p>Both definition-level and test-level <code>variables</code> support <code>$ref</code> to load values from shared files:</p>
+  <CodeBlock code={`{
+  "variables": {
+    "$ref": "../shared/db-vars.json",
+    "localOverride": "my-value"
+  }
+}`} lang="json" />
+  <p>Multi-ref also works for variables:</p>
+  <CodeBlock code={`{
+  "variables": {
+    "$ref": ["../shared/db-vars.json", "../shared/test-users.json"],
+    "extraVar": "inline-wins"
+  }
+}`} lang="json" />
+  <p>Referenced files must be plain <code>&#123; "key": "value" &#125;</code> objects (no nested objects). Variable files can themselves use <code>$ref</code> to load from another variables file — recursive resolution with circular reference detection.</p>
+
+  <h2>$ref for actions</h2>
+  <p>Step actions support <code>$ref</code> to load reusable action definitions from shared fragments. This works for all action types — <code>httpRequest</code>, <code>dbQuery</code>, <code>ui</code>, and <code>wait</code>.</p>
+  <p>The fragment file must have an <code>action</code> field, and can include optional <code>name</code> and <code>description</code> metadata:</p>
+  <CodeBlock code={`# shared/create-user.yaml
+name: Create user
+description: POST to create a new user
+action:
+  type: httpRequest
+  method: POST
+  url: api-gateway/api/users
+  headers:
+    Content-Type: application/json
+  body:
+    name: "{{userName}}"`} lang="yaml" />
+  <p>Reference it on a step's <code>action</code> with <code>$ref</code>. Inline fields are shallow-merged as overrides:</p>
+  <CodeBlock code={`- name: Create a user
+  action:
+    $ref: ../shared/create-user.yaml
+    body:
+      name: custom-name
+  assertions:
+    - assertions:
+        - path: response.statusCode
+          operator: eq
+          value: 201`} lang="yaml" />
+
+  <h3>UI sub-step $ref</h3>
+  <p>UI actions also support <code>$ref</code> inside the <code>steps</code> array to splice in reusable sub-step sequences (e.g., a login flow). The fragment has a <code>steps</code> array instead of <code>action</code>:</p>
+  <CodeBlock code={`# shared/login-flow.yaml
+name: OAuth login flow
+description: Signs in via Google OAuth mock
+steps:
+  - visit: /login
+  - click: "[data-testid='login-btn']"
+  - waitFor: "[data-testid='dashboard']"`} lang="yaml" />
+  <p>Reference it inside a UI action's <code>steps</code> array:</p>
+  <CodeBlock code={`action:
+  type: ui
+  target: my-app
+  steps:
+    - $ref: ../shared/login-flow.yaml
+    - visit: /settings
+    - click: "[data-testid='save']"`} lang="yaml" />
+  <p>The <code>$ref</code> entry is replaced by the fragment's <code>steps</code> array, spliced into position. Multiple <code>$ref</code> entries can appear in the same steps array.</p>
+
+  <h2>Recursive refs</h2>
+  <p>Fragments can themselves use <code>$ref</code> to build on other fragments. This lets you create layered definitions — a base service with common settings, then variants that override a few fields:</p>
+  <CodeBlock code={`# shared/base-service.yaml
+type: SERVICE
+port: 3000
+healthCheck: /health
+env:
+  - name: NODE_ENV
+    value: production`} lang="yaml" />
+  <CodeBlock code={`# shared/api-gateway.yaml
+$ref: ./base-service.yaml
+name: api-gateway
+image: my-registry/api-gateway:latest
+env:
+  - ...$ref.env
+  - name: DATABASE_URL
+    value: postgresql://dokkimi:dokkimi@postgres-db:5432/dokkimi`} lang="yaml" />
+  <p>At resolution time, Dokkimi walks the chain: <code>base-service.yaml</code> is loaded first, then <code>api-gateway.yaml</code> overrides on top, then any inline overrides in the test file win last. Each level is a shallow merge, same as single-level <code>$ref</code>.</p>
+  <p>This also works for action refs, UI sub-step refs, and variable refs. Circular references are detected and reported as validation errors. Chains are limited to 10 levels deep.</p>
+
+  <h2>Rules</h2>
+  <ul>
+    <li>Paths are relative to the file containing the <code>$ref</code></li>
+    <li>For multi-ref, fragments merge left-to-right; inline override fields win</li>
+    <li>Refs are recursive — fragments can <code>$ref</code> other fragments, with circular reference detection</li>
+    <li>Maximum ref chain depth is 10 levels</li>
+    <li><code>$ref</code> is stripped before sending to the backend</li>
+    <li>Merging is shallow — no deep merging for objects</li>
+  </ul>
+
+  <div class="nav-links">
+    <a href="/docs/mocks">← Mocks</a>
+    <a href="/docs/tests-and-steps">Tests &amp; Steps →</a>
+  </div>
+</DocsLayout>

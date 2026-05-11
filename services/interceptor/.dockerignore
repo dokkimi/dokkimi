@@ -1,0 +1,38 @@
+# Git
+.git
+.gitignore
+
+# Documentation
+*.md
+README*
+LICENSE
+
+# Test files
+*_test.go
+*.test
+coverage.*
+*.out
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build artifacts
+vendor/
+tmp/
+temp/
+
+# Environment
+.env
+.env.*
+
+# Binary (will be built in container)
+interceptor
+

@@ -1,0 +1,168 @@
+---
+import DocsLayout from '../../layouts/DocsLayout.astro';
+import CodeBlock from '../../components/CodeBlock.astro';
+---
+
+<DocsLayout title="Variables — Dokkimi Docs" description="Use variables for test data and extract values from responses to chain multi-step workflows.">
+  <h1>Variables</h1>
+  <p class="subtitle">Define test data upfront and extract runtime values to chain multi-step workflows.</p>
+
+  <h2>Defining variables</h2>
+  <p>Variables are key-value pairs defined at the definition level or test level:</p>
+  <CodeBlock code={`{
+  "name": "my-suite",
+  "variables": {
+    "baseEmail": "test@example.com"
+  },
+  "tests": [
+    {
+      "name": "Test 1",
+      "variables": {
+        "testEmail": "specific@example.com"
+      },
+      "steps": [ ... ]
+    }
+  ]
+}`} lang="json" />
+
+  <h2>Interpolation: &#123;&#123;variableName&#125;&#125;</h2>
+  <p>Reference variables with <code>&#123;&#123;variableName&#125;&#125;</code> anywhere in actions and assertions:</p>
+
+  <table>
+    <thead>
+      <tr><th>Where</th><th>Example</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>Action URLs</td><td><code>"url": "api-gateway/api/users/&#123;&#123;userId&#125;&#125;"</code></td></tr>
+      <tr><td>Action headers</td><td><code>"Authorization": "Bearer &#123;&#123;token&#125;&#125;"</code></td></tr>
+      <tr><td>Action body (string values)</td><td><code>"email": "&#123;&#123;email&#125;&#125;"</code></td></tr>
+      <tr><td>Database queries</td><td><code>"query": "SELECT * FROM users WHERE id = &#123;&#123;userId&#125;&#125;"</code></td></tr>
+      <tr><td>Assertion values</td><td><code>"value": "&#123;&#123;email&#125;&#125;"</code></td></tr>
+      <tr><td>Match block fields</td><td><code>"url": "user-service/&#123;&#123;path&#125;&#125;"</code></td></tr>
+      <tr><td>Console log messages</td><td><code>"value": "User &#123;&#123;userId&#125;&#125; created"</code></td></tr>
+    </tbody>
+  </table>
+
+  <h2>Extraction</h2>
+  <p>Extract values from responses at runtime using JSONPath expressions:</p>
+  <CodeBlock code={`{
+  "name": "Create user",
+  "action": {
+    "type": "httpRequest",
+    "method": "POST",
+    "url": "api-gateway/api/users",
+    "body": { "email": "{{testEmail}}" }
+  },
+  "extract": {
+    "userId": "$.body.id",
+    "authToken": "$.headers.x-auth-token",
+    "firstName": "$.body.user.profile.name",
+    "firstItem": "$.body.items[0].id"
+  }
+}`} lang="json" />
+  <p>Extracted values become variables available in all subsequent steps.</p>
+
+  <h3>Regex extraction</h3>
+  <p>Extract rules can also be <strong>regex extract objects</strong> — resolve a JSONPath first, then apply a regex pattern to pull out a substring:</p>
+  <CodeBlock code={`{
+  "extract": {
+    "userId": "$.body.id",
+    "correlationId": {
+      "path": "$.body.message",
+      "pattern": "correlation_id=([a-f0-9-]+)",
+      "group": 1
+    }
+  }
+}`} lang="json" />
+
+  <table>
+    <thead>
+      <tr><th>Field</th><th>Type</th><th>Required</th><th>Description</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>path</code></td><td>string</td><td>Yes</td><td>JSONPath to the source value</td></tr>
+      <tr><td><code>pattern</code></td><td>string</td><td>Yes</td><td>Regex pattern (with capture groups)</td></tr>
+      <tr><td><code>group</code></td><td>number</td><td>No</td><td>Capture group index (default: <code>1</code>; use <code>0</code> for full match)</td></tr>
+    </tbody>
+  </table>
+
+  <p>The JSONPath is resolved first, the result is coerced to a string, then the regex is applied. An error is raised if the path doesn't exist, the pattern doesn't match, or the capture group is out of range.</p>
+
+  <div class="callout">
+    <p><strong>When to use regex extraction.</strong> Use the simple string form when the value you need is already a discrete field. Use the regex form when the value is embedded inside a larger string — for example, extracting an ID from a log message or a token from a URL.</p>
+  </div>
+
+  <h3>Extract paths</h3>
+  <p>For HTTP responses:</p>
+  <ul>
+    <li><code>$.body.field</code> — response body field</li>
+    <li><code>$.statusCode</code> — HTTP status code</li>
+    <li><code>$.headers.header-name</code> — response header (case-insensitive)</li>
+    <li><code>$.body.nested.field</code> — nested access</li>
+    <li><code>$.body.array[0]</code> — array index</li>
+  </ul>
+  <p>For database query results:</p>
+  <ul>
+    <li><code>$.data[0].field</code> — column from a result row</li>
+    <li><code>$.success</code> — whether the query succeeded</li>
+  </ul>
+
+  <div class="callout">
+    <p><strong>Extract paths vs assertion paths.</strong> Extract paths use a flat document (<code>$.body.field</code>). Assertion paths use a nested format (<code>response.body.field</code>). Don't mix them — see <a href="/docs/assertions">Assertions</a> for assertion path syntax.</p>
+  </div>
+
+  <h2>Extraction in assertion blocks</h2>
+  <p>You can also extract values from within assertion blocks — useful for capturing values from intercepted inter-service traffic:</p>
+  <CodeBlock code={`{
+  "match": {
+    "origin": "api-gateway",
+    "method": "POST",
+    "url": "order-service/api/orders"
+  },
+  "extract": {
+    "internalOrderId": "$.response.body.orderId"
+  },
+  "assertions": [
+    { "path": "response.status", "operator": "eq", "value": 201 }
+  ]
+}`} lang="json" />
+
+  <h2>Precedence</h2>
+  <p>Variables come from three sources, in order of increasing precedence:</p>
+  <ol>
+    <li><strong>Definition-level <code>variables</code></strong> — shared across all tests</li>
+    <li><strong>Test-level <code>variables</code></strong> — per-test overrides</li>
+    <li><strong><code>extract</code> on steps</strong> — runtime extraction (overwrites all hardcoded values)</li>
+  </ol>
+
+  <h2>Scoping rules</h2>
+  <ul>
+    <li>Definition-level variables are seeded first, then test-level variables override</li>
+    <li>Variables persist across all groups within a single test run</li>
+    <li>Extracted variables from group N are available in groups N+1, N+2, etc.</li>
+    <li>Within a parallel group, variable extraction order is non-deterministic</li>
+    <li>Referencing an undefined variable causes an immediate error</li>
+  </ul>
+
+  <h2>Build-time vs runtime variables</h2>
+  <table>
+    <thead>
+      <tr><th>Syntax</th><th>Resolved</th><th>By</th><th>Purpose</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>$&#123;&#123;VAR&#125;&#125;</code></td><td>Build time</td><td>Definition resolver</td><td>Config values from <a href="/docs/project-structure">config.yaml</a> <code>env</code></td></tr>
+      <tr><td><code>&#123;&#123;VAR&#125;&#125;</code></td><td>Runtime</td><td>Test agent</td><td>Variables from <code>variables</code> / <code>extract</code></td></tr>
+    </tbody>
+  </table>
+  <p>You can combine both — use <code>$&#123;&#123;&#125;&#125;</code> inside a <code>variables</code> value to compose runtime variables from config:</p>
+  <CodeBlock code={`{
+  "variables": {
+    "baseUrl": "\${{API_HOST}}/v1"
+  }
+}`} lang="json" />
+
+  <div class="nav-links">
+    <a href="/docs/actions">← Actions</a>
+    <a href="/docs/assertions">Assertions →</a>
+  </div>
+</DocsLayout>

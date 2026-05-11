@@ -1,0 +1,9 @@
+name: Google OAuth login
+description: |
+  Visit /login, click "Sign in with Google", and wait for the dashboard.
+  Requires the Google OAuth mocks (authorize, token, userinfo) to be
+  included in the definition's items.
+steps:
+  - visit: /login
+  - click: "[data-testid='login-google-button']"
+  - waitFor: "[data-testid='dashboard-page']"

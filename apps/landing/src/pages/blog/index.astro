@@ -1,0 +1,86 @@
+---
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import Nav from '../../components/Nav.astro';
+import Footer from '../../components/Footer.astro';
+import { getCollection } from 'astro:content';
+
+const posts = await getCollection('blog');
+const sortedPosts = posts.sort(
+  (a, b) => new Date(b.data.date).getTime() - new Date(a.data.date).getTime()
+);
+---
+
+<BaseLayout title="Blog — Dokkimi" description="Articles about microservice testing, Kubernetes, and Dokkimi.">
+  <Nav />
+  <main class="container blog">
+    <h1>Blog</h1>
+    {sortedPosts.length === 0 && (
+      <p class="empty">No posts yet. Check back soon.</p>
+    )}
+    <div class="posts">
+      {sortedPosts.map((post) => (
+        <a href={`/blog/${post.data.slug}`} class="post-card">
+          <time datetime={post.data.date}>{new Date(post.data.date).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</time>
+          <h2>{post.data.title}</h2>
+          <p>{post.data.description}</p>
+        </a>
+      ))}
+    </div>
+  </main>
+  <Footer />
+</BaseLayout>
+
+<style>
+  .blog {
+    padding: 120px 0 0;
+  }
+
+  h1 {
+    font-size: 2.5rem;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    margin-bottom: 48px;
+  }
+
+  .empty {
+    color: var(--color-text-muted);
+    font-size: 1.05rem;
+  }
+
+  .posts {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .post-card {
+    display: block;
+    padding: 28px 32px;
+    background: var(--color-bg-soft);
+    border: 1px solid var(--color-border);
+    border-radius: 12px;
+    transition: border-color 0.2s;
+  }
+
+  .post-card:hover {
+    border-color: var(--color-primary);
+  }
+
+  time {
+    font-size: 0.8rem;
+    color: var(--color-text-muted);
+  }
+
+  .post-card h2 {
+    font-size: 1.25rem;
+    font-weight: 600;
+    margin: 8px 0 6px;
+    color: var(--color-text);
+  }
+
+  .post-card p {
+    font-size: 0.925rem;
+    color: var(--color-text-muted);
+    line-height: 1.5;
+  }
+</style>

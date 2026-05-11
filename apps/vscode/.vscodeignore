@@ -1,0 +1,7 @@
+src/**
+!src/schema/**
+!src/snippets/**
+tsconfig.json
+.vscode/**
+node_modules/**
+*.vsix

@@ -1,0 +1,134 @@
+---
+
+---
+
+<footer class="footer">
+  <div class="container footer-inner">
+    <div class="footer-left">
+      <span class="logo"><img src="/logo-teal.png" alt="Dokkimi" class="footer-logo" />Dokkimi</span>
+      <p>Integration, E2E, and visual regression testing.</p>
+    </div>
+    <div class="footer-links">
+      <div class="link-group">
+        <h4>Product</h4>
+        <a href="/#features">Features</a>
+        <a href="/#pricing">Pricing</a>
+        <a href="/docs">Docs</a>
+        <a href="/tutorials">Tutorials</a>
+      </div>
+      <div class="link-group">
+        <h4>Resources</h4>
+        <a href="/blog">Blog</a>
+        <a href="https://www.npmjs.com/package/dokkimi" target="_blank" rel="noopener noreferrer">npm</a>
+        <a href="https://github.com/dokkimi/dokkimi/discussions" target="_blank" rel="noopener noreferrer">Community</a>
+      </div>
+      <div class="link-group">
+        <h4>Connect</h4>
+        <a href="https://github.com/dokkimi/dokkimi" target="_blank" rel="noopener noreferrer" class="icon-link">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z"/></svg>
+          GitHub
+        </a>
+        <a href="https://www.linkedin.com/company/dokkimi-testing" target="_blank" rel="noopener noreferrer" class="icon-link">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 0 1-2.063-2.065 2.064 2.064 0 1 1 2.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/></svg>
+          LinkedIn
+        </a>
+        <a href="mailto:hello@dokkimi.com" class="icon-link">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg>
+          hello@dokkimi.com
+        </a>
+      </div>
+    </div>
+  </div>
+  <div class="container footer-bottom">
+    <p>&copy; {new Date().getFullYear()} Dokkimi LLC. All rights reserved.</p>
+  </div>
+</footer>
+
+<style>
+  .footer {
+    border-top: 1px solid var(--color-border);
+    padding: 64px 0 32px;
+    margin-top: var(--section-spacing);
+  }
+
+  .footer-inner {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 48px;
+  }
+
+  .footer-left .logo {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 1.1rem;
+    font-weight: 700;
+    margin-bottom: 8px;
+  }
+
+  .footer-logo {
+    height: 24px;
+    width: auto;
+  }
+
+  .footer-left p {
+    font-size: 0.875rem;
+    color: var(--color-text-muted);
+  }
+
+  .footer-links {
+    display: flex;
+    gap: 80px;
+  }
+
+  .link-group {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .link-group h4 {
+    font-size: 0.8rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--color-text);
+    margin-bottom: 4px;
+  }
+
+  .link-group a {
+    font-size: 0.875rem;
+    color: var(--color-text-muted);
+  }
+
+  .link-group a:hover {
+    color: var(--color-text);
+  }
+
+  .icon-link {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .footer-bottom {
+    border-top: 1px solid var(--color-border);
+    padding-top: 24px;
+  }
+
+  .footer-bottom p {
+    font-size: 0.8rem;
+    color: var(--color-text-muted);
+  }
+
+  @media (max-width: 640px) {
+    .footer-inner {
+      flex-direction: column;
+      gap: 40px;
+    }
+
+    .footer-links {
+      gap: 48px;
+    }
+  }
+</style>

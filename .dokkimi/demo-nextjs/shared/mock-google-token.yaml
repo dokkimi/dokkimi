@@ -1,0 +1,17 @@
+type: MOCK
+name: mock-google-token
+description: |
+  Server-to-server code-exchange leg. Returns a canned access_token; the
+  Next.js callback uses it as a Bearer header on the userinfo call.
+mockMethod: POST
+mockOrigin: nextjs-demo
+mockTarget: oauth2.googleapis.com
+mockPath: /token
+mockResponseStatus: 200
+mockResponseHeaders:
+  Content-Type: application/json
+mockResponseBody:
+  access_token: mock-access-token-xyz
+  id_token: mock-id-token
+  token_type: Bearer
+  expires_in: 3600

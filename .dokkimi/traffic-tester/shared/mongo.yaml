@@ -1,0 +1,5 @@
+type: DATABASE
+name: mongo-db
+description: Shared MongoDB database
+database: mongodb
+initFilePath: ../init-files/init-mongo.js

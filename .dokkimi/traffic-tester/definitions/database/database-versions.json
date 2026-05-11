@@ -1,0 +1,276 @@
+{
+  "name": "database-versions",
+  "description": "Verify that user-specified database versions work — each engine deploys with an explicit version and runs basic queries",
+  "config": {
+    "timeoutSeconds": 120
+  },
+  "items": [
+    {
+      "$ref": "../../shared/service-a.yaml"
+    },
+    {
+      "$ref": "../../shared/postgres.yaml",
+      "name": "postgres-v16",
+      "version": "16"
+    },
+    {
+      "$ref": "../../shared/mysql.json",
+      "name": "mysql-v8-0",
+      "version": "8.0"
+    },
+    {
+      "$ref": "../../shared/mongo.yaml",
+      "name": "mongo-v6",
+      "version": "6"
+    },
+    {
+      "type": "DATABASE",
+      "name": "redis-v6",
+      "database": "redis",
+      "version": "6"
+    }
+  ],
+  "tests": [
+    {
+      "name": "Postgres 16 — query seeded data",
+      "variables": {
+        "pgConnStr": "postgresql://dokkimi:dokkimi@postgres-v16:5432/dokkimi"
+      },
+      "steps": [
+        {
+          "name": "SELECT from seeded users table",
+          "action": {
+            "type": "httpRequest",
+            "method": "POST",
+            "url": "service-a/query",
+            "headers": {
+              "Content-Type": "application/json"
+            },
+            "body": {
+              "queries": [
+                {
+                  "databaseType": "postgres",
+                  "connectionString": "{{pgConnStr}}",
+                  "command": "SELECT version()"
+                }
+              ]
+            }
+          },
+          "assertions": [
+            {
+              "assertions": [
+                {
+                  "path": "response.status",
+                  "operator": "eq",
+                  "value": 200
+                },
+                {
+                  "path": "response.body.queryResults[0][0].result[0].version",
+                  "operator": "contains",
+                  "value": "PostgreSQL 16"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "MySQL 8.0 — verify version",
+      "variables": {
+        "mysqlConnStr": "mysql://dokkimi:dokkimi@mysql-v8-0:3306/dokkimi"
+      },
+      "steps": [
+        {
+          "name": "SELECT MySQL version",
+          "action": {
+            "type": "httpRequest",
+            "method": "POST",
+            "url": "service-a/query",
+            "headers": {
+              "Content-Type": "application/json"
+            },
+            "body": {
+              "queries": [
+                {
+                  "databaseType": "mysql",
+                  "connectionString": "{{mysqlConnStr}}",
+                  "command": "SELECT VERSION() AS version"
+                }
+              ]
+            }
+          },
+          "assertions": [
+            {
+              "assertions": [
+                {
+                  "path": "response.status",
+                  "operator": "eq",
+                  "value": 200
+                },
+                {
+                  "path": "response.body.queryResults[0][0].result[0].version",
+                  "operator": "contains",
+                  "value": "8.0"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "MongoDB 6 — insert and find roundtrip",
+      "variables": {
+        "mongoConnStr": "mongodb://dokkimi:dokkimi@mongo-v6:27017/dokkimi?authSource=admin"
+      },
+      "steps": [
+        {
+          "name": "Insert a doc to verify mongo:6 is reachable",
+          "action": {
+            "type": "httpRequest",
+            "method": "POST",
+            "url": "service-a/query",
+            "headers": {
+              "Content-Type": "application/json"
+            },
+            "body": {
+              "queries": [
+                {
+                  "databaseType": "mongodb",
+                  "connectionString": "{{mongoConnStr}}",
+                  "command": "{\"operation\":\"insertOne\",\"collection\":\"version_probe\",\"document\":{\"marker\":\"mongo6-works\"}}"
+                }
+              ]
+            }
+          },
+          "assertions": [
+            {
+              "assertions": [
+                {
+                  "path": "response.status",
+                  "operator": "eq",
+                  "value": 200
+                },
+                {
+                  "path": "response.body.queryResults[0][0].result.acknowledged",
+                  "operator": "eq",
+                  "value": true
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Redis 6 — SET and GET",
+      "variables": {
+        "redisConnStr": "redis://:dokkimi@redis-v6:6379"
+      },
+      "steps": [
+        {
+          "name": "SET a key",
+          "action": {
+            "type": "httpRequest",
+            "method": "POST",
+            "url": "service-a/redis-set",
+            "headers": {
+              "Content-Type": "application/json"
+            },
+            "body": {
+              "queries": [
+                {
+                  "databaseType": "redis",
+                  "connectionString": "{{redisConnStr}}",
+                  "command": "SET version-test-key \"redis6-works\""
+                }
+              ]
+            }
+          },
+          "assertions": [
+            {
+              "assertions": [
+                {
+                  "path": "response.status",
+                  "operator": "eq",
+                  "value": 200
+                },
+                {
+                  "path": "response.body.queryResults[0][0].result",
+                  "operator": "eq",
+                  "value": "OK"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "GET the key back",
+          "action": {
+            "type": "httpRequest",
+            "method": "POST",
+            "url": "service-a/redis-get",
+            "headers": {
+              "Content-Type": "application/json"
+            },
+            "body": {
+              "queries": [
+                {
+                  "databaseType": "redis",
+                  "connectionString": "{{redisConnStr}}",
+                  "command": "GET version-test-key"
+                }
+              ]
+            }
+          },
+          "assertions": [
+            {
+              "assertions": [
+                {
+                  "path": "response.status",
+                  "operator": "eq",
+                  "value": 200
+                },
+                {
+                  "path": "response.body.queryResults[0][0].result",
+                  "operator": "eq",
+                  "value": "redis6-works"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Postgres 16 — dbQuery action verifies version",
+      "steps": [
+        {
+          "name": "Direct dbQuery to check Postgres version",
+          "action": {
+            "type": "dbQuery",
+            "database": "postgres-v16",
+            "query": "SELECT version()"
+          },
+          "assertions": [
+            {
+              "assertions": [
+                {
+                  "path": "success",
+                  "operator": "eq",
+                  "value": true
+                },
+                {
+                  "path": "data[0].version",
+                  "operator": "contains",
+                  "value": "PostgreSQL 16"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

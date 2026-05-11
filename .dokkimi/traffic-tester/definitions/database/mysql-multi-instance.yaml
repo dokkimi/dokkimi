@@ -1,0 +1,98 @@
+name: mysql-multi-instance
+description: |
+  Two independent MySQL instances in the same namespace, each with
+  its own schema and seed data. Validates that the wire protocol proxy,
+  K8s Service routing, health checks, and test-agent connection pooling
+  all work correctly when multiple MySQL databases coexist.
+config:
+  timeoutSeconds: 120
+items:
+  - type: DATABASE
+    name: products-db
+    database: mysql
+    initFilePath: ../../init-files/init-mysql.sql
+  - type: DATABASE
+    name: orders-db
+    database: mysql
+    initFilePath: ../../init-files/init-mysql-orders.sql
+tests:
+  - name: Each instance has its own schema
+    steps:
+      - name: Parallel requests
+        action:
+          type: parallel
+          actions:
+            - type: dbQuery
+              database: products-db
+              query: 'SELECT COUNT(*) AS cnt FROM products'
+            - type: dbQuery
+              database: orders-db
+              query: 'SELECT COUNT(*) AS cnt FROM orders'
+  - name: products table does not exist in orders-db
+    steps:
+      - name: Query products table on orders-db should fail
+        action:
+          type: dbQuery
+          database: orders-db
+          query: 'SELECT * FROM products'
+        assertions:
+          - assertions:
+              - path: success
+                operator: eq
+                value: false
+              - path: error
+                operator: contains
+                value: products
+
+  - name: orders table does not exist in products-db
+    steps:
+      - name: Query orders table on products-db should fail
+        action:
+          type: dbQuery
+          database: products-db
+          query: 'SELECT * FROM orders'
+        assertions:
+          - assertions:
+              - path: success
+                operator: eq
+                value: false
+              - path: error
+                operator: contains
+                value: orders
+
+  - name: Parallel writes to both instances
+    steps:
+      - name: Parallel requests
+        action:
+          type: parallel
+          actions:
+            - type: dbQuery
+              database: products-db
+              query: "INSERT INTO products (name, price, stock) VALUES ('Contraption', 29.99, 10)"
+            - type: dbQuery
+              database: orders-db
+              query: "INSERT INTO orders (customer_name, total_cents, status) VALUES ('Dave', 3500, 'pending')"
+  - name: Read back from both instances after writes
+    steps:
+      - name: Parallel requests
+        action:
+          type: parallel
+          actions:
+            - type: dbQuery
+              database: products-db
+              query: "SELECT name, price, stock FROM products WHERE name = 'Contraption'"
+            - type: dbQuery
+              database: orders-db
+              query: "SELECT customer_name, total_cents, status FROM orders WHERE customer_name = 'Dave'"
+  - name: Typed results from both instances
+    steps:
+      - name: Parallel requests
+        action:
+          type: parallel
+          actions:
+            - type: dbQuery
+              database: products-db
+              query: 'SELECT id, name FROM products WHERE id = 1'
+            - type: dbQuery
+              database: orders-db
+              query: 'SELECT id, total_cents FROM orders WHERE id = 1'

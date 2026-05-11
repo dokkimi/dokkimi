@@ -1,0 +1,27 @@
+name: validation-test
+config:
+  timeoutSeconds: -5
+items:
+  - $ref: ../shared/service-a.yaml
+  - type: SERVICE
+    name: Bad_Name
+    port: 99999
+  - type: DATABASE
+    name: broken-db
+    database: oracle
+    initFilePath: missing-file.sql
+  - type: MOCK
+    name: broken-mock
+    mockMethod: INVALID_METHOD
+    mockResponseStatus: 999
+tests:
+  - name: bad steps
+    steps:
+      - action:
+          type: dbQuery
+          query: SELECT 1
+      - action:
+          type: httpRequest
+          method: PATCH
+          url: 'service-a:3000/api/test'
+          poo: invalid

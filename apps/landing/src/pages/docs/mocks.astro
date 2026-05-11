@@ -1,0 +1,112 @@
+---
+import DocsLayout from '../../layouts/DocsLayout.astro';
+import CodeBlock from '../../components/CodeBlock.astro';
+---
+
+<DocsLayout title="Mocks — Dokkimi Docs" description="Intercept outbound requests to external APIs and return controlled responses.">
+  <h1>Mocks</h1>
+  <p class="subtitle">Intercept outbound HTTP requests from your services and return controlled responses.</p>
+
+  <h2>Required fields</h2>
+  <table>
+    <thead>
+      <tr><th>Field</th><th>Type</th><th>Description</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>type</code></td><td><code>"MOCK"</code></td><td>Item type</td></tr>
+      <tr><td><code>name</code></td><td>string</td><td>Unique name (1-63 chars)</td></tr>
+      <tr><td><code>mockTarget</code></td><td>string</td><td>Target hostname to intercept (e.g., <code>api.stripe.com</code>)</td></tr>
+      <tr><td><code>mockPath</code></td><td>string</td><td>URL path to match (e.g., <code>/v1/charges</code>, <code>/api/*</code>)</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Optional fields</h2>
+  <table>
+    <thead>
+      <tr><th>Field</th><th>Type</th><th>Default</th><th>Description</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>description</code></td><td>string</td><td>—</td><td>Human-readable description (max 500 chars)</td></tr>
+      <tr><td><code>mockMethod</code></td><td>enum</td><td><code>*</code></td><td>HTTP method: <code>GET</code>, <code>POST</code>, <code>PUT</code>, <code>DELETE</code>, <code>PATCH</code>, <code>HEAD</code>, <code>OPTIONS</code>, or <code>*</code> (any)</td></tr>
+      <tr><td><code>mockOrigin</code></td><td>string</td><td>any</td><td>Service name that makes the request, or <code>*</code> for any</td></tr>
+      <tr><td><code>mockDelayMs</code></td><td>integer</td><td>—</td><td>Artificial response delay in milliseconds</td></tr>
+      <tr><td><code>mockResponseStatus</code></td><td>integer</td><td>—</td><td>HTTP response status code (100-599)</td></tr>
+      <tr><td><code>mockResponseHeaders</code></td><td>object</td><td>—</td><td>Response headers</td></tr>
+      <tr><td><code>mockResponseBody</code></td><td>any JSON</td><td>—</td><td>Response body</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Example — mocking Stripe</h2>
+  <CodeBlock code={`{
+  "type": "MOCK",
+  "name": "mock-stripe-charges",
+  "mockMethod": "POST",
+  "mockOrigin": "payment-service",
+  "mockTarget": "api.stripe.com",
+  "mockPath": "/v1/charges",
+  "mockDelayMs": 100,
+  "mockResponseStatus": 200,
+  "mockResponseHeaders": { "Content-Type": "application/json" },
+  "mockResponseBody": {
+    "id": "ch_test_123",
+    "object": "charge",
+    "amount": 2000,
+    "currency": "usd",
+    "status": "succeeded"
+  }
+}`} lang="json" />
+
+  <h2>Example — mocking a failure</h2>
+  <CodeBlock code={`{
+  "type": "MOCK",
+  "name": "mock-stripe-failure",
+  "mockMethod": "POST",
+  "mockTarget": "api.stripe.com",
+  "mockPath": "/v1/charges",
+  "mockResponseStatus": 402,
+  "mockResponseBody": {
+    "error": { "type": "card_error", "message": "Your card was declined." }
+  }
+}`} lang="json" />
+
+  <h2>Alternative: top-level mocks array</h2>
+  <p>Mocks can also be defined in a top-level <code>mocks</code> array on the definition, with shorter field names:</p>
+  <CodeBlock code={`{
+  "name": "my-definition",
+  "items": [ ... ],
+  "mocks": [
+    {
+      "name": "Stripe Create Charge",
+      "method": "POST",
+      "origin": "payment-service",
+      "target": "api.stripe.com",
+      "path": "/v1/charges",
+      "responseStatus": 200,
+      "responseHeaders": { "Content-Type": "application/json" },
+      "responseBody": { "id": "ch_test", "status": "succeeded" }
+    }
+  ]
+}`} lang="json" />
+
+  <h3>Field name mapping</h3>
+  <table>
+    <thead>
+      <tr><th>Item field</th><th>Mocks array field</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>mockMethod</code></td><td><code>method</code></td></tr>
+      <tr><td><code>mockOrigin</code></td><td><code>origin</code></td></tr>
+      <tr><td><code>mockTarget</code></td><td><code>target</code></td></tr>
+      <tr><td><code>mockPath</code></td><td><code>path</code></td></tr>
+      <tr><td><code>mockDelayMs</code></td><td><code>delayMs</code></td></tr>
+      <tr><td><code>mockResponseStatus</code></td><td><code>responseStatus</code></td></tr>
+      <tr><td><code>mockResponseHeaders</code></td><td><code>responseHeaders</code></td></tr>
+      <tr><td><code>mockResponseBody</code></td><td><code>responseBody</code></td></tr>
+    </tbody>
+  </table>
+
+  <div class="nav-links">
+    <a href="/docs/databases">← Databases</a>
+    <a href="/docs/refs">References ($ref) →</a>
+  </div>
+</DocsLayout>

@@ -1,0 +1,61 @@
+---
+import DocsLayout from '../../layouts/DocsLayout.astro';
+import CodeBlock from '../../components/CodeBlock.astro';
+---
+
+<DocsLayout title="AI Integration — Dokkimi Docs" description="How Dokkimi works with AI assistants to write test definitions and debug failures.">
+  <h1>AI Integration</h1>
+  <p class="subtitle">Dokkimi is designed to work with AI assistants out of the box.</p>
+
+  <h2>How it works</h2>
+  <p>When you install Dokkimi, it updates your AI assistant's context files so the assistant automatically knows about Dokkimi's definition format, CLI commands, and capabilities. There's nothing to configure — your AI assistant is ready to write and debug Dokkimi tests immediately after installation.</p>
+  <p>Specifically, Dokkimi adds a reference to <code>~/.dokkimi/dokkimi-instructions.md</code> (the complete specification) in your assistant's context configuration. This means tools like Claude Code, Cursor, and similar AI coding assistants can:</p>
+  <ul>
+    <li>Write test definitions from natural language descriptions</li>
+    <li>Add assertions to existing tests</li>
+    <li>Create shared fragments and wire up <code>$ref</code> references</li>
+    <li>Debug failing tests using structured output</li>
+  </ul>
+
+  <h2>Writing tests with AI</h2>
+  <p>Just describe what you want to test. Your AI assistant already has the full Dokkimi spec in context:</p>
+  <CodeBlock code={`# In your AI assistant:
+"Write a Dokkimi test definition that tests the checkout flow.
+I have an API gateway (port 3000), an order service (port 3001),
+and a Postgres database. Mock Stripe for payment processing."`} lang="bash" />
+  <p>The AI will generate a valid definition file with the correct item types, connection strings, mock configuration, and assertion blocks — no need to tell it where to find the docs.</p>
+
+  <h2>Debugging with dokkimi dump</h2>
+  <p>When a test fails, <code>dokkimi dump</code> exports the entire run as structured JSON — captured HTTP traffic, console logs, assertion results, and timing data:</p>
+  <CodeBlock code={`# Export only failed instances
+dokkimi dump --failed -o failures.json`} lang="bash" />
+  <p>Your AI assistant can read this file and diagnose the failure:</p>
+  <CodeBlock code={`# In your AI assistant:
+"The checkout test failed. Read failures.json and trace through
+the captured traffic to tell me what went wrong."`} lang="bash" />
+  <p>The dump contains everything the AI needs to diagnose the issue without access to your cluster — request/response bodies, inter-service calls, service logs, and the full test definition.</p>
+
+  <h2>The dump file</h2>
+  <p>The JSON output from <code>dokkimi dump</code> includes:</p>
+  <ul>
+    <li><strong>Definition</strong> — the full resolved test definition (items, variables, tests)</li>
+    <li><strong>HTTP logs</strong> — every inter-service HTTP call with request and response bodies, headers, and timing</li>
+    <li><strong>Console logs</strong> — stdout/stderr from every service, with timestamps and detected log levels</li>
+    <li><strong>Assertion results</strong> — which assertions passed, which failed, and the expected vs actual values</li>
+    <li><strong>Database logs</strong> — queries executed and their results</li>
+    <li><strong>Execution logs</strong> — step-by-step timeline of the test run</li>
+  </ul>
+  <p>See the <a href="/docs/cli">CLI Reference</a> for the full output structure.</p>
+
+  <h2>Tips for AI-assisted workflows</h2>
+  <ul>
+    <li><strong>Use <code>dokkimi validate</code> after generation.</strong> Run <code>dokkimi validate</code> on AI-generated definitions to catch schema errors before deploying.</li>
+    <li><strong>Save dumps from CI.</strong> Add <code>dokkimi dump --failed -o artifacts/failures.json</code> to your CI failure handler so dump files are always available for debugging.</li>
+    <li><strong>Include your service code.</strong> When debugging, share the relevant endpoint handler code alongside the dump. The dump shows <em>what happened</em>; your code shows <em>why</em>.</li>
+  </ul>
+
+  <div class="nav-links">
+    <a href="/docs">← Getting Started</a>
+    <a href="/docs/project-structure">Project Structure →</a>
+  </div>
+</DocsLayout>

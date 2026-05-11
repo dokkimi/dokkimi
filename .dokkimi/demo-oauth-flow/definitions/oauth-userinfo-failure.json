@@ -1,0 +1,123 @@
+{
+  "name": "oauth-userinfo-failure",
+  "description": "Tests how the service handles the userinfo endpoint failing after a successful token exchange — the token mock returns success, but the userinfo mock returns 401",
+  "items": [
+    { "$ref": "../shared/api-service.json" },
+    {
+      "$ref": "../shared/postgres-db.json",
+      "initFilePath": "../init-files/schema.sql"
+    },
+    { "$ref": "../shared/mock-oauth-token.json" },
+    {
+      "type": "MOCK",
+      "name": "mock-oauth-userinfo-expired",
+      "description": "Simulates the OAuth provider rejecting the access token at the userinfo endpoint",
+      "mockMethod": "GET",
+      "mockTarget": "auth.provider.com",
+      "mockPath": "/userinfo",
+      "mockResponseStatus": 401,
+      "mockResponseHeaders": { "Content-Type": "application/json" },
+      "mockResponseBody": {
+        "error": "invalid_token",
+        "error_description": "The access token is expired or revoked."
+      }
+    }
+  ],
+  "tests": [
+    {
+      "name": "Userinfo failure after successful token exchange",
+      "description": "Token exchange succeeds (200) but userinfo fetch fails (401) — the service should return 500 and not create a user",
+      "steps": [
+        {
+          "name": "Callback triggers token exchange (success) then userinfo (failure)",
+          "action": {
+            "type": "httpRequest",
+            "method": "GET",
+            "url": "api-service/auth/callback?code=valid_code&state=test"
+          },
+          "assertions": [
+            {
+              "assertions": [
+                { "path": "response.status", "operator": "eq", "value": 500 },
+                {
+                  "path": "response.body.message",
+                  "operator": "eq",
+                  "value": "Authentication failed"
+                }
+              ]
+            },
+            {
+              "match": {
+                "origin": "api-service",
+                "method": "POST",
+                "url": "auth.provider.com/oauth/token"
+              },
+              "count": { "operator": "eq", "value": 1 },
+              "assertions": [
+                { "path": "response.status", "operator": "eq", "value": 200 },
+                { "path": "response.body.access_token", "operator": "exists" }
+              ]
+            },
+            {
+              "match": {
+                "origin": "api-service",
+                "method": "GET",
+                "url": "auth.provider.com/userinfo"
+              },
+              "count": { "operator": "eq", "value": 1 },
+              "assertions": [
+                { "path": "response.status", "operator": "eq", "value": 401 },
+                {
+                  "path": "response.body.error",
+                  "operator": "eq",
+                  "value": "invalid_token"
+                }
+              ]
+            },
+            {
+              "service": "api-service",
+              "consoleAssertions": [
+                {
+                  "message": {
+                    "operator": "contains",
+                    "value": "Token exchange successful"
+                  },
+                  "count": { "operator": "eq", "value": 1 }
+                },
+                {
+                  "message": {
+                    "operator": "contains",
+                    "value": "Userinfo fetch failed"
+                  },
+                  "count": { "operator": "gte", "value": 1 }
+                },
+                {
+                  "message": {
+                    "operator": "contains",
+                    "value": "OAuth callback failed"
+                  },
+                  "count": { "operator": "gte", "value": 1 }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "No user was created despite successful token exchange",
+          "action": {
+            "type": "dbQuery",
+            "database": "postgres-db",
+            "query": "SELECT COUNT(*) as count FROM users WHERE oauth_id != 'oauth_user_alice'"
+          },
+          "assertions": [
+            {
+              "assertions": [
+                { "path": "data[0].count", "operator": "eq", "value": 0 }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

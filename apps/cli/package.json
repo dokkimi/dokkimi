@@ -1,0 +1,53 @@
+{
+  "name": "@dokkimi/cli",
+  "version": "0.3.6",
+  "private": true,
+  "main": "dist/bin/dokkimi.js",
+  "bin": {
+    "dokkimi": "dist/bin/dokkimi.js"
+  },
+  "scripts": {
+    "build": "tsc && chmod +x dist/bin/dokkimi.js && cp ../../shared/docs/dokkimi-instructions.md dist/dokkimi-instructions.md",
+    "dev": "yarn workspace @dokkimi/config build && yarn workspace @dokkimi/platform build && yarn workspace @dokkimi/telemetry build && yarn workspace @dokkimi/definition-validator build && yarn workspace @dokkimi/definition-resolver build && yarn workspace @dokkimi/service-manager build && tsc && chmod +x dist/bin/dokkimi.js && cp ../../shared/docs/dokkimi-instructions.md dist/dokkimi-instructions.md && DEPLOYMENT_TYPE=desktop NODE_ENV=development concurrently -n cfg,plat,tel,val,res,sm,ct,tsc -c gray,gray,gray,gray,gray,gray,blue,green \"yarn workspace @dokkimi/config dev\" \"yarn workspace @dokkimi/platform dev\" \"yarn workspace @dokkimi/telemetry dev\" \"yarn workspace @dokkimi/definition-validator dev\" \"yarn workspace @dokkimi/definition-resolver dev\" \"yarn workspace @dokkimi/service-manager dev\" \"yarn workspace control-tower start:dev\" \"tsc --watch --preserveWatchOutput\"",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:cov": "jest --coverage"
+  },
+  "jest": {
+    "moduleFileExtensions": [
+      "js",
+      "json",
+      "ts"
+    ],
+    "rootDir": "src",
+    "testRegex": ".*\\.spec\\.ts$",
+    "transform": {
+      "^.+\\.ts$": "ts-jest"
+    },
+    "collectCoverageFrom": [
+      "**/*.ts",
+      "!**/*.spec.ts",
+      "!bin/**"
+    ],
+    "coverageDirectory": "../coverage",
+    "testEnvironment": "node"
+  },
+  "dependencies": {
+    "@dokkimi/config": "workspace:*",
+    "@dokkimi/definition-resolver": "workspace:*",
+    "@dokkimi/platform": "workspace:*",
+    "@dokkimi/service-manager": "workspace:*",
+    "@dokkimi/telemetry": "workspace:*",
+    "chokidar": "^5.0.0",
+    "js-yaml": "^4.1.1"
+  },
+  "devDependencies": {
+    "@types/jest": "^30.0.0",
+    "@types/js-yaml": "^4.0.9",
+    "@types/node": "^25.6.2",
+    "concurrently": "^9.2.1",
+    "jest": "^30.4.1",
+    "ts-jest": "^29.4.9",
+    "typescript": "^6.0.3"
+  }
+}

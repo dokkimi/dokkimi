@@ -1,0 +1,54 @@
+name: chain-ui-e2e
+description: |
+  Drive the DbQueryHarness "Run Chain" button. The UI POSTs once to traffic-
+  tester, which forwards to downstream-svc, which queries postgres and
+  returns the user count. Three observable hops in inter-service traffic
+  (UI→tt, tt→downstream, downstream→DB) plus the rendered count in the page.
+  Exercises chained backend calls triggered from a single UI action.
+config:
+  timeoutSeconds: 120
+items:
+  - $ref: ../shared/frontend.yaml
+  - $ref: ../shared/traffic-tester.yaml
+  - $ref: ../shared/downstream-svc.yaml
+  - $ref: ../shared/postgres.yaml
+tests:
+  - name: UI-driven chain hits two services and the DB
+    steps:
+      - name: Click Run Chain and wait for the rendered count
+        action:
+          type: ui
+          target: routing-test-ui
+          steps:
+            - $ref: ../shared/navigate-to-db-harness.yaml
+            - click: "[data-testid='db-run-chain']"
+            - waitFor: "[data-testid='db-chain-result']"
+            - extract:
+                userCount:
+                  from: attribute
+                  selector: "[data-testid='db-chain-result']"
+                  name: data-user-count
+            - screenshot: chain-rendered
+        assertions:
+          # The seeded users table has 3 rows. Asserts the chain executed
+          # all the way through and the count came back into the DOM.
+          - assertions:
+              - path: $.extracted.userCount
+                operator: eq
+                value: '3'
+          # Outer hop: UI → traffic-tester (kicked off by the SPA's fetch).
+          - match:
+              method: POST
+              url: traffic-tester/chain
+            count:
+              operator: eq
+              value: 1
+          # Inner hop: traffic-tester → downstream-svc (made by axios inside
+          # traffic-tester when handling the requests[] array).
+          - match:
+              origin: traffic-tester
+              method: POST
+              url: downstream-svc/inner
+            count:
+              operator: eq
+              value: 1

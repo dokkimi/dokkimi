@@ -1,0 +1,84 @@
+---
+
+---
+
+<section class="learn-more">
+  <div class="container">
+    <h2 class="section-heading">Learn More</h2>
+    <p class="section-subtitle">Dive into the docs or follow a step-by-step tutorial.</p>
+    <div class="links">
+      <a href="/docs" class="link-card">
+        <div class="link-icon">
+          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+        </div>
+        <div>
+          <strong>Documentation</strong>
+          <p>Installation, project structure, services, mocks, assertions, and CLI reference.</p>
+        </div>
+      </a>
+      <a href="/tutorials" class="link-card">
+        <div class="link-icon">
+          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
+        </div>
+        <div>
+          <strong>Tutorials</strong>
+          <p>Real-world walkthroughs: OAuth mocking, Next.js E2E testing, external API integrations.</p>
+        </div>
+      </a>
+    </div>
+  </div>
+</section>
+
+<style>
+  .learn-more {
+    padding: var(--section-spacing) 0;
+  }
+
+  .links {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 24px;
+    max-width: 800px;
+    margin: 0 auto;
+  }
+
+  .link-card {
+    display: flex;
+    align-items: flex-start;
+    gap: 16px;
+    padding: 28px 32px;
+    background: var(--color-bg-soft);
+    border: 1px solid var(--color-border);
+    border-radius: 12px;
+    transition: border-color 0.2s;
+  }
+
+  .link-card:hover {
+    border-color: var(--color-primary);
+    color: var(--color-primary);
+  }
+
+  .link-icon {
+    flex-shrink: 0;
+    color: var(--color-primary-soft);
+    margin-top: 2px;
+  }
+
+  .link-card strong {
+    display: block;
+    font-size: 1.1rem;
+    margin-bottom: 6px;
+  }
+
+  .link-card p {
+    font-size: 0.9rem;
+    color: var(--color-text-muted);
+    line-height: 1.5;
+  }
+
+  @media (max-width: 768px) {
+    .links {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>

@@ -1,0 +1,44 @@
+name: ui-substep-timeout
+description: |
+  Exercises the per-sub-step `timeoutMs` override on a UI action. Each
+  sub-step gets a custom timeout — generous on `waitFor` (where backend
+  latency lives), tight on `click`/`type` (which should always be near-
+  instant). The test passes when every sub-step finishes inside its budget;
+  if the override plumbing regresses, the test fails fast on the offending
+  step rather than hanging until the test-level timeout.
+config:
+  timeoutSeconds: 60
+items:
+  - $ref: ../shared/frontend.yaml
+  - $ref: ../shared/traffic-tester.yaml
+  - $ref: ../shared/postgres.yaml
+tests:
+  - name: List users with overridden per-sub-step timeouts
+    steps:
+      - name: Drive the DB Query Harness with explicit timeouts
+        action:
+          type: ui
+          target: routing-test-ui
+          steps:
+            - visit: /
+              timeoutMs: 10000
+            - click: "[data-testid='tab-db']"
+              timeoutMs: 3000
+            - waitFor: "[data-testid='scenario-db']"
+              timeoutMs: 5000
+            - click: "[data-testid='db-list-users']"
+              timeoutMs: 3000
+            - waitFor: "[data-testid='db-users-list']"
+              timeoutMs: 10000
+            - extract:
+                aliceName:
+                  from: text
+                  selector: "[data-testid='db-user-name-1']"
+              timeoutMs: 2000
+            - screenshot: users-listed
+              timeoutMs: 10000
+        assertions:
+          - assertions:
+              - path: $.extracted.aliceName
+                operator: eq
+                value: Alice

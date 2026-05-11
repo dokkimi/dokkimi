@@ -1,0 +1,12 @@
+{
+  "type": "MOCK",
+  "name": "mock-rabbitmq",
+  "description": "Mock RabbitMQ management API for queue health checks",
+  "mockTarget": "rabbitmq",
+  "mockPath": "/api/*",
+  "mockResponseStatus": 200,
+  "mockResponseHeaders": { "Content-Type": "application/json" },
+  "mockResponseBody": {
+    "status": "ok"
+  }
+}

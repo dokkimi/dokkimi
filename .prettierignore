@@ -1,0 +1,16 @@
+node_modules/
+dist/
+build/
+out/
+coverage/
+.publish-staging/
+.yarn/
+**/*.min.js
+**/*.min.css
+apps/landing/dist/
+apps/vscode/dist/
+shared/prisma/migrations/
+**/generated/
+yarn.lock
+pnpm-lock.yaml
+package-lock.json

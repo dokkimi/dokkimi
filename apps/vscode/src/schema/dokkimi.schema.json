@@ -1,0 +1,1496 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+
+  "oneOf": [
+    { "$ref": "#/definitions/DefinitionFile" },
+    { "$ref": "#/definitions/RefFragment" },
+    { "$ref": "#/definitions/ServiceItem" },
+    { "$ref": "#/definitions/DatabaseItem" },
+    { "$ref": "#/definitions/MockItem" },
+    { "$ref": "#/definitions/HttpRequestItem" },
+    { "$ref": "#/definitions/DbQueryItem" },
+    { "$ref": "#/definitions/SharedVariableFile" },
+    { "$ref": "#/definitions/ActionFragment" },
+    { "$ref": "#/definitions/StepFragment" }
+  ],
+
+  "definitions": {
+    "DefinitionFile": {
+      "type": "object",
+      "required": ["name", "items"],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Unique name for this definition.",
+          "maxLength": 100
+        },
+        "description": {
+          "type": "string",
+          "description": "Human-readable description."
+        },
+        "config": {
+          "type": "object",
+          "description": "Run-level configuration: timeouts, browser settings, etc.",
+          "additionalProperties": false,
+          "properties": {
+            "timeoutSeconds": {
+              "type": "integer",
+              "description": "Default timeout in seconds for all tests.",
+              "exclusiveMinimum": 0
+            },
+            "browser": {
+              "type": "object",
+              "description": "Browser configuration for UI tests.",
+              "additionalProperties": false,
+              "properties": {
+                "version": {
+                  "type": "string",
+                  "description": "Chrome version tag (e.g., '148.0.7778.56'). Defaults to the pinned version."
+                }
+              }
+            }
+          }
+        },
+        "items": {
+          "type": "array",
+          "description": "Items to deploy: services, databases, and mocks.",
+          "items": { "$ref": "#/definitions/AnyItem" }
+        },
+        "variables": {
+          "type": "object",
+          "description": "Definition-level variables shared by all tests. Supports $ref for cross-file sharing. Test-level variables override these.",
+          "properties": {
+            "$ref": {
+              "oneOf": [
+                {
+                  "type": "string",
+                  "description": "Path to a shared variable file (e.g., '../shared/db-vars.json')."
+                },
+                {
+                  "type": "array",
+                  "description": "Paths to shared variable files, merged left-to-right.",
+                  "items": { "type": "string" }
+                }
+              ]
+            }
+          },
+          "additionalProperties": {
+            "oneOf": [
+              {
+                "type": "string",
+                "description": "JSONPath expression (e.g. $.body.id)"
+              },
+              {
+                "type": "object",
+                "description": "Regex extraction rule — resolve a JSONPath, then apply a regex pattern.",
+                "required": ["path", "pattern"],
+                "properties": {
+                  "path": {
+                    "type": "string",
+                    "description": "JSONPath to the source value."
+                  },
+                  "pattern": {
+                    "type": "string",
+                    "description": "Regex pattern with capture groups."
+                  },
+                  "group": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": "Capture group index (default 1; use 0 for full match)."
+                  }
+                },
+                "additionalProperties": false
+              }
+            ]
+          }
+        },
+        "tests": {
+          "type": "array",
+          "description": "Test definitions to run against the deployed namespace.",
+          "items": { "$ref": "#/definitions/TestDefinition" }
+        }
+      }
+    },
+
+    "AnyItem": {
+      "oneOf": [
+        { "$ref": "#/definitions/RefItem" },
+        { "$ref": "#/definitions/ServiceItem" },
+        { "$ref": "#/definitions/DatabaseItem" },
+        { "$ref": "#/definitions/MockItem" },
+        { "$ref": "#/definitions/HttpRequestItem" },
+        { "$ref": "#/definitions/DbQueryItem" }
+      ]
+    },
+
+    "RefItem": {
+      "type": "object",
+      "required": ["$ref"],
+      "properties": {
+        "$ref": {
+          "oneOf": [
+            {
+              "type": "string",
+              "description": "Relative path to a shared fragment file (e.g., '../shared/postgres.json')."
+            },
+            {
+              "type": "array",
+              "description": "Paths to shared fragment files, merged left-to-right. Later files override earlier ones.",
+              "items": { "type": "string" }
+            }
+          ]
+        }
+      },
+      "additionalProperties": true
+    },
+
+    "ServiceItem": {
+      "type": "object",
+      "required": ["type", "name"],
+      "additionalProperties": false,
+      "properties": {
+        "type": { "type": "string", "const": "SERVICE" },
+        "name": {
+          "type": "string",
+          "description": "Unique name (DNS label). Lowercase alphanumeric with hyphens, 1-63 chars.",
+          "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$",
+          "maxLength": 63
+        },
+        "description": {
+          "type": "string",
+          "description": "Human-readable description."
+        },
+        "image": {
+          "type": "string",
+          "description": "Docker image URI (e.g., 'myregistry/my-service:latest')."
+        },
+        "port": {
+          "type": "integer",
+          "description": "Port the service listens on inside the container.",
+          "minimum": 1,
+          "maximum": 65535
+        },
+        "healthCheck": {
+          "type": "string",
+          "description": "HTTP endpoint path for health checks (e.g., '/health')."
+        },
+        "uiPath": {
+          "type": "string",
+          "description": "URL path to the service's UI (e.g., '/')."
+        },
+        "debugPort": {
+          "type": "integer",
+          "description": "Port for remote debugging (e.g., 9229 for Node.js --inspect).",
+          "minimum": 1,
+          "maximum": 65535
+        },
+        "env": {
+          "type": "array",
+          "description": "Environment variables passed to the container.",
+          "items": { "$ref": "#/definitions/EnvVar" }
+        },
+        "build": { "$ref": "#/definitions/BuildConfig" },
+        "localDevPath": {
+          "type": "string",
+          "description": "Local source path for dev hot-reload."
+        },
+        "mountPath": {
+          "type": "string",
+          "description": "Container mount path for local dev source."
+        },
+        "minCpu": {
+          "type": "number",
+          "description": "Minimum CPU cores requested."
+        },
+        "minMemory": {
+          "type": "number",
+          "description": "Minimum memory in MB requested."
+        },
+        "maxCpu": {
+          "type": "number",
+          "description": "Maximum CPU cores allowed."
+        },
+        "maxMemory": {
+          "type": "number",
+          "description": "Maximum memory in MB allowed."
+        }
+      }
+    },
+
+    "DatabaseItem": {
+      "type": "object",
+      "required": ["type", "name", "database"],
+      "additionalProperties": false,
+      "properties": {
+        "type": { "type": "string", "const": "DATABASE" },
+        "name": {
+          "type": "string",
+          "description": "Unique name (DNS label). Lowercase alphanumeric with hyphens, 1-63 chars.",
+          "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$",
+          "maxLength": 63
+        },
+        "description": {
+          "type": "string",
+          "description": "Human-readable description."
+        },
+        "database": {
+          "type": "string",
+          "description": "Database engine type.",
+          "enum": ["postgres", "mysql", "mongodb", "redis"]
+        },
+        "version": {
+          "type": "string",
+          "description": "Database image version tag (e.g. \"16\" for postgres:16). Must start with a digit. Defaults to a sensible version per engine.",
+          "pattern": "^[0-9][a-zA-Z0-9.\\-]*$"
+        },
+        "dbName": {
+          "type": "string",
+          "description": "Custom database/schema name to create."
+        },
+        "dbUser": {
+          "type": "string",
+          "description": "Custom database username."
+        },
+        "dbPassword": {
+          "type": "string",
+          "description": "Custom database password."
+        },
+        "initFilePath": {
+          "type": "string",
+          "description": "Path to init file relative to .dokkimi/init-files/."
+        },
+        "initFilePaths": {
+          "type": "array",
+          "description": "Array of init file paths (run in order).",
+          "items": { "type": "string" }
+        },
+        "initFileIds": {
+          "type": "array",
+          "description": "Array of init file IDs.",
+          "items": { "type": "string" }
+        },
+        "minCpu": {
+          "type": "number",
+          "description": "Minimum CPU cores requested."
+        },
+        "minMemory": {
+          "type": "number",
+          "description": "Minimum memory in MB requested."
+        },
+        "maxCpu": {
+          "type": "number",
+          "description": "Maximum CPU cores allowed."
+        },
+        "maxMemory": {
+          "type": "number",
+          "description": "Maximum memory in MB allowed."
+        }
+      }
+    },
+
+    "MockItem": {
+      "type": "object",
+      "required": ["type", "name", "mockTarget", "mockPath"],
+      "additionalProperties": false,
+      "properties": {
+        "type": { "type": "string", "const": "MOCK" },
+        "name": {
+          "type": "string",
+          "description": "Unique name (DNS label). Lowercase alphanumeric with hyphens, 1-63 chars.",
+          "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$",
+          "maxLength": 63
+        },
+        "description": {
+          "type": "string",
+          "description": "Human-readable description."
+        },
+        "mockMethod": {
+          "type": "string",
+          "description": "HTTP method to match, or '*' for any.",
+          "enum": [
+            "GET",
+            "POST",
+            "PUT",
+            "DELETE",
+            "PATCH",
+            "HEAD",
+            "OPTIONS",
+            "*"
+          ]
+        },
+        "mockOrigin": {
+          "type": "string",
+          "description": "Service making the request, or '*' for any."
+        },
+        "mockTarget": {
+          "type": "string",
+          "description": "Target hostname to intercept (e.g., 'api.stripe.com')."
+        },
+        "mockPath": {
+          "type": "string",
+          "description": "URL path pattern to match (e.g., '/v1/charges')."
+        },
+        "mockRequestBodyContains": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Substring match against the serialized request body (case-insensitive). Mutually exclusive with mockRequestBodyMatches."
+        },
+        "mockRequestBodyMatches": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Regex match against the serialized request body (case-sensitive; use (?i) for case-insensitive). Mutually exclusive with mockRequestBodyContains."
+        },
+        "mockDelayMs": {
+          "type": "integer",
+          "description": "Artificial delay in milliseconds before responding."
+        },
+        "mockResponseStatus": {
+          "type": "integer",
+          "description": "HTTP status code for the mock response.",
+          "minimum": 100,
+          "maximum": 599
+        },
+        "mockResponseHeaders": {
+          "type": "object",
+          "description": "HTTP response headers.",
+          "additionalProperties": {
+            "oneOf": [
+              {
+                "type": "string",
+                "description": "JSONPath expression (e.g. $.body.id)"
+              },
+              {
+                "type": "object",
+                "description": "Regex extraction rule — resolve a JSONPath, then apply a regex pattern.",
+                "required": ["path", "pattern"],
+                "properties": {
+                  "path": {
+                    "type": "string",
+                    "description": "JSONPath to the source value."
+                  },
+                  "pattern": {
+                    "type": "string",
+                    "description": "Regex pattern with capture groups."
+                  },
+                  "group": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": "Capture group index (default 1; use 0 for full match)."
+                  }
+                },
+                "additionalProperties": false
+              }
+            ]
+          }
+        },
+        "mockResponseBody": {
+          "description": "Response body. Can be a JSON object/array or a string."
+        }
+      }
+    },
+
+    "HttpRequestItem": {
+      "type": "object",
+      "required": [
+        "type",
+        "name",
+        "requestMethod",
+        "requestUrl",
+        "requestTarget"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "type": { "type": "string", "const": "HTTP_REQUEST" },
+        "name": {
+          "type": "string",
+          "description": "Unique name (DNS label). Lowercase alphanumeric with hyphens, 1-63 chars.",
+          "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$",
+          "maxLength": 63
+        },
+        "description": {
+          "type": "string",
+          "description": "Human-readable description."
+        },
+        "requestMethod": {
+          "type": "string",
+          "description": "HTTP method.",
+          "enum": ["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"]
+        },
+        "requestProtocol": {
+          "type": "string",
+          "description": "Request protocol.",
+          "enum": ["http", "https"]
+        },
+        "requestUrl": { "type": "string", "description": "Request URL." },
+        "requestHeaders": {
+          "type": "object",
+          "description": "HTTP request headers.",
+          "additionalProperties": {
+            "oneOf": [
+              {
+                "type": "string",
+                "description": "JSONPath expression (e.g. $.body.id)"
+              },
+              {
+                "type": "object",
+                "description": "Regex extraction rule — resolve a JSONPath, then apply a regex pattern.",
+                "required": ["path", "pattern"],
+                "properties": {
+                  "path": {
+                    "type": "string",
+                    "description": "JSONPath to the source value."
+                  },
+                  "pattern": {
+                    "type": "string",
+                    "description": "Regex pattern with capture groups."
+                  },
+                  "group": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": "Capture group index (default 1; use 0 for full match)."
+                  }
+                },
+                "additionalProperties": false
+              }
+            ]
+          }
+        },
+        "requestBody": { "description": "Request body (JSON)." },
+        "requestTarget": {
+          "type": "string",
+          "description": "Target service name."
+        }
+      }
+    },
+
+    "DbQueryItem": {
+      "type": "object",
+      "required": ["type", "name", "queryTarget", "queryText"],
+      "additionalProperties": false,
+      "properties": {
+        "type": { "type": "string", "const": "DB_QUERY" },
+        "name": {
+          "type": "string",
+          "description": "Unique name (DNS label). Lowercase alphanumeric with hyphens, 1-63 chars.",
+          "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$",
+          "maxLength": 63
+        },
+        "description": {
+          "type": "string",
+          "description": "Human-readable description."
+        },
+        "queryTarget": {
+          "type": "string",
+          "description": "Target database service name."
+        },
+        "queryText": {
+          "type": "string",
+          "description": "SQL query or MongoDB command."
+        },
+        "queryParams": {
+          "type": "object",
+          "description": "Query parameters.",
+          "additionalProperties": true
+        }
+      }
+    },
+
+    "SharedVariableFile": {
+      "type": "object",
+      "description": "A shared variable file: flat key-value pairs referenced via $ref from definition or test variables.",
+      "additionalProperties": {
+        "oneOf": [
+          {
+            "type": "string",
+            "description": "JSONPath expression (e.g. $.body.id)"
+          },
+          {
+            "type": "object",
+            "description": "Regex extraction rule — resolve a JSONPath, then apply a regex pattern.",
+            "required": ["path", "pattern"],
+            "properties": {
+              "path": {
+                "type": "string",
+                "description": "JSONPath to the source value."
+              },
+              "pattern": {
+                "type": "string",
+                "description": "Regex pattern with capture groups."
+              },
+              "group": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Capture group index (default 1; use 0 for full match)."
+              }
+            },
+            "additionalProperties": false
+          }
+        ]
+      },
+      "not": {
+        "anyOf": [
+          { "required": ["name"] },
+          { "required": ["type"] },
+          { "required": ["items"] }
+        ]
+      }
+    },
+
+    "ActionFragment": {
+      "type": "object",
+      "description": "A shared action fragment file. Contains a reusable action definition referenced via $ref on a step's action field.",
+      "required": ["action"],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Human-readable name for this fragment."
+        },
+        "description": {
+          "type": "string",
+          "description": "What this action does."
+        },
+        "action": { "$ref": "#/definitions/AnyAction" }
+      },
+      "not": {
+        "anyOf": [
+          { "required": ["items"] },
+          { "required": ["tests"] },
+          { "required": ["steps"] }
+        ]
+      }
+    },
+
+    "StepFragment": {
+      "type": "object",
+      "description": "A shared UI sub-step fragment file. Contains reusable sub-steps (e.g., a login flow) referenced via $ref inside a UI action's steps array.",
+      "required": ["steps"],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Human-readable name for this fragment."
+        },
+        "description": {
+          "type": "string",
+          "description": "What these steps do."
+        },
+        "steps": {
+          "type": "array",
+          "description": "Ordered UI sub-steps to splice into the referencing action.",
+          "items": { "$ref": "#/definitions/UiSubStep" }
+        }
+      },
+      "not": {
+        "anyOf": [
+          { "required": ["items"] },
+          { "required": ["tests"] },
+          { "required": ["action"] }
+        ]
+      }
+    },
+
+    "RefFragment": {
+      "type": "object",
+      "description": "A shared fragment that inherits from another fragment via $ref. Inline fields are shallow-merged as overrides on top of the referenced file.",
+      "required": ["$ref"],
+      "properties": {
+        "$ref": {
+          "oneOf": [
+            {
+              "type": "string",
+              "description": "Relative path to a base fragment file (e.g., './base-service.yaml')."
+            },
+            {
+              "type": "array",
+              "description": "Paths to base fragment files, merged left-to-right.",
+              "items": { "type": "string" }
+            }
+          ]
+        }
+      },
+      "additionalProperties": true,
+      "not": {
+        "anyOf": [
+          { "required": ["items"] },
+          { "required": ["action"] },
+          { "required": ["steps"] }
+        ]
+      }
+    },
+
+    "EnvVar": {
+      "type": "object",
+      "required": ["name", "value"],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Environment variable name (e.g., 'DATABASE_URL')."
+        },
+        "value": {
+          "type": "string",
+          "description": "Environment variable value."
+        }
+      }
+    },
+
+    "BuildConfig": {
+      "type": "object",
+      "description": "Local Docker build configuration.",
+      "additionalProperties": false,
+      "properties": {
+        "context": {
+          "type": "string",
+          "description": "Path to the Docker build context directory."
+        },
+        "dockerfile": {
+          "type": "string",
+          "description": "Dockerfile path relative to the build context. Defaults to 'Dockerfile'."
+        },
+        "target": {
+          "type": "string",
+          "description": "Multi-stage build target (e.g., 'dev')."
+        },
+        "args": {
+          "type": "object",
+          "description": "Docker build arguments.",
+          "additionalProperties": {
+            "oneOf": [
+              {
+                "type": "string",
+                "description": "JSONPath expression (e.g. $.body.id)"
+              },
+              {
+                "type": "object",
+                "description": "Regex extraction rule — resolve a JSONPath, then apply a regex pattern.",
+                "required": ["path", "pattern"],
+                "properties": {
+                  "path": {
+                    "type": "string",
+                    "description": "JSONPath to the source value."
+                  },
+                  "pattern": {
+                    "type": "string",
+                    "description": "Regex pattern with capture groups."
+                  },
+                  "group": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": "Capture group index (default 1; use 0 for full match)."
+                  }
+                },
+                "additionalProperties": false
+              }
+            ]
+          }
+        }
+      }
+    },
+
+    "TestDefinition": {
+      "type": "object",
+      "required": ["name"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string", "description": "Test suite name." },
+        "description": {
+          "type": "string",
+          "description": "What this test verifies."
+        },
+        "timeoutSeconds": {
+          "type": "integer",
+          "description": "Timeout for this test. Overrides definition-level timeout.",
+          "exclusiveMinimum": 0
+        },
+        "stopOnFailure": {
+          "type": "boolean",
+          "description": "Stop on first failure (default true)."
+        },
+        "variables": {
+          "type": "object",
+          "description": "Variables for {{interpolation}} in actions and assertions. Supports $ref for cross-file sharing. Overrides definition-level variables.",
+          "properties": {
+            "$ref": {
+              "oneOf": [
+                {
+                  "type": "string",
+                  "description": "Path to a shared variable file (e.g., '../shared/db-vars.json')."
+                },
+                {
+                  "type": "array",
+                  "description": "Paths to shared variable files, merged left-to-right.",
+                  "items": { "type": "string" }
+                }
+              ]
+            }
+          },
+          "additionalProperties": {
+            "oneOf": [
+              {
+                "type": "string",
+                "description": "JSONPath expression (e.g. $.body.id)"
+              },
+              {
+                "type": "object",
+                "description": "Regex extraction rule — resolve a JSONPath, then apply a regex pattern.",
+                "required": ["path", "pattern"],
+                "properties": {
+                  "path": {
+                    "type": "string",
+                    "description": "JSONPath to the source value."
+                  },
+                  "pattern": {
+                    "type": "string",
+                    "description": "Regex pattern with capture groups."
+                  },
+                  "group": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": "Capture group index (default 1; use 0 for full match)."
+                  }
+                },
+                "additionalProperties": false
+              }
+            ]
+          }
+        },
+        "steps": {
+          "type": "array",
+          "description": "Sequential test steps. Use a 'parallel' action to run multiple actions concurrently.",
+          "items": { "$ref": "#/definitions/TestStep" }
+        }
+      }
+    },
+
+    "TestStep": {
+      "type": "object",
+      "required": ["action"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string", "description": "Step name." },
+        "description": {
+          "type": "string",
+          "description": "What this step does."
+        },
+        "stopOnFailure": {
+          "type": "boolean",
+          "description": "Stop the test on assertion failure (default true)."
+        },
+        "action": { "$ref": "#/definitions/AnyAction" },
+        "extract": {
+          "type": "object",
+          "description": "Extract variables from the response for use in subsequent steps.",
+          "additionalProperties": {
+            "oneOf": [
+              {
+                "type": "string",
+                "description": "JSONPath expression (e.g. $.body.id)"
+              },
+              {
+                "type": "object",
+                "description": "Regex extraction rule — resolve a JSONPath, then apply a regex pattern.",
+                "required": ["path", "pattern"],
+                "properties": {
+                  "path": {
+                    "type": "string",
+                    "description": "JSONPath to the source value."
+                  },
+                  "pattern": {
+                    "type": "string",
+                    "description": "Regex pattern with capture groups."
+                  },
+                  "group": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": "Capture group index (default 1; use 0 for full match)."
+                  }
+                },
+                "additionalProperties": false
+              }
+            ]
+          }
+        },
+        "assertions": {
+          "type": "array",
+          "description": "Assertion blocks to validate after the action completes.",
+          "items": { "$ref": "#/definitions/AssertionBlock" }
+        }
+      }
+    },
+
+    "ActionRef": {
+      "type": "object",
+      "description": "Reference a shared action fragment file. Inline fields are shallow-merged as overrides.",
+      "required": ["$ref"],
+      "properties": {
+        "$ref": {
+          "type": "string",
+          "description": "Relative path to an action fragment file (e.g., '../shared/create-user.yaml')."
+        }
+      },
+      "additionalProperties": true
+    },
+
+    "AnyAction": {
+      "oneOf": [
+        { "$ref": "#/definitions/ActionRef" },
+        { "$ref": "#/definitions/TypedAction" }
+      ]
+    },
+
+    "TypedAction": {
+      "type": "object",
+      "required": ["type"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "description": "Action type.",
+          "enum": ["httpRequest", "dbQuery", "wait", "ui", "parallel"]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "type": { "const": "httpRequest" } },
+            "required": ["type"]
+          },
+          "then": {
+            "required": ["method", "url"],
+            "additionalProperties": false,
+            "properties": {
+              "type": { "const": "httpRequest" },
+              "method": {
+                "type": "string",
+                "description": "HTTP method.",
+                "enum": [
+                  "GET",
+                  "POST",
+                  "PUT",
+                  "DELETE",
+                  "PATCH",
+                  "HEAD",
+                  "OPTIONS"
+                ]
+              },
+              "url": {
+                "type": "string",
+                "description": "Request URL: 'service-name/path'. Supports {{variable}} interpolation."
+              },
+              "path": {
+                "type": "string",
+                "description": "Request path. Supports {{variable}} interpolation."
+              },
+              "headers": {
+                "type": "object",
+                "description": "HTTP request headers.",
+                "additionalProperties": {
+                  "oneOf": [
+                    {
+                      "type": "string",
+                      "description": "JSONPath expression (e.g. $.body.id)"
+                    },
+                    {
+                      "type": "object",
+                      "description": "Regex extraction rule — resolve a JSONPath, then apply a regex pattern.",
+                      "required": ["path", "pattern"],
+                      "properties": {
+                        "path": {
+                          "type": "string",
+                          "description": "JSONPath to the source value."
+                        },
+                        "pattern": {
+                          "type": "string",
+                          "description": "Regex pattern with capture groups."
+                        },
+                        "group": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "description": "Capture group index (default 1; use 0 for full match)."
+                        }
+                      },
+                      "additionalProperties": false
+                    }
+                  ]
+                }
+              },
+              "body": {
+                "description": "Request body (JSON). String values support {{variable}} interpolation."
+              },
+              "timeout": {
+                "type": "integer",
+                "description": "Request timeout in milliseconds."
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": { "type": { "const": "dbQuery" } },
+            "required": ["type"]
+          },
+          "then": {
+            "required": ["database", "query"],
+            "additionalProperties": false,
+            "properties": {
+              "type": { "const": "dbQuery" },
+              "database": {
+                "type": "string",
+                "description": "Name of the DATABASE item to query."
+              },
+              "query": {
+                "type": "string",
+                "description": "SQL query or MongoDB command. Supports {{variable}} interpolation."
+              },
+              "params": {
+                "type": "object",
+                "description": "Query parameters.",
+                "additionalProperties": true
+              },
+              "timeout": {
+                "type": "integer",
+                "description": "Query timeout in milliseconds."
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": { "type": { "const": "wait" } },
+            "required": ["type"]
+          },
+          "then": {
+            "required": ["durationMs"],
+            "additionalProperties": false,
+            "properties": {
+              "type": { "const": "wait" },
+              "durationMs": {
+                "type": "integer",
+                "description": "Duration to wait in milliseconds.",
+                "exclusiveMinimum": 0
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": { "type": { "const": "ui" } },
+            "required": ["type"]
+          },
+          "then": {
+            "required": ["target", "steps"],
+            "additionalProperties": false,
+            "properties": {
+              "type": { "const": "ui" },
+              "target": {
+                "type": "string",
+                "description": "Name of a SERVICE item the browser will load. Maps to that service's internal URL."
+              },
+              "steps": {
+                "type": "array",
+                "description": "Ordered UI sub-steps (visit, click, type, waitFor, extract, screenshot). Entries can also be { $ref: 'path' } to splice in shared sub-step fragments.",
+                "items": {
+                  "oneOf": [
+                    { "$ref": "#/definitions/UiSubStep" },
+                    { "$ref": "#/definitions/UiSubStepRef" }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": { "type": { "const": "parallel" } },
+            "required": ["type"]
+          },
+          "then": {
+            "required": ["actions"],
+            "additionalProperties": false,
+            "properties": {
+              "type": { "const": "parallel" },
+              "actions": {
+                "type": "array",
+                "description": "Actions to execute concurrently. All actions in this array run in parallel.",
+                "items": { "$ref": "#/definitions/AnyAction" }
+              }
+            }
+          }
+        }
+      ]
+    },
+
+    "UiSubStepRef": {
+      "type": "object",
+      "description": "Reference a shared UI sub-step fragment file. The fragment's steps array is spliced into this position.",
+      "required": ["$ref"],
+      "additionalProperties": false,
+      "properties": {
+        "$ref": {
+          "type": "string",
+          "description": "Relative path to a sub-step fragment file (e.g., '../shared/login-flow.yaml')."
+        }
+      }
+    },
+
+    "UiSubStep": {
+      "type": "object",
+      "description": "A single UI sub-step. Object has EXACTLY ONE discriminator key (visit / click / type / waitFor / extract / screenshot / scroll / select / hover / key / upload / drag / viewport) plus an optional `timeoutMs` sibling for per-sub-step timeout override.",
+      "properties": {
+        "visit": {
+          "type": "string",
+          "description": "Navigate. Bare path resolves against the target's base URL; absolute URL is used verbatim. Supports {{variable}} interpolation."
+        },
+        "click": {
+          "type": "string",
+          "description": "CSS selector to click. Supports {{variable}} interpolation."
+        },
+        "type": {
+          "type": "object",
+          "description": "Focus and type text into the matching element.",
+          "required": ["selector", "text"],
+          "additionalProperties": false,
+          "properties": {
+            "selector": {
+              "type": "string",
+              "description": "CSS selector. Supports {{variable}}."
+            },
+            "text": {
+              "type": "string",
+              "description": "Text to type. Supports {{variable}}."
+            }
+          }
+        },
+        "waitFor": {
+          "oneOf": [
+            {
+              "type": "string",
+              "description": "CSS selector to wait for visibility. Supports {{variable}}."
+            },
+            {
+              "type": "object",
+              "required": ["selector"],
+              "additionalProperties": false,
+              "properties": {
+                "selector": {
+                  "type": "string",
+                  "description": "CSS selector. Supports {{variable}}."
+                },
+                "text": {
+                  "type": "string",
+                  "description": "Optional: wait until the element's text equals this. Supports {{variable}}."
+                }
+              }
+            }
+          ]
+        },
+        "extract": {
+          "type": "object",
+          "description": "Pull values off the page into variables. Each key becomes a variable name.",
+          "minProperties": 1,
+          "additionalProperties": {
+            "type": "object",
+            "required": ["from"],
+            "additionalProperties": false,
+            "properties": {
+              "from": {
+                "type": "string",
+                "enum": [
+                  "text",
+                  "attribute",
+                  "value",
+                  "url",
+                  "cookie",
+                  "localStorage",
+                  "sessionStorage",
+                  "count",
+                  "exists"
+                ],
+                "description": "Source kind."
+              },
+              "selector": {
+                "type": "string",
+                "description": "CSS selector (most kinds)."
+              },
+              "name": {
+                "type": "string",
+                "description": "Attribute or cookie name."
+              },
+              "key": {
+                "type": "string",
+                "description": "localStorage / sessionStorage key."
+              },
+              "part": {
+                "type": "string",
+                "enum": ["full", "pathname", "search", "hash", "host"],
+                "description": "URL part to extract (when from=url)."
+              },
+              "pattern": {
+                "type": "string",
+                "description": "Regex pattern (optional post-processing on the raw value)."
+              },
+              "group": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Capture group index when pattern is set (default 1; 0 for full match)."
+              }
+            }
+          }
+        },
+        "screenshot": {
+          "oneOf": [
+            {
+              "type": "string",
+              "pattern": "^[a-zA-Z0-9_-]{1,64}$",
+              "description": "Take a full-page PNG of the current viewport, tagged with this name. Short form — equivalent to { name: \"...\" } with no selector and no match block."
+            },
+            {
+              "type": "object",
+              "description": "Take a PNG, optionally region-scoped via `selector` and/or compared against a checked-in baseline via `match`. Baselines live at .dokkimi/<project>/baselines/<name>.png; the diff runs post-run in Control Tower. First run with no baseline surfaces under `dokkimi baselines pending` for approval.",
+              "required": ["name"],
+              "additionalProperties": false,
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "pattern": "^[a-zA-Z0-9_-]{1,64}$",
+                  "description": "Artifact name (and baseline lookup key when `match` is set). Maps to screenshot/<name>.png under the instance's artifact dir. Must be unique per test."
+                },
+                "selector": {
+                  "type": "string",
+                  "description": "Optional CSS selector — when set, only that element's bounding box is captured (else full page)."
+                },
+                "match": {
+                  "oneOf": [
+                    {
+                      "type": "boolean",
+                      "description": "true → run the post-run baseline diff with default options. false → no diff (equivalent to omitting the key)."
+                    },
+                    {
+                      "type": "object",
+                      "description": "Run the post-run baseline diff with custom options. Compares against .dokkimi/<project>/baselines/<name>.png.",
+                      "additionalProperties": false,
+                      "properties": {
+                        "threshold": {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 1,
+                          "description": "Fraction of pixels allowed to differ before the diff fails (default 0.01 = 1%)."
+                        },
+                        "ignoreRegions": {
+                          "type": "array",
+                          "items": { "type": "string" },
+                          "description": "Selectors masked out before diffing (timestamps, ad slots, animated content, user avatars)."
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        "scroll": {
+          "oneOf": [
+            {
+              "type": "string",
+              "description": "CSS selector — scroll the matching element into view. Supports {{variable}}."
+            },
+            {
+              "type": "object",
+              "description": "Scroll the page (or an element) to absolute pixel coordinates.",
+              "additionalProperties": false,
+              "properties": {
+                "selector": {
+                  "type": "string",
+                  "description": "CSS selector. Supports {{variable}}."
+                },
+                "x": {
+                  "type": "integer",
+                  "description": "Horizontal pixel offset."
+                },
+                "y": {
+                  "type": "integer",
+                  "description": "Vertical pixel offset."
+                }
+              }
+            }
+          ]
+        },
+        "select": {
+          "type": "object",
+          "description": "Set the value of a native <select> element and dispatch a change event.",
+          "required": ["selector", "value"],
+          "additionalProperties": false,
+          "properties": {
+            "selector": {
+              "type": "string",
+              "description": "CSS selector for the <select>. Supports {{variable}}."
+            },
+            "value": {
+              "type": "string",
+              "description": "Option value to select. Supports {{variable}}."
+            }
+          }
+        },
+        "hover": {
+          "type": "string",
+          "description": "CSS selector to hover over (synthetic mouseover/mouseenter). Supports {{variable}}."
+        },
+        "key": {
+          "oneOf": [
+            {
+              "type": "string",
+              "description": "Named key to send to the focused element (Enter, Tab, Escape, ArrowUp, etc.)."
+            },
+            {
+              "type": "object",
+              "required": ["key"],
+              "additionalProperties": false,
+              "properties": {
+                "selector": {
+                  "type": "string",
+                  "description": "Optional CSS selector to focus first. Supports {{variable}}."
+                },
+                "key": {
+                  "type": "string",
+                  "description": "Named key (Enter, Tab, Escape, ArrowDown, …) or single character. Supports {{variable}}."
+                }
+              }
+            }
+          ]
+        },
+        "upload": {
+          "type": "object",
+          "description": "Attach files to an <input type=\"file\"> element. Paths must exist inside the test-agent container.",
+          "required": ["selector", "files"],
+          "additionalProperties": false,
+          "properties": {
+            "selector": {
+              "type": "string",
+              "description": "CSS selector for the file input. Supports {{variable}}."
+            },
+            "files": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "string",
+                "description": "Path inside the test-agent container."
+              },
+              "description": "Files to attach."
+            }
+          }
+        },
+        "drag": {
+          "type": "object",
+          "description": "Synthesize a mouse drag from one element to another. Works for HTML5 native drag and most JS drag libraries (react-dnd, dnd-kit) that listen on real mouse events.",
+          "required": ["from", "to"],
+          "additionalProperties": false,
+          "properties": {
+            "from": {
+              "type": "string",
+              "description": "CSS selector for the drag source. Supports {{variable}}."
+            },
+            "to": {
+              "type": "string",
+              "description": "CSS selector for the drop target. Supports {{variable}}."
+            }
+          }
+        },
+        "viewport": {
+          "type": "object",
+          "description": "Set the browser viewport dimensions. Persists across subsequent UI actions until changed.",
+          "required": ["width", "height"],
+          "additionalProperties": false,
+          "properties": {
+            "width": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "description": "Viewport width in pixels."
+            },
+            "height": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "description": "Viewport height in pixels."
+            }
+          }
+        },
+        "timeoutMs": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "description": "Per-sub-step timeout in milliseconds. Overrides the executor's 30s default for this sub-step only."
+        }
+      },
+      "additionalProperties": false
+    },
+
+    "AssertionBlock": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "assertions": {
+          "type": "array",
+          "description": "Field assertions using dotted paths.",
+          "items": { "$ref": "#/definitions/Assertion" }
+        },
+        "extract": {
+          "type": "object",
+          "description": "Extract variables from the matched result.",
+          "additionalProperties": {
+            "oneOf": [
+              {
+                "type": "string",
+                "description": "JSONPath expression (e.g. $.body.id)"
+              },
+              {
+                "type": "object",
+                "description": "Regex extraction rule — resolve a JSONPath, then apply a regex pattern.",
+                "required": ["path", "pattern"],
+                "properties": {
+                  "path": {
+                    "type": "string",
+                    "description": "JSONPath to the source value."
+                  },
+                  "pattern": {
+                    "type": "string",
+                    "description": "Regex pattern with capture groups."
+                  },
+                  "group": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": "Capture group index (default 1; use 0 for full match)."
+                  }
+                },
+                "additionalProperties": false
+              }
+            ]
+          }
+        },
+        "match": {
+          "$ref": "#/definitions/MatchCriteria"
+        },
+        "count": { "$ref": "#/definitions/CountAssertion" },
+        "assertionScope": {
+          "type": "string",
+          "description": "Which matching entries to validate.",
+          "enum": ["all", "first", "last", "any"]
+        },
+        "service": {
+          "type": "string",
+          "description": "Service whose console logs to check (makes this a consoleLog block)."
+        },
+        "consoleAssertions": {
+          "type": "array",
+          "description": "Console log assertions.",
+          "items": { "$ref": "#/definitions/ConsoleLogAssertion" }
+        }
+      }
+    },
+
+    "MatchCriteria": {
+      "type": "object",
+      "description": "Filter criteria for matching observed HTTP traffic (makes this an httpCall block).",
+      "additionalProperties": false,
+      "properties": {
+        "origin": {
+          "type": "string",
+          "description": "Name of the service that made the request."
+        },
+        "method": { "type": "string", "description": "HTTP method to match." },
+        "url": {
+          "type": "string",
+          "description": "Target URL pattern: 'service-name/path'."
+        }
+      }
+    },
+
+    "Assertion": {
+      "type": "object",
+      "required": ["path", "operator"],
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Dotted path to the value (e.g., 'response.status', 'response.body.user.id')."
+        },
+        "operator": {
+          "type": "string",
+          "description": "Comparison operator.",
+          "enum": [
+            "eq",
+            "ne",
+            "gt",
+            "gte",
+            "lt",
+            "lte",
+            "contains",
+            "notContains",
+            "matches",
+            "exists",
+            "notExists",
+            "in",
+            "notIn",
+            "type",
+            "length",
+            "isEmpty",
+            "notEmpty",
+            "arrayContains",
+            "arrayNotContains"
+          ]
+        },
+        "value": {
+          "description": "Expected value. Supports {{variable}} interpolation in strings."
+        },
+        "disabled": {
+          "type": "boolean",
+          "description": "Skip this assertion during validation."
+        }
+      }
+    },
+
+    "ConsoleLogAssertion": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "level": {
+          "type": "string",
+          "description": "Filter by log level.",
+          "enum": ["INFO", "WARN", "ERROR", "DEBUG"]
+        },
+        "message": {
+          "type": "object",
+          "description": "Filter by message content.",
+          "additionalProperties": false,
+          "properties": {
+            "operator": {
+              "type": "string",
+              "description": "Match mode: 'eq' (exact), 'contains' (substring), 'matches' (regex).",
+              "enum": ["eq", "contains", "matches"]
+            },
+            "value": {
+              "type": "string",
+              "description": "Message text to match. Supports {{variable}} interpolation."
+            }
+          }
+        },
+        "count": { "$ref": "#/definitions/CountAssertion" },
+        "disabled": { "type": "boolean", "description": "Skip this assertion." }
+      }
+    },
+
+    "CountAssertion": {
+      "type": "object",
+      "description": "Assert on a count value.",
+      "required": ["operator", "value"],
+      "additionalProperties": false,
+      "properties": {
+        "operator": {
+          "type": "string",
+          "description": "Comparison operator.",
+          "enum": ["eq", "gte", "lte", "gt", "lt"]
+        },
+        "value": { "type": "integer", "description": "Expected count." }
+      }
+    }
+  }
+}

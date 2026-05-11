@@ -1,0 +1,16 @@
+{
+  "type": "MOCK",
+  "name": "mock-oauth-token",
+  "description": "Mocks the OAuth provider's token endpoint — exchanges an authorization code for an access token",
+  "mockMethod": "POST",
+  "mockTarget": "auth.provider.com",
+  "mockPath": "/oauth/token",
+  "mockResponseStatus": 200,
+  "mockResponseHeaders": { "Content-Type": "application/json" },
+  "mockResponseBody": {
+    "access_token": "mock_access_token_abc123",
+    "token_type": "Bearer",
+    "expires_in": 3600,
+    "scope": "openid profile email"
+  }
+}
