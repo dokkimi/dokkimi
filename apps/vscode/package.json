@@ -59,6 +59,24 @@
         "title": "Dokkimi: Run Definition"
       }
     ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "dokkimi",
+          "title": "Dokkimi",
+          "icon": "icon.png"
+        }
+      ]
+    },
+    "views": {
+      "dokkimi": [
+        {
+          "type": "webview",
+          "id": "dokkimi.sidebar",
+          "name": "Tests"
+        }
+      ]
+    },
     "snippets": [
       {
         "language": "json",
@@ -67,16 +85,29 @@
     ]
   },
   "scripts": {
-    "build": "esbuild ./src/extension.ts --bundle --outfile=dist/extension.js --external:vscode --format=cjs --platform=node --main-fields=module,main",
-    "watch": "yarn build --watch",
+    "build": "yarn build:ext && yarn build:webview",
+    "build:ext": "esbuild ./src/extension.ts --bundle --outfile=dist/extension.js --external:vscode --format=cjs --platform=node --main-fields=module,main",
+    "build:webview": "esbuild ./src/webview/index.tsx --bundle --outfile=dist/webview.js --format=iife --platform=browser --jsx=automatic --loader:.tsx=tsx --loader:.ts=ts --minify",
+    "watch": "yarn build:ext --watch & yarn build:webview --watch",
     "lint": "eslint src --ext ts",
     "package": "yarn build && vsce package --no-dependencies --allow-missing-repository --skip-license"
   },
   "devDependencies": {
+    "@types/js-yaml": "^4.0.9",
     "@types/node": "^25.6.2",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@types/styled-components": "^5.1.36",
     "@types/vscode": "^1.118.0",
     "@vscode/vsce": "^3.9.1",
     "esbuild": "^0.28.0",
     "typescript": "^6.0.3"
+  },
+  "dependencies": {
+    "@dokkimi/platform": "workspace:*",
+    "js-yaml": "^4.1.1",
+    "react": "^19.2.5",
+    "react-dom": "^19.2.5",
+    "styled-components": "^6.4.1"
   }
 }

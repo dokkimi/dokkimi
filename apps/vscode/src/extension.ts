@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import { resolve, dirname } from 'path';
+import { DokkimiSidebarProvider } from './sidebar-provider';
 
 const DEFINITION_GLOB = '**/.dokkimi/**/*.{json,yaml,yml}';
 
@@ -30,6 +31,14 @@ export function activate(context: vscode.ExtensionContext) {
       terminal.show();
       terminal.sendText(`dokkimi run ${filePath}`);
     }),
+  );
+
+  const sidebarProvider = new DokkimiSidebarProvider(context.extensionUri);
+  context.subscriptions.push(
+    vscode.window.registerWebviewViewProvider(
+      DokkimiSidebarProvider.viewType,
+      sidebarProvider,
+    ),
   );
 }
 

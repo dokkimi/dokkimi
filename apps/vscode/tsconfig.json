@@ -6,6 +6,7 @@
     "lib": ["ES2022"],
     "sourceMap": true,
     "rootDir": "src",
+    "jsx": "react",
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
