@@ -4,8 +4,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Non-Negotiables
 
-1. **Read the Dokkimi reference before answering questions about `.dokkimi/` definition files or test authoring** — the complete spec lives at `~/.dokkimi/dokkimi-instructions.md`. Do not guess field names, operators, or file structure — that file is authoritative.
-2. **Use `dokkimi dump` to debug failed runs** — `dokkimi dump` writes a JSON snapshot of the last run (definition, logs, assertion results, artifacts) to `~/.dokkimi/generated/dump.json`. When the user asks why a run failed, read this dump instead of querying the database directly. Use `dokkimi dump --failed` to limit to failed instances.
+1. **Use the Dokkimi MCP tools for definition files and test authoring** — call `get_reference` to look up the relevant spec section before writing or editing definition files. Use `validate_file`, `list_fragments`, `resolve_definition`, `run_tests`, and `dump_results` for the corresponding workflows. Do not guess field names, operators, or file structure.
+2. **Use `dump_results` (or `dokkimi dump`) to debug failed runs** — returns a JSON snapshot of the last run (definition, logs, assertion results, artifacts). Use `--failed` to limit to failed instances.
 3. **Read architecture docs before writing code** — `docs/ARCHITECTURE.md`
 4. **This is greenfield / rewrite** — no backwards compatibility required. Prefer correctness and clean design.
 5. **Yarn only** — use `yarn`, never `npm`.

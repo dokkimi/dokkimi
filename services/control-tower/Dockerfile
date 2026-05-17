@@ -18,6 +18,7 @@ COPY shared/service-manager/package.json shared/service-manager/
 COPY services/control-tower/package.json services/control-tower/
 COPY apps/vscode/package.json apps/vscode/
 COPY apps/cli/package.json apps/cli/
+COPY apps/mcp/package.json apps/mcp/
 COPY apps/landing/package.json apps/landing/
 
 # Copy Prisma schema (needed for install/generate)
@@ -72,6 +73,7 @@ COPY --from=builder /app/shared/prisma/ shared/prisma/
 # Stub out other workspaces for yarn focus
 COPY apps/vscode/package.json apps/vscode/
 COPY apps/cli/package.json apps/cli/
+COPY apps/mcp/package.json apps/mcp/
 COPY apps/landing/package.json apps/landing/
 COPY shared/service-manager/package.json shared/service-manager/
 

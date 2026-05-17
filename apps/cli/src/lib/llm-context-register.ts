@@ -8,7 +8,7 @@ const INSTRUCTIONS_PATH = path.join(DOKKIMI_DIR, 'dokkimi-instructions.md');
 const VERSION_PATH = path.join(DOKKIMI_DIR, '.version');
 const DOKKIMI_MARKER = '<!-- dokkimi -->';
 
-const HINT = `When the user asks about Dokkimi, .dokkimi/ files, or writing test definitions for microservices, read the file ${INSTRUCTIONS_PATH} for the complete Dokkimi reference. Do not guess — that file has the full specification.`;
+const HINT = `When the user asks about Dokkimi, .dokkimi/ files, or writing test definitions for microservices, use the Dokkimi MCP tools (get_reference, validate_file, list_fragments, resolve_definition, run_tests, dump_results). Call get_reference first to look up the relevant spec section before writing or editing definition files. Do not guess field names, operators, or file structure.`;
 
 function readStoredVersion(): string | null {
   try {
@@ -78,6 +78,50 @@ function readInstructionsSource(): string | null {
 }
 
 /**
+ * Ensures the MCP server is registered in global AI tool settings.
+ */
+function registerMcpServer(): void {
+  const mcpConfig = { command: 'dokkimi', args: ['mcp'] };
+
+  // Claude Code: ~/.claude.json
+  try {
+    const claudeConfig = path.join(os.homedir(), '.claude.json');
+    let config: Record<string, unknown> = {};
+    try {
+      config = JSON.parse(fs.readFileSync(claudeConfig, 'utf-8'));
+    } catch {
+      // File doesn't exist or is invalid — start fresh
+    }
+    if (!config.mcpServers || typeof config.mcpServers !== 'object') {
+      config.mcpServers = {};
+    }
+    (config.mcpServers as Record<string, unknown>).dokkimi = mcpConfig;
+    fs.writeFileSync(claudeConfig, JSON.stringify(config, null, 2) + '\n');
+  } catch {
+    // silently skip
+  }
+
+  // Cursor: ~/.cursor/mcp.json
+  try {
+    const cursorMcp = path.join(os.homedir(), '.cursor', 'mcp.json');
+    fs.mkdirSync(path.dirname(cursorMcp), { recursive: true });
+    let config: Record<string, unknown> = {};
+    try {
+      config = JSON.parse(fs.readFileSync(cursorMcp, 'utf-8'));
+    } catch {
+      // File doesn't exist or is invalid — start fresh
+    }
+    if (!config.mcpServers || typeof config.mcpServers !== 'object') {
+      config.mcpServers = {};
+    }
+    (config.mcpServers as Record<string, unknown>).dokkimi = mcpConfig;
+    fs.writeFileSync(cursorMcp, JSON.stringify(config, null, 2) + '\n');
+  } catch {
+    // silently skip
+  }
+}
+
+/**
  * Full registration: writes all LLM context files unconditionally.
  * Used on first launch or when the app version changes.
  */
@@ -112,6 +156,9 @@ function fullRegister(instructions: string): void {
   } catch {
     // silently skip
   }
+
+  // MCP server config in global AI tool settings
+  registerMcpServer();
 }
 
 /**
@@ -158,6 +205,9 @@ function ensureMissing(instructions: string): void {
       // silently skip
     }
   }
+
+  // MCP server config (ensure present)
+  registerMcpServer();
 }
 
 export function registerLlmContext(): void {
