@@ -1,6 +1,11 @@
 import { execSync, execFileSync, spawn } from 'child_process';
 import * as os from 'os';
-import type { Platform, ExecOptions, SpawnOptions, SpawnResult } from './platform';
+import type {
+  Platform,
+  ExecOptions,
+  SpawnOptions,
+  SpawnResult,
+} from './platform';
 
 export const windows: Platform = {
   isProcessAlive(pid: number): boolean {
@@ -130,7 +135,9 @@ export const windows: Platform = {
     });
 
     proc.on('close', (code) => {
-      callback(code === 0 ? null : new Error(`Process exited with code ${code}`));
+      callback(
+        code === 0 ? null : new Error(`Process exited with code ${code}`),
+      );
     });
 
     proc.on('error', (err) => {

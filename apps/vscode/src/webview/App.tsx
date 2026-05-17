@@ -63,7 +63,9 @@ function filterEntries<T extends { name: string }>(
   entries: T[],
   filter: string,
 ): T[] {
-  if (!filter) return entries;
+  if (!filter) {
+    return entries;
+  }
   const lower = filter.toLowerCase();
   return entries.filter((e) => e.name.toLowerCase().includes(lower));
 }

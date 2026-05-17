@@ -171,11 +171,7 @@ function relativeTo(fsPath: string): string {
     : fsPath;
 }
 
-const CONFIG_NAMES = new Set([
-  'config.json',
-  'config.yaml',
-  'config.yml',
-]);
+const CONFIG_NAMES = new Set(['config.json', 'config.yaml', 'config.yml']);
 
 async function scanWorkspace(): Promise<WorkspaceData> {
   const [dataFiles, scriptFiles, baselineFiles] = await Promise.all([
