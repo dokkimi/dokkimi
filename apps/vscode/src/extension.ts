@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import { resolve, dirname } from 'path';
-
-const DEFINITION_GLOB = '**/.dokkimi/**/*.{json,yaml,yml}';
+import { createTestController, DEFINITION_GLOB } from './test-controller';
+import { createRunProfile } from './test-runner';
 
 export function activate(context: vscode.ExtensionContext) {
   const selector: vscode.DocumentSelector = [
@@ -31,28 +31,20 @@ export function activate(context: vscode.ExtensionContext) {
       terminal.sendText(`dokkimi run ${filePath}`);
     }),
   );
+
+  // Test Explorer integration
+  const controller = createTestController(context);
+  createRunProfile(controller, context);
 }
 
 export function deactivate() {}
 
-/**
- * Shows a "▶ Run Definition" CodeLens on runnable Dokkimi definitions.
- * A file is runnable when it has both a root-level "name" key AND
- * an "items" or "tests" key — this excludes fragments, shared variables,
- * and config files.
- */
-/**
- * Renders $ref paths as clickable links that open the referenced file.
- * Underlines the entire path string. Works for both JSON and YAML.
- */
 class DokkimiRefLinkProvider implements vscode.DocumentLinkProvider {
   provideDocumentLinks(document: vscode.TextDocument): vscode.DocumentLink[] {
     const links: vscode.DocumentLink[] = [];
     const dir = dirname(document.uri.fsPath);
 
-    // JSON: "$ref": "path"   or   "$ref": ["path1", "path2"]
     const jsonRe = /"\$ref"\s*:\s*"([^"]+)"/g;
-    // YAML: $ref: path   or   - $ref: path
     const yamlRe = /\$ref:\s*(?:['"]?)([^\s'",\]]+)(?:['"]?)/g;
 
     for (let i = 0; i < document.lineCount; i++) {

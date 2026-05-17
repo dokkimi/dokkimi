@@ -29,6 +29,8 @@ import {
   submitDefinition,
   type CreateRunResponse,
 } from './run-helpers';
+import { writeDump } from './dump';
+import type { LatestRunResponse } from '../lib/inspect-types';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -277,6 +279,26 @@ export async function run(args: string[]): Promise<void> {
       } catch {}
     }
 
+    // Auto-dump results for extension consumption (best-effort)
+    if (lastResult.runId) {
+      try {
+        const latestRun = await fetchJson<LatestRunResponse>(
+          `${ctUrl}/runs/latest`,
+        );
+        if (latestRun) {
+          await writeDump({
+            ctUrl,
+            storageDir: config.storage.dir,
+            instances: latestRun.instances,
+            runId: latestRun.runId,
+            runStatus: latestRun.status,
+            createdAt: latestRun.createdAt,
+            completedAt: latestRun.completedAt,
+          });
+        }
+      } catch {}
+    }
+
     if (!ciMode) {
       printHint();
     }
@@ -450,6 +472,7 @@ export async function run(args: string[]): Promise<void> {
   await inFlight;
 
   // CI mode: exit immediately with appropriate code
+  // Auto-dump already ran inside triggerRun(), no need to dump again.
   if (ciMode) {
     await fetchAction(`${ctUrl}/runs/stop`, 'POST');
     process.exit((lastResult as RunOnceResult | null)?.passed ? 0 : 1);

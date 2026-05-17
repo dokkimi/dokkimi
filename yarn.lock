@@ -6718,10 +6718,13 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "dokkimi-vscode@workspace:apps/vscode"
   dependencies:
+    "@dokkimi/platform": "workspace:*"
+    "@types/js-yaml": "npm:^4.0.9"
     "@types/node": "npm:^25.6.2"
     "@types/vscode": "npm:^1.118.0"
     "@vscode/vsce": "npm:^3.9.1"
     esbuild: "npm:^0.28.0"
+    js-yaml: "npm:^4.1.1"
     typescript: "npm:^6.0.3"
   languageName: unknown
   linkType: soft

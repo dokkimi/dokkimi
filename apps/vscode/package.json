@@ -15,7 +15,7 @@
     "Linters"
   ],
   "activationEvents": [
-    "onStartupFinished"
+    "workspaceContains:**/.dokkimi/**"
   ],
   "extensionDependencies": [
     "redhat.vscode-yaml"
@@ -67,16 +67,22 @@
     ]
   },
   "scripts": {
-    "build": "esbuild ./src/extension.ts --bundle --outfile=dist/extension.js --external:vscode --format=cjs --platform=node --main-fields=module,main",
-    "watch": "yarn build --watch",
+    "build": "yarn build:ext",
+    "build:ext": "esbuild ./src/extension.ts --bundle --outfile=dist/extension.js --external:vscode --format=cjs --platform=node --main-fields=module,main",
+    "watch": "yarn build:ext --watch",
     "lint": "eslint src --ext ts",
     "package": "yarn build && vsce package --no-dependencies --allow-missing-repository --skip-license"
   },
   "devDependencies": {
+    "@types/js-yaml": "^4.0.9",
     "@types/node": "^25.6.2",
     "@types/vscode": "^1.118.0",
     "@vscode/vsce": "^3.9.1",
     "esbuild": "^0.28.0",
     "typescript": "^6.0.3"
+  },
+  "dependencies": {
+    "@dokkimi/platform": "workspace:*",
+    "js-yaml": "^4.1.1"
   }
 }

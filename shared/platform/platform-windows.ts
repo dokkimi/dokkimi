@@ -1,6 +1,11 @@
-import { execSync, execFileSync } from 'child_process';
+import { execSync, execFileSync, spawn } from 'child_process';
 import * as os from 'os';
-import type { Platform, ExecOptions } from './platform';
+import type {
+  Platform,
+  ExecOptions,
+  SpawnOptions,
+  SpawnResult,
+} from './platform';
 
 export const windows: Platform = {
   isProcessAlive(pid: number): boolean {
@@ -113,6 +118,33 @@ export const windows: Platform = {
         { stdio: ['pipe', 'pipe', 'pipe'], timeout: 5000 },
       );
     } catch {}
+  },
+
+  spawnInShell(
+    cmd: string,
+    args: string[],
+    opts: SpawnOptions,
+    callback: (err: Error | null) => void,
+  ): SpawnResult {
+    const proc = spawn(cmd, args, {
+      cwd: opts.cwd,
+      env: opts.env ?? process.env,
+      shell: 'cmd.exe',
+      stdio: 'ignore',
+      windowsHide: true,
+    });
+
+    proc.on('close', (code) => {
+      callback(
+        code === 0 ? null : new Error(`Process exited with code ${code}`),
+      );
+    });
+
+    proc.on('error', (err) => {
+      callback(err);
+    });
+
+    return { process: proc };
   },
 
   getDiskSpaceAvailable(): number | null {
