@@ -20,12 +20,76 @@ import type {
   ArtifactsResponse,
 } from '../lib/inspect-types';
 
-const DEFAULT_DUMP_PATH = path.join(
+export const DEFAULT_DUMP_PATH = path.join(
   os.homedir(),
   '.dokkimi',
   'generated',
   'dump.json',
 );
+
+// ---------------------------------------------------------------------------
+// Core dump logic — callable from both the `dump` command and auto-dump
+// ---------------------------------------------------------------------------
+
+export interface WriteDumpOptions {
+  ctUrl: string;
+  storageDir: string;
+  instances: InstanceSummary[];
+  runId: string;
+  runStatus: string;
+  createdAt: string;
+  completedAt: string | null;
+  outputPath?: string;
+  inlineArtifacts?: boolean;
+}
+
+export async function writeDump(opts: WriteDumpOptions): Promise<void> {
+  const {
+    ctUrl,
+    storageDir,
+    instances,
+    runId,
+    runStatus,
+    createdAt,
+    completedAt,
+    outputPath = DEFAULT_DUMP_PATH,
+    inlineArtifacts = false,
+  } = opts;
+
+  const resolved = path.resolve(outputPath);
+  fs.mkdirSync(path.dirname(resolved), { recursive: true });
+  const stream = fs.createWriteStream(resolved);
+
+  stream.write('{\n');
+  stream.write(`  "runId": ${JSON.stringify(runId)},\n`);
+  stream.write(`  "status": ${JSON.stringify(runStatus)},\n`);
+  stream.write(`  "createdAt": ${JSON.stringify(createdAt)},\n`);
+  stream.write(`  "completedAt": ${JSON.stringify(completedAt)},\n`);
+  stream.write(`  "instances": [\n`);
+
+  for (let i = 0; i < instances.length; i++) {
+    const instanceData = await dumpInstance(ctUrl, runId, instances[i], {
+      storageDir,
+      inlineArtifacts,
+    });
+    const json = JSON.stringify(instanceData, null, 2);
+    const indented = json.replace(/^/gm, '    ');
+    stream.write(indented);
+    if (i < instances.length - 1) {
+      stream.write(',');
+    }
+    stream.write('\n');
+  }
+
+  stream.write('  ]\n');
+  stream.write('}\n');
+
+  await new Promise<void>((resolve) => stream.end(resolve));
+}
+
+// ---------------------------------------------------------------------------
+// CLI command handler
+// ---------------------------------------------------------------------------
 
 export async function dump(args: string[]): Promise<void> {
   if (args.includes('--help') || args.includes('-h')) {
@@ -107,39 +171,17 @@ export async function dump(args: string[]): Promise<void> {
     }
   }
 
-  const resolved = path.resolve(outputFile);
-  fs.mkdirSync(path.dirname(resolved), { recursive: true });
-  const stream = fs.createWriteStream(resolved);
-
-  stream.write('{\n');
-  stream.write(`  "runId": ${JSON.stringify(latestRun.runId)},\n`);
-  stream.write(`  "status": ${JSON.stringify(latestRun.status)},\n`);
-  stream.write(`  "createdAt": ${JSON.stringify(latestRun.createdAt)},\n`);
-  stream.write(`  "completedAt": ${JSON.stringify(latestRun.completedAt)},\n`);
-  stream.write(`  "instances": [\n`);
-
-  for (let i = 0; i < instances.length; i++) {
-    const instanceData = await dumpInstance(
-      ctUrl,
-      latestRun.runId,
-      instances[i],
-      { storageDir, inlineArtifacts },
-    );
-    const json = JSON.stringify(instanceData, null, 2);
-    // Indent each line by 4 spaces
-    const indented = json.replace(/^/gm, '    ');
-    stream.write(indented);
-    if (i < instances.length - 1) {
-      stream.write(',');
-    }
-    stream.write('\n');
-  }
-
-  stream.write('  ]\n');
-  stream.write('}\n');
-
-  await new Promise<void>((resolve) => stream.end(resolve));
-  console.error(`Dump written to ${resolved}`);
+  await writeDump({
+    ctUrl,
+    storageDir,
+    instances,
+    runId: latestRun.runId,
+    runStatus: latestRun.status,
+    createdAt: latestRun.createdAt,
+    completedAt: latestRun.completedAt,
+    outputPath: outputFile,
+  });
+  console.error(`Dump written to ${path.resolve(outputFile)}`);
 
   trackEvent('cli_dump_result', {
     instance_count: instances.length,
