@@ -18,6 +18,7 @@ echo "Syncing all package.json files to version ${VERSION}..."
 PACKAGE_FILES=(
   "package.json"
   "apps/cli/package.json"
+  "apps/mcp/package.json"
   "apps/landing/package.json"
   "apps/vscode/package.json"
   "services/control-tower/package.json"

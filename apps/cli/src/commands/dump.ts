@@ -27,6 +27,13 @@ export const DEFAULT_DUMP_PATH = path.join(
   'dump.json',
 );
 
+export const DEFAULT_DUMP_FAILED_PATH = path.join(
+  os.homedir(),
+  '.dokkimi',
+  'generated',
+  'dump_failed.json',
+);
+
 // ---------------------------------------------------------------------------
 // Core dump logic — callable from both the `dump` command and auto-dump
 // ---------------------------------------------------------------------------

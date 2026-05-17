@@ -1,0 +1,218 @@
+import * as os from 'os';
+import * as path from 'path';
+import * as fs from 'fs';
+import { spawn } from 'child_process';
+import { z } from 'zod';
+import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+
+const DUMP_DIR = path.join(os.homedir(), '.dokkimi', 'generated');
+const DUMP_PATH = path.join(DUMP_DIR, 'dump.json');
+const DUMP_FAILED_PATH = path.join(DUMP_DIR, 'dump_failed.json');
+
+function findDokkimiBin(): string {
+  // Prefer the locally-linked CLI, fall back to global
+  const localBin = path.resolve(
+    __dirname,
+    '..',
+    '..',
+    '..',
+    'cli',
+    'dist',
+    'bin',
+    'dokkimi.js',
+  );
+  if (fs.existsSync(localBin)) {
+    return localBin;
+  }
+  return 'dokkimi';
+}
+
+interface RunResult {
+  success: boolean;
+  summary: { total: number; passed: number; failed: number; skipped: number };
+  results: {
+    definitionName: string;
+    status: string;
+    errorMessage?: string;
+  }[];
+  dumpFilePath: string;
+  dumpFailedFilePath: string;
+}
+
+function parseDumpFile(dumpPath: string): RunResult | null {
+  if (!fs.existsSync(dumpPath)) {
+    return null;
+  }
+  try {
+    const raw = JSON.parse(fs.readFileSync(dumpPath, 'utf-8'));
+    const instances: {
+      name: string;
+      status: string;
+      testStatus?: string;
+      errorMessage?: string;
+    }[] = raw.instances ?? [];
+
+    let passed = 0;
+    let failed = 0;
+    let skipped = 0;
+
+    const results = instances.map((inst) => {
+      const status = inst.testStatus ?? inst.status;
+      if (status === 'PASSED' || status === 'COMPLETED') {
+        passed++;
+      } else if (status === 'FAILED') {
+        failed++;
+      } else if (status === 'SKIPPED') {
+        skipped++;
+      }
+
+      return {
+        definitionName: inst.name,
+        status,
+        ...(inst.errorMessage ? { errorMessage: inst.errorMessage } : {}),
+      };
+    });
+
+    return {
+      success: failed === 0 && skipped === 0,
+      summary: { total: instances.length, passed, failed, skipped },
+      results,
+      dumpFilePath: DUMP_PATH,
+      dumpFailedFilePath: DUMP_FAILED_PATH,
+    };
+  } catch {
+    return null;
+  }
+}
+
+export function registerRunTests(server: McpServer): void {
+  server.tool(
+    'run_tests',
+    'Executes dokkimi run against a definition file or pattern and returns structured results with dump file paths.',
+    {
+      target: z
+        .string()
+        .optional()
+        .describe(
+          'File path, pattern, or subfolder (same as `dokkimi run` target). Defaults to the full .dokkimi/ directory.',
+        ),
+    },
+    async ({ target }, { sendNotification }) => {
+      const bin = findDokkimiBin();
+      const args = ['run', '--ci'];
+      if (target) {
+        args.splice(1, 0, target);
+      }
+
+      const isNodeScript = bin.endsWith('.js');
+      const command = isNodeScript ? process.execPath : bin;
+      const spawnArgs = isNodeScript ? [bin, ...args] : args;
+
+      return new Promise((resolve) => {
+        const child = spawn(command, spawnArgs, {
+          stdio: ['ignore', 'pipe', 'pipe'],
+          env: { ...process.env },
+        });
+
+        let progressToken = 0;
+
+        const forwardLine = (line: string) => {
+          const trimmed = line.trim();
+          if (!trimmed) {
+            return;
+          }
+          sendNotification({
+            method: 'notifications/progress',
+            params: {
+              progressToken: progressToken++,
+              progress: progressToken,
+              total: undefined,
+              message: trimmed,
+            },
+          }).catch(() => {});
+        };
+
+        let stdoutBuf = '';
+        let stderrBuf = '';
+
+        child.stdout.on('data', (chunk: Buffer) => {
+          stdoutBuf += chunk.toString();
+          const lines = stdoutBuf.split('\n');
+          stdoutBuf = lines.pop()!;
+          for (const line of lines) {
+            forwardLine(line);
+          }
+        });
+
+        child.stderr.on('data', (chunk: Buffer) => {
+          stderrBuf += chunk.toString();
+          const lines = stderrBuf.split('\n');
+          stderrBuf = lines.pop()!;
+          for (const line of lines) {
+            forwardLine(line);
+          }
+        });
+
+        child.on('close', (code) => {
+          if (stdoutBuf.trim()) {
+            forwardLine(stdoutBuf);
+          }
+          if (stderrBuf.trim()) {
+            forwardLine(stderrBuf);
+          }
+
+          const parsed = parseDumpFile(DUMP_PATH);
+
+          if (parsed) {
+            parsed.success = code === 0;
+            resolve({
+              content: [
+                { type: 'text', text: JSON.stringify(parsed, null, 2) },
+              ],
+            });
+          } else {
+            resolve({
+              content: [
+                {
+                  type: 'text',
+                  text: JSON.stringify(
+                    {
+                      success: code === 0,
+                      summary: { total: 0, passed: 0, failed: 0, skipped: 0 },
+                      results: [],
+                      dumpFilePath: DUMP_PATH,
+                      dumpFailedFilePath: DUMP_FAILED_PATH,
+                      error: `dokkimi run exited with code ${code}`,
+                    },
+                    null,
+                    2,
+                  ),
+                },
+              ],
+              isError: code !== 0,
+            });
+          }
+        });
+
+        child.on('error', (err) => {
+          resolve({
+            content: [
+              {
+                type: 'text',
+                text: JSON.stringify(
+                  {
+                    success: false,
+                    error: `Failed to spawn dokkimi: ${err.message}`,
+                  },
+                  null,
+                  2,
+                ),
+              },
+            ],
+            isError: true,
+          });
+        });
+      });
+    },
+  );
+}

@@ -29,7 +29,7 @@ import {
   submitDefinition,
   type CreateRunResponse,
 } from './run-helpers';
-import { writeDump } from './dump';
+import { writeDump, DEFAULT_DUMP_FAILED_PATH } from './dump';
 import type { LatestRunResponse } from '../lib/inspect-types';
 
 // ---------------------------------------------------------------------------
@@ -279,14 +279,14 @@ export async function run(args: string[]): Promise<void> {
       } catch {}
     }
 
-    // Auto-dump results for extension consumption (best-effort)
+    // Auto-dump results for extension and MCP consumption (best-effort)
     if (lastResult.runId) {
       try {
         const latestRun = await fetchJson<LatestRunResponse>(
           `${ctUrl}/runs/latest`,
         );
         if (latestRun) {
-          await writeDump({
+          const dumpOpts = {
             ctUrl,
             storageDir: config.storage.dir,
             instances: latestRun.instances,
@@ -294,7 +294,19 @@ export async function run(args: string[]): Promise<void> {
             runStatus: latestRun.status,
             createdAt: latestRun.createdAt,
             completedAt: latestRun.completedAt,
-          });
+          };
+          await writeDump(dumpOpts);
+
+          const failedInstances = latestRun.instances.filter(
+            (i) => i.testStatus === 'FAILED' || i.status === 'FAILED',
+          );
+          if (failedInstances.length > 0) {
+            await writeDump({
+              ...dumpOpts,
+              instances: failedInstances,
+              outputPath: DEFAULT_DUMP_FAILED_PATH,
+            });
+          }
         }
       } catch {}
     }

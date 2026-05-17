@@ -48,11 +48,13 @@ const dirs = [
     .map((d) => path.join(stageDir, 'shared', d)),
 ];
 
-// Also include the CLI (read from repo, not staging — only dist/ is copied)
+// Also include apps (read from repo, not staging — only dist/ is copied)
 const repoRoot = path.join(__dirname, '..');
-const cliPkgPath = path.join(repoRoot, 'apps', 'cli', 'package.json');
-if (fs.existsSync(cliPkgPath)) {
-  dirs.push(path.dirname(cliPkgPath));
+for (const app of ['cli', 'mcp']) {
+  const appPkgPath = path.join(repoRoot, 'apps', app, 'package.json');
+  if (fs.existsSync(appPkgPath)) {
+    dirs.push(path.dirname(appPkgPath));
+  }
 }
 
 const merged = {};

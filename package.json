@@ -13,6 +13,7 @@
   },
   "workspaces": [
     "apps/cli",
+    "apps/mcp",
     "apps/vscode",
     "apps/landing",
     "services/*",
@@ -26,6 +27,7 @@
   "scripts": {
     "dev:cli": "yarn workspace @dokkimi/cli dev",
     "dev:landing": "yarn workspace @dokkimi/landing dev",
+    "dev:mcp": "yarn build:shared && yarn workspace @dokkimi/mcp build && yarn workspace @dokkimi/cli build && npx @modelcontextprotocol/inspector node apps/cli/dist/bin/dokkimi.js mcp",
     "link": "cd apps/cli && npm link",
     "unlink": "cd apps/cli && npm unlink",
     "package:vscode": "yarn workspace @dokkimi/definition-validator build && yarn workspace dokkimi-vscode package",

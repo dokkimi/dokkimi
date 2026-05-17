@@ -180,6 +180,29 @@ function removeLlmConfigPointers(): void {
   } catch {
     // Best-effort
   }
+
+  // Remove MCP server entries
+  for (const configPath of [
+    path.join(os.homedir(), '.claude.json'),
+    path.join(os.homedir(), '.cursor', 'mcp.json'),
+  ]) {
+    try {
+      if (!fs.existsSync(configPath)) {
+        continue;
+      }
+      const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+      if (config.mcpServers?.dokkimi) {
+        delete config.mcpServers.dokkimi;
+        fs.writeFileSync(
+          configPath,
+          JSON.stringify(config, null, 2) + '\n',
+          'utf-8',
+        );
+      }
+    } catch {
+      // Best-effort
+    }
+  }
 }
 
 function findDokkimiNamespaces(): string[] {
