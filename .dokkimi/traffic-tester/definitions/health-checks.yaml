@@ -7,18 +7,25 @@ items:
   - $ref: ../shared/service-b.json
   - $ref: ../shared/service-c.yaml
 tests:
-  - name: Health check returns OK
+  - name: Service A returns 999
     steps:
-      - name: Parallel requests
-        action:
-          type: parallel
-          actions:
-            - type: httpRequest
-              method: GET
-              url: service-a/health
-            - type: httpRequest
-              method: GET
-              url: service-b/health
-            - type: httpRequest
-              method: GET
-              url: service-c/health
+      - action:
+          type: httpRequest
+          method: GET
+          url: service-a/health
+        assertions:
+          - assertions:
+              - path: response.status
+                operator: eq
+                value: 999
+  - name: Service C returns 200
+    steps:
+      - action:
+          type: httpRequest
+          method: GET
+          url: service-c/health
+        assertions:
+          - assertions:
+              - path: response.status
+                operator: eq
+                value: 200

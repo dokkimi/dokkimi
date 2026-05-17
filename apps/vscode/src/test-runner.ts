@@ -127,11 +127,14 @@ function spawnRun(
     proc.stdout?.on('data', (data: Buffer) => {
       const text = data.toString();
       outputChannel.append(text);
+      run.appendOutput(text.replace(/\n/g, '\r\n'));
       parseProgressLines(text, controller, run);
     });
 
     proc.stderr?.on('data', (data: Buffer) => {
-      outputChannel.append(data.toString());
+      const text = data.toString();
+      outputChannel.append(text);
+      run.appendOutput(text.replace(/\n/g, '\r\n'));
     });
 
     proc.on('error', (err) => {
