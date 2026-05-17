@@ -119,9 +119,7 @@ interface TestResult {
   message: vscode.TestMessage;
 }
 
-function buildPerTestResults(
-  instance: DumpInstance,
-): Map<string, TestResult> {
+function buildPerTestResults(instance: DumpInstance): Map<string, TestResult> {
   const results = new Map<string, TestResult>();
   const tests = instance.definition?.tests;
   if (!tests || tests.length === 0) {
@@ -158,7 +156,9 @@ function buildPerTestResults(
     const assertions = assertionsByTest.get(test.name) ?? [];
     const allSkipped =
       assertions.length > 0 &&
-      assertions.every((a) => a.resultKind === 'NOT_VALIDATED' || a.resultKind === 'SKIPPED');
+      assertions.every(
+        (a) => a.resultKind === 'NOT_VALIDATED' || a.resultKind === 'SKIPPED',
+      );
 
     if (allSkipped) {
       results.set(test.name, {
@@ -169,7 +169,10 @@ function buildPerTestResults(
     }
 
     const failed = assertions.filter(
-      (a) => !a.passed && a.resultKind !== 'NOT_VALIDATED' && a.resultKind !== 'SKIPPED',
+      (a) =>
+        !a.passed &&
+        a.resultKind !== 'NOT_VALIDATED' &&
+        a.resultKind !== 'SKIPPED',
     );
     if (failed.length === 0) {
       results.set(test.name, {
