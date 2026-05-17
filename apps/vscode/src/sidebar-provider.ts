@@ -12,6 +12,19 @@ export interface DefinitionEntry {
   warningCount: number;
 }
 
+export interface FileEntry {
+  file: string;
+  name: string;
+  itemType?: string;
+}
+
+export interface WorkspaceData {
+  definitions: DefinitionEntry[];
+  fragments: FileEntry[];
+  initFiles: FileEntry[];
+  baselines: FileEntry[];
+}
+
 export type RunStatus = 'running' | 'passed' | 'failed';
 
 export class DokkimiSidebarProvider implements vscode.WebviewViewProvider {
@@ -120,13 +133,16 @@ export class DokkimiSidebarProvider implements vscode.WebviewViewProvider {
   }
 
   private async refreshTests() {
-    const definitions = await scanForDefinitions();
-    this.view?.webview.postMessage({ type: 'definitions', definitions });
+    const workspace = await scanWorkspace();
+    this.view?.webview.postMessage({ type: 'workspace', workspace });
   }
 
   private getHtml(webview: vscode.Webview): string {
     const scriptUri = webview.asWebviewUri(
       vscode.Uri.joinPath(this.extensionUri, 'dist', 'webview.js'),
+    );
+    const codiconsUri = webview.asWebviewUri(
+      vscode.Uri.joinPath(this.extensionUri, 'dist', 'codicon.css'),
     );
     const nonce = getNonce();
 
@@ -136,7 +152,8 @@ export class DokkimiSidebarProvider implements vscode.WebviewViewProvider {
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta http-equiv="Content-Security-Policy"
-    content="default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-${nonce}';">
+    content="default-src 'none'; style-src 'unsafe-inline' ${webview.cspSource}; font-src ${webview.cspSource}; script-src 'nonce-${nonce}';">
+  <link rel="stylesheet" href="${codiconsUri}">
 </head>
 <body>
   <div id="root"></div>
@@ -146,62 +163,110 @@ export class DokkimiSidebarProvider implements vscode.WebviewViewProvider {
   }
 }
 
-async function scanForDefinitions(): Promise<DefinitionEntry[]> {
-  const files = await vscode.workspace.findFiles(
-    '**/.dokkimi/**/*.{json,yaml,yml}',
-    '**/node_modules/**',
-  );
+function relativeTo(fsPath: string): string {
+  const workspaceRoot =
+    vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '';
+  return fsPath.startsWith(workspaceRoot)
+    ? fsPath.slice(workspaceRoot.length + 1)
+    : fsPath;
+}
+
+const CONFIG_NAMES = new Set([
+  'config.json',
+  'config.yaml',
+  'config.yml',
+]);
+
+async function scanWorkspace(): Promise<WorkspaceData> {
+  const [dataFiles, scriptFiles, baselineFiles] = await Promise.all([
+    vscode.workspace.findFiles(
+      '**/.dokkimi/**/*.{json,yaml,yml}',
+      '**/node_modules/**',
+    ),
+    vscode.workspace.findFiles(
+      '**/.dokkimi/**/*.{sql,js}',
+      '**/node_modules/**',
+    ),
+    vscode.workspace.findFiles(
+      '**/.dokkimi/**/baselines/*.png',
+      '**/node_modules/**',
+    ),
+  ]);
 
   const definitions: DefinitionEntry[] = [];
+  const fragments: FileEntry[] = [];
 
-  for (const file of files) {
+  for (const file of dataFiles) {
+    const fileName = basename(file.fsPath);
+    if (CONFIG_NAMES.has(fileName)) {
+      continue;
+    }
+
     try {
       const raw = await vscode.workspace.fs.readFile(file);
       const text = Buffer.from(raw).toString('utf-8');
       const ext = file.fsPath.split('.').pop()?.toLowerCase();
       const parsed = ext === 'json' ? JSON.parse(text) : yaml.load(text);
 
-      if (
-        !parsed ||
-        typeof parsed !== 'object' ||
-        !Array.isArray(parsed.tests)
-      ) {
+      if (!parsed || typeof parsed !== 'object') {
         continue;
       }
 
-      const workspaceRoot =
-        vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '';
-      const relativePath = file.fsPath.startsWith(workspaceRoot)
-        ? file.fsPath.slice(workspaceRoot.length + 1)
-        : file.fsPath;
-
+      const relativePath = relativeTo(file.fsPath);
       const name = parsed.name ?? basename(file.fsPath, '.' + ext);
-      const testCount = parsed.tests.filter(
-        (t: any) => typeof t.name === 'string' && t.name.length > 0,
-      ).length;
+      const isRunnable =
+        typeof parsed.name === 'string' && Array.isArray(parsed.items);
 
-      const diagnostics = vscode.languages.getDiagnostics(file);
-      const errorCount = diagnostics.filter(
-        (d) => d.severity === vscode.DiagnosticSeverity.Error,
-      ).length;
-      const warningCount = diagnostics.filter(
-        (d) => d.severity === vscode.DiagnosticSeverity.Warning,
-      ).length;
+      if (isRunnable) {
+        const testCount = Array.isArray(parsed.tests)
+          ? parsed.tests.filter(
+              (t: any) => typeof t.name === 'string' && t.name.length > 0,
+            ).length
+          : 0;
 
-      definitions.push({
-        file: relativePath,
-        name,
-        testCount,
-        errorCount,
-        warningCount,
-      });
+        const diagnostics = vscode.languages.getDiagnostics(file);
+        const errorCount = diagnostics.filter(
+          (d) => d.severity === vscode.DiagnosticSeverity.Error,
+        ).length;
+        const warningCount = diagnostics.filter(
+          (d) => d.severity === vscode.DiagnosticSeverity.Warning,
+        ).length;
+
+        definitions.push({
+          file: relativePath,
+          name,
+          testCount,
+          errorCount,
+          warningCount,
+        });
+      } else {
+        fragments.push({
+          file: relativePath,
+          name,
+          itemType: parsed.type,
+        });
+      }
     } catch {
       // skip unparseable files
     }
   }
 
+  const initFiles: FileEntry[] = scriptFiles.map((file) => ({
+    file: relativeTo(file.fsPath),
+    name: basename(file.fsPath),
+  }));
+
+  const baselines: FileEntry[] = baselineFiles.map((file) => ({
+    file: relativeTo(file.fsPath),
+    name: basename(file.fsPath, '.png'),
+  }));
+
   definitions.sort((a, b) => a.name.localeCompare(b.name));
-  return definitions;
+  fragments.sort((a, b) => a.name.localeCompare(b.name));
+  initFiles.sort((a, b) => a.name.localeCompare(b.name));
+  baselines.sort((a, b) => a.name.localeCompare(b.name));
+
+  return { definitions, fragments, initFiles, baselines };
 }
 
 function getNonce(): string {

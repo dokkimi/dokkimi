@@ -2,7 +2,7 @@ import { unix } from './platform-unix';
 import { windows } from './platform-windows';
 import type { Platform } from './platform';
 
-export type { Platform, ExecOptions } from './platform';
+export type { Platform, ExecOptions, SpawnOptions, SpawnResult } from './platform';
 
 const platform: Platform = process.platform === 'win32' ? windows : unix;
 
@@ -16,5 +16,6 @@ export const openFile = platform.openFile.bind(platform);
 export const startDocker = platform.startDocker.bind(platform);
 export const getDiskSpaceAvailable =
   platform.getDiskSpaceAvailable.bind(platform);
+export const spawnInShell = platform.spawnInShell.bind(platform);
 
 export { createDirectoryTar } from './tar';

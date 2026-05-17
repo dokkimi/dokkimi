@@ -1,8 +1,19 @@
+import type { ChildProcess } from 'child_process';
+
 export interface ExecOptions {
   timeout?: number;
   cwd?: string;
   env?: NodeJS.ProcessEnv;
   input?: string;
+}
+
+export interface SpawnOptions {
+  cwd?: string;
+  env?: NodeJS.ProcessEnv;
+}
+
+export interface SpawnResult {
+  process: ChildProcess;
 }
 
 export interface Platform {
@@ -14,4 +25,10 @@ export interface Platform {
   openFile(filePath: string): void;
   startDocker(): void;
   getDiskSpaceAvailable(): number | null;
+  spawnInShell(
+    cmd: string,
+    args: string[],
+    opts: SpawnOptions,
+    callback: (err: Error | null) => void,
+  ): SpawnResult;
 }

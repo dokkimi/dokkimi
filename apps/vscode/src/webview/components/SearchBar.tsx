@@ -75,9 +75,9 @@ export function SearchBar({
     <Wrapper>
       <Input
         type="text"
-        placeholder="Filter definitions..."
+        placeholder="Filter..."
         value={value}
-        onChange={(e) => onChange(e.target.value)}
+        onChange={(e: React.ChangeEvent<HTMLInputElement>) => onChange(e.target.value)}
       />
       <RunAllButton
         $disabled={runningAll}

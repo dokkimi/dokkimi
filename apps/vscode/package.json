@@ -85,7 +85,8 @@
     ]
   },
   "scripts": {
-    "build": "yarn build:ext && yarn build:webview",
+    "build": "yarn build:ext && yarn build:webview && yarn copy:codicons",
+    "copy:codicons": "cp $(node -e \"console.log(require.resolve('@vscode/codicons/dist/codicon.css'))\") $(node -e \"console.log(require.resolve('@vscode/codicons/dist/codicon.ttf'))\") dist/",
     "build:ext": "esbuild ./src/extension.ts --bundle --outfile=dist/extension.js --external:vscode --format=cjs --platform=node --main-fields=module,main",
     "build:webview": "esbuild ./src/webview/index.tsx --bundle --outfile=dist/webview.js --format=iife --platform=browser --jsx=automatic --loader:.tsx=tsx --loader:.ts=ts --minify",
     "watch": "yarn build:ext --watch & yarn build:webview --watch",
@@ -105,6 +106,7 @@
   },
   "dependencies": {
     "@dokkimi/platform": "workspace:*",
+    "@vscode/codicons": "^0.0.36",
     "js-yaml": "^4.1.1",
     "react": "^19.2.5",
     "react-dom": "^19.2.5",
