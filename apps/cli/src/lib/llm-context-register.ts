@@ -8,7 +8,9 @@ const INSTRUCTIONS_PATH = path.join(DOKKIMI_DIR, 'dokkimi-instructions.md');
 const VERSION_PATH = path.join(DOKKIMI_DIR, '.version');
 const DOKKIMI_MARKER = '<!-- dokkimi -->';
 
-const HINT = `When the user asks about Dokkimi, .dokkimi/ files, or writing test definitions for microservices, use the Dokkimi MCP tools (get_reference, validate_file, list_fragments, resolve_definition, run_tests, dump_results). Call get_reference first to look up the relevant spec section before writing or editing definition files. Do not guess field names, operators, or file structure.`;
+const HINT = `When the user asks about Dokkimi, .dokkimi/ files, or writing test definitions for microservices, use the Dokkimi MCP tools (get_reference, validate_file, list_fragments, resolve_definition, run_tests, dump_results). Call get_reference first to look up the relevant spec section before writing or editing definition files. Do not guess field names, operators, or file structure.
+
+If the Dokkimi MCP tools are unavailable, try restarting the server by running \`dokkimi mcp\` in the shell. If that also fails, fall back to reading ${INSTRUCTIONS_PATH} for the complete Dokkimi reference and use the \`dokkimi\` CLI directly (e.g. \`dokkimi validate\`, \`dokkimi run\`, \`dokkimi dump\`).`;
 
 function readStoredVersion(): string | null {
   try {
