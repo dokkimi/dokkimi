@@ -48,5 +48,9 @@ for file in "${PACKAGE_FILES[@]}"; do
   fi
 done
 
+VERSION_TS="$REPO_ROOT/shared/config/version.ts"
+echo "export const DOKKIMI_VERSION = '${VERSION}';" > "$VERSION_TS"
+echo "  ✓ shared/config/version.ts"
+
 echo ""
 echo "All package.json files synced to version ${VERSION}"

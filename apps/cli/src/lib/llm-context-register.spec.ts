@@ -32,16 +32,10 @@ jest.mock('os', () => ({
   homedir: () => '/mock-home',
 }));
 
-jest.mock('./version', () => ({
-  getCliVersion: jest.fn(() => '1.2.3'),
-}));
+const mockConfig = { DOKKIMI_VERSION: '1.2.3' };
+jest.mock('@dokkimi/config', () => mockConfig);
 
 import { registerLlmContext } from './llm-context-register';
-import { getCliVersion } from './version';
-
-const mockGetCliVersion = getCliVersion as jest.MockedFunction<
-  typeof getCliVersion
->;
 
 // ---------------------------------------------------------------------------
 // Paths
@@ -84,7 +78,7 @@ describe('registerLlmContext', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     clearMockFs();
-    mockGetCliVersion.mockReturnValue('1.2.3');
+    mockConfig.DOKKIMI_VERSION = '1.2.3';
   });
 
   it('does nothing when instructions source is missing', () => {
@@ -202,7 +196,7 @@ describe('registerLlmContext', () => {
   it('updates when version is newer than cache', () => {
     mockFs[INSTRUCTIONS_SOURCE] = '# Updated Instructions v2';
     mockFs[VERSION_PATH] = '1.0.0';
-    mockGetCliVersion.mockReturnValue('1.2.3');
+    mockConfig.DOKKIMI_VERSION = '1.2.3';
 
     registerLlmContext();
 

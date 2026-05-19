@@ -15,19 +15,15 @@ jest.mock('fs', () => {
   };
 });
 
-// Mock version module
-jest.mock('./version', () => ({
-  getCliVersion: jest.fn().mockReturnValue('1.0.0'),
-}));
+const mockConfig = { DOKKIMI_VERSION: '1.0.0' };
+jest.mock('@dokkimi/config', () => mockConfig);
 
 import * as fs from 'fs';
 import { checkForUpdate } from './update-check';
-import { getCliVersion } from './version';
 
 const mockExistsSync = fs.existsSync as jest.Mock;
 const mockReadFileSync = fs.readFileSync as jest.Mock;
 const mockWriteFileSync = fs.writeFileSync as jest.Mock;
-const mockGetCliVersion = getCliVersion as jest.Mock;
 
 describe('update-check', () => {
   let consoleSpy: jest.SpyInstance;
@@ -37,7 +33,7 @@ describe('update-check', () => {
     consoleSpy = jest.spyOn(console, 'log').mockImplementation();
     originalFetch = globalThis.fetch;
     jest.clearAllMocks();
-    mockGetCliVersion.mockReturnValue('1.0.0');
+    mockConfig.DOKKIMI_VERSION = '1.0.0';
   });
 
   afterEach(() => {
@@ -48,18 +44,6 @@ describe('update-check', () => {
   function flushPromises(): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, 0));
   }
-
-  describe('early return', () => {
-    it('returns early when CLI version is unknown', async () => {
-      mockGetCliVersion.mockReturnValue('unknown');
-      globalThis.fetch = jest.fn();
-
-      await checkForUpdate();
-
-      expect(globalThis.fetch).not.toHaveBeenCalled();
-      expect(consoleSpy).not.toHaveBeenCalled();
-    });
-  });
 
   describe('cached version path', () => {
     it('prints banner when cache has a newer version and is fresh', async () => {
