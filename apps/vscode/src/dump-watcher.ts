@@ -1,9 +1,6 @@
 import * as vscode from 'vscode';
 import * as fs from 'fs';
-import * as path from 'path';
-import * as os from 'os';
-
-const DUMP_PATH = path.join(os.homedir(), '.dokkimi', 'generated', 'dump.json');
+import { DUMP_PATH } from '@dokkimi/config';
 
 export interface DumpOutput {
   runId: string;

@@ -6,3 +6,4 @@ export * from './go-service-env.builder';
 export * from './assertions';
 export * from './user-prefs';
 export * from './version';
+export * from './paths';

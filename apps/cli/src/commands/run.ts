@@ -29,7 +29,8 @@ import {
   submitDefinition,
   type CreateRunResponse,
 } from './run-helpers';
-import { writeDump, DEFAULT_DUMP_FAILED_PATH } from './dump';
+import { writeDump } from './dump';
+import { DUMP_FAILED_PATH } from '@dokkimi/config';
 import type { LatestRunResponse } from '../lib/inspect-types';
 
 // ---------------------------------------------------------------------------
@@ -304,7 +305,7 @@ export async function run(args: string[]): Promise<void> {
             await writeDump({
               ...dumpOpts,
               instances: failedInstances,
-              outputPath: DEFAULT_DUMP_FAILED_PATH,
+              outputPath: DUMP_FAILED_PATH,
             });
           }
         }
