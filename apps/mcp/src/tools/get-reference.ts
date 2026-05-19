@@ -1,7 +1,6 @@
-import * as fs from 'fs';
-import * as path from 'path';
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { loadSpec } from '../lib/load-spec.js';
 
 const TOPIC_SECTIONS: Record<string, string[]> = {
   service: ['## Item Types', '### SERVICE'],
@@ -19,29 +18,6 @@ const TOPIC_SECTIONS: Record<string, string[]> = {
   config: ['## Config'],
   ref: ['## $ref (Item References)', '## $ref (Action References)'],
 };
-
-function loadSpec(): string {
-  const candidates = [
-    path.join(__dirname, '..', 'dokkimi-instructions.md'),
-    path.join(__dirname, '..', '..', 'dokkimi-instructions.md'),
-    path.resolve(
-      __dirname,
-      '..',
-      '..',
-      '..',
-      '..',
-      'shared',
-      'docs',
-      'dokkimi-instructions.md',
-    ),
-  ];
-  for (const p of candidates) {
-    if (fs.existsSync(p)) {
-      return fs.readFileSync(p, 'utf-8');
-    }
-  }
-  throw new Error('Could not find dokkimi-instructions.md');
-}
 
 function extractSection(spec: string, heading: string): string {
   const level = heading.match(/^#+/)![0].length;

@@ -174,6 +174,7 @@ export async function dump(args: string[]): Promise<void> {
     createdAt: latestRun.createdAt,
     completedAt: latestRun.completedAt,
     outputPath: outputFile,
+    inlineArtifacts,
   });
   console.error(`Dump written to ${path.resolve(outputFile)}`);
 
