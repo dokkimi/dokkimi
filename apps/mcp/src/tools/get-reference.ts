@@ -17,13 +17,19 @@ const TOPIC_SECTIONS: Record<string, string[]> = {
   ui: ['## Tests', '### Step Actions'],
   config: ['## Config'],
   ref: ['## $ref (Item References)', '## $ref (Action References)'],
+  examples: [
+    '## Best Practices (IMPORTANT)',
+    '## Two File Types (Shape Detection)',
+    '## Complete Example',
+  ],
 };
 
 function extractSection(spec: string, heading: string): string {
   const level = heading.match(/^#+/)![0].length;
   const escapedHeading = heading.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const boundary = /\w$/.test(heading) ? '\\b' : '';
   const pattern = new RegExp(
-    `(${escapedHeading}\\b[^\\n]*\\n)([\\s\\S]*?)(?=\\n#{1,${level}} [^#]|$)`,
+    `(${escapedHeading}${boundary}[^\\n]*\\n)([\\s\\S]*?)(?=\\n#{1,${level}} [^#]|$)`,
   );
   const match = spec.match(pattern);
   return match ? match[1] + match[2] : '';
@@ -61,6 +67,7 @@ export function registerGetReference(server: McpServer): void {
           'ui',
           'config',
           'ref',
+          'examples',
           'all',
         ])
         .optional()

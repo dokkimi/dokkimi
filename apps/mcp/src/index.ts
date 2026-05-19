@@ -11,6 +11,7 @@ import { registerDumpResults } from './tools/dump-results.js';
 import { registerDoctor } from './tools/doctor.js';
 import { registerStatus } from './tools/status.js';
 import { registerClean } from './tools/clean.js';
+import { registerReboot } from './tools/reboot.js';
 import { registerSpecResource } from './resources/spec.js';
 
 export function createServer(): McpServer {
@@ -29,6 +30,7 @@ export function createServer(): McpServer {
   registerDoctor(server);
   registerStatus(server);
   registerClean(server);
+  registerReboot(server);
   registerSpecResource(server);
 
   return server;
