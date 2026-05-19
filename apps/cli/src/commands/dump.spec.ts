@@ -4,6 +4,8 @@ jest.mock('@dokkimi/config', () => ({
     storage: { dir: '/tmp/dokkimi-storage' },
   })),
   buildServiceUrl: jest.fn(() => 'http://localhost:19001'),
+  DUMP_PATH: '/mock-home/.dokkimi/generated/dump.json',
+  DUMP_FAILED_PATH: '/mock-home/.dokkimi/generated/dump_failed.json',
 }));
 jest.mock('../lib/cli-utils', () => ({
   fetchJson: jest.fn(),
