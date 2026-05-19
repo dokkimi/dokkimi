@@ -1,18 +1,21 @@
 # Dokkimi
 
-> Dokkimi is a developer tool for testing microservices the way they actually run. It spins up isolated Kubernetes sandboxes, intercepts inter-service HTTP traffic, seeds databases, mocks external APIs, and runs assertions on real network calls — without requiring any code changes to your services.
+> Dokkimi is a testing framework for backend engineers, platform engineers, QA teams, and AI-native development teams. It runs integration, E2E UI, visual regression, and database tests in isolated Kubernetes sandboxes — without requiring a staging environment or code changes to your services. Built to integrate natively with AI coding agents like Claude, Cursor, and Copilot.
 
-Dokkimi is for backend and platform engineers who are frustrated with the gap between unit tests (which mock away the interesting parts) and staging environments (which drift from reality). Each test run gets its own Kubernetes namespace with dedicated services and databases, so there is no shared state and no cross-test interference. Tests are defined declaratively in a `.dokkimi/` folder and executed via the `dokkimi` CLI.
+Dokkimi is for engineers frustrated with the gap between unit tests (which mock away the interesting parts) and staging environments (which drift from reality and cost too much to maintain). Each test run gets its own Kubernetes namespace with dedicated services, databases, and a headless browser — no shared state, no cross-test interference. Tests are defined declaratively in a `.dokkimi/` folder and executed via the `dokkimi` CLI.
 
 Key capabilities:
 - Isolated per-run Kubernetes namespaces with dedicated services and databases
+- E2E UI testing with headless Chromium browser automation
+- Visual regression testing with screenshot diffing against baselines
 - Interceptor sidecars that capture every HTTP request between services for assertion
-- Mocking of outbound calls to third-party APIs (Stripe, Twilio, etc.)
-- Database seeding for Postgres, MySQL, MongoDB, and Redis via SQL or JS scripts
+- Mocking of outbound calls to third-party APIs (Stripe, Auth0, Twilio, and more)
+- Database seeding for Postgres, MySQL, MongoDB, and Redis
 - Parallel step and test execution
-- Zero code changes to services — sidecars, routing, DNS, and cleanup are handled automatically
+- Zero code changes to services — sidecars, routing, DNS, and cleanup handled automatically
+- AI agent integration — test definitions in YAML/JSON that agents can read, write, and iterate on
 
-Install: `npm install -g dokkimi`. Requires Node.js 20+, Docker, and a local Kubernetes cluster (Docker Desktop, Rancher Desktop, or minikube).
+Install: `npm install -g dokkimi` or `brew install dokkimi/tap/dokkimi`. Requires Node.js 20+, Docker, and a local Kubernetes cluster (Docker Desktop, Rancher Desktop, or minikube).
 
 ## Docs
 
@@ -21,22 +24,38 @@ Install: `npm install -g dokkimi`. Requires Node.js 20+, Docker, and a local Kub
 - [Services](https://dokkimi.com/docs/services): defining the services that make up a test topology
 - [Databases](https://dokkimi.com/docs/databases): Postgres, MySQL, MongoDB, Redis seeding
 - [Tests and Steps](https://dokkimi.com/docs/tests-and-steps): structuring test definitions and step groups
-- [Actions](https://dokkimi.com/docs/actions): the actions a test step can perform (HTTP calls, console logs, etc.)
-- [Assertions](https://dokkimi.com/docs/assertions): asserting on intercepted requests, responses, headers, logs, and DB state
+- [Actions](https://dokkimi.com/docs/actions): HTTP calls, UI steps, DB queries, and more
+- [Assertions](https://dokkimi.com/docs/assertions): asserting on traffic, responses, headers, logs, and DB state
 - [Variables](https://dokkimi.com/docs/variables): hardcoded variables and runtime extraction with `{{variable}}` interpolation
 - [Mocks](https://dokkimi.com/docs/mocks): intercepting outbound calls to external APIs
 - [Refs](https://dokkimi.com/docs/refs): referencing shared definitions across files
 - [CLI Reference](https://dokkimi.com/docs/cli): all `dokkimi` commands (`run`, `init`, `doctor`, `inspect`, ...)
 - [AI Integration](https://dokkimi.com/docs/ai-integration): using Dokkimi with AI coding assistants
 
+## Tutorials
+
+- [Mocking OAuth Flows](https://dokkimi.com/tutorials/mocking-oauth-flows): test Auth0 and other OAuth providers without test tenants
+- [Testing Next.js Apps](https://dokkimi.com/tutorials/testing-nextjs-apps): end-to-end testing a Next.js application
+- [Testing External API Integrations](https://dokkimi.com/tutorials/testing-external-api-integrations): mock Stripe, Twilio, and other third-party services
+- [Testing LLM Integrations](https://dokkimi.com/tutorials/testing-llm-integrations): test OpenAI and other LLM API integrations
+
 ## Blog
 
 - [Why we built Dokkimi](https://dokkimi.com/blog/why-we-built-dokkimi): the motivation behind the project
 - [Getting started with Dokkimi](https://dokkimi.com/blog/getting-started-with-dokkimi): walkthrough of a first test
 - [How traffic interception works](https://dokkimi.com/blog/how-traffic-interception-works): the interceptor sidecar architecture
+- [Mocking external APIs](https://dokkimi.com/blog/mocking-external-apis): intercepting calls to Stripe, Twilio, and more
+- [Testing with real databases](https://dokkimi.com/blog/testing-with-real-databases): seeding and querying Postgres, MySQL, MongoDB
+- [Parallel test execution](https://dokkimi.com/blog/parallel-test-execution): running tests concurrently
+- [Reusable definitions with $ref](https://dokkimi.com/blog/ref-pattern-reusable-definitions): the $ref pattern for shared configs
+- [Debugging failed tests](https://dokkimi.com/blog/debugging-failed-tests): reading output and fixing failures
+- [Variables and extraction](https://dokkimi.com/blog/variables-and-extraction): using runtime variables in test steps
+- [Console log assertions](https://dokkimi.com/blog/console-log-assertions): asserting on service console output
+- [Dokkimi vs Docker Compose testing](https://dokkimi.com/blog/dokkimi-vs-docker-compose-testing): why Docker Compose alone isn't enough
 
 ## Optional
 
 - [Pricing](https://dokkimi.com/#pricing)
 - [Features overview](https://dokkimi.com/#features)
 - [How it works](https://dokkimi.com/#how-it-works)
+- [Community](https://github.com/dokkimi/dokkimi/discussions)
