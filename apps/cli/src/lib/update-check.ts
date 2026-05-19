@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
-import { getCliVersion } from './version';
+import { DOKKIMI_VERSION } from '@dokkimi/config';
 
 const CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000; // 1 day
 const CHECK_FILE = path.join(os.homedir(), '.dokkimi', 'update-check.json');
@@ -58,17 +58,12 @@ function isNewer(remote: string, local: string): boolean {
  * Never blocks, never throws — failures are silent.
  */
 export async function checkForUpdate(): Promise<void> {
-  const cli = getCliVersion();
-  if (cli === 'unknown') {
-    return;
-  }
-
   const state = readCheckState();
 
   // If we checked recently and have a cached result, use it
   if (state && Date.now() - state.lastCheck < CHECK_INTERVAL_MS) {
-    if (state.latestVersion && isNewer(state.latestVersion, cli)) {
-      printUpdateBanner(state.latestVersion, cli);
+    if (state.latestVersion && isNewer(state.latestVersion, DOKKIMI_VERSION)) {
+      printUpdateBanner(state.latestVersion, DOKKIMI_VERSION);
     }
     return;
   }
@@ -81,8 +76,8 @@ export async function checkForUpdate(): Promise<void> {
         return;
       }
       writeCheckState({ lastCheck: Date.now(), latestVersion: latest });
-      if (isNewer(latest, cli)) {
-        printUpdateBanner(latest, cli);
+      if (isNewer(latest, DOKKIMI_VERSION)) {
+        printUpdateBanner(latest, DOKKIMI_VERSION);
       }
     })
     .catch(() => {

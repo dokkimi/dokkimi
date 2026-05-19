@@ -1,3 +1,4 @@
+import { DOKKIMI_VERSION } from '@dokkimi/config';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { registerGetReference } from './tools/get-reference.js';
@@ -11,7 +12,7 @@ import { registerSpecResource } from './resources/spec.js';
 export function createServer(): McpServer {
   const server = new McpServer({
     name: 'dokkimi',
-    version: '0.3.7',
+    version: DOKKIMI_VERSION,
   });
 
   registerGetReference(server);

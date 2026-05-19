@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
-import { getCliVersion } from './version';
+import { DOKKIMI_VERSION } from '@dokkimi/config';
 
 const DOKKIMI_DIR = path.join(os.homedir(), '.dokkimi');
 const INSTRUCTIONS_PATH = path.join(DOKKIMI_DIR, 'dokkimi-instructions.md');
@@ -218,12 +218,11 @@ export function registerLlmContext(): void {
     return;
   }
 
-  const appVersion = getCliVersion();
   const storedVersion = readStoredVersion();
 
-  if (storedVersion !== appVersion) {
+  if (storedVersion !== DOKKIMI_VERSION) {
     fullRegister(instructions);
-    writeVersion(appVersion);
+    writeVersion(DOKKIMI_VERSION);
   } else {
     ensureMissing(instructions);
   }

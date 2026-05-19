@@ -3,18 +3,17 @@ jest.mock('../lib/cli-utils', () => ({
   ...jest.requireActual('../lib/cli-utils'),
   prompt: jest.fn(),
 }));
-jest.mock('../lib/version');
+const mockConfig = { DOKKIMI_VERSION: '1.0.0' };
+jest.mock('@dokkimi/config', () => mockConfig);
 
 import * as fs from 'fs';
 import { prompt } from '../lib/cli-utils';
-import { getCliVersion } from '../lib/version';
 import { init } from './init';
 
 const mockExistsSync = fs.existsSync as jest.Mock;
 const mockMkdirSync = fs.mkdirSync as jest.Mock;
 const mockWriteFileSync = fs.writeFileSync as jest.Mock;
 const mockPrompt = prompt as jest.Mock;
-const mockGetCliVersion = getCliVersion as jest.Mock;
 
 let consoleSpy: jest.SpyInstance;
 let exitSpy: jest.SpyInstance;
@@ -29,7 +28,7 @@ beforeEach(() => {
   exitSpy = jest.spyOn(process, 'exit').mockImplementation(() => {
     throw new Error('process.exit');
   });
-  mockGetCliVersion.mockReturnValue('1.0.0');
+  mockConfig.DOKKIMI_VERSION = '1.0.0';
 });
 
 afterEach(() => {
@@ -74,7 +73,7 @@ describe('init', () => {
 
   it('writes config.yaml with CLI version', async () => {
     mockExistsSync.mockReturnValue(false);
-    mockGetCliVersion.mockReturnValue('2.3.4');
+    mockConfig.DOKKIMI_VERSION = '2.3.4';
 
     await init([]);
 

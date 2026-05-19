@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { init } from '../commands/init';
-import { getCliVersion } from '../lib/version';
+import { DOKKIMI_VERSION } from '@dokkimi/config';
 import { run } from '../commands/run';
 import { validate } from '../commands/validate';
 import { inspect } from '../commands/inspect';
@@ -67,8 +67,7 @@ async function main() {
   }
 
   if (command === '--version' || command === '-v' || command === 'version') {
-    const v = getCliVersion();
-    console.log(v === 'unknown' ? 'dokkimi (unknown version)' : `v${v}`);
+    console.log(`v${DOKKIMI_VERSION}`);
     process.exit(0);
   }
 
