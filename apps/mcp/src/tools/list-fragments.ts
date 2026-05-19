@@ -2,43 +2,14 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import {
-  isDefinitionFile,
-  parseDefinitionFile,
-} from '@dokkimi/definition-validator';
+import { parseDefinitionFile } from '@dokkimi/definition-validator';
+import { findDokkimiDir, scanFiles } from '../lib/dokkimi-dir.js';
 
 interface Fragment {
   filePath: string;
   type: string;
   name: string;
   description?: string;
-}
-
-function findDokkimiDir(startDir: string): string | null {
-  let dir = path.resolve(startDir);
-  const root = path.parse(dir).root;
-
-  while (dir !== root) {
-    const candidate = path.join(dir, '.dokkimi');
-    if (fs.existsSync(candidate) && fs.statSync(candidate).isDirectory()) {
-      return candidate;
-    }
-    dir = path.dirname(dir);
-  }
-  return null;
-}
-
-function scanFiles(dir: string): string[] {
-  const results: string[] = [];
-  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-    const full = path.join(dir, entry.name);
-    if (entry.isDirectory()) {
-      results.push(...scanFiles(full));
-    } else if (isDefinitionFile(entry.name)) {
-      results.push(full);
-    }
-  }
-  return results;
 }
 
 function classifyFragment(
