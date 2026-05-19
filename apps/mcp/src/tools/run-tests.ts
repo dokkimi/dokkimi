@@ -66,7 +66,7 @@ function parseDumpFile(dumpPath: string): RunResult | null {
 export function registerRunTests(server: McpServer): void {
   server.tool(
     'run_tests',
-    'Executes dokkimi run against a definition file or pattern and returns structured results with dump file paths.',
+    'Executes dokkimi run against a definition file or pattern and returns structured results with dump file paths. IMPORTANT: Only invoke this tool once at a time. Results history depth is 1 — parallel or sequential calls will overwrite previous results. To run multiple definition files, use a glob pattern (e.g. database/redis-*) or a subfolder path, not separate calls.',
     {
       target: z
         .string()

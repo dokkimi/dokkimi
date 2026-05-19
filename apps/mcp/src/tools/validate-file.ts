@@ -8,13 +8,15 @@ import {
 export function registerValidateFile(server: McpServer): void {
   server.tool(
     'validate_file',
-    'Validates a definition file on disk and returns structured errors/warnings. Fast, no-network check.',
+    'Validates definition file(s) and returns structured errors/warnings. Fast, no-network check. Accepts a single file, a folder, or a pattern.',
     {
-      filePath: z
+      target: z
         .string()
-        .describe('Path to a .dokkimi/ definition file (.json, .yml, .yaml)'),
+        .describe(
+          'Path to a definition file (.json, .yml, .yaml), a folder containing definitions, or a pattern.',
+        ),
     },
-    async ({ filePath }) => {
+    async ({ target: filePath }) => {
       let result: ResolverResult;
       try {
         result = resolveDefinitions(filePath);

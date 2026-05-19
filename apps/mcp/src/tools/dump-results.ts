@@ -8,7 +8,7 @@ import { findDokkimiBin } from '../lib/find-bin.js';
 export function registerDumpResults(server: McpServer): void {
   server.tool(
     'dump_results',
-    'Regenerates the dump output from the last run and returns the file path. Use run_tests output paths for the common case.',
+    "Regenerates the dump output from the last run and returns the file path. Only the most recent run's results are available — if run_tests was called multiple times, only the last invocation's results can be dumped.",
     {
       target: z
         .string()
