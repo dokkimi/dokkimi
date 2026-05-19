@@ -160,11 +160,11 @@ export function registerRunTests(server: McpServer): void {
           const parsed = parseDumpFile(DUMP_PATH);
 
           if (parsed) {
-            parsed.success = code === 0;
             resolve({
               content: [
                 { type: 'text', text: JSON.stringify(parsed, null, 2) },
               ],
+              isError: !parsed.success,
             });
           } else {
             resolve({
