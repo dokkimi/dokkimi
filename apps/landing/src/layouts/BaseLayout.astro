@@ -39,6 +39,14 @@ const { title, description = 'The only testing framework that does integration, 
     <link rel="preload" href="/logo-teal.png" as="image" />
 
     <title>{title}</title>
+    <!-- Google Analytics 4 -->
+    <script async src="https://www.googletagmanager.com/gtag/js?id=G-3JYZDCQCQC"></script>
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){dataLayer.push(arguments);}
+      gtag('js', new Date());
+      gtag('config', 'G-3JYZDCQCQC');
+    </script>
 
     <script type="application/ld+json" set:html={JSON.stringify({
       "@context": "https://schema.org",
