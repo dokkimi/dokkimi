@@ -1,26 +1,9 @@
-import * as fs from 'fs';
-import * as path from 'path';
 import { spawn } from 'child_process';
+import * as path from 'path';
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { DUMP_DIR } from '@dokkimi/config';
-
-function findDokkimiBin(): string {
-  const localBin = path.resolve(
-    __dirname,
-    '..',
-    '..',
-    '..',
-    'cli',
-    'dist',
-    'bin',
-    'dokkimi.js',
-  );
-  if (fs.existsSync(localBin)) {
-    return localBin;
-  }
-  return 'dokkimi';
-}
+import { findDokkimiBin } from '../lib/find-bin.js';
 
 export function registerDumpResults(server: McpServer): void {
   server.tool(

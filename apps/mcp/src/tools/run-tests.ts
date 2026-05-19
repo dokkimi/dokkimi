@@ -1,27 +1,9 @@
 import * as fs from 'fs';
 import { spawn } from 'child_process';
-import * as path from 'path';
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { DUMP_PATH, DUMP_FAILED_PATH } from '@dokkimi/config';
-
-function findDokkimiBin(): string {
-  // Prefer the locally-linked CLI, fall back to global
-  const localBin = path.resolve(
-    __dirname,
-    '..',
-    '..',
-    '..',
-    'cli',
-    'dist',
-    'bin',
-    'dokkimi.js',
-  );
-  if (fs.existsSync(localBin)) {
-    return localBin;
-  }
-  return 'dokkimi';
-}
+import { findDokkimiBin } from '../lib/find-bin.js';
 
 interface RunResult {
   success: boolean;
@@ -70,7 +52,7 @@ function parseDumpFile(dumpPath: string): RunResult | null {
     });
 
     return {
-      success: failed === 0 && skipped === 0,
+      success: failed === 0,
       summary: { total: instances.length, passed, failed, skipped },
       results,
       dumpFilePath: DUMP_PATH,
@@ -95,14 +77,17 @@ export function registerRunTests(server: McpServer): void {
     },
     async ({ target }, { sendNotification }) => {
       const bin = findDokkimiBin();
-      const args = ['run', '--ci'];
+      const args = ['run'];
       if (target) {
-        args.splice(1, 0, target);
+        args.push(target);
       }
+      args.push('--ci');
 
       const isNodeScript = bin.endsWith('.js');
       const command = isNodeScript ? process.execPath : bin;
       const spawnArgs = isNodeScript ? [bin, ...args] : args;
+
+      const TIMEOUT_MS = 10 * 60 * 1000;
 
       return new Promise((resolve) => {
         const child = spawn(command, spawnArgs, {
@@ -110,7 +95,27 @@ export function registerRunTests(server: McpServer): void {
           env: { ...process.env },
         });
 
-        let progressToken = 0;
+        const timer = setTimeout(() => {
+          child.kill();
+          resolve({
+            content: [
+              {
+                type: 'text',
+                text: JSON.stringify(
+                  {
+                    success: false,
+                    error: `dokkimi run timed out after ${TIMEOUT_MS / 1000}s`,
+                    dumpFilePath: DUMP_PATH,
+                    dumpFailedFilePath: DUMP_FAILED_PATH,
+                  },
+                  null,
+                  2,
+                ),
+              },
+            ],
+            isError: true,
+          });
+        }, TIMEOUT_MS);
 
         const forwardLine = (line: string) => {
           const trimmed = line.trim();
@@ -118,12 +123,10 @@ export function registerRunTests(server: McpServer): void {
             return;
           }
           sendNotification({
-            method: 'notifications/progress',
+            method: 'notifications/message',
             params: {
-              progressToken: progressToken++,
-              progress: progressToken,
-              total: undefined,
-              message: trimmed,
+              level: 'info',
+              data: trimmed,
             },
           }).catch(() => {});
         };
@@ -150,6 +153,7 @@ export function registerRunTests(server: McpServer): void {
         });
 
         child.on('close', (code) => {
+          clearTimeout(timer);
           if (stdoutBuf.trim()) {
             forwardLine(stdoutBuf);
           }
@@ -191,6 +195,7 @@ export function registerRunTests(server: McpServer): void {
         });
 
         child.on('error', (err) => {
+          clearTimeout(timer);
           resolve({
             content: [
               {
