@@ -1,13 +1,9 @@
-import * as os from 'os';
-import * as path from 'path';
 import * as fs from 'fs';
 import { spawn } from 'child_process';
+import * as path from 'path';
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-
-const DUMP_DIR = path.join(os.homedir(), '.dokkimi', 'generated');
-const DUMP_PATH = path.join(DUMP_DIR, 'dump.json');
-const DUMP_FAILED_PATH = path.join(DUMP_DIR, 'dump_failed.json');
+import { DUMP_PATH, DUMP_FAILED_PATH } from '@dokkimi/config';
 
 function findDokkimiBin(): string {
   // Prefer the locally-linked CLI, fall back to global
