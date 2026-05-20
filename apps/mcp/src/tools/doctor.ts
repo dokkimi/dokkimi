@@ -2,46 +2,6 @@ import { spawn } from 'child_process';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { findDokkimiBin } from '../lib/find-bin.js';
 
-// eslint-disable-next-line no-control-regex
-const ANSI_RE = /\x1b\[\d+m/g;
-const CHECK_RE = /^\s*[✓✗○]\s+(\S+(?:\s+\S+)*?)\s{2,}(.+)$/;
-const FIX_RE = /^\s*↳\s*(.+)$/;
-
-interface CheckResult {
-  name: string;
-  passed: boolean;
-  detail: string;
-  fix?: string;
-}
-
-function parseOutput(raw: string): CheckResult[] {
-  const lines = raw.replace(ANSI_RE, '').split('\n');
-  const results: CheckResult[] = [];
-
-  for (let i = 0; i < lines.length; i++) {
-    const match = CHECK_RE.exec(lines[i]);
-    if (!match) {
-      continue;
-    }
-
-    const [, name, detail] = match;
-    const passed = lines[i].includes('✓');
-    const result: CheckResult = { name, passed, detail: detail.trim() };
-
-    const nextLine = lines[i + 1];
-    if (nextLine) {
-      const fixMatch = FIX_RE.exec(nextLine.replace(ANSI_RE, ''));
-      if (fixMatch) {
-        result.fix = fixMatch[1].trim();
-      }
-    }
-
-    results.push(result);
-  }
-
-  return results;
-}
-
 export function registerDoctor(server: McpServer): void {
   server.tool(
     'doctor',
@@ -51,7 +11,9 @@ export function registerDoctor(server: McpServer): void {
       const bin = findDokkimiBin();
       const isNodeScript = bin.endsWith('.js');
       const command = isNodeScript ? process.execPath : bin;
-      const args = isNodeScript ? [bin, 'doctor'] : ['doctor'];
+      const args = isNodeScript
+        ? [bin, 'doctor', '--json']
+        : ['doctor', '--json'];
 
       return new Promise((resolve) => {
         const child = spawn(command, args, {
@@ -65,26 +27,32 @@ export function registerDoctor(server: McpServer): void {
         });
 
         child.on('close', (code) => {
-          const checks = parseOutput(stdout);
-          const failed = checks.filter((c) => !c.passed);
-
-          resolve({
-            content: [
-              {
-                type: 'text',
-                text: JSON.stringify(
-                  {
-                    passed: code === 0,
-                    checks,
-                    ...(failed.length > 0 ? { failed } : {}),
-                  },
-                  null,
-                  2,
-                ),
-              },
-            ],
-            isError: code !== 0,
-          });
+          try {
+            const result = JSON.parse(stdout);
+            resolve({
+              content: [
+                { type: 'text', text: JSON.stringify(result, null, 2) },
+              ],
+              isError: code !== 0,
+            });
+          } catch {
+            resolve({
+              content: [
+                {
+                  type: 'text',
+                  text: JSON.stringify(
+                    {
+                      error: 'Failed to parse doctor output',
+                      exitCode: code,
+                    },
+                    null,
+                    2,
+                  ),
+                },
+              ],
+              isError: true,
+            });
+          }
         });
 
         child.on('error', (err) => {

@@ -40,11 +40,13 @@ export async function clean(args: string[]): Promise<void> {
     console.log('');
     console.log('Options:');
     console.log('  --force, -f    Skip confirmation prompt');
+    console.log('  --json         Output results as JSON (implies --force)');
     console.log('  --help, -h     Show this help message');
     process.exit(0);
   }
 
-  const force = args.includes('--force') || args.includes('-f');
+  const jsonMode = args.includes('--json');
+  const force = jsonMode || args.includes('--force') || args.includes('-f');
 
   const config = loadConfig();
   const ctUrl = buildServiceUrl(config.services.controlTower);
@@ -55,11 +57,58 @@ export async function clean(args: string[]): Promise<void> {
   // Find orphaned K8s namespaces regardless of CT status
   const orphanedNamespaces = findDokkimiNamespaces();
 
+  if (jsonMode) {
+    const nothingToClean = ctCheck.healthy
+      ? await isNothingToCleanCT(ctUrl, orphanedNamespaces)
+      : orphanedNamespaces.length === 0;
+
+    if (nothingToClean) {
+      console.log(JSON.stringify({ success: true }));
+      return;
+    }
+
+    const originalLog = console.log;
+    const originalExit = process.exit;
+    console.log = () => {};
+    // Prevent sub-functions from exiting early
+    process.exit = (() => {}) as never;
+    let success = true;
+    let error: string | undefined;
+    try {
+      if (ctCheck.healthy) {
+        await cleanViaCT(ctUrl, true, orphanedNamespaces);
+      } else {
+        await cleanDirectK8s(true, orphanedNamespaces);
+      }
+    } catch (err) {
+      success = false;
+      error = err instanceof Error ? err.message : String(err);
+    }
+    console.log = originalLog;
+    process.exit = originalExit;
+    console.log(
+      JSON.stringify({
+        success,
+        ...(error ? { error } : {}),
+      }),
+    );
+    return;
+  }
+
   if (ctCheck.healthy) {
     await cleanViaCT(ctUrl, force, orphanedNamespaces);
   } else {
     await cleanDirectK8s(force, orphanedNamespaces);
   }
+}
+
+async function isNothingToCleanCT(
+  ctUrl: string,
+  orphanedNamespaces: string[],
+): Promise<boolean> {
+  const latestRun = await fetchJson<RunStatus>(`${ctUrl}/runs/latest`);
+  const instanceCount = latestRun?.instances?.length ?? 0;
+  return instanceCount === 0 && orphanedNamespaces.length === 0;
 }
 
 /**

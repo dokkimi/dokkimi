@@ -13,24 +13,26 @@ import { getServiceStatus } from '@dokkimi/service-manager';
 
 export async function status(args: string[]): Promise<void> {
   if (args.includes('--help') || args.includes('-h')) {
-    console.log('Usage: dokkimi status');
+    console.log('Usage: dokkimi status [options]');
     console.log('');
     console.log('Show the status of Dokkimi and any running instances.');
+    console.log('');
+    console.log('Options:');
+    console.log('  --json         Output results as JSON');
+    console.log('  --help, -h     Show this help message');
     process.exit(0);
   }
 
+  const jsonMode = args.includes('--json');
   const config = loadConfig();
   const serviceStatus = await getServiceStatus(config);
 
-  console.log('');
-  if (serviceStatus.healthy) {
-    console.log('\x1b[32m✓\x1b[0m Dokkimi is running');
-    if (serviceStatus.startedAt) {
-      const uptimeMs = Date.now() - new Date(serviceStatus.startedAt).getTime();
-      const uptimeSeconds = Math.floor(uptimeMs / 1000);
-      console.log(`  \x1b[90mUptime: ${formatUptime(uptimeSeconds)}\x1b[0m`);
+  if (!serviceStatus.healthy) {
+    if (jsonMode) {
+      console.log(JSON.stringify({ running: false, instances: [] }));
+      return;
     }
-  } else {
+    console.log('');
     console.log('\x1b[31m✗\x1b[0m Dokkimi is not running');
     console.log('');
     console.log(
@@ -52,10 +54,47 @@ export async function status(args: string[]): Promise<void> {
     };
   }>(`${ctUrl}/health`);
 
+  const kubernetes = health
+    ? health.checks.kubernetes.status === 'healthy'
+    : undefined;
+  const database = health
+    ? health.checks.database.status === 'healthy'
+    : undefined;
+
+  // Get running instances
+  const rawInstances = await fetchJson<Instance[]>(
+    `${ctUrl}/namespaces/instances`,
+  );
+
+  const instances = (rawInstances ?? []).map((i) => ({
+    name: i.definition?.name || i.id,
+    status: i.status,
+    createdAt: i.createdAt,
+  }));
+
+  if (jsonMode) {
+    console.log(
+      JSON.stringify({
+        running: true,
+        ...(kubernetes !== undefined ? { kubernetes } : {}),
+        ...(database !== undefined ? { database } : {}),
+        instances,
+      }),
+    );
+    return;
+  }
+
+  // Formatted output
+  console.log('');
+  console.log('\x1b[32m✓\x1b[0m Dokkimi is running');
+  if (serviceStatus.startedAt) {
+    const uptimeMs = Date.now() - new Date(serviceStatus.startedAt).getTime();
+    const uptimeSeconds = Math.floor(uptimeMs / 1000);
+    console.log(`  \x1b[90mUptime: ${formatUptime(uptimeSeconds)}\x1b[0m`);
+  }
+
   if (health) {
-    const k8sOk = health.checks.kubernetes.status === 'healthy';
-    const dbOk = health.checks.database.status === 'healthy';
-    if (k8sOk) {
+    if (kubernetes) {
       console.log('\x1b[32m✓\x1b[0m Kubernetes connected');
     } else {
       console.log('\x1b[31m✗\x1b[0m Kubernetes not connected');
@@ -63,18 +102,13 @@ export async function status(args: string[]): Promise<void> {
         '  \x1b[90mEnsure Docker Desktop has Kubernetes enabled.\x1b[0m',
       );
     }
-    if (!dbOk) {
+    if (!database) {
       console.log('\x1b[31m✗\x1b[0m Database not available');
     }
   }
 
-  // Get running instances
-  const instances = await fetchJson<Instance[]>(
-    `${ctUrl}/namespaces/instances`,
-  );
-
   console.log('');
-  if (!instances || instances.length === 0) {
+  if (instances.length === 0) {
     console.log('No active instances.');
   } else {
     const active = instances.filter((i) => ACTIVE_STATUSES.includes(i.status));
@@ -87,7 +121,7 @@ export async function status(args: string[]): Promise<void> {
       for (const inst of active) {
         const statusColor = inst.status === 'RUNNING' ? '\x1b[32m' : '\x1b[33m';
         console.log(
-          `  ${statusColor}${inst.status.padEnd(PAD_STATUS)}\x1b[0m ${(inst.definition?.name || inst.id).padEnd(PAD_NAME)} ${formatAge(inst.createdAt)}`,
+          `  ${statusColor}${inst.status.padEnd(PAD_STATUS)}\x1b[0m ${inst.name.padEnd(PAD_NAME)} ${formatAge(inst.createdAt)}`,
         );
       }
     } else {

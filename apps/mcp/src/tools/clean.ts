@@ -2,9 +2,6 @@ import { spawn } from 'child_process';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { findDokkimiBin } from '../lib/find-bin.js';
 
-// eslint-disable-next-line no-control-regex
-const ANSI_RE = /\x1b\[\d+m/g;
-
 export function registerClean(server: McpServer): void {
   server.tool(
     'clean',
@@ -15,8 +12,8 @@ export function registerClean(server: McpServer): void {
       const isNodeScript = bin.endsWith('.js');
       const command = isNodeScript ? process.execPath : bin;
       const args = isNodeScript
-        ? [bin, 'clean', '--force']
-        : ['clean', '--force'];
+        ? [bin, 'clean', '--force', '--json']
+        : ['clean', '--force', '--json'];
 
       return new Promise((resolve) => {
         const child = spawn(command, args, {
@@ -36,25 +33,32 @@ export function registerClean(server: McpServer): void {
         });
 
         child.on('close', (code) => {
-          const output = (stdout + stderr).replace(ANSI_RE, '').trim();
-          const success = code === 0 || output.includes('Clean complete');
-
-          resolve({
-            content: [
-              {
-                type: 'text',
-                text: JSON.stringify(
-                  {
-                    success,
-                    output,
-                  },
-                  null,
-                  2,
-                ),
-              },
-            ],
-            isError: !success,
-          });
+          try {
+            const result = JSON.parse(stdout);
+            resolve({
+              content: [
+                { type: 'text', text: JSON.stringify(result, null, 2) },
+              ],
+              isError: !result.success,
+            });
+          } catch {
+            resolve({
+              content: [
+                {
+                  type: 'text',
+                  text: JSON.stringify(
+                    {
+                      success: code === 0,
+                      error: stderr.trim() || 'Failed to parse clean output',
+                    },
+                    null,
+                    2,
+                  ),
+                },
+              ],
+              isError: code !== 0,
+            });
+          }
         });
 
         child.on('error', (err) => {
