@@ -1,5 +1,4 @@
 import * as fs from 'fs';
-import * as os from 'os';
 import * as path from 'path';
 import { resolveDefinitions } from '@dokkimi/definition-resolver';
 import { fetchJson } from '../lib/cli-utils';
@@ -20,12 +19,7 @@ import type {
   ArtifactsResponse,
 } from '../lib/inspect-types';
 
-export const DEFAULT_DUMP_PATH = path.join(
-  os.homedir(),
-  '.dokkimi',
-  'generated',
-  'dump.json',
-);
+import { DUMP_PATH } from '@dokkimi/config';
 
 // ---------------------------------------------------------------------------
 // Core dump logic — callable from both the `dump` command and auto-dump
@@ -52,7 +46,7 @@ export async function writeDump(opts: WriteDumpOptions): Promise<void> {
     runStatus,
     createdAt,
     completedAt,
-    outputPath = DEFAULT_DUMP_PATH,
+    outputPath = DUMP_PATH,
     inlineArtifacts = false,
   } = opts;
 
@@ -99,7 +93,7 @@ export async function dump(args: string[]): Promise<void> {
       'Output a raw JSON data dump of the last run for LLM-assisted debugging.',
     );
     console.log('');
-    console.log(`By default, writes to ${DEFAULT_DUMP_PATH}`);
+    console.log(`By default, writes to ${DUMP_PATH}`);
     console.log('');
     console.log('Arguments:');
     console.log(
@@ -127,7 +121,7 @@ export async function dump(args: string[]): Promise<void> {
   }
 
   const explicitOutput = parseOutputFlag(args);
-  const outputFile = explicitOutput ?? DEFAULT_DUMP_PATH;
+  const outputFile = explicitOutput ?? DUMP_PATH;
   const failedOnly = parseBoolFlag(args, '--failed');
   const inlineArtifacts = parseBoolFlag(args, '--inline-artifacts');
   const config = loadConfig();
@@ -180,6 +174,7 @@ export async function dump(args: string[]): Promise<void> {
     createdAt: latestRun.createdAt,
     completedAt: latestRun.completedAt,
     outputPath: outputFile,
+    inlineArtifacts,
   });
   console.error(`Dump written to ${path.resolve(outputFile)}`);
 

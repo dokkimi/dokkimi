@@ -38,6 +38,8 @@
   },
   "files": [
     "apps/cli/dist/",
+    "apps/mcp/dist/",
+    "apps/mcp/package.json",
     "services/control-tower/dist/",
     "services/control-tower/package.json",
     "shared/prisma/sqlite/schema.prisma",

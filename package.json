@@ -13,6 +13,7 @@
   },
   "workspaces": [
     "apps/cli",
+    "apps/mcp",
     "apps/vscode",
     "apps/landing",
     "services/*",
@@ -26,13 +27,14 @@
   "scripts": {
     "dev:cli": "yarn workspace @dokkimi/cli dev",
     "dev:landing": "yarn workspace @dokkimi/landing dev",
+    "dev:mcp": "yarn build:shared && yarn workspace @dokkimi/mcp build && yarn workspace @dokkimi/cli build && npx @modelcontextprotocol/inspector node apps/cli/dist/bin/dokkimi.js mcp",
     "link": "cd apps/cli && npm link",
     "unlink": "cd apps/cli && npm unlink",
     "package:vscode": "yarn workspace @dokkimi/definition-validator build && yarn workspace dokkimi-vscode package",
     "build": "yarn build:shared && yarn build:services && yarn build:apps",
     "build:shared": "yarn workspace @dokkimi/config build && yarn workspace @dokkimi/platform build && yarn workspace @dokkimi/telemetry build && yarn workspace @dokkimi/definition-validator build && yarn workspace @dokkimi/definition-resolver build && yarn workspace @dokkimi/service-manager build",
     "build:services": "yarn workspaces foreach --all --include 'services/*' run build",
-    "build:apps": "yarn workspaces foreach --all --include 'apps/*' run build",
+    "build:apps": "yarn workspaces foreach --all --topological --include 'apps/*' run build",
     "build:all": "yarn workspaces foreach --all --topological run build",
     "test": "yarn workspaces foreach --all run test",
     "lint": "eslint .",

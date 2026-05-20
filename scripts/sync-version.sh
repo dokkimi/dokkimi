@@ -18,6 +18,7 @@ echo "Syncing all package.json files to version ${VERSION}..."
 PACKAGE_FILES=(
   "package.json"
   "apps/cli/package.json"
+  "apps/mcp/package.json"
   "apps/landing/package.json"
   "apps/vscode/package.json"
   "services/control-tower/package.json"
@@ -46,6 +47,10 @@ for file in "${PACKAGE_FILES[@]}"; do
     echo "  ✗ $file (not found)"
   fi
 done
+
+VERSION_TS="$REPO_ROOT/shared/config/version.ts"
+echo "export const DOKKIMI_VERSION = '${VERSION}';" > "$VERSION_TS"
+echo "  ✓ shared/config/version.ts"
 
 echo ""
 echo "All package.json files synced to version ${VERSION}"

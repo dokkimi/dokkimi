@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { init } from '../commands/init';
-import { getCliVersion } from '../lib/version';
+import { DOKKIMI_VERSION } from '@dokkimi/config';
 import { run } from '../commands/run';
 import { validate } from '../commands/validate';
 import { inspect } from '../commands/inspect';
@@ -14,6 +14,7 @@ import { shutdown } from '../commands/shutdown';
 import { reboot } from '../commands/reboot';
 import { uninstall } from '../commands/uninstall';
 import { configCommand } from '../commands/config';
+import { mcp } from '../commands/mcp';
 import { registerLlmContext } from '../lib/llm-context-register';
 import {
   initTelemetry,
@@ -38,6 +39,7 @@ Commands:
   reboot                Restart all Dokkimi services
   uninstall             Remove Dokkimi data, images, and namespaces
   config                View and edit Dokkimi settings
+  mcp                   Start the MCP server (stdio mode, for AI tool integration)
   version               Show version
 
 Options:
@@ -65,8 +67,7 @@ async function main() {
   }
 
   if (command === '--version' || command === '-v' || command === 'version') {
-    const v = getCliVersion();
-    console.log(v === 'unknown' ? 'dokkimi (unknown version)' : `v${v}`);
+    console.log(`v${DOKKIMI_VERSION}`);
     process.exit(0);
   }
 
@@ -113,6 +114,9 @@ async function main() {
         break;
       case 'config':
         await configCommand(commandArgs);
+        break;
+      case 'mcp':
+        await mcp();
         break;
       default:
         console.error(`Unknown command: ${command}`);

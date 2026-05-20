@@ -111,8 +111,7 @@ function spawnRun(
 ): Promise<void> {
   return new Promise((resolve, reject) => {
     const cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-    const escaped = target.replace(/'/g, "'\\''");
-    const proc = cp.spawn(`dokkimi run --ci '${escaped}'`, {
+    const proc = cp.spawn('dokkimi', ['run', '--ci', target], {
       stdio: ['ignore', 'pipe', 'pipe'],
       shell: true,
       cwd,

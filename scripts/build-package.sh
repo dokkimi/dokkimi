@@ -61,6 +61,9 @@ cd "$REPO_ROOT"
 yarn build:shared
 yarn build:services
 
+echo "==> Building MCP server"
+yarn workspace @dokkimi/mcp build
+
 echo "==> Building CLI"
 yarn workspace @dokkimi/cli build
 
@@ -100,6 +103,11 @@ cp shared/docs/dokkimi-instructions.md "$STAGE_DIR/shared/docs/"
 mkdir -p "$STAGE_DIR/services/control-tower"
 cp -r services/control-tower/dist "$STAGE_DIR/services/control-tower/dist"
 strip_dev_deps "$REPO_ROOT/services/control-tower/package.json" "$STAGE_DIR/services/control-tower/package.json"
+
+# MCP server
+mkdir -p "$STAGE_DIR/apps/mcp"
+cp -r apps/mcp/dist "$STAGE_DIR/apps/mcp/dist"
+strip_dev_deps "$REPO_ROOT/apps/mcp/package.json" "$STAGE_DIR/apps/mcp/package.json"
 
 # CLI
 mkdir -p "$STAGE_DIR/apps/cli"

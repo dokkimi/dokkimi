@@ -1,7 +1,7 @@
 import * as path from 'path';
 import * as fs from 'fs';
 import { prompt } from '../lib/cli-utils';
-import { getCliVersion } from '../lib/version';
+import { DOKKIMI_VERSION } from '@dokkimi/config';
 
 const EXAMPLE_DEFINITION = `# Example definition — replace with your own services and tests
 name: example-test
@@ -83,8 +83,7 @@ export async function init(args: string[]): Promise<void> {
     fs.mkdirSync(dir, { recursive: true });
   }
 
-  const cliVersion = getCliVersion();
-  const configContent = `dokkimi: ${cliVersion}\nenv: {}\n`;
+  const configContent = `dokkimi: ${DOKKIMI_VERSION}\nenv: {}\n`;
 
   const files = [
     {

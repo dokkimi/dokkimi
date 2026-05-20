@@ -31,6 +31,18 @@ if (!fs.existsSync(dokkimiScope)) {
   fs.mkdirSync(dokkimiScope, { recursive: true });
 }
 
+// Also include app packages that are importable as @dokkimi/*
+const appsDir = path.join(pkgRoot, 'apps');
+for (const app of ['mcp']) {
+  const appDir = path.join(appsDir, app);
+  if (
+    fs.existsSync(appDir) &&
+    fs.existsSync(path.join(appDir, 'package.json'))
+  ) {
+    internalPackages.push({ name: app, dir: appDir });
+  }
+}
+
 for (const { name, dir } of internalPackages) {
   const linkPath = path.join(dokkimiScope, name);
   if (fs.existsSync(linkPath)) {

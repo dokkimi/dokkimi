@@ -82,7 +82,6 @@
     "typescript": "^6.0.3"
   },
   "dependencies": {
-    "@dokkimi/platform": "workspace:*",
     "js-yaml": "^4.1.1"
   }
 }

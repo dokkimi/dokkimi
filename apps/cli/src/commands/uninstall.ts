@@ -64,7 +64,7 @@ export async function uninstall(args: string[]): Promise<void> {
   console.log('');
 
   // 1. Stop Dokkimi
-  console.log('[1/4] Stopping Dokkimi...');
+  console.log('[1/5] Stopping Dokkimi...');
   try {
     await shutdownServices();
     console.log('       Stopped.');
@@ -73,7 +73,7 @@ export async function uninstall(args: string[]): Promise<void> {
   }
 
   // 2. Clean K8s namespaces
-  console.log('[2/4] Cleaning Kubernetes namespaces...');
+  console.log('[2/5] Cleaning Kubernetes namespaces...');
   const remainingNamespaces = findDokkimiNamespaces();
   if (remainingNamespaces.length > 0) {
     for (const ns of remainingNamespaces) {
@@ -91,7 +91,7 @@ export async function uninstall(args: string[]): Promise<void> {
   }
 
   // 3. Remove Docker images
-  console.log('[3/4] Removing Docker images...');
+  console.log('[3/5] Removing Docker images...');
   let imagesRemoved = 0;
   for (const image of DOKKIMI_IMAGES) {
     const imageIds = findImageIds(image);
@@ -109,7 +109,7 @@ export async function uninstall(args: string[]): Promise<void> {
   );
 
   // 4. Remove data directory
-  console.log(`[4/4] Removing ${DOKKIMI_DIR}/...`);
+  console.log(`[4/5] Removing ${DOKKIMI_DIR}/...`);
   if (fs.existsSync(DOKKIMI_DIR)) {
     fs.rmSync(DOKKIMI_DIR, { recursive: true, force: true });
     console.log('       Removed.');
@@ -179,6 +179,29 @@ function removeLlmConfigPointers(): void {
     }
   } catch {
     // Best-effort
+  }
+
+  // Remove MCP server entries
+  for (const configPath of [
+    path.join(os.homedir(), '.claude.json'),
+    path.join(os.homedir(), '.cursor', 'mcp.json'),
+  ]) {
+    try {
+      if (!fs.existsSync(configPath)) {
+        continue;
+      }
+      const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+      if (config.mcpServers?.dokkimi) {
+        delete config.mcpServers.dokkimi;
+        fs.writeFileSync(
+          configPath,
+          JSON.stringify(config, null, 2) + '\n',
+          'utf-8',
+        );
+      }
+    } catch {
+      // Best-effort
+    }
   }
 }
 

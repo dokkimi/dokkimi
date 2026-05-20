@@ -238,18 +238,19 @@ async function checkDokkimiServices(): Promise<Check> {
 
 export async function doctor(args: string[]): Promise<void> {
   if (args.includes('--help') || args.includes('-h')) {
-    console.log('Usage: dokkimi doctor');
+    console.log('Usage: dokkimi doctor [options]');
     console.log('');
     console.log(
       'Run pre-flight checks to verify your environment is ready for Dokkimi.',
     );
+    console.log('');
+    console.log('Options:');
+    console.log('  --json         Output results as JSON');
+    console.log('  --help, -h     Show this help message');
     process.exit(0);
   }
 
-  console.log('');
-  console.log('Dokkimi Doctor');
-  console.log('══════════════');
-  console.log('');
+  const jsonMode = args.includes('--json');
 
   const checks: Check[] = [];
 
@@ -300,9 +301,48 @@ export async function doctor(args: string[]): Promise<void> {
     fix: hasDokkimi ? undefined : "Run 'dokkimi init' to scaffold one",
   });
 
-  // Print results
-  let failures = 0;
-  let warnings = 0;
+  const failures = checks.filter(
+    (c) => !c.pass && c.name !== '.dokkimi/',
+  ).length;
+  const warnings = checks.filter(
+    (c) => !c.pass && c.name === '.dokkimi/',
+  ).length;
+
+  // JSON output mode
+  if (jsonMode) {
+    const jsonChecks = checks.map((c) => ({
+      name: c.name,
+      passed: c.pass,
+      detail: c.detail,
+      ...(c.fix ? { fix: c.fix } : {}),
+    }));
+    const failed = jsonChecks.filter((c) => !c.passed);
+    console.log(
+      JSON.stringify({
+        passed: failures === 0,
+        checks: jsonChecks,
+        ...(failed.length > 0 ? { failed } : {}),
+      }),
+    );
+
+    trackEvent('cli_doctor_result', {
+      passed: failures === 0,
+      failure_count: failures,
+      warning_count: warnings,
+      checks: buildTelemetryMap(checks),
+    });
+
+    if (failures > 0) {
+      process.exit(1);
+    }
+    return;
+  }
+
+  // Formatted output
+  console.log('');
+  console.log('Dokkimi Doctor');
+  console.log('══════════════');
+  console.log('');
 
   for (const check of checks) {
     if (check.pass) {
@@ -315,12 +355,10 @@ export async function doctor(args: string[]): Promise<void> {
         console.log(
           `  \x1b[33m○\x1b[0m ${check.name.padEnd(PAD_LABEL)} ${check.detail}`,
         );
-        warnings++;
       } else {
         console.log(
           `  \x1b[31m✗\x1b[0m ${check.name.padEnd(PAD_LABEL)} ${check.detail}`,
         );
-        failures++;
       }
       if (check.fix) {
         console.log(`${''.padEnd(4 + PAD_LABEL)}\x1b[90m↳ ${check.fix}\x1b[0m`);
@@ -342,25 +380,27 @@ export async function doctor(args: string[]): Promise<void> {
   }
   console.log('');
 
-  // Build per-check telemetry map
-  const checkResults: Record<string, boolean | string> = {};
-  for (const check of checks) {
-    const key = check.name.toLowerCase().replace(/[^a-z0-9]/g, '_');
-    if (check.name === 'K8s Context') {
-      checkResults[key] = check.detail;
-    } else {
-      checkResults[key] = check.pass;
-    }
-  }
-
   trackEvent('cli_doctor_result', {
     passed: failures === 0,
     failure_count: failures,
     warning_count: warnings,
-    checks: checkResults,
+    checks: buildTelemetryMap(checks),
   });
 
   if (failures > 0) {
     process.exit(1);
   }
+}
+
+function buildTelemetryMap(checks: Check[]): Record<string, boolean | string> {
+  const result: Record<string, boolean | string> = {};
+  for (const check of checks) {
+    const key = check.name.toLowerCase().replace(/[^a-z0-9]/g, '_');
+    if (check.name === 'K8s Context') {
+      result[key] = check.detail;
+    } else {
+      result[key] = check.pass;
+    }
+  }
+  return result;
 }
