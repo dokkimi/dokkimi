@@ -30,8 +30,9 @@ import {
   type CreateRunResponse,
 } from './run-helpers';
 import { writeDump } from './dump';
-import { DUMP_FAILED_PATH } from '@dokkimi/config';
+import { DUMP_PATH, DUMP_FAILED_PATH } from '@dokkimi/config';
 import type { LatestRunResponse } from '../lib/inspect-types';
+import { existsSync, readFileSync } from 'fs';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -87,6 +88,9 @@ export async function run(args: string[]): Promise<void> {
       '  --ci                 CI-friendly output (no interactive UI, exit with 0/1)',
     );
     console.log(
+      '  --failed             Re-run only definitions that failed in the last run',
+    );
+    console.log(
       '  --timeout=SECONDS    Fail after SECONDS if not complete (default: 600 in CI)',
     );
     console.log('');
@@ -102,6 +106,7 @@ export async function run(args: string[]): Promise<void> {
 
   const ciMode = args.includes('--ci');
   const watchMode = args.includes('--watch') || args.includes('-w');
+  const failedOnly = args.includes('--failed');
   const timeoutArg = args.find((a) => a.startsWith('--timeout='));
   const timeoutMs = timeoutArg
     ? parseInt(timeoutArg.split('=')[1], 10) * 1000
@@ -111,6 +116,16 @@ export async function run(args: string[]): Promise<void> {
   const target = args.find(
     (a) => !a.startsWith('-') && !a.startsWith('--timeout'),
   );
+
+  let initialFilterNames: string[] | undefined;
+  if (failedOnly) {
+    const failedNames = readFailedNames();
+    if (failedNames.length === 0) {
+      console.error('No failed definitions found in the last run.');
+      process.exit(1);
+    }
+    initialFilterNames = failedNames;
+  }
 
   const config = loadConfig();
   const ctUrl = buildServiceUrl(config.services.controlTower);
@@ -481,7 +496,10 @@ export async function run(args: string[]): Promise<void> {
   if (process.stdout.isTTY && !ciMode) {
     process.stdout.write('\x1b[s');
   }
-  inFlight = triggerRun();
+  inFlight = triggerRun(
+    initialFilterNames,
+    initialFilterNames ? 'rerun_failed' : undefined,
+  );
   await inFlight;
 
   // CI mode: exit immediately with appropriate code
@@ -680,4 +698,31 @@ async function executeRun(
     baselinesUploaded,
     consumedFiles: result.consumedFiles,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Read failed definition names from the last run's dump file
+// ---------------------------------------------------------------------------
+
+function readFailedNames(): string[] {
+  if (existsSync(DUMP_FAILED_PATH)) {
+    try {
+      const raw = JSON.parse(readFileSync(DUMP_FAILED_PATH, 'utf-8'));
+      const instances: { name: string }[] = raw.instances ?? [];
+      return instances.map((i) => i.name);
+    } catch {}
+  }
+
+  if (existsSync(DUMP_PATH)) {
+    try {
+      const raw = JSON.parse(readFileSync(DUMP_PATH, 'utf-8'));
+      const instances: { name: string; status: string; testStatus?: string }[] =
+        raw.instances ?? [];
+      return instances
+        .filter((i) => (i.testStatus ?? i.status) === 'FAILED')
+        .map((i) => i.name);
+    } catch {}
+  }
+
+  return [];
 }

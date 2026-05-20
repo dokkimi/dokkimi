@@ -74,14 +74,23 @@ export function registerRunTests(server: McpServer): void {
         .describe(
           'File path, pattern, or subfolder (same as `dokkimi run` target). Defaults to the full .dokkimi/ directory.',
         ),
+      failedOnly: z
+        .boolean()
+        .optional()
+        .describe(
+          'Re-run only definitions that failed in the last run. Requires a prior run to have completed with failures.',
+        ),
     },
-    async ({ target }, { sendNotification }) => {
+    async ({ target, failedOnly }, { sendNotification }) => {
       const bin = findDokkimiBin();
       const args = ['run'];
       if (target) {
         args.push(target);
       }
       args.push('--ci');
+      if (failedOnly) {
+        args.push('--failed');
+      }
 
       const isNodeScript = bin.endsWith('.js');
       const command = isNodeScript ? process.execPath : bin;

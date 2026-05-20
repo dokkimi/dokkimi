@@ -2,31 +2,11 @@
 
 Follow-up items from the `dokkimi-mcp` branch review that would meaningfully improve the LLM experience.
 
-## 1. Config MCP tools
+## ~~1. Config MCP tools~~ DONE
 
-**Problem:** `dokkimi config` is a fully interactive TUI (arrow-key menus, alternate screen buffer). The MCP server can't shell out to it, so LLMs have no visibility into or control over Dokkimi settings.
+Added `get_config` and `set_config` MCP tools that read/write `~/.dokkimi/config.json` directly via the `@dokkimi/config` user-prefs API — no CLI subprocess needed.
 
-**Settings currently managed by `dokkimi config`:**
-- Concurrency: `maxNamespaces` (default 6), `maxBooting` (default 2)
-- Kubernetes context override
-- Telemetry on/off
-
-**Proposed approach:**
-
-### `get_config` MCP tool
-Read the config file and preference stores directly (no CLI needed) and return structured JSON with all current settings and their defaults.
-
-### `set_config` MCP tool
-Write to the same preference stores that `dokkimi config` uses. The MCP tool reads/writes the config directly — no CLI flags needed since the TUI remains the CLI interface.
-
-Accepts a key-value pair:
-```
-set_config({ key: "maxNamespaces", value: 10 })
-set_config({ key: "context", value: "docker-desktop" })
-set_config({ key: "telemetry", value: false })
-```
-
-**Note:** Changes to concurrency and K8s context require a service reboot to take effect. `set_config` should report whether a reboot is needed in its response but not reboot automatically. The `reboot` MCP tool (implemented) can be called separately.
+`get_config` returns all settings with current values, defaults, and whether the default is active. `set_config` accepts a key (`maxNamespaces`, `maxBooting`, `context`, `telemetry`) and value, validates the input, and reports whether a reboot is needed.
 
 ---
 
@@ -61,36 +41,11 @@ Either option needs a cleanup mechanism — disk usage from accumulated dump fil
 
 ---
 
-## 3. Rerun failed tests
+## ~~3. Rerun failed tests~~ DONE
 
-**Problem:** After a test run, the most common next step is to fix the failures and rerun only the failed definitions. The CLI supports this in watch mode (press `f`), but there's no non-interactive way to do it — meaning the MCP server can't offer it.
+Added `--failed` flag to `dokkimi run` that reads the dump file from the last run, extracts failed definition names, and reruns only those. Exits with an error if there's no prior run or no failures.
 
-**Why it matters for LLMs:** The typical LLM workflow is: run tests → read failures → edit definition or code → rerun. Today the LLM has to parse the failed definition names from `run_tests` output and manually construct a pattern to pass back as a target. A dedicated "rerun failed" flow would make this loop tighter and less error-prone.
-
-**Proposed approach:**
-
-### Phase 1: CLI flag
-Add `--failed` to `dokkimi run`:
-```
-dokkimi run --failed
-```
-Reads the last run's results (from the dump file or CT API), extracts the names of failed definitions, and reruns only those. Exits with an error if there's no prior run or no failures.
-
-The plumbing already exists — the watch-mode `f` key handler does exactly this:
-1. Reads `lastResult.instances` filtered to `FAILED` status
-2. Passes the names as `filterNames` to the run function
-3. The run function filters `definitions` to only those names
-
-Extracting this into a `--failed` flag is straightforward.
-
-### Phase 2: MCP tool parameter
-Add a `failedOnly` boolean parameter to `run_tests`:
-```
-run_tests({ failedOnly: true })
-```
-When set, passes `--failed` to the CLI. The tool description should note that this requires a prior run to have completed.
-
-**Alternative:** A separate `rerun_failed` tool. Simpler discovery for the LLM, but adds yet another tool. The parameter on `run_tests` is cleaner since it's the same operation with a filter.
+Added `failedOnly` boolean parameter to the MCP `run_tests` tool — passes `--failed` to the CLI when set.
 
 ---
 
