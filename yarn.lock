@@ -6774,7 +6774,6 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "dokkimi-vscode@workspace:apps/vscode"
   dependencies:
-    "@dokkimi/platform": "workspace:*"
     "@types/js-yaml": "npm:^4.0.9"
     "@types/node": "npm:^25.6.2"
     "@types/vscode": "npm:^1.118.0"
