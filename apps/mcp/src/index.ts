@@ -13,13 +13,17 @@ import { registerStatus } from './tools/status.js';
 import { registerClean } from './tools/clean.js';
 import { registerReboot } from './tools/reboot.js';
 import { registerGetConfig, registerSetConfig } from './tools/config.js';
+import { registerSendFeedback } from './tools/send-feedback.js';
 import { registerSpecResource } from './resources/spec.js';
+import { withToolTracking } from './lib/tracked-server.js';
 
 export function createServer(): McpServer {
-  const server = new McpServer({
-    name: 'dokkimi',
-    version: DOKKIMI_VERSION,
-  });
+  const server = withToolTracking(
+    new McpServer({
+      name: 'dokkimi',
+      version: DOKKIMI_VERSION,
+    }),
+  );
 
   registerGetReference(server);
   registerListFragments(server);
@@ -34,6 +38,7 @@ export function createServer(): McpServer {
   registerReboot(server);
   registerGetConfig(server);
   registerSetConfig(server);
+  registerSendFeedback(server);
   registerSpecResource(server);
 
   return server;

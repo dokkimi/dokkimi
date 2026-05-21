@@ -14,6 +14,7 @@
     "@dokkimi/config": "workspace:*",
     "@dokkimi/definition-resolver": "workspace:*",
     "@dokkimi/definition-validator": "workspace:*",
+    "@dokkimi/telemetry": "workspace:*",
     "@modelcontextprotocol/sdk": "^1.12.1"
   },
   "devDependencies": {
