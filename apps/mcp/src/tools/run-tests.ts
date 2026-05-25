@@ -1,72 +1,67 @@
-import * as fs from 'fs';
+import * as path from 'path';
 import { spawn } from 'child_process';
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { DUMP_PATH, DUMP_FAILED_PATH } from '@dokkimi/config';
-import { findDokkimiBin } from '../lib/find-bin.js';
+import { findDokkimiBin } from '../lib/find-bin';
+import { findDokkimiDir } from '../lib/dokkimi-dir';
+import { ctFetchOrNull } from '../lib/ct-client';
+import type { LatestRunResponse } from '../lib/ct-types';
 
 interface RunResult {
   success: boolean;
+  runId?: string;
   summary: { total: number; passed: number; failed: number; skipped: number };
-  results: {
-    definitionName: string;
+  instances: {
+    id: string;
+    name: string;
     status: string;
     errorMessage?: string;
   }[];
-  dumpFilePath: string;
-  dumpFailedFilePath: string;
 }
 
-function parseDumpFile(dumpPath: string): RunResult | null {
-  if (!fs.existsSync(dumpPath)) {
+async function buildRunResult(projectPath?: string): Promise<RunResult | null> {
+  const run = await ctFetchOrNull<LatestRunResponse>(
+    '/runs/latest',
+    projectPath ? { projectPath } : undefined,
+  );
+  if (!run) {
     return null;
   }
-  try {
-    const raw = JSON.parse(fs.readFileSync(dumpPath, 'utf-8'));
-    const instances: {
-      name: string;
-      status: string;
-      testStatus?: string;
-      errorMessage?: string;
-    }[] = raw.instances ?? [];
 
-    let passed = 0;
-    let failed = 0;
-    let skipped = 0;
+  let passed = 0;
+  let failed = 0;
+  let skipped = 0;
 
-    const results = instances.map((inst) => {
-      const status = inst.testStatus ?? inst.status;
-      if (status === 'PASSED' || status === 'COMPLETED') {
-        passed++;
-      } else if (status === 'FAILED') {
-        failed++;
-      } else if (status === 'SKIPPED') {
-        skipped++;
-      }
-
-      return {
-        definitionName: inst.name,
-        status,
-        ...(inst.errorMessage ? { errorMessage: inst.errorMessage } : {}),
-      };
-    });
+  const instances = run.instances.map((inst) => {
+    const status = inst.testStatus ?? inst.status;
+    if (status === 'PASSED' || status === 'COMPLETED') {
+      passed++;
+    } else if (status === 'FAILED') {
+      failed++;
+    } else if (status === 'SKIPPED') {
+      skipped++;
+    }
 
     return {
-      success: failed === 0,
-      summary: { total: instances.length, passed, failed, skipped },
-      results,
-      dumpFilePath: DUMP_PATH,
-      dumpFailedFilePath: DUMP_FAILED_PATH,
+      id: inst.id,
+      name: inst.name,
+      status,
+      ...(inst.errorMessage ? { errorMessage: inst.errorMessage } : {}),
     };
-  } catch {
-    return null;
-  }
+  });
+
+  return {
+    success: failed === 0,
+    runId: run.runId,
+    summary: { total: run.instances.length, passed, failed, skipped },
+    instances,
+  };
 }
 
 export function registerRunTests(server: McpServer): void {
   server.tool(
     'run_tests',
-    'Executes dokkimi run against a definition file or pattern and returns structured results with dump file paths. IMPORTANT: Only invoke this tool once at a time. Results history depth is 1 — parallel or sequential calls will overwrite previous results. To run multiple definition files, use a glob pattern (e.g. database/redis-*) or a subfolder path, not separate calls.',
+    'Executes dokkimi run against a definition file or pattern and returns structured results. IMPORTANT: Only invoke this tool once at a time. Parallel or sequential calls will overwrite previous results. To run multiple definition files, use a glob pattern (e.g. database/redis-*) or a subfolder path, not separate calls. After a failed run, use get_failures, get_step_detail, get_traffic, get_console_logs, or get_db_logs to drill into specific issues.',
     {
       target: z
         .string()
@@ -92,6 +87,9 @@ export function registerRunTests(server: McpServer): void {
         args.push('--failed');
       }
 
+      const dokkimiDir = findDokkimiDir(process.cwd());
+      const projectPath = dokkimiDir ? path.dirname(dokkimiDir) : undefined;
+
       const isNodeScript = bin.endsWith('.js');
       const command = isNodeScript ? process.execPath : bin;
       const spawnArgs = isNodeScript ? [bin, ...args] : args;
@@ -102,6 +100,7 @@ export function registerRunTests(server: McpServer): void {
         const child = spawn(command, spawnArgs, {
           stdio: ['ignore', 'pipe', 'pipe'],
           env: { ...process.env },
+          cwd: projectPath ?? process.cwd(),
         });
 
         const timer = setTimeout(() => {
@@ -109,13 +108,11 @@ export function registerRunTests(server: McpServer): void {
           resolve({
             content: [
               {
-                type: 'text',
+                type: 'text' as const,
                 text: JSON.stringify(
                   {
                     success: false,
                     error: `dokkimi run timed out after ${TIMEOUT_MS / 1000}s`,
-                    dumpFilePath: DUMP_PATH,
-                    dumpFailedFilePath: DUMP_FAILED_PATH,
                   },
                   null,
                   2,
@@ -161,7 +158,7 @@ export function registerRunTests(server: McpServer): void {
           }
         });
 
-        child.on('close', (code) => {
+        child.on('close', async (code) => {
           clearTimeout(timer);
           if (stdoutBuf.trim()) {
             forwardLine(stdoutBuf);
@@ -170,27 +167,28 @@ export function registerRunTests(server: McpServer): void {
             forwardLine(stderrBuf);
           }
 
-          const parsed = parseDumpFile(DUMP_PATH);
+          const result = await buildRunResult(projectPath);
 
-          if (parsed) {
+          if (result) {
             resolve({
               content: [
-                { type: 'text', text: JSON.stringify(parsed, null, 2) },
+                {
+                  type: 'text' as const,
+                  text: JSON.stringify(result, null, 2),
+                },
               ],
-              isError: !parsed.success,
+              isError: !result.success,
             });
           } else {
             resolve({
               content: [
                 {
-                  type: 'text',
+                  type: 'text' as const,
                   text: JSON.stringify(
                     {
                       success: code === 0,
                       summary: { total: 0, passed: 0, failed: 0, skipped: 0 },
-                      results: [],
-                      dumpFilePath: DUMP_PATH,
-                      dumpFailedFilePath: DUMP_FAILED_PATH,
+                      instances: [],
                       error: `dokkimi run exited with code ${code}`,
                     },
                     null,
@@ -208,7 +206,7 @@ export function registerRunTests(server: McpServer): void {
           resolve({
             content: [
               {
-                type: 'text',
+                type: 'text' as const,
                 text: JSON.stringify(
                   {
                     success: false,

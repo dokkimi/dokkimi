@@ -3,12 +3,12 @@ import * as path from 'path';
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { DUMP_DIR } from '@dokkimi/config';
-import { findDokkimiBin } from '../lib/find-bin.js';
+import { findDokkimiBin } from '../lib/find-bin';
 
 export function registerDumpResults(server: McpServer): void {
   server.tool(
     'dump_results',
-    "Regenerates the dump output from the last run and returns the file path. Only the most recent run's results are available — if run_tests was called multiple times, only the last invocation's results can be dumped.",
+    "Exports the last run's full data dump to a JSON file for external consumption (sharing, archiving, CI). For targeted debugging, prefer get_run_summary, get_failures, get_step_detail, get_traffic, get_console_logs, or get_db_logs instead.",
     {
       target: z
         .string()

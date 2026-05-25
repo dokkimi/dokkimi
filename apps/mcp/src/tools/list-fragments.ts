@@ -3,7 +3,7 @@ import * as path from 'path';
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { parseDefinitionFile } from '@dokkimi/definition-validator';
-import { findDokkimiDir, scanFiles } from '../lib/dokkimi-dir.js';
+import { findDokkimiDir, scanFiles } from '../lib/dokkimi-dir';
 
 interface Fragment {
   filePath: string;

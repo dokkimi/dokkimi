@@ -202,6 +202,8 @@ export interface ResolverResult {
   config: DokkimiConfig;
   /** All file paths consumed during resolution (definition files, $ref targets, init files, config) */
   consumedFiles: string[];
+  /** Absolute path to the resolved .dokkimi/ directory (undefined on early error exits) */
+  dokkimiDir?: string;
 }
 
 /**
@@ -330,7 +332,7 @@ export function resolveDefinitions(target?: string): ResolverResult {
   const config = loadDokkimiConfig(dokkimiDir, errors);
 
   if (filesToProcess.length === 0) {
-    return { definitions: [], errors, config, consumedFiles: [] };
+    return { definitions: [], errors, config, consumedFiles: [], dokkimiDir };
   }
 
   const resolved: ResolvedDefinition[] = [];
@@ -541,6 +543,7 @@ export function resolveDefinitions(target?: string): ResolverResult {
     errors,
     config,
     consumedFiles: [...consumedFiles],
+    dokkimiDir,
   };
 }
 

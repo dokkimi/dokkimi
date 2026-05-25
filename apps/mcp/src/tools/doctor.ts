@@ -1,6 +1,6 @@
 import { spawn } from 'child_process';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { findDokkimiBin } from '../lib/find-bin.js';
+import { findDokkimiBin } from '../lib/find-bin';
 
 export function registerDoctor(server: McpServer): void {
   server.tool(

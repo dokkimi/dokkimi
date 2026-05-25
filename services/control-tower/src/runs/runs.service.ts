@@ -51,6 +51,7 @@ export class RunsService implements OnApplicationBootstrap {
   async createRun(
     definitionNames: string[],
     credentials?: RegistryCredential[],
+    projectPath?: string,
   ) {
     if (credentials?.length) {
       const health = await this.healthService.getHealthStatus();
@@ -79,6 +80,7 @@ export class RunsService implements OnApplicationBootstrap {
     const run = await this.prisma.run.create({
       data: {
         status: RunStatus.PENDING,
+        projectPath: projectPath ?? null,
         instances: {
           create: definitionNames.map((name) => ({
             name,
@@ -219,8 +221,9 @@ export class RunsService implements OnApplicationBootstrap {
     return { instanceId, status: 'PENDING' };
   }
 
-  async getLatestRun() {
+  async getLatestRun(projectPath?: string) {
     const run = await this.prisma.run.findFirst({
+      where: projectPath ? { projectPath } : undefined,
       orderBy: { createdAt: 'desc' },
       include: { instances: true },
     });
