@@ -975,7 +975,10 @@ __metadata:
     "@dokkimi/definition-validator": "workspace:*"
     "@dokkimi/telemetry": "workspace:*"
     "@modelcontextprotocol/sdk": "npm:^1.12.1"
+    "@types/jest": "npm:^30.0.0"
     "@types/node": "npm:^25.6.2"
+    jest: "npm:^30.4.1"
+    ts-jest: "npm:^29.4.9"
     tsup: "npm:^8.5.0"
     typescript: "npm:^6.0.3"
   languageName: unknown

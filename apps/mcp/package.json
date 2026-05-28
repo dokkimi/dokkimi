@@ -9,6 +9,7 @@
     "build": "tsup && cp ../../shared/docs/dokkimi-instructions.md dist/dokkimi-instructions.md",
     "dev": "tsup --watch",
     "typecheck": "tsc",
+    "test": "jest",
     "clean": "rm -rf dist"
   },
   "dependencies": {
@@ -19,8 +20,24 @@
     "@modelcontextprotocol/sdk": "^1.12.1"
   },
   "devDependencies": {
+    "@types/jest": "^30.0.0",
     "@types/node": "^25.6.2",
+    "jest": "^30.4.1",
+    "ts-jest": "^29.4.9",
     "tsup": "^8.5.0",
     "typescript": "^6.0.3"
+  },
+  "jest": {
+    "moduleFileExtensions": [
+      "js",
+      "json",
+      "ts"
+    ],
+    "rootDir": "src",
+    "testRegex": ".*\\.spec\\.ts$",
+    "transform": {
+      "^.+\\.ts$": ["ts-jest", { "tsconfig": "tsconfig.test.json" }]
+    },
+    "testEnvironment": "node"
   }
 }
