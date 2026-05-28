@@ -48,7 +48,12 @@ describe('get_traffic', () => {
     const { server, call } = createMockServer();
     registerGetTraffic(server);
 
-    mockCtFetch.mockResolvedValue({ logs: sampleLogs, total: 2, limit: 500, offset: 0 });
+    mockCtFetch.mockResolvedValue({
+      logs: sampleLogs,
+      total: 2,
+      limit: 500,
+      offset: 0,
+    });
 
     const result = await call('get_traffic', { instanceId: 'i1' });
     const data = parseContent(result);
@@ -62,7 +67,12 @@ describe('get_traffic', () => {
     const { server, call } = createMockServer();
     registerGetTraffic(server);
 
-    mockCtFetch.mockResolvedValue({ logs: sampleLogs, total: 2, limit: 500, offset: 0 });
+    mockCtFetch.mockResolvedValue({
+      logs: sampleLogs,
+      total: 2,
+      limit: 500,
+      offset: 0,
+    });
 
     const result = await call('get_traffic', {
       instanceId: 'i1',
@@ -77,7 +87,12 @@ describe('get_traffic', () => {
     const { server, call } = createMockServer();
     registerGetTraffic(server);
 
-    mockCtFetch.mockResolvedValue({ logs: sampleLogs, total: 2, limit: 500, offset: 0 });
+    mockCtFetch.mockResolvedValue({
+      logs: sampleLogs,
+      total: 2,
+      limit: 500,
+      offset: 0,
+    });
 
     const result = await call('get_traffic', {
       instanceId: 'i1',
@@ -93,7 +108,9 @@ describe('get_traffic', () => {
     const { server, call } = createMockServer();
     registerGetTraffic(server);
 
-    mockCtFetch.mockRejectedValue(new Error('Control Tower returned 404: not found'));
+    mockCtFetch.mockRejectedValue(
+      new Error('Control Tower returned 404: not found'),
+    );
 
     const result = await call('get_traffic', { instanceId: 'bad-id' });
 

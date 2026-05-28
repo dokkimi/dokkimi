@@ -92,7 +92,9 @@ describe('get_step_detail', () => {
     registerGetStepDetail(server);
 
     mockCtFetch.mockRejectedValue(
-      new Error('Control Tower is not running. Start Dokkimi with `dokkimi status` first.'),
+      new Error(
+        'Control Tower is not running. Start Dokkimi with `dokkimi status` first.',
+      ),
     );
 
     const result = await call('get_step_detail', {

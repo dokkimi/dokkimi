@@ -17,8 +17,16 @@ describe('get_console_logs', () => {
 
     mockCtFetch.mockResolvedValue({
       logs: [
-        { level: 'info', message: 'Server started', timestamp: '2026-01-01T00:00:01Z' },
-        { level: 'error', message: 'Connection refused', timestamp: '2026-01-01T00:00:02Z' },
+        {
+          level: 'info',
+          message: 'Server started',
+          timestamp: '2026-01-01T00:00:01Z',
+        },
+        {
+          level: 'error',
+          message: 'Connection refused',
+          timestamp: '2026-01-01T00:00:02Z',
+        },
       ],
       total: 2,
       limit: 1000,
@@ -41,12 +49,28 @@ describe('get_console_logs', () => {
     mockCtFetch
       .mockResolvedValueOnce({
         items: [
-          { id: 'item-1', itemDefinitionName: 'api-gateway', status: 'RUNNING', readinessStatus: 'READY' },
-          { id: 'item-2', itemDefinitionName: 'user-service', status: 'RUNNING', readinessStatus: 'READY' },
+          {
+            id: 'item-1',
+            itemDefinitionName: 'api-gateway',
+            status: 'RUNNING',
+            readinessStatus: 'READY',
+          },
+          {
+            id: 'item-2',
+            itemDefinitionName: 'user-service',
+            status: 'RUNNING',
+            readinessStatus: 'READY',
+          },
         ],
       })
       .mockResolvedValueOnce({
-        logs: [{ level: 'info', message: 'filtered', timestamp: '2026-01-01T00:00:01Z' }],
+        logs: [
+          {
+            level: 'info',
+            message: 'filtered',
+            timestamp: '2026-01-01T00:00:01Z',
+          },
+        ],
         total: 1,
         limit: 1000,
         offset: 0,
@@ -71,7 +95,12 @@ describe('get_console_logs', () => {
 
     mockCtFetch.mockResolvedValueOnce({
       items: [
-        { id: 'item-1', itemDefinitionName: 'api-gateway', status: 'RUNNING', readinessStatus: 'READY' },
+        {
+          id: 'item-1',
+          itemDefinitionName: 'api-gateway',
+          status: 'RUNNING',
+          readinessStatus: 'READY',
+        },
       ],
     });
 
@@ -88,7 +117,11 @@ describe('get_console_logs', () => {
     const { server, call } = createMockServer();
     registerGetConsoleLogs(server);
 
-    mockCtFetch.mockRejectedValue(new Error('Control Tower is not running. Start Dokkimi with `dokkimi status` first.'));
+    mockCtFetch.mockRejectedValue(
+      new Error(
+        'Control Tower is not running. Start Dokkimi with `dokkimi status` first.',
+      ),
+    );
 
     const result = await call('get_console_logs', { instanceId: 'i1' });
 

@@ -47,35 +47,45 @@ describe('get_db_logs', () => {
     const { server, call } = createMockServer();
     registerGetDbLogs(server);
 
-    mockCtFetch.mockResolvedValue({ logs: [], total: 0, limit: 100, offset: 0 });
+    mockCtFetch.mockResolvedValue({
+      logs: [],
+      total: 0,
+      limit: 100,
+      offset: 0,
+    });
 
     await call('get_db_logs', { instanceId: 'i1', limit: 100 });
 
-    expect(mockCtFetch).toHaveBeenCalledWith(
-      '/logs/database/instance/i1',
-      { limit: '100' },
-    );
+    expect(mockCtFetch).toHaveBeenCalledWith('/logs/database/instance/i1', {
+      limit: '100',
+    });
   });
 
   it('defaults limit to 500', async () => {
     const { server, call } = createMockServer();
     registerGetDbLogs(server);
 
-    mockCtFetch.mockResolvedValue({ logs: [], total: 0, limit: 500, offset: 0 });
+    mockCtFetch.mockResolvedValue({
+      logs: [],
+      total: 0,
+      limit: 500,
+      offset: 0,
+    });
 
     await call('get_db_logs', { instanceId: 'i1' });
 
-    expect(mockCtFetch).toHaveBeenCalledWith(
-      '/logs/database/instance/i1',
-      { limit: '500' },
-    );
+    expect(mockCtFetch).toHaveBeenCalledWith('/logs/database/instance/i1', {
+      limit: '500',
+    });
   });
 
   it('returns error when CT throws', async () => {
     const { server, call } = createMockServer();
     registerGetDbLogs(server);
 
-    mockCtFetch.mockRejectedValue(new Error('Control Tower returned 500: boom'));
+    mockCtFetch.mockRejectedValue(
+      new Error('Control Tower returned 500: boom'),
+    );
 
     const result = await call('get_db_logs', { instanceId: 'i1' });
 

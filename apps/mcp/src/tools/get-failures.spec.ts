@@ -143,7 +143,9 @@ describe('get_failures', () => {
     const { server, call } = createMockServer();
     registerGetFailures(server);
 
-    mockCtFetchOrNull.mockRejectedValue(new Error('Control Tower returned 500: oops'));
+    mockCtFetchOrNull.mockRejectedValue(
+      new Error('Control Tower returned 500: oops'),
+    );
 
     const result = await call('get_failures');
 
