@@ -19,11 +19,21 @@ interface RunResult {
   }[];
 }
 
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
 async function buildRunResult(projectPath?: string): Promise<RunResult | null> {
-  const run = await ctFetchOrNull<LatestRunResponse>(
-    '/runs/latest',
-    projectPath ? { projectPath } : undefined,
-  );
+  // Brief retry — CT may still be finalizing the run status after the CLI exits.
+  let run: LatestRunResponse | null = null;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    run = await ctFetchOrNull<LatestRunResponse>(
+      '/runs/latest',
+      projectPath ? { projectPath } : undefined,
+    );
+    if (run && run.status !== 'PENDING' && run.status !== 'RUNNING') {
+      break;
+    }
+    await sleep(500);
+  }
   if (!run) {
     return null;
   }
@@ -167,7 +177,10 @@ export function registerRunTests(server: McpServer): void {
             forwardLine(stderrBuf);
           }
 
-          const result = await buildRunResult(projectPath);
+          let result: RunResult | null = null;
+          try {
+            result = await buildRunResult(projectPath);
+          } catch {}
 
           if (result) {
             resolve({

@@ -32,6 +32,7 @@ describe('RunsController', () => {
       expect(mockRunsService.createRun).toHaveBeenCalledWith(
         ['api-tests', 'db-tests'],
         undefined,
+        undefined,
       );
       expect(result).toEqual(expected);
     });
@@ -43,7 +44,27 @@ describe('RunsController', () => {
 
       await controller.createRun(dto as any);
 
-      expect(mockRunsService.createRun).toHaveBeenCalledWith(['test'], creds);
+      expect(mockRunsService.createRun).toHaveBeenCalledWith(
+        ['test'],
+        creds,
+        undefined,
+      );
+    });
+
+    it('passes projectPath when provided', async () => {
+      const dto = {
+        definitions: ['test'],
+        projectPath: '/home/user/my-project',
+      };
+      mockRunsService.createRun.mockResolvedValue({ runId: 'run-1' });
+
+      await controller.createRun(dto as any);
+
+      expect(mockRunsService.createRun).toHaveBeenCalledWith(
+        ['test'],
+        undefined,
+        '/home/user/my-project',
+      );
     });
   });
 
@@ -75,7 +96,7 @@ describe('RunsController', () => {
 
       const result = await controller.getLatestRun();
 
-      expect(mockRunsService.getLatestRun).toHaveBeenCalled();
+      expect(mockRunsService.getLatestRun).toHaveBeenCalledWith(undefined);
       expect(result).toEqual(expected);
     });
 
@@ -85,6 +106,18 @@ describe('RunsController', () => {
       const result = await controller.getLatestRun();
 
       expect(result).toBeNull();
+    });
+
+    it('passes projectPath to runsService when provided', async () => {
+      const expected = { runId: 'run-1', status: 'COMPLETED' };
+      mockRunsService.getLatestRun.mockResolvedValue(expected);
+
+      const result = await controller.getLatestRun('/home/user/my-project');
+
+      expect(mockRunsService.getLatestRun).toHaveBeenCalledWith(
+        '/home/user/my-project',
+      );
+      expect(result).toEqual(expected);
     });
   });
 

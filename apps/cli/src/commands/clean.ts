@@ -6,6 +6,7 @@ import {
   sleep,
 } from '../lib/cli-utils';
 import { loadConfig, buildServiceUrl } from '@dokkimi/config';
+import { getProjectPath, latestRunUrl } from '../lib/project-path';
 import { formatDuration, statusColor } from '../lib/formatting';
 import { clearLines } from '../lib/terminal';
 import { execSilent } from '@dokkimi/platform';
@@ -106,7 +107,10 @@ async function isNothingToCleanCT(
   ctUrl: string,
   orphanedNamespaces: string[],
 ): Promise<boolean> {
-  const latestRun = await fetchJson<RunStatus>(`${ctUrl}/runs/latest`);
+  const projectPath = getProjectPath();
+  const latestRun = await fetchJson<RunStatus>(
+    latestRunUrl(ctUrl, projectPath),
+  );
   const instanceCount = latestRun?.instances?.length ?? 0;
   return instanceCount === 0 && orphanedNamespaces.length === 0;
 }
@@ -119,7 +123,10 @@ async function cleanViaCT(
   force: boolean,
   orphanedNamespaces: string[],
 ): Promise<void> {
-  const latestRun = await fetchJson<RunStatus>(`${ctUrl}/runs/latest`);
+  const projectPath = getProjectPath();
+  const latestRun = await fetchJson<RunStatus>(
+    latestRunUrl(ctUrl, projectPath),
+  );
 
   const hasRun = latestRun && latestRun.instances.length > 0;
   const active = hasRun

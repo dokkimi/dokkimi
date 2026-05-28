@@ -20,33 +20,54 @@ export function registerGetDbLogs(server: McpServer): void {
         .describe('Maximum number of logs to return (default: 500)'),
     },
     async ({ instanceId, limit }) => {
-      const response = await ctFetch<PaginatedResponse<DatabaseLog>>(
-        `/logs/database/instance/${instanceId}`,
-        { limit: String(limit ?? 500) },
-      );
+      try {
+        const response = await ctFetch<PaginatedResponse<DatabaseLog>>(
+          `/logs/database/instance/${instanceId}`,
+          { limit: String(limit ?? 500) },
+        );
 
-      const result = {
-        total: response.total,
-        returned: response.logs.length,
-        logs: response.logs.map((l) => ({
-          databaseType: l.databaseType,
-          databaseName: l.databaseName,
-          query: l.query,
-          params: l.params,
-          success: l.success,
-          data: l.data,
-          rowsAffected: l.rowsAffected,
-          error: l.error,
-          duration: l.duration,
-          timestamp: l.timestamp,
-        })),
-      };
+        const result = {
+          total: response.total,
+          returned: response.logs.length,
+          logs: response.logs.map((l) => ({
+            databaseType: l.databaseType,
+            databaseName: l.databaseName,
+            query: l.query,
+            params: l.params,
+            success: l.success,
+            data: l.data,
+            rowsAffected: l.rowsAffected,
+            error: l.error,
+            duration: l.duration,
+            timestamp: l.timestamp,
+          })),
+        };
 
-      return {
-        content: [
-          { type: 'text' as const, text: JSON.stringify(result, null, 2) },
-        ],
-      };
+        return {
+          content: [
+            { type: 'text' as const, text: JSON.stringify(result, null, 2) },
+          ],
+        };
+      } catch (err) {
+        return {
+          content: [
+            {
+              type: 'text' as const,
+              text: JSON.stringify(
+                {
+                  error:
+                    err instanceof Error
+                      ? err.message
+                      : 'Failed to fetch database logs',
+                },
+                null,
+                2,
+              ),
+            },
+          ],
+          isError: true,
+        };
+      }
     },
   );
 }

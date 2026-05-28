@@ -28,57 +28,78 @@ export function registerGetConsoleLogs(server: McpServer): void {
         .describe('Maximum number of logs to return (default: 1000)'),
     },
     async ({ instanceId, service, limit }) => {
-      const params: Record<string, string | undefined> = {
-        limit: String(limit ?? 1000),
-      };
+      try {
+        const params: Record<string, string | undefined> = {
+          limit: String(limit ?? 1000),
+        };
 
-      if (service) {
-        const instance = await ctFetch<InstanceDetail>(
-          `/namespaces/instances/${instanceId}`,
-        );
-        const item = instance.items.find(
-          (i) => i.itemDefinitionName.toLowerCase() === service.toLowerCase(),
-        );
-        if (!item) {
-          return {
-            content: [
-              {
-                type: 'text' as const,
-                text: JSON.stringify(
-                  {
-                    error: `Service "${service}" not found in instance. Available: ${instance.items.map((i) => i.itemDefinitionName).join(', ')}`,
-                  },
-                  null,
-                  2,
-                ),
-              },
-            ],
-            isError: true,
-          };
+        if (service) {
+          const instance = await ctFetch<InstanceDetail>(
+            `/namespaces/instances/${instanceId}`,
+          );
+          const item = instance.items.find(
+            (i) => i.itemDefinitionName.toLowerCase() === service.toLowerCase(),
+          );
+          if (!item) {
+            return {
+              content: [
+                {
+                  type: 'text' as const,
+                  text: JSON.stringify(
+                    {
+                      error: `Service "${service}" not found in instance. Available: ${instance.items.map((i) => i.itemDefinitionName).join(', ')}`,
+                    },
+                    null,
+                    2,
+                  ),
+                },
+              ],
+              isError: true,
+            };
+          }
+          params.instanceItemId = item.id;
         }
-        params.instanceItemId = item.id;
+
+        const response = await ctFetch<PaginatedResponse<ConsoleLog>>(
+          `/logs/console/instance/${instanceId}`,
+          params,
+        );
+
+        const result = {
+          total: response.total,
+          returned: response.logs.length,
+          logs: response.logs.map((l) => ({
+            level: l.level,
+            message: l.message,
+            timestamp: l.timestamp,
+          })),
+        };
+
+        return {
+          content: [
+            { type: 'text' as const, text: JSON.stringify(result, null, 2) },
+          ],
+        };
+      } catch (err) {
+        return {
+          content: [
+            {
+              type: 'text' as const,
+              text: JSON.stringify(
+                {
+                  error:
+                    err instanceof Error
+                      ? err.message
+                      : 'Failed to fetch console logs',
+                },
+                null,
+                2,
+              ),
+            },
+          ],
+          isError: true,
+        };
       }
-
-      const response = await ctFetch<PaginatedResponse<ConsoleLog>>(
-        `/logs/console/instance/${instanceId}`,
-        params,
-      );
-
-      const result = {
-        total: response.total,
-        returned: response.logs.length,
-        logs: response.logs.map((l) => ({
-          level: l.level,
-          message: l.message,
-          timestamp: l.timestamp,
-        })),
-      };
-
-      return {
-        content: [
-          { type: 'text' as const, text: JSON.stringify(result, null, 2) },
-        ],
-      };
     },
   );
 }

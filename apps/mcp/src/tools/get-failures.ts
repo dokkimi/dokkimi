@@ -22,93 +22,116 @@ export function registerGetFailures(server: McpServer): void {
         ),
     },
     async ({ instanceId }) => {
-      let failedInstances: InstanceSummary[];
+      try {
+        let failedInstances: InstanceSummary[];
 
-      if (instanceId) {
-        failedInstances = [{ id: instanceId, name: '', status: 'FAILED' }];
-      } else {
-        const dokkimiDir = findDokkimiDir(process.cwd());
-        const projectPath = dokkimiDir ? path.dirname(dokkimiDir) : undefined;
+        if (instanceId) {
+          failedInstances = [{ id: instanceId, name: '', status: 'FAILED' }];
+        } else {
+          const dokkimiDir = findDokkimiDir(process.cwd());
+          const projectPath = dokkimiDir ? path.dirname(dokkimiDir) : undefined;
 
-        const run = await ctFetchOrNull<LatestRunResponse>(
-          '/runs/latest',
-          projectPath ? { projectPath } : undefined,
-        );
+          const run = await ctFetchOrNull<LatestRunResponse>(
+            '/runs/latest',
+            projectPath ? { projectPath } : undefined,
+          );
 
-        if (!run) {
-          return {
-            content: [
-              {
-                type: 'text' as const,
-                text: JSON.stringify(
-                  { error: 'No run found. Run tests first with run_tests.' },
-                  null,
-                  2,
-                ),
-              },
-            ],
-            isError: true,
-          };
-        }
-
-        failedInstances = run.instances.filter(
-          (i) => (i.testStatus ?? i.status) === 'FAILED',
-        );
-
-        if (failedInstances.length === 0) {
-          return {
-            content: [
-              {
-                type: 'text' as const,
-                text: JSON.stringify(
-                  { message: 'No failures found. All tests passed.' },
-                  null,
-                  2,
-                ),
-              },
-            ],
-          };
-        }
-      }
-
-      const results = await Promise.all(
-        failedInstances.map(async (inst) => {
-          try {
-            const assertions = await ctFetch<AssertionResult[]>(
-              `/logs/assertion-results/instance/${inst.id}`,
-            );
-            const failed = assertions.filter((a) => !a.passed);
+          if (!run) {
             return {
-              instanceId: inst.id,
-              instanceName: inst.name,
-              errorMessage: inst.errorMessage,
-              failedAssertions: failed.map((a) => ({
-                stepIndex: a.stepIndex,
-                blockIndex: a.blockIndex,
-                assertionIndex: a.assertionIndex,
-                path: a.path,
-                operator: a.operator,
-                expected: a.expected,
-                actual: a.actual,
-                error: a.error,
-              })),
-            };
-          } catch (err) {
-            return {
-              instanceId: inst.id,
-              instanceName: inst.name,
-              error:
-                err instanceof Error ? err.message : 'Failed to fetch results',
+              content: [
+                {
+                  type: 'text' as const,
+                  text: JSON.stringify(
+                    { error: 'No run found. Run tests first with run_tests.' },
+                    null,
+                    2,
+                  ),
+                },
+              ],
+              isError: true,
             };
           }
-        }),
-      );
 
-      return {
-        content: [
-          { type: 'text' as const, text: JSON.stringify(results, null, 2) },
-        ],
-      };
+          failedInstances = run.instances.filter(
+            (i) => (i.testStatus ?? i.status) === 'FAILED',
+          );
+
+          if (failedInstances.length === 0) {
+            return {
+              content: [
+                {
+                  type: 'text' as const,
+                  text: JSON.stringify(
+                    { message: 'No failures found. All tests passed.' },
+                    null,
+                    2,
+                  ),
+                },
+              ],
+            };
+          }
+        }
+
+        const results = await Promise.all(
+          failedInstances.map(async (inst) => {
+            try {
+              const assertions = await ctFetch<AssertionResult[]>(
+                `/logs/assertion-results/instance/${inst.id}`,
+              );
+              const failed = assertions.filter((a) => !a.passed);
+              return {
+                instanceId: inst.id,
+                instanceName: inst.name,
+                errorMessage: inst.errorMessage,
+                failedAssertions: failed.map((a) => ({
+                  stepIndex: a.stepIndex,
+                  blockIndex: a.blockIndex,
+                  assertionIndex: a.assertionIndex,
+                  path: a.path,
+                  operator: a.operator,
+                  expected: a.expected,
+                  actual: a.actual,
+                  error: a.error,
+                })),
+              };
+            } catch (err) {
+              return {
+                instanceId: inst.id,
+                instanceName: inst.name,
+                error:
+                  err instanceof Error
+                    ? err.message
+                    : 'Failed to fetch results',
+              };
+            }
+          }),
+        );
+
+        return {
+          content: [
+            { type: 'text' as const, text: JSON.stringify(results, null, 2) },
+          ],
+        };
+      } catch (err) {
+        return {
+          content: [
+            {
+              type: 'text' as const,
+              text: JSON.stringify(
+                {
+                  error:
+                    err instanceof Error
+                      ? err.message
+                      : 'Failed to fetch failures',
+                },
+                null,
+                2,
+              ),
+            },
+          ],
+          isError: true,
+        };
+      }
     },
   );
 }

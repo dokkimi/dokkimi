@@ -569,6 +569,30 @@ describe('RunsService', () => {
         errorMessage: null,
       });
     });
+
+    it('should filter by projectPath when provided', async () => {
+      mockPrisma.run.findFirst.mockResolvedValue(null);
+
+      await service.getLatestRun('/home/user/my-project');
+
+      expect(mockPrisma.run.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { projectPath: '/home/user/my-project' },
+        }),
+      );
+    });
+
+    it('should not filter by projectPath when omitted', async () => {
+      mockPrisma.run.findFirst.mockResolvedValue(null);
+
+      await service.getLatestRun();
+
+      expect(mockPrisma.run.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: undefined,
+        }),
+      );
+    });
   });
 
   // ============================================

@@ -3,6 +3,7 @@ import { fetchJson } from '../lib/cli-utils';
 import { loadConfig, buildServiceUrl } from '@dokkimi/config';
 import { inspectRun } from '../lib/inspect-run';
 import type { LatestRunResponse } from '../lib/inspect-types';
+import { getProjectPath, latestRunUrl } from '../lib/project-path';
 
 export async function inspect(args: string[]): Promise<void> {
   if (args.includes('--help') || args.includes('-h')) {
@@ -21,7 +22,10 @@ export async function inspect(args: string[]): Promise<void> {
   const config = loadConfig();
   const ctUrl = buildServiceUrl(config.services.controlTower);
 
-  const latestRun = await fetchJson<LatestRunResponse>(`${ctUrl}/runs/latest`);
+  const projectPath = getProjectPath();
+  const latestRun = await fetchJson<LatestRunResponse>(
+    latestRunUrl(ctUrl, projectPath),
+  );
   if (!latestRun) {
     console.log('No run history found. Run `dokkimi run` first.');
     return;

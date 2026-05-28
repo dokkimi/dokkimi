@@ -30,6 +30,7 @@ import {
   type CreateRunResponse,
 } from './run-helpers';
 import type { LatestRunResponse } from '../lib/inspect-types';
+import { getProjectPath, latestRunUrl } from '../lib/project-path';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -677,7 +678,10 @@ async function executeRun(
 
 async function readFailedNames(ctUrl: string): Promise<string[]> {
   try {
-    const run = await fetchJson<LatestRunResponse>(`${ctUrl}/runs/latest`);
+    const projectPath = getProjectPath();
+    const run = await fetchJson<LatestRunResponse>(
+      latestRunUrl(ctUrl, projectPath),
+    );
     if (!run) {
       return [];
     }

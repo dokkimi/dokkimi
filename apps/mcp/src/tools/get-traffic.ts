@@ -28,49 +28,70 @@ export function registerGetTraffic(server: McpServer): void {
         .describe('Maximum number of logs to return (default: 500)'),
     },
     async ({ instanceId, origin, target, limit }) => {
-      const response = await ctFetch<PaginatedResponse<HttpLog>>(
-        `/logs/http/instance/${instanceId}`,
-        { limit: String(limit ?? 500) },
-      );
-
-      let logs = response.logs;
-
-      if (origin) {
-        logs = logs.filter(
-          (l) => l.origin?.toLowerCase() === origin.toLowerCase(),
+      try {
+        const response = await ctFetch<PaginatedResponse<HttpLog>>(
+          `/logs/http/instance/${instanceId}`,
+          { limit: String(limit ?? 500) },
         );
-      }
-      if (target) {
-        logs = logs.filter(
-          (l) => l.target?.toLowerCase() === target.toLowerCase(),
-        );
-      }
 
-      const result = {
-        total: response.total,
-        returned: logs.length,
-        logs: logs.map((l) => ({
-          method: l.method,
-          url: l.url,
-          statusCode: l.statusCode,
-          origin: l.origin,
-          target: l.target,
-          isMocked: l.isMocked,
-          duration: l.duration,
-          requestBody: l.requestBody,
-          responseBody: l.responseBody,
-          requestHeaders: l.requestHeaders,
-          responseHeaders: l.responseHeaders,
-          requestSentAt: l.requestSentAt,
-          responseReceivedAt: l.responseReceivedAt,
-        })),
-      };
+        let logs = response.logs;
 
-      return {
-        content: [
-          { type: 'text' as const, text: JSON.stringify(result, null, 2) },
-        ],
-      };
+        if (origin) {
+          logs = logs.filter(
+            (l) => l.origin?.toLowerCase() === origin.toLowerCase(),
+          );
+        }
+        if (target) {
+          logs = logs.filter(
+            (l) => l.target?.toLowerCase() === target.toLowerCase(),
+          );
+        }
+
+        const result = {
+          total: response.total,
+          returned: logs.length,
+          logs: logs.map((l) => ({
+            method: l.method,
+            url: l.url,
+            statusCode: l.statusCode,
+            origin: l.origin,
+            target: l.target,
+            isMocked: l.isMocked,
+            duration: l.duration,
+            requestBody: l.requestBody,
+            responseBody: l.responseBody,
+            requestHeaders: l.requestHeaders,
+            responseHeaders: l.responseHeaders,
+            requestSentAt: l.requestSentAt,
+            responseReceivedAt: l.responseReceivedAt,
+          })),
+        };
+
+        return {
+          content: [
+            { type: 'text' as const, text: JSON.stringify(result, null, 2) },
+          ],
+        };
+      } catch (err) {
+        return {
+          content: [
+            {
+              type: 'text' as const,
+              text: JSON.stringify(
+                {
+                  error:
+                    err instanceof Error
+                      ? err.message
+                      : 'Failed to fetch traffic logs',
+                },
+                null,
+                2,
+              ),
+            },
+          ],
+          isError: true,
+        };
+      }
     },
   );
 }

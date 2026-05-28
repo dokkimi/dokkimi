@@ -15,7 +15,9 @@ export async function ctFetch<T>(
   params?: Record<string, string | undefined>,
 ): Promise<T> {
   const base = getCtUrl();
-  const url = new URL(path, base);
+  // Use string concat rather than new URL(path, base) — the latter discards
+  // any base path when `path` starts with '/'.
+  const url = new URL(`${base.replace(/\/$/, '')}${path}`);
   if (params) {
     for (const [key, value] of Object.entries(params)) {
       if (value !== undefined) {
@@ -59,7 +61,17 @@ export async function ctFetchOrNull<T>(
 ): Promise<T | null> {
   try {
     return await ctFetch<T>(path, params);
-  } catch {
-    return null;
+  } catch (err) {
+    // Only swallow "not running" / timeout errors — propagate server errors
+    // so callers don't confuse a 500 with "no data."
+    const msg = err instanceof Error ? err.message : '';
+    if (
+      msg.includes('not running') ||
+      msg.includes('timed out') ||
+      msg.includes('request failed')
+    ) {
+      return null;
+    }
+    throw err;
   }
 }
