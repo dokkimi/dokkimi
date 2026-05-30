@@ -3,6 +3,7 @@ import { NamespaceLifecycleService } from './namespace-lifecycle.service';
 import { PrismaModule } from '../prisma/prisma.module';
 import { KubernetesClientService } from './kubernetes/kubernetes-client.service';
 import { KubernetesResourceService } from './kubernetes/kubernetes-resource.service';
+import { DockerClientService } from './docker/docker-client.service';
 import { ServiceDeploymentBuilderService } from './builders/service-deployment-builder.service';
 import { DatabaseDeploymentBuilderService } from './builders/database-deployment-builder.service';
 import { DatabaseConfigService } from './builders/database-config.service';
@@ -22,6 +23,7 @@ import { RegistryCredentialsService } from './registry-credentials.service';
     NamespaceLifecycleService,
     KubernetesClientService,
     KubernetesResourceService,
+    DockerClientService,
     ServiceDeploymentBuilderService,
     DatabaseDeploymentBuilderService,
     DatabaseConfigService,
@@ -38,6 +40,7 @@ import { RegistryCredentialsService } from './registry-credentials.service';
     NamespaceLifecycleService,
     KubernetesClientService,
     KubernetesResourceService,
+    DockerClientService,
     ConfigMapBuilderService,
     InterceptorCreatorService,
     ServiceInterceptorCreatorService,
