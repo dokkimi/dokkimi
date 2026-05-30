@@ -503,6 +503,137 @@ stream.on('data', (chunk) => processLog(instanceId, itemId, chunk));
 
 **Effort:** Net deletion of ~1000+ lines.
 
+### Phase 12: GitHub Action — Remove K8s, Simplify to Docker-Only
+
+**Replace:** `github-action/action.yml`
+
+The current GitHub Action (`github-action/action.yml`) installs a full k3s cluster before running tests:
+
+```yaml
+# Current flow (k3s):
+- Free disk space
+- Install k3s (curl | sh, wait for node Ready)
+- Pull sidecar images (busybox, fluent-bit, dnsmasq)
+- Install Dokkimi CLI
+- Run tests (dokkimi run --ci)
+- Cleanup (dokkimi clean + k3s-uninstall.sh)
+```
+
+After migration, the action becomes:
+
+```yaml
+# New flow (Docker-only):
+- Free disk space
+- Pull Dokkimi sidecar images (interceptor, db-proxy, test-agent, dnsmasq)
+- Install Dokkimi CLI
+- Run tests (dokkimi run --ci)
+- Cleanup (dokkimi clean)
+```
+
+**What changes:**
+
+1. **Remove the "Install k3s" step entirely.** GitHub Actions runners have Docker pre-installed and the socket is available by default. No cluster setup, no waiting for node Ready, no KUBECONFIG export.
+2. **Remove CONTROL_TOWER_HOST logic.** Currently extracts the node's InternalIP so Control Tower can be reached from inside the cluster. With Docker, Control Tower runs on the host and containers reach it via `host.docker.internal` (injected automatically by DockerClientService on Linux).
+3. **Update image pre-pull list.** Remove `busybox:1.37` (init container, no longer needed) and `fluent/fluent-bit:3.2` (log sidecar, replaced by Docker log API). Keep `andyshinn/dnsmasq:2.83`. Add Dokkimi sidecar images (`ghcr.io/dokkimi/interceptor`, etc.) if not already cached in the runner.
+4. **Remove k3s-uninstall.sh from cleanup.** `dokkimi clean` handles Docker cleanup (containers + networks). No cluster to tear down.
+5. **Remove KUBECONFIG env var** from the action and from `GITHUB_ENV`.
+6. **Remove `kind-config.yaml`** (`.github/kind-config.yaml`) — no longer needed.
+
+**Updated action.yml:**
+
+```yaml
+name: Dokkimi Run Tests
+description: Run Dokkimi integration tests using Docker.
+branding:
+  icon: check-circle
+  color: blue
+inputs:
+  tests:
+    description: Path to .dokkimi/ directory or a specific definition file
+    required: true
+  max-parallel:
+    description: Maximum concurrent test environments
+    default: '6'
+  max-booting:
+    description: Maximum environments booting simultaneously
+    default: '2'
+  timeout:
+    description: HTTP request timeout in milliseconds
+    default: '30000'
+  viewport-width:
+    description: Default browser viewport width for UI tests
+    default: '1280'
+  viewport-height:
+    description: Default browser viewport height for UI tests
+    default: '720'
+  dokkimi-version:
+    description: Dokkimi CLI version to install
+    default: latest
+
+runs:
+  using: composite
+  steps:
+    - name: Free disk space
+      shell: bash
+      run: |
+        sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/share/powershell
+        docker builder prune -af
+
+    - name: Pull sidecar images
+      shell: bash
+      run: |
+        docker pull andyshinn/dnsmasq:2.83
+
+    - name: Install Dokkimi CLI
+      shell: bash
+      run: |
+        if [ "${{ inputs.dokkimi-version }}" = "latest" ]; then
+          npm install -g dokkimi
+        else
+          npm install -g dokkimi@${{ inputs.dokkimi-version }}
+        fi
+
+    - name: Run tests
+      shell: bash
+      env:
+        DOKKIMI_MAX_CONCURRENT_NAMESPACES: ${{ inputs.max-parallel }}
+        DOKKIMI_MAX_BOOTING_NAMESPACES: ${{ inputs.max-booting }}
+        DOKKIMI_HTTP_TIMEOUT: ${{ inputs.timeout }}
+        DOKKIMI_DEFAULT_VIEWPORT_WIDTH: ${{ inputs.viewport-width }}
+        DOKKIMI_DEFAULT_VIEWPORT_HEIGHT: ${{ inputs.viewport-height }}
+      run: dokkimi run ${{ inputs.tests }} --ci
+
+    - name: Cleanup
+      if: always()
+      shell: bash
+      run: dokkimi clean 2>/dev/null || true
+```
+
+**CI startup time savings:** The k3s install + wait-for-ready step takes 10-20 seconds on GitHub Actions runners. Eliminating it means tests start sooner and the action YAML is half the size.
+
+**Effort:** Minimal — editing one YAML file and deleting another. But this is user-facing (anyone using the Dokkimi GitHub Action gets the change), so it should ship alongside or shortly after the Control Tower migration, not before.
+
+### Phase 13: Update Prerequisites and CLI Documentation
+
+**Replace:** `scripts/npm-readme.md`, `dokkimi doctor` checks
+
+The npm README currently lists prerequisites as:
+- Node.js 20+
+- Docker Desktop with Kubernetes enabled
+- kubectl
+
+After migration:
+- Node.js 20+
+- Docker
+
+**Changes:**
+1. **`scripts/npm-readme.md`** — remove "Docker Desktop with Kubernetes enabled" and "kubectl" from prerequisites. Replace with just "Docker". Update the project description from "isolated Kubernetes sandboxes" to "isolated Docker sandboxes" (or similar). Remove `dokkimi uninstall` from the commands table (no cluster resources to uninstall).
+2. **`dokkimi doctor`** — remove K8s-related checks (cluster reachable, context valid, kubectl installed). Keep Docker socket check. Add a check for minimum Docker version (20.10+ for `host.docker.internal` on Linux).
+3. **`dokkimi config`** — remove K8s context picker. No kubeconfig interaction needed.
+4. **`scripts/publish-package.json`** — remove "kubernetes" from package keywords.
+
+**Effort:** Small. Mostly text edits and deletion of K8s prerequisite checks.
+
 ---
 
 ## Summary of Effort
@@ -520,10 +651,12 @@ stream.on('data', (chunk) => processLog(instanceId, itemId, chunk));
 | 9 | Test-agent config reading | ~50 changed | — |
 | 10 | Interceptor DNS config | ~5 changed | — |
 | 11 | Remove K8s code | 0 new | deletes ~1000+ |
+| 12 | GitHub Action (remove k3s) | ~30 new | replaces ~50 |
+| 13 | Update prerequisites & docs | ~10 new | replaces ~30 |
 
-**Total new code:** ~1,300 lines
-**Total deleted code:** ~2,800+ lines
-**Net:** ~1,500 fewer lines of infrastructure code
+**Total new code:** ~1,340 lines
+**Total deleted code:** ~2,880+ lines
+**Net:** ~1,540 fewer lines of infrastructure code
 
 The Go sidecars (interceptor, db-proxy, test-agent) need minimal changes — they're already container-native and communicate via HTTP/DNS. The bulk of the work is in Control Tower's TypeScript orchestration layer, replacing K8s API calls with Docker API calls.
 
@@ -537,6 +670,7 @@ The Go sidecars (interceptor, db-proxy, test-agent) need minimal changes — the
 4. **Phase 8** — log collection. Can be done in parallel with phase 2.
 5. **Phase 9 + 10** — sidecar adaptations. Small, testable changes.
 6. **Phase 11** — cleanup. Remove all K8s code once Docker path is working.
+7. **Phase 12 + 13** — GitHub Action and docs. Ship after Control Tower migration is verified. Phase 12 updates the user-facing GitHub Action (remove k3s, simplify to Docker-only). Phase 13 updates npm README, `dokkimi doctor`, and CLI config.
 
 Phases 1-5 could be done behind a feature flag, allowing both Docker and K8s paths to coexist during development. But given the simplification, a clean cutover is likely less effort than maintaining both.
 
