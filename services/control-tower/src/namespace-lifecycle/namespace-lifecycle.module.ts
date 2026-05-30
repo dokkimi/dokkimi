@@ -7,6 +7,7 @@ import { DockerClientService } from './docker/docker-client.service';
 import { DockerConfigService } from './docker/docker-config.service';
 import { DockerCaService } from './docker/docker-ca.service';
 import { DockerRegistryService } from './docker/docker-registry.service';
+import { DockerDeployerService } from './docker/docker-deployer.service';
 import { ServiceDeploymentBuilderService } from './builders/service-deployment-builder.service';
 import { DatabaseDeploymentBuilderService } from './builders/database-deployment-builder.service';
 import { DatabaseConfigService } from './builders/database-config.service';
@@ -30,6 +31,7 @@ import { RegistryCredentialsService } from './registry-credentials.service';
     DockerConfigService,
     DockerCaService,
     DockerRegistryService,
+    DockerDeployerService,
     ServiceDeploymentBuilderService,
     DatabaseDeploymentBuilderService,
     DatabaseConfigService,
@@ -50,6 +52,7 @@ import { RegistryCredentialsService } from './registry-credentials.service';
     DockerConfigService,
     DockerCaService,
     DockerRegistryService,
+    DockerDeployerService,
     ConfigMapBuilderService,
     InterceptorCreatorService,
     ServiceInterceptorCreatorService,

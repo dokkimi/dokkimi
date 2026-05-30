@@ -1,0 +1,378 @@
+import { DockerDeployerService } from './docker-deployer.service';
+import { DeploymentContext } from '../../namespace-deployer/deployment-context.types';
+
+jest.mock('dockerode', () => jest.fn(() => ({})));
+
+jest.mock('@dokkimi/config', () => ({
+  getConfig: () => ({
+    services: {
+      interceptor: { port: 8080, host: 'localhost' },
+      controlTower: { port: 19001, host: 'host.docker.internal', protocol: 'http' },
+      testAgent: { port: 8080, host: 'localhost' },
+      chromium: { port: 9222 },
+    },
+    network: { dns: { nameserver: '127.0.0.1' } },
+    logging: { actions: false },
+    database: { defaultName: 'dokkimi', defaultUser: 'dokkimi', defaultPassword: 'dokkimi' },
+    browser: {},
+  }),
+  buildInterceptorEnvVars: jest.fn().mockReturnValue([
+    { name: 'PORT', value: '8080' },
+    { name: 'NAMESPACE', value: 'test-instance' },
+  ]),
+  buildTestAgentEnvVars: jest.fn().mockReturnValue([
+    { name: 'PORT', value: '8080' },
+    { name: 'K8S_NAMESPACE', value: 'dokkimi-run-test-instance' },
+  ]),
+  buildDbProxyEnvVars: jest.fn().mockReturnValue([
+    { name: 'DATABASE_TYPE', value: 'postgres' },
+    { name: 'DATABASE_PORT', value: '5432' },
+  ]),
+  buildServiceUrl: jest.fn().mockReturnValue('http://host.docker.internal:19001'),
+}));
+
+const mockDockerClient = {
+  createNetwork: jest.fn().mockResolvedValue('dokkimi-run-test-instance'),
+  removeNetwork: jest.fn(),
+  runContainer: jest.fn().mockResolvedValue('container-id'),
+  getDockerDnsIP: jest.fn().mockReturnValue('127.0.0.11'),
+};
+
+const mockDockerConfig = {
+  createConfigDir: jest.fn().mockReturnValue({
+    configDir: '/tmp/dokkimi-test',
+    configJsonPath: '/tmp/dokkimi-test/config.json',
+    dnsmasqDir: '/tmp/dokkimi-test/dnsmasq',
+  }),
+  writeInterceptorConfig: jest.fn(),
+  writeDnsmasqConfig: jest.fn().mockReturnValue('/tmp/dokkimi-test/dnsmasq/svc.conf'),
+  cleanupConfigDir: jest.fn(),
+};
+
+const mockCaService = {
+  prepareCaBundleForInstance: jest.fn().mockReturnValue({
+    caCertPath: '/home/.dokkimi/ca/ca.crt',
+    caKeyPath: '/home/.dokkimi/ca/ca.key',
+    caBundlePath: '/tmp/dokkimi-test/ca-bundle.crt',
+  }),
+  getInterceptorCaBinds: jest.fn().mockReturnValue([
+    '/home/.dokkimi/ca/ca.crt:/etc/dokkimi/ca/tls.crt:ro',
+    '/home/.dokkimi/ca/ca.key:/etc/dokkimi/ca/tls.key:ro',
+  ]),
+  getServiceCaBinds: jest.fn().mockReturnValue([
+    '/home/.dokkimi/ca/ca.crt:/etc/ssl/certs/dokkimi-ca.crt:ro',
+    '/tmp/dokkimi-test/ca-bundle.crt:/ca-bundle/ca-bundle.crt:ro',
+  ]),
+  getServiceCaEnvVars: jest.fn().mockReturnValue({
+    NODE_EXTRA_CA_CERTS: '/etc/ssl/certs/dokkimi-ca.crt',
+    SSL_CERT_FILE: '/ca-bundle/ca-bundle.crt',
+  }),
+  getInterceptorCaEnvVars: jest.fn().mockReturnValue({
+    DOKKIMI_CA_CERT_PATH: '/etc/dokkimi/ca/tls.crt',
+    DOKKIMI_CA_KEY_PATH: '/etc/dokkimi/ca/tls.key',
+  }),
+};
+
+const mockDatabaseConfig = {
+  getConfig: jest.fn().mockReturnValue({
+    image: 'postgres:15',
+    environment: {
+      POSTGRES_DB: 'dokkimi',
+      POSTGRES_USER: 'dokkimi',
+      POSTGRES_PASSWORD: 'dokkimi',
+    },
+    ports: [5432],
+  }),
+};
+
+function buildCtx(overrides: Partial<DeploymentContext> = {}): DeploymentContext {
+  return {
+    runId: 'run-1',
+    instanceId: 'test-instance',
+    k8sNamespaceName: 'dokkimi-run-test-instance',
+    instanceItemIds: new Map([
+      ['api-gateway', 'item-1'],
+      ['user-service', 'item-2'],
+      ['postgres-db', 'item-3'],
+    ]),
+    definition: {
+      name: 'test-def',
+      items: [
+        {
+          name: 'api-gateway',
+          type: 'SERVICE',
+          image: 'myapp/api-gateway:latest',
+          port: 3000,
+          healthCheck: '/health',
+        },
+        {
+          name: 'user-service',
+          type: 'SERVICE',
+          image: 'myapp/user-service:latest',
+          port: 3000,
+        },
+        {
+          name: 'postgres-db',
+          type: 'DATABASE',
+          database: 'postgres',
+        },
+      ],
+      tests: [],
+    },
+    ...overrides,
+  };
+}
+
+describe('DockerDeployerService', () => {
+  let service: DockerDeployerService;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    service = new DockerDeployerService(
+      mockDockerClient as any,
+      mockDockerConfig as any,
+      mockCaService as any,
+      mockDatabaseConfig as any,
+    );
+  });
+
+  describe('deploy', () => {
+    it('should create network, write config, and deploy all container groups', async () => {
+      await service.deploy(buildCtx());
+
+      // Network created
+      expect(mockDockerClient.createNetwork).toHaveBeenCalledWith('test-instance');
+
+      // Config written
+      expect(mockDockerConfig.createConfigDir).toHaveBeenCalledWith('test-instance');
+      expect(mockDockerConfig.writeInterceptorConfig).toHaveBeenCalled();
+
+      // CA bundle prepared
+      expect(mockCaService.prepareCaBundleForInstance).toHaveBeenCalledWith('test-instance');
+    });
+
+    it('should create the global interceptor', async () => {
+      await service.deploy(buildCtx());
+
+      const interceptorCall = mockDockerClient.runContainer.mock.calls.find(
+        (call: any[]) => call[0].name === 'interceptor-test-instance',
+      );
+      expect(interceptorCall).toBeDefined();
+      expect(interceptorCall![0].networkAliases).toContain('interceptor-service');
+      expect(interceptorCall![0].image).toContain('interceptor');
+    });
+
+    it('should create the test-agent', async () => {
+      await service.deploy(buildCtx());
+
+      const taCall = mockDockerClient.runContainer.mock.calls.find(
+        (call: any[]) => call[0].name === 'test-agent-test-instance',
+      );
+      expect(taCall).toBeDefined();
+      expect(taCall![0].networkAliases).toContain('test-agent-service');
+    });
+
+    it('should create service groups with interceptor + dnsmasq + user container', async () => {
+      await service.deploy(buildCtx());
+
+      const containerNames = mockDockerClient.runContainer.mock.calls.map(
+        (call: any[]) => call[0].name,
+      );
+
+      // api-gateway group
+      expect(containerNames).toContain('api-gateway-interceptor-test-instance');
+      expect(containerNames).toContain('api-gateway-dnsmasq-test-instance');
+      expect(containerNames).toContain('api-gateway-test-instance');
+
+      // user-service group
+      expect(containerNames).toContain('user-service-interceptor-test-instance');
+      expect(containerNames).toContain('user-service-dnsmasq-test-instance');
+      expect(containerNames).toContain('user-service-test-instance');
+    });
+
+    it('should set service interceptor as primary with network alias', async () => {
+      await service.deploy(buildCtx());
+
+      const interceptorCall = mockDockerClient.runContainer.mock.calls.find(
+        (call: any[]) => call[0].name === 'api-gateway-interceptor-test-instance',
+      );
+      expect(interceptorCall![0].networkAliases).toContain('api-gateway');
+    });
+
+    it('should join dnsmasq and user container to interceptor network namespace', async () => {
+      await service.deploy(buildCtx());
+
+      const dnsmasqCall = mockDockerClient.runContainer.mock.calls.find(
+        (call: any[]) => call[0].name === 'api-gateway-dnsmasq-test-instance',
+      );
+      expect(dnsmasqCall![0].networkMode).toBe(
+        'container:api-gateway-interceptor-test-instance',
+      );
+
+      const userCall = mockDockerClient.runContainer.mock.calls.find(
+        (call: any[]) => call[0].name === 'api-gateway-test-instance',
+      );
+      expect(userCall![0].networkMode).toBe(
+        'container:api-gateway-interceptor-test-instance',
+      );
+    });
+
+    it('should set --dns 127.0.0.1 on user service containers', async () => {
+      await service.deploy(buildCtx());
+
+      const userCall = mockDockerClient.runContainer.mock.calls.find(
+        (call: any[]) => call[0].name === 'api-gateway-test-instance',
+      );
+      expect(userCall![0].dns).toEqual(['127.0.0.1']);
+    });
+
+    it('should mount CA binds on user service containers', async () => {
+      await service.deploy(buildCtx());
+
+      const userCall = mockDockerClient.runContainer.mock.calls.find(
+        (call: any[]) => call[0].name === 'api-gateway-test-instance',
+      );
+      expect(userCall![0].binds).toEqual(
+        expect.arrayContaining([
+          expect.stringContaining('dokkimi-ca.crt:ro'),
+          expect.stringContaining('ca-bundle.crt:ro'),
+        ]),
+      );
+    });
+
+    it('should create database groups with db-proxy + database container', async () => {
+      await service.deploy(buildCtx());
+
+      const containerNames = mockDockerClient.runContainer.mock.calls.map(
+        (call: any[]) => call[0].name,
+      );
+
+      expect(containerNames).toContain('postgres-db-dbproxy-test-instance');
+      expect(containerNames).toContain('postgres-db-db-test-instance');
+    });
+
+    it('should set db-proxy as primary with network alias for database', async () => {
+      await service.deploy(buildCtx());
+
+      const dbProxyCall = mockDockerClient.runContainer.mock.calls.find(
+        (call: any[]) => call[0].name === 'postgres-db-dbproxy-test-instance',
+      );
+      expect(dbProxyCall![0].networkAliases).toContain('postgres-db');
+    });
+
+    it('should join database container to db-proxy network namespace', async () => {
+      await service.deploy(buildCtx());
+
+      const dbCall = mockDockerClient.runContainer.mock.calls.find(
+        (call: any[]) => call[0].name === 'postgres-db-db-test-instance',
+      );
+      expect(dbCall![0].networkMode).toBe(
+        'container:postgres-db-dbproxy-test-instance',
+      );
+    });
+
+    it('should skip items with type MOCK', async () => {
+      const ctx = buildCtx({
+        definition: {
+          name: 'test',
+          items: [
+            {
+              name: 'mock-stripe',
+              type: 'MOCK',
+              mockTarget: 'api.stripe.com',
+              mockPath: '/v1/charges',
+              mockResponseStatus: 200,
+              mockResponseBody: '{"id":"ch_test"}',
+            },
+          ],
+        },
+      });
+      ctx.instanceItemIds = new Map([['mock-stripe', 'item-mock']]);
+
+      await service.deploy(ctx);
+
+      // Only global interceptor + test-agent, no service/db groups
+      const containerNames = mockDockerClient.runContainer.mock.calls.map(
+        (call: any[]) => call[0].name,
+      );
+      expect(containerNames).toEqual([
+        'interceptor-test-instance',
+        'test-agent-test-instance',
+      ]);
+    });
+
+    it('should not create chromium group when no UI steps', async () => {
+      await service.deploy(buildCtx());
+
+      const containerNames = mockDockerClient.runContainer.mock.calls.map(
+        (call: any[]) => call[0].name,
+      );
+      expect(containerNames.some((n: string) => n.includes('chromium'))).toBe(false);
+    });
+
+    it('should create chromium group when UI steps exist', async () => {
+      const ctx = buildCtx({
+        definition: {
+          name: 'ui-test',
+          items: [
+            {
+              name: 'web-app',
+              type: 'SERVICE',
+              image: 'myapp/web:latest',
+              port: 3000,
+            },
+          ],
+          tests: [
+            {
+              name: 'ui test',
+              steps: [
+                { action: { type: 'ui', target: 'web-app', steps: [] } } as any,
+              ],
+            },
+          ],
+        },
+      });
+      ctx.instanceItemIds = new Map([['web-app', 'item-web']]);
+
+      await service.deploy(ctx);
+
+      const containerNames = mockDockerClient.runContainer.mock.calls.map(
+        (call: any[]) => call[0].name,
+      );
+      expect(containerNames).toContain('chromium-interceptor-test-instance');
+      expect(containerNames).toContain('chromium-dnsmasq-test-instance');
+      expect(containerNames).toContain('chromium-test-instance');
+    });
+  });
+
+  describe('teardown', () => {
+    it('should remove network and cleanup config dir', async () => {
+      await service.teardown('test-instance');
+
+      expect(mockDockerClient.removeNetwork).toHaveBeenCalledWith('test-instance');
+      expect(mockDockerConfig.cleanupConfigDir).toHaveBeenCalledWith('test-instance');
+    });
+  });
+
+  describe('dnsmasq config', () => {
+    it('should write dnsmasq config with database exceptions', async () => {
+      await service.deploy(buildCtx());
+
+      const dnsmasqCalls = mockDockerConfig.writeDnsmasqConfig.mock.calls;
+      // Should be called for each service (api-gateway, user-service)
+      expect(dnsmasqCalls.length).toBeGreaterThanOrEqual(2);
+
+      // Check one of the dnsmasq configs was written for api-gateway
+      const apiGwCall = dnsmasqCalls.find(
+        (call: any[]) => call[1] === 'api-gateway',
+      );
+      expect(apiGwCall).toBeDefined();
+
+      const configContent = apiGwCall![2] as string;
+      // Should forward database names to Docker DNS
+      expect(configContent).toContain('server=/postgres-db/127.0.0.11');
+      // Should catch-all to localhost (interceptor)
+      expect(configContent).toContain('address=/#/127.0.0.1');
+    });
+  });
+});
