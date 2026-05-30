@@ -4,6 +4,9 @@ import { PrismaModule } from '../prisma/prisma.module';
 import { KubernetesClientService } from './kubernetes/kubernetes-client.service';
 import { KubernetesResourceService } from './kubernetes/kubernetes-resource.service';
 import { DockerClientService } from './docker/docker-client.service';
+import { DockerConfigService } from './docker/docker-config.service';
+import { DockerCaService } from './docker/docker-ca.service';
+import { DockerRegistryService } from './docker/docker-registry.service';
 import { ServiceDeploymentBuilderService } from './builders/service-deployment-builder.service';
 import { DatabaseDeploymentBuilderService } from './builders/database-deployment-builder.service';
 import { DatabaseConfigService } from './builders/database-config.service';
@@ -24,6 +27,9 @@ import { RegistryCredentialsService } from './registry-credentials.service';
     KubernetesClientService,
     KubernetesResourceService,
     DockerClientService,
+    DockerConfigService,
+    DockerCaService,
+    DockerRegistryService,
     ServiceDeploymentBuilderService,
     DatabaseDeploymentBuilderService,
     DatabaseConfigService,
@@ -41,6 +47,9 @@ import { RegistryCredentialsService } from './registry-credentials.service';
     KubernetesClientService,
     KubernetesResourceService,
     DockerClientService,
+    DockerConfigService,
+    DockerCaService,
+    DockerRegistryService,
     ConfigMapBuilderService,
     InterceptorCreatorService,
     ServiceInterceptorCreatorService,
