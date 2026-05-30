@@ -24,7 +24,11 @@ import { DokkimiCaService } from './dokkimi-ca.service';
 import { RegistryCredentialsService } from './registry-credentials.service';
 
 @Module({
-  imports: [PrismaModule, forwardRef(() => NamespaceModule), LogProcessingModule],
+  imports: [
+    PrismaModule,
+    forwardRef(() => NamespaceModule),
+    LogProcessingModule,
+  ],
   providers: [
     NamespaceLifecycleService,
     KubernetesClientService,

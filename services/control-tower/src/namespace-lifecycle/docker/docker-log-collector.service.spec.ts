@@ -27,10 +27,7 @@ describe('DockerLogCollectorService', () => {
     );
   });
 
-  function buildDockerFrame(
-    streamType: number,
-    payload: string,
-  ): Buffer {
+  function buildDockerFrame(streamType: number, payload: string): Buffer {
     const payloadBuf = Buffer.from(payload, 'utf-8');
     const header = Buffer.alloc(8);
     header[0] = streamType;
@@ -52,13 +49,8 @@ describe('DockerLogCollectorService', () => {
       await service.startCollecting('inst-1', 'c1', 'api');
       await service.startCollecting('inst-1', 'c2', 'web');
 
-      // stopCollecting should destroy both
+      // Verified via stopCollecting test below — both streams should be destroyed
       service.stopCollecting('inst-1');
-      const destroyFn1 =
-        mockDockerClient.streamLogs.mock.results[0].value.then
-          ? undefined
-          : undefined;
-      // Verified via stopCollecting test below
     });
 
     it('should not throw if streamLogs fails', async () => {
@@ -151,12 +143,12 @@ describe('DockerLogCollectorService', () => {
       expect(
         mockConsoleLogProcessor.processFromFluentBit,
       ).toHaveBeenCalledTimes(3);
-      expect(
-        mockConsoleLogProcessor.processFromFluentBit,
-      ).toHaveBeenCalledWith(expect.objectContaining({ log: 'first' }));
-      expect(
-        mockConsoleLogProcessor.processFromFluentBit,
-      ).toHaveBeenCalledWith(expect.objectContaining({ log: 'third' }));
+      expect(mockConsoleLogProcessor.processFromFluentBit).toHaveBeenCalledWith(
+        expect.objectContaining({ log: 'first' }),
+      );
+      expect(mockConsoleLogProcessor.processFromFluentBit).toHaveBeenCalledWith(
+        expect.objectContaining({ log: 'third' }),
+      );
     });
 
     it('should skip empty lines', async () => {

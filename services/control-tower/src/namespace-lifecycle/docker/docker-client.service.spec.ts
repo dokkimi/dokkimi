@@ -71,10 +71,7 @@ describe('DockerClientService', () => {
 
   describe('removeNetwork', () => {
     it('should remove all containers then remove the network', async () => {
-      mockDocker.listContainers.mockResolvedValue([
-        { Id: 'c1' },
-        { Id: 'c2' },
-      ]);
+      mockDocker.listContainers.mockResolvedValue([{ Id: 'c1' }, { Id: 'c2' }]);
       mockDocker.listNetworks.mockResolvedValue([
         { Name: 'dokkimi-run-inst-1', Id: 'net-1' },
       ]);

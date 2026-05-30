@@ -98,7 +98,11 @@ describe('DockerClientService (integration)', () => {
       name: `test-pinger-${TEST_INSTANCE_ID}`,
       image: TEST_IMAGE,
       networkName: `dokkimi-run-${TEST_INSTANCE_ID}`,
-      cmd: ['sh', '-c', 'ping -c 1 -W 2 my-service && echo REACHABLE || echo UNREACHABLE'],
+      cmd: [
+        'sh',
+        '-c',
+        'ping -c 1 -W 2 my-service && echo REACHABLE || echo UNREACHABLE',
+      ],
     });
 
     // Wait for the ping container to finish
@@ -124,7 +128,11 @@ describe('DockerClientService (integration)', () => {
   });
 
   it('should return false from waitForHealthy for non-existent container', async () => {
-    const healthy = await service.waitForHealthy('nonexistent-container-xyz', 1000, 200);
+    const healthy = await service.waitForHealthy(
+      'nonexistent-container-xyz',
+      1000,
+      200,
+    );
     expect(healthy).toBe(false);
   });
 

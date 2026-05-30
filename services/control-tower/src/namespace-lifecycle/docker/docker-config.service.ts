@@ -18,9 +18,7 @@ export interface InstanceConfigPaths {
 export class DockerConfigService {
   private readonly logger = new Logger(DockerConfigService.name);
 
-  constructor(
-    private readonly configMapBuilder: ConfigMapBuilderService,
-  ) {}
+  constructor(private readonly configMapBuilder: ConfigMapBuilderService) {}
 
   createConfigDir(instanceId: string): InstanceConfigPaths {
     const configDir = path.join(os.tmpdir(), `dokkimi-${instanceId}`);
@@ -75,10 +73,7 @@ export class DockerConfigService {
     serviceName: string,
     config: string,
   ): string {
-    const confPath = path.join(
-      configPaths.dnsmasqDir,
-      `${serviceName}.conf`,
-    );
+    const confPath = path.join(configPaths.dnsmasqDir, `${serviceName}.conf`);
     fs.writeFileSync(confPath, config);
     return confPath;
   }

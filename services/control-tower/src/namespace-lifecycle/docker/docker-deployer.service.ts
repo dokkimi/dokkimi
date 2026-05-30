@@ -1,19 +1,31 @@
+import * as fs from 'fs';
+import * as path from 'path';
 import { Injectable, Logger } from '@nestjs/common';
-import { getConfig, buildInterceptorEnvVars, buildTestAgentEnvVars, buildDbProxyEnvVars, buildServiceUrl } from '@dokkimi/config';
-import { DockerClientService, RunContainerOptions } from './docker-client.service';
-import { DockerConfigService, InstanceConfigPaths } from './docker-config.service';
+import {
+  getConfig,
+  buildInterceptorEnvVars,
+  buildTestAgentEnvVars,
+  buildDbProxyEnvVars,
+} from '@dokkimi/config';
+import { DockerClientService } from './docker-client.service';
+import {
+  DockerConfigService,
+  InstanceConfigPaths,
+} from './docker-config.service';
 import { DockerCaService, CaBundlePaths } from './docker-ca.service';
 import { DockerLogCollectorService } from './docker-log-collector.service';
-import { DOKKIMI_IMAGES, resolveBrowserImage } from '../../constants/image-tags';
+import {
+  DOKKIMI_IMAGES,
+  resolveBrowserImage,
+} from '../../constants/image-tags';
 import { sanitizeK8sName } from '../../utils/k8s.utils';
-import { DeploymentContext, DefinitionItem, BrowserConfig } from '../../namespace-deployer/deployment-context.types';
+import {
+  DeploymentContext,
+  DefinitionItem,
+  BrowserConfig,
+} from '../../namespace-deployer/deployment-context.types';
 import { DatabaseConfigService } from '../builders/database-config.service';
 import { hasUiSteps } from '../../namespace-deployer/ui-step-detection';
-
-interface ServiceGroupResult {
-  interceptorContainerId: string;
-  interceptorContainerName: string;
-}
 
 @Injectable()
 export class DockerDeployerService {
@@ -35,7 +47,9 @@ export class DockerDeployerService {
     const configPaths = this.dockerConfig.createConfigDir(instanceId);
     const caBundlePaths = this.caService.prepareCaBundleForInstance(instanceId);
 
-    const serviceItems = ctx.definition.items.filter((i) => i.type === 'SERVICE');
+    const serviceItems = ctx.definition.items.filter(
+      (i) => i.type === 'SERVICE',
+    );
     const allServiceNames = serviceItems.map((i) => sanitizeK8sName(i.name));
     const allServicePorts = serviceItems
       .map((i) => i.port)
@@ -54,15 +68,21 @@ export class DockerDeployerService {
       instanceId,
       dockerDnsIP,
       configPaths,
-      caBundlePaths,
     );
 
     // 3. Create test-agent
-    await this.createTestAgent(networkName, instanceId, attachChromium, configPaths);
+    await this.createTestAgent(
+      networkName,
+      instanceId,
+      attachChromium,
+      configPaths,
+    );
 
     // 4. Deploy services
     for (const item of ctx.definition.items) {
-      if (item.type === 'MOCK') continue;
+      if (item.type === 'MOCK') {
+        continue;
+      }
 
       const containerName = sanitizeK8sName(item.name);
       const instanceItemId = ctx.instanceItemIds.get(item.name);
@@ -145,14 +165,20 @@ export class DockerDeployerService {
       .filter((item) => item.type === 'MOCK')
       .map((mock) => {
         let responseBody: string | undefined;
-        if (mock.mockResponseBody !== null && mock.mockResponseBody !== undefined) {
+        if (
+          mock.mockResponseBody !== null &&
+          mock.mockResponseBody !== undefined
+        ) {
           responseBody =
             typeof mock.mockResponseBody === 'string'
               ? mock.mockResponseBody
               : JSON.stringify(mock.mockResponseBody);
         }
         let responseHeaders: string | undefined;
-        if (mock.mockResponseHeaders !== null && mock.mockResponseHeaders !== undefined) {
+        if (
+          mock.mockResponseHeaders !== null &&
+          mock.mockResponseHeaders !== undefined
+        ) {
           responseHeaders = JSON.stringify(mock.mockResponseHeaders);
         }
         return {
@@ -169,20 +195,25 @@ export class DockerDeployerService {
         };
       });
 
-    let testConfig: {
-      testRunId: string;
-      timeoutSeconds: number;
-      executionMode: string;
-      tests: Record<string, unknown>[];
-      variables?: Record<string, string>;
-    } | undefined;
+    let testConfig:
+      | {
+          testRunId: string;
+          timeoutSeconds: number;
+          executionMode: string;
+          tests: Record<string, unknown>[];
+          variables?: Record<string, string>;
+        }
+      | undefined;
     let expectedNamespaceItemIds: string[] | undefined;
 
     if (ctx.definition.tests?.length) {
       const strippedTests = ctx.definition.tests.map((test) => ({
         ...test,
         steps: (test.steps ?? []).map((step) => {
-          const { assertions, ...executionOnly } = step as Record<string, unknown> & { assertions?: unknown };
+          const { assertions: _assertions, ...executionOnly } = step as Record<
+            string,
+            unknown
+          > & { assertions?: unknown };
           return executionOnly;
         }),
       }));
@@ -224,7 +255,6 @@ export class DockerDeployerService {
     instanceId: string,
     dockerDnsIP: string,
     configPaths: InstanceConfigPaths,
-    caBundlePaths: CaBundlePaths,
   ): Promise<void> {
     const config = getConfig();
     const envEntries = buildInterceptorEnvVars(config, {
@@ -288,9 +318,7 @@ export class DockerDeployerService {
       networkName,
       networkAliases: ['test-agent-service'],
       env,
-      binds: [
-        `${configPaths.configJsonPath}:/etc/dokkimi/config.json:ro`,
-      ],
+      binds: [`${configPaths.configJsonPath}:/etc/dokkimi/config.json:ro`],
       exposedPorts: [config.services.testAgent.port],
       labels: {
         'io.dokkimi.instance-id': instanceId,
@@ -397,7 +425,9 @@ export class DockerDeployerService {
     if (item.env) {
       if (Array.isArray(item.env)) {
         for (const e of item.env as Array<{ name: string; value: string }>) {
-          if (e.name) userEnv[e.name] = String(e.value ?? '');
+          if (e.name) {
+            userEnv[e.name] = String(e.value ?? '');
+          }
         }
       } else {
         for (const [k, v] of Object.entries(item.env)) {
@@ -525,7 +555,9 @@ export class DockerDeployerService {
       },
     });
 
-    this.logger.log(`Created database group for ${item.name} (${item.database})`);
+    this.logger.log(
+      `Created database group for ${item.name} (${item.database})`,
+    );
   }
 
   // ============================================
@@ -681,16 +713,26 @@ export class DockerDeployerService {
 
   private getDbProxyPort(databaseType: string): number {
     const dbType = databaseType.toLowerCase();
-    if (dbType === 'postgres' || dbType === 'postgresql') return 15432;
-    if (dbType === 'mysql' || dbType === 'mariadb') return 13306;
-    if (dbType === 'redis') return 16379;
-    if (dbType === 'mongodb') return 17017;
+    if (dbType === 'postgres' || dbType === 'postgresql') {
+      return 15432;
+    }
+    if (dbType === 'mysql' || dbType === 'mariadb') {
+      return 13306;
+    }
+    if (dbType === 'redis') {
+      return 16379;
+    }
+    if (dbType === 'mongodb') {
+      return 17017;
+    }
     return 8080;
   }
 
   private getInitFileMountPath(databaseType: string): string | null {
     const dbType = databaseType.toLowerCase();
-    if (dbType === 'redis') return null;
+    if (dbType === 'redis') {
+      return null;
+    }
     return '/docker-entrypoint-initdb.d';
   }
 
@@ -698,18 +740,18 @@ export class DockerDeployerService {
     configPaths: InstanceConfigPaths,
     item: DefinitionItem,
   ): string | null {
-    if (!item.initFiles?.length) return null;
+    if (!item.initFiles?.length) {
+      return null;
+    }
 
-    const fs = require('fs') as typeof import('fs');
-    const path = require('path') as typeof import('path');
-    const initDir = path.join(configPaths.configDir, `init-${sanitizeK8sName(item.name)}`);
+    const initDir = path.join(
+      configPaths.configDir,
+      `init-${sanitizeK8sName(item.name)}`,
+    );
     fs.mkdirSync(initDir, { recursive: true });
 
     for (const initFile of item.initFiles) {
-      fs.writeFileSync(
-        path.join(initDir, initFile.filename),
-        initFile.content,
-      );
+      fs.writeFileSync(path.join(initDir, initFile.filename), initFile.content);
     }
 
     return initDir;

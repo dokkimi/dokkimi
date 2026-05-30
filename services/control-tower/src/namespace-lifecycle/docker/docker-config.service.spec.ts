@@ -57,7 +57,9 @@ describe('DockerConfigService', () => {
       service.writeInterceptorConfig(paths, [], [], testInstanceId);
 
       expect(fs.existsSync(paths.configJsonPath)).toBe(true);
-      const content = JSON.parse(fs.readFileSync(paths.configJsonPath, 'utf-8'));
+      const content = JSON.parse(
+        fs.readFileSync(paths.configJsonPath, 'utf-8'),
+      );
       expect(content).toHaveProperty('urlMap');
       expect(content).toHaveProperty('httpMocks');
     });
@@ -74,7 +76,9 @@ describe('DockerConfigService', () => {
         testInstanceId,
       );
 
-      expect(mockConfigMapBuilder.buildInterceptorConfigMap).toHaveBeenCalledWith(
+      expect(
+        mockConfigMapBuilder.buildInterceptorConfigMap,
+      ).toHaveBeenCalledWith(
         `dokkimi-run-${testInstanceId}`,
         items,
         mocks,
@@ -96,9 +100,7 @@ describe('DockerConfigService', () => {
         dnsmasqConf,
       );
 
-      expect(confPath).toBe(
-        path.join(paths.dnsmasqDir, 'service-a.conf'),
-      );
+      expect(confPath).toBe(path.join(paths.dnsmasqDir, 'service-a.conf'));
       expect(fs.readFileSync(confPath, 'utf-8')).toBe(dnsmasqConf);
     });
   });

@@ -7,13 +7,21 @@ jest.mock('@dokkimi/config', () => ({
   getConfig: () => ({
     services: {
       interceptor: { port: 8080, host: 'localhost' },
-      controlTower: { port: 19001, host: 'host.docker.internal', protocol: 'http' },
+      controlTower: {
+        port: 19001,
+        host: 'host.docker.internal',
+        protocol: 'http',
+      },
       testAgent: { port: 8080, host: 'localhost' },
       chromium: { port: 9222 },
     },
     network: { dns: { nameserver: '127.0.0.1' } },
     logging: { actions: false },
-    database: { defaultName: 'dokkimi', defaultUser: 'dokkimi', defaultPassword: 'dokkimi' },
+    database: {
+      defaultName: 'dokkimi',
+      defaultUser: 'dokkimi',
+      defaultPassword: 'dokkimi',
+    },
     browser: {},
   }),
   buildInterceptorEnvVars: jest.fn().mockReturnValue([
@@ -28,7 +36,9 @@ jest.mock('@dokkimi/config', () => ({
     { name: 'DATABASE_TYPE', value: 'postgres' },
     { name: 'DATABASE_PORT', value: '5432' },
   ]),
-  buildServiceUrl: jest.fn().mockReturnValue('http://host.docker.internal:19001'),
+  buildServiceUrl: jest
+    .fn()
+    .mockReturnValue('http://host.docker.internal:19001'),
 }));
 
 const mockDockerClient = {
@@ -45,7 +55,9 @@ const mockDockerConfig = {
     dnsmasqDir: '/tmp/dokkimi-test/dnsmasq',
   }),
   writeInterceptorConfig: jest.fn(),
-  writeDnsmasqConfig: jest.fn().mockReturnValue('/tmp/dokkimi-test/dnsmasq/svc.conf'),
+  writeDnsmasqConfig: jest
+    .fn()
+    .mockReturnValue('/tmp/dokkimi-test/dnsmasq/svc.conf'),
   cleanupConfigDir: jest.fn(),
 };
 
@@ -55,14 +67,18 @@ const mockCaService = {
     caKeyPath: '/home/.dokkimi/ca/ca.key',
     caBundlePath: '/tmp/dokkimi-test/ca-bundle.crt',
   }),
-  getInterceptorCaBinds: jest.fn().mockReturnValue([
-    '/home/.dokkimi/ca/ca.crt:/etc/dokkimi/ca/tls.crt:ro',
-    '/home/.dokkimi/ca/ca.key:/etc/dokkimi/ca/tls.key:ro',
-  ]),
-  getServiceCaBinds: jest.fn().mockReturnValue([
-    '/home/.dokkimi/ca/ca.crt:/etc/ssl/certs/dokkimi-ca.crt:ro',
-    '/tmp/dokkimi-test/ca-bundle.crt:/ca-bundle/ca-bundle.crt:ro',
-  ]),
+  getInterceptorCaBinds: jest
+    .fn()
+    .mockReturnValue([
+      '/home/.dokkimi/ca/ca.crt:/etc/dokkimi/ca/tls.crt:ro',
+      '/home/.dokkimi/ca/ca.key:/etc/dokkimi/ca/tls.key:ro',
+    ]),
+  getServiceCaBinds: jest
+    .fn()
+    .mockReturnValue([
+      '/home/.dokkimi/ca/ca.crt:/etc/ssl/certs/dokkimi-ca.crt:ro',
+      '/tmp/dokkimi-test/ca-bundle.crt:/ca-bundle/ca-bundle.crt:ro',
+    ]),
   getServiceCaEnvVars: jest.fn().mockReturnValue({
     NODE_EXTRA_CA_CERTS: '/etc/ssl/certs/dokkimi-ca.crt',
     SSL_CERT_FILE: '/ca-bundle/ca-bundle.crt',
@@ -90,7 +106,9 @@ const mockLogCollector = {
   stopCollecting: jest.fn(),
 };
 
-function buildCtx(overrides: Partial<DeploymentContext> = {}): DeploymentContext {
+function buildCtx(
+  overrides: Partial<DeploymentContext> = {},
+): DeploymentContext {
   return {
     runId: 'run-1',
     instanceId: 'test-instance',
@@ -147,14 +165,20 @@ describe('DockerDeployerService', () => {
       await service.deploy(buildCtx());
 
       // Network created
-      expect(mockDockerClient.createNetwork).toHaveBeenCalledWith('test-instance');
+      expect(mockDockerClient.createNetwork).toHaveBeenCalledWith(
+        'test-instance',
+      );
 
       // Config written
-      expect(mockDockerConfig.createConfigDir).toHaveBeenCalledWith('test-instance');
+      expect(mockDockerConfig.createConfigDir).toHaveBeenCalledWith(
+        'test-instance',
+      );
       expect(mockDockerConfig.writeInterceptorConfig).toHaveBeenCalled();
 
       // CA bundle prepared
-      expect(mockCaService.prepareCaBundleForInstance).toHaveBeenCalledWith('test-instance');
+      expect(mockCaService.prepareCaBundleForInstance).toHaveBeenCalledWith(
+        'test-instance',
+      );
     });
 
     it('should create the global interceptor', async () => {
@@ -164,7 +188,9 @@ describe('DockerDeployerService', () => {
         (call: any[]) => call[0].name === 'interceptor-test-instance',
       );
       expect(interceptorCall).toBeDefined();
-      expect(interceptorCall![0].networkAliases).toContain('interceptor-service');
+      expect(interceptorCall![0].networkAliases).toContain(
+        'interceptor-service',
+      );
       expect(interceptorCall![0].image).toContain('interceptor');
     });
 
@@ -196,7 +222,9 @@ describe('DockerDeployerService', () => {
       expect(containerNames).toContain('api-gateway-test-instance');
 
       // user-service group
-      expect(containerNames).toContain('user-service-interceptor-test-instance');
+      expect(containerNames).toContain(
+        'user-service-interceptor-test-instance',
+      );
       expect(containerNames).toContain('user-service-dnsmasq-test-instance');
       expect(containerNames).toContain('user-service-test-instance');
     });
@@ -205,7 +233,8 @@ describe('DockerDeployerService', () => {
       await service.deploy(buildCtx());
 
       const interceptorCall = mockDockerClient.runContainer.mock.calls.find(
-        (call: any[]) => call[0].name === 'api-gateway-interceptor-test-instance',
+        (call: any[]) =>
+          call[0].name === 'api-gateway-interceptor-test-instance',
       );
       expect(interceptorCall![0].networkAliases).toContain('api-gateway');
     });
@@ -318,7 +347,9 @@ describe('DockerDeployerService', () => {
       const containerNames = mockDockerClient.runContainer.mock.calls.map(
         (call: any[]) => call[0].name,
       );
-      expect(containerNames.some((n: string) => n.includes('chromium'))).toBe(false);
+      expect(containerNames.some((n: string) => n.includes('chromium'))).toBe(
+        false,
+      );
     });
 
     it('should create chromium group when UI steps exist', async () => {
@@ -381,9 +412,15 @@ describe('DockerDeployerService', () => {
     it('should stop log collection, remove network, and cleanup config dir', async () => {
       await service.teardown('test-instance');
 
-      expect(mockLogCollector.stopCollecting).toHaveBeenCalledWith('test-instance');
-      expect(mockDockerClient.removeNetwork).toHaveBeenCalledWith('test-instance');
-      expect(mockDockerConfig.cleanupConfigDir).toHaveBeenCalledWith('test-instance');
+      expect(mockLogCollector.stopCollecting).toHaveBeenCalledWith(
+        'test-instance',
+      );
+      expect(mockDockerClient.removeNetwork).toHaveBeenCalledWith(
+        'test-instance',
+      );
+      expect(mockDockerConfig.cleanupConfigDir).toHaveBeenCalledWith(
+        'test-instance',
+      );
     });
   });
 

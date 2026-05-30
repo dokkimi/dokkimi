@@ -54,7 +54,9 @@ export class DockerLogCollectorService {
 
   stopCollecting(instanceId: string): void {
     const streams = this.activeStreams.get(instanceId);
-    if (!streams) return;
+    if (!streams) {
+      return;
+    }
 
     for (const stream of streams) {
       try {
@@ -105,13 +107,20 @@ export class DockerLogCollectorService {
         break;
       }
 
-      const payload = data.subarray(offset, offset + payloadSize).toString('utf-8');
+      const payload = data
+        .subarray(offset, offset + payloadSize)
+        .toString('utf-8');
       offset += payloadSize;
 
       // Split by newlines — each line is a separate log entry
       const lines = payload.split('\n').filter((l) => l.length > 0);
       for (const line of lines) {
-        this.processLine(line, instanceId, instanceItemId, streamType === 2 ? 'stderr' : 'stdout');
+        this.processLine(
+          line,
+          instanceId,
+          instanceItemId,
+          streamType === 2 ? 'stderr' : 'stdout',
+        );
       }
     }
   }
@@ -122,7 +131,9 @@ export class DockerLogCollectorService {
     instanceItemId?: string,
     stream?: string,
   ): void {
-    if (!line.trim()) return;
+    if (!line.trim()) {
+      return;
+    }
 
     // Post to the console log processor in the same format fluent-bit uses
     this.consoleLogProcessor

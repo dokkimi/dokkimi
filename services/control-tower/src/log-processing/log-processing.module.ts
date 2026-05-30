@@ -22,6 +22,10 @@ import { PrismaModule } from '../prisma/prisma.module';
     UiTimelineService,
     InFlightTrackerService,
   ],
-  exports: [UiTimelineService, InFlightTrackerService, ConsoleLogProcessorService],
+  exports: [
+    UiTimelineService,
+    InFlightTrackerService,
+    ConsoleLogProcessorService,
+  ],
 })
 export class LogProcessingModule {}

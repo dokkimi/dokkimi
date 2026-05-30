@@ -47,7 +47,10 @@ export class DockerRegistryService {
     // Images like "ghcr.io/org/name:tag" have registry "ghcr.io"
     // Images like "name:tag" or "library/name:tag" use Docker Hub
     const parts = image.split('/');
-    if (parts.length >= 2 && (parts[0].includes('.') || parts[0].includes(':'))) {
+    if (
+      parts.length >= 2 &&
+      (parts[0].includes('.') || parts[0].includes(':'))
+    ) {
       return parts[0];
     }
     return 'https://index.docker.io/v1/';

@@ -112,9 +112,7 @@ export class DockerClientService implements OnApplicationBootstrap {
       opts.networkMode && opts.networkMode.startsWith('container:');
 
     const extraHosts =
-      process.platform === 'linux'
-        ? ['host.docker.internal:host-gateway']
-        : [];
+      process.platform === 'linux' ? ['host.docker.internal:host-gateway'] : [];
 
     const exposedPorts: Record<string, object> = {};
     if (opts.exposedPorts) {
@@ -131,7 +129,8 @@ export class DockerClientService implements OnApplicationBootstrap {
         [DOKKIMI_LABEL]: 'true',
         ...opts.labels,
       },
-      ExposedPorts: Object.keys(exposedPorts).length > 0 ? exposedPorts : undefined,
+      ExposedPorts:
+        Object.keys(exposedPorts).length > 0 ? exposedPorts : undefined,
       ...(opts.cmd && { Cmd: opts.cmd }),
       ...(opts.entrypoint && { Entrypoint: opts.entrypoint }),
       ...(opts.healthcheck && {
@@ -140,8 +139,7 @@ export class DockerClientService implements OnApplicationBootstrap {
           Interval: (opts.healthcheck.intervalMs ?? 5000) * 1_000_000,
           Timeout: (opts.healthcheck.timeoutMs ?? 3000) * 1_000_000,
           Retries: opts.healthcheck.retries ?? 3,
-          StartPeriod:
-            (opts.healthcheck.startPeriodMs ?? 2000) * 1_000_000,
+          StartPeriod: (opts.healthcheck.startPeriodMs ?? 2000) * 1_000_000,
         },
       }),
       HostConfig: {
@@ -277,9 +275,8 @@ export class DockerClientService implements OnApplicationBootstrap {
     this.logger.log(`Pulling image: ${image}`);
     const stream = await this.docker.pull(image);
     await new Promise<void>((resolve, reject) => {
-      this.docker.modem.followProgress(
-        stream,
-        (err: Error | null) => (err ? reject(err) : resolve()),
+      this.docker.modem.followProgress(stream, (err: Error | null) =>
+        err ? reject(err) : resolve(),
       );
     });
     this.logger.log(`Pulled image: ${image}`);
@@ -337,9 +334,7 @@ export class DockerClientService implements OnApplicationBootstrap {
         await this.docker.getNetwork(net.Id).remove();
         this.logger.log(`Cleaned up orphaned network: ${net.Name}`);
       } catch (error) {
-        this.logger.warn(
-          `Failed to clean up network ${net.Name}: ${error}`,
-        );
+        this.logger.warn(`Failed to clean up network ${net.Name}: ${error}`);
       }
     }
   }
@@ -356,9 +351,7 @@ export class DockerClientService implements OnApplicationBootstrap {
   // PRIVATE
   // ============================================
 
-  private async findNetwork(
-    name: string,
-  ): Promise<Docker.Network | null> {
+  private async findNetwork(name: string): Promise<Docker.Network | null> {
     const networks = await this.docker.listNetworks({
       filters: { name: [name] },
     });
