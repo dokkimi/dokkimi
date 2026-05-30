@@ -370,7 +370,7 @@ describe('DockerClientService', () => {
 
       await service.pullImage('new-image:latest');
 
-      expect(mockDocker.pull).toHaveBeenCalledWith('new-image:latest');
+      expect(mockDocker.pull).toHaveBeenCalledWith('new-image:latest', {});
     });
   });
 });

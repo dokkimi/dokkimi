@@ -11,11 +11,8 @@ import { InstanceStatus, RunStatus } from '@prisma/client';
 import { RunStorageService } from '../storage/run-storage.service';
 import { SubmitInstanceDto } from './dto/submit-instance.dto';
 import { NamespaceLifecycleService } from '../namespace-lifecycle/namespace-lifecycle.service';
-import {
-  RegistryCredentialsService,
-  type RegistryCredential,
-} from '../namespace-lifecycle/registry-credentials.service';
-import { HealthService } from '../health/health.service';
+import { DockerRegistryService } from '../namespace-lifecycle/docker/docker-registry.service';
+import { RegistryCredential } from '@dokkimi/config';
 import { RunCleanupService } from './run-cleanup.service';
 import { DeploymentSchedulerService } from './deployment-scheduler.service';
 import {
@@ -41,8 +38,7 @@ export class RunsService implements OnApplicationBootstrap {
     private readonly prisma: PrismaService,
     private readonly runStorage: RunStorageService,
     private readonly lifecycle: NamespaceLifecycleService,
-    private readonly registryCredentials: RegistryCredentialsService,
-    private readonly healthService: HealthService,
+    private readonly registryService: DockerRegistryService,
     private readonly telemetry: TelemetryService,
     private readonly cleanup: RunCleanupService,
     private readonly scheduler: DeploymentSchedulerService,
@@ -53,18 +49,6 @@ export class RunsService implements OnApplicationBootstrap {
     credentials?: RegistryCredential[],
     projectPath?: string,
   ) {
-    if (credentials?.length) {
-      const health = await this.healthService.getHealthStatus();
-      if (
-        health.checks.kubernetes.status === 'unhealthy' ||
-        health.checks.kubernetes.status === 'degraded'
-      ) {
-        throw new Error(
-          'Kubernetes cluster is not reachable. Run `dokkimi status` to check connectivity.',
-        );
-      }
-    }
-
     const activeRun = await this.prisma.run.findFirst({
       where: { status: { in: [RunStatus.PENDING, RunStatus.RUNNING] } },
       select: { id: true },
@@ -94,12 +78,7 @@ export class RunsService implements OnApplicationBootstrap {
     });
 
     if (credentials?.length) {
-      try {
-        await this.registryCredentials.createRunSecret(run.id, credentials);
-      } catch (err) {
-        await this.prisma.run.delete({ where: { id: run.id } });
-        throw err;
-      }
+      this.registryService.storeCredentials(run.id, credentials);
     }
 
     this.logger.log(
@@ -310,13 +289,7 @@ export class RunsService implements OnApplicationBootstrap {
       },
     });
 
-    await this.registryCredentials
-      .deleteRunSecret(activeRun.id)
-      .catch((err) => {
-        this.logger.warn(
-          `Failed to delete registry secret for run ${activeRun.id}: ${err}`,
-        );
-      });
+    this.registryService.clearCredentials(activeRun.id);
 
     this.logger.log(`Stopped run ${activeRun.id}`);
     this.telemetry.track('ct_run_stopped', {
@@ -343,11 +316,7 @@ export class RunsService implements OnApplicationBootstrap {
       await this.runStorage.deleteInstance(instance.id);
     }
 
-    await this.registryCredentials.deleteRunSecret(runId).catch((err) => {
-      this.logger.warn(
-        `Failed to delete registry secret for run ${runId}: ${err}`,
-      );
-    });
+    this.registryService.clearCredentials(runId);
 
     this.logger.log(`Deleted run ${runId}`);
     return { runId, status: 'DELETED' };
@@ -358,7 +327,7 @@ export class RunsService implements OnApplicationBootstrap {
     passed: boolean,
     error?: string,
   ) {
-    await this.prisma.namespaceInstance.update({
+    const instance = await this.prisma.namespaceInstance.update({
       where: { id: instanceId },
       data: {
         testStatus: passed ? 'PASSED' : 'FAILED',
@@ -367,9 +336,16 @@ export class RunsService implements OnApplicationBootstrap {
       },
     });
 
-    this.lifecycle.stopInstance(instanceId).catch((err) => {
-      this.logger.error(`Failed to stop instance ${instanceId}:`, err);
-    });
+    this.lifecycle
+      .stopInstance(instanceId)
+      .then(() => {
+        if (instance.runId) {
+          return this.scheduler.handleInstancesStopped([instance.runId]);
+        }
+      })
+      .catch((err) => {
+        this.logger.error(`Failed to stop instance ${instanceId}:`, err);
+      });
   }
 
   async handleInstancesStopped(runIds: string[]) {

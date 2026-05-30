@@ -24,8 +24,8 @@ describe('RunCleanupService', () => {
     deleteGeneratedFiles: jest.fn().mockResolvedValue(undefined),
   };
 
-  const mockRegistryCredentials: any = {
-    deleteRunSecret: jest.fn().mockResolvedValue(undefined),
+  const mockRegistryService: any = {
+    clearCredentials: jest.fn(),
   };
 
   beforeEach(() => {
@@ -33,7 +33,7 @@ describe('RunCleanupService', () => {
       mockPrisma,
       mockLifecycle,
       mockRunStorage,
-      mockRegistryCredentials,
+      mockRegistryService,
     );
     jest.clearAllMocks();
   });
@@ -134,7 +134,7 @@ describe('RunCleanupService', () => {
       });
       expect(mockRunStorage.deleteInstance).toHaveBeenCalledWith('inst-1');
       expect(mockRunStorage.deleteInstance).toHaveBeenCalledWith('inst-2');
-      expect(mockRegistryCredentials.deleteRunSecret).toHaveBeenCalledWith(
+      expect(mockRegistryService.clearCredentials).toHaveBeenCalledWith(
         'run-1',
       );
       expect(mockRunStorage.deleteGeneratedFiles).toHaveBeenCalled();
@@ -149,7 +149,7 @@ describe('RunCleanupService', () => {
       await service.teardownExistingRuns();
 
       expect(mockPrisma.run.delete).toHaveBeenCalledTimes(2);
-      expect(mockRegistryCredentials.deleteRunSecret).toHaveBeenCalledTimes(2);
+      expect(mockRegistryService.clearCredentials).toHaveBeenCalledTimes(2);
     });
 
     it('handles no existing runs', async () => {
@@ -161,18 +161,16 @@ describe('RunCleanupService', () => {
       expect(mockRunStorage.deleteGeneratedFiles).toHaveBeenCalled();
     });
 
-    it('continues if registry secret deletion fails', async () => {
+    it('clears registry credentials for each run', async () => {
       mockPrisma.run.findMany.mockResolvedValue([
         { id: 'run-1', instances: [] },
       ]);
-      mockRegistryCredentials.deleteRunSecret.mockRejectedValue(
-        new Error('secret not found'),
-      );
 
       await service.teardownExistingRuns();
 
-      expect(mockPrisma.run.delete).toHaveBeenCalled();
-      expect(mockRunStorage.deleteGeneratedFiles).toHaveBeenCalled();
+      expect(mockRegistryService.clearCredentials).toHaveBeenCalledWith(
+        'run-1',
+      );
     });
   });
 

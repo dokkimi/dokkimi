@@ -12,7 +12,6 @@ import { LogQueryModule } from './log-query/log-query.module';
 import { RunsModule } from './runs/runs.module';
 import { LogProcessingModule } from './log-processing/log-processing.module';
 import { TestValidationModule } from './test-validation/test-validation.module';
-import { ClusterWatcherModule } from './cluster-watcher/cluster-watcher.module';
 import { ArtifactsModule } from './artifacts/artifacts.module';
 import { BaselinesModule } from './baselines/baselines.module';
 import { StorageModule } from './storage/storage.module';
@@ -40,8 +39,9 @@ import { getConfig, getConcurrencyPrefs } from '@dokkimi/config';
               config.circuitBreaker?.errorThresholdPercentage ?? 50,
             CIRCUIT_BREAKER_RESET_TIMEOUT:
               config.circuitBreaker?.resetTimeout ?? 30000,
-            IDLE_POLL_INTERVAL_MS: config.clusterWatcher.idlePollIntervalMs,
-            ACTIVE_POLL_INTERVAL_MS: config.clusterWatcher.activePollIntervalMs,
+            IDLE_POLL_INTERVAL_MS: config.clusterWatcher?.idlePollIntervalMs,
+            ACTIVE_POLL_INTERVAL_MS:
+              config.clusterWatcher?.activePollIntervalMs,
           };
         },
       ],
@@ -61,7 +61,6 @@ import { getConfig, getConcurrencyPrefs } from '@dokkimi/config';
     RunsModule,
     LogProcessingModule,
     TestValidationModule,
-    ClusterWatcherModule,
     ArtifactsModule,
     BaselinesModule,
     StorageModule,

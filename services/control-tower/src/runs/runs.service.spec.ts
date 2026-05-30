@@ -42,14 +42,10 @@ describe('RunsService', () => {
     stopInstance: jest.fn().mockResolvedValue(undefined),
   };
 
-  const mockRegistryCredentials = {
-    copyToNamespace: jest.fn(),
-    createRunSecret: jest.fn().mockResolvedValue(undefined),
-    deleteRunSecret: jest.fn().mockResolvedValue(undefined),
-  };
-
-  const mockHealthService = {
-    getHealthStatus: jest.fn(),
+  const mockRegistryService = {
+    storeCredentials: jest.fn(),
+    clearCredentials: jest.fn(),
+    getAuthConfig: jest.fn(),
   };
 
   const mockTelemetry = {
@@ -72,8 +68,7 @@ describe('RunsService', () => {
       mockPrisma as any,
       mockRunStorage as any,
       mockLifecycle as any,
-      mockRegistryCredentials as any,
-      mockHealthService as any,
+      mockRegistryService as any,
       mockTelemetry as any,
       mockCleanup as any,
       mockScheduler as any,
@@ -147,83 +142,17 @@ describe('RunsService', () => {
       );
     });
 
-    it('should check kubernetes health when credentials are provided', async () => {
-      mockHealthService.getHealthStatus.mockResolvedValue({
-        checks: { kubernetes: { status: 'healthy' } },
-      });
-      mockPrisma.run.findFirst.mockResolvedValue(null);
-      mockPrisma.run.create.mockResolvedValue({ id: 'run-1', instances: [] });
-
-      await service.createRun(
-        ['api-tests'],
-        [{ registryUrl: 'ghcr.io', username: 'u', password: 'p' }],
-      );
-
-      expect(mockHealthService.getHealthStatus).toHaveBeenCalled();
-    });
-
-    it('should throw if kubernetes is unhealthy when credentials are provided', async () => {
-      mockHealthService.getHealthStatus.mockResolvedValue({
-        checks: { kubernetes: { status: 'unhealthy' } },
-      });
-
-      await expect(
-        service.createRun(
-          ['api-tests'],
-          [{ registryUrl: 'ghcr.io', username: 'u', password: 'p' }],
-        ),
-      ).rejects.toThrow('Kubernetes cluster is not reachable');
-    });
-
-    it('should throw if kubernetes is degraded when credentials are provided', async () => {
-      mockHealthService.getHealthStatus.mockResolvedValue({
-        checks: { kubernetes: { status: 'degraded' } },
-      });
-
-      await expect(
-        service.createRun(
-          ['api-tests'],
-          [{ registryUrl: 'ghcr.io', username: 'u', password: 'p' }],
-        ),
-      ).rejects.toThrow('Kubernetes cluster is not reachable');
-    });
-
-    it('should create registry secret when credentials are provided', async () => {
-      mockHealthService.getHealthStatus.mockResolvedValue({
-        checks: { kubernetes: { status: 'healthy' } },
-      });
+    it('should store registry credentials when provided', async () => {
       mockPrisma.run.findFirst.mockResolvedValue(null);
       mockPrisma.run.create.mockResolvedValue({ id: 'run-1', instances: [] });
 
       const creds = [{ registryUrl: 'ghcr.io', username: 'u', password: 'p' }];
       await service.createRun(['api-tests'], creds);
 
-      expect(mockRegistryCredentials.createRunSecret).toHaveBeenCalledWith(
+      expect(mockRegistryService.storeCredentials).toHaveBeenCalledWith(
         'run-1',
         creds,
       );
-    });
-
-    it('should rollback run if registry secret creation fails', async () => {
-      mockHealthService.getHealthStatus.mockResolvedValue({
-        checks: { kubernetes: { status: 'healthy' } },
-      });
-      mockPrisma.run.findFirst.mockResolvedValue(null);
-      mockPrisma.run.create.mockResolvedValue({ id: 'run-1', instances: [] });
-      mockRegistryCredentials.createRunSecret.mockRejectedValue(
-        new Error('secret failed'),
-      );
-
-      await expect(
-        service.createRun(
-          ['api-tests'],
-          [{ registryUrl: 'ghcr.io', username: 'u', password: 'p' }],
-        ),
-      ).rejects.toThrow('secret failed');
-
-      expect(mockPrisma.run.delete).toHaveBeenCalledWith({
-        where: { id: 'run-1' },
-      });
     });
 
     it('should track telemetry on run creation', async () => {
@@ -483,6 +412,13 @@ describe('RunsService', () => {
   // ============================================
 
   describe('handleValidationComplete', () => {
+    beforeEach(() => {
+      mockPrisma.namespaceInstance.update.mockResolvedValue({
+        id: 'inst-1',
+        runId: 'run-1',
+      });
+    });
+
     it('should update instance test status to PASSED', async () => {
       await service.handleValidationComplete('inst-1', true);
 
@@ -626,23 +562,23 @@ describe('RunsService', () => {
       });
       expect(mockRunStorage.deleteInstance).toHaveBeenCalledWith('inst-1');
       expect(mockRunStorage.deleteInstance).toHaveBeenCalledWith('inst-2');
-      expect(mockRegistryCredentials.deleteRunSecret).toHaveBeenCalledWith(
+      expect(mockRegistryService.clearCredentials).toHaveBeenCalledWith(
         'run-1',
       );
       expect(result).toEqual({ runId: 'run-1', status: 'DELETED' });
     });
 
-    it('should continue if registry secret deletion fails', async () => {
+    it('should clear registry credentials on delete', async () => {
       mockPrisma.run.findUnique.mockResolvedValue({
         id: 'run-1',
         instances: [],
       });
-      mockRegistryCredentials.deleteRunSecret.mockRejectedValue(
-        new Error('not found'),
-      );
 
       const result = await service.deleteRun('run-1');
 
+      expect(mockRegistryService.clearCredentials).toHaveBeenCalledWith(
+        'run-1',
+      );
       expect(result.status).toBe('DELETED');
     });
   });

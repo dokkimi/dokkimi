@@ -1,23 +1,23 @@
 import { Injectable, Logger } from '@nestjs/common';
-import Docker from 'dockerode';
 import { RegistryCredential } from '@dokkimi/config';
+
+export interface DockerAuthConfig {
+  username: string;
+  password: string;
+  serveraddress: string;
+}
 
 @Injectable()
 export class DockerRegistryService {
   private readonly logger = new Logger(DockerRegistryService.name);
-  private readonly docker: Docker;
-  private readonly runAuthConfigs = new Map<string, Docker.AuthConfig[]>();
-
-  constructor() {
-    this.docker = new Docker();
-  }
+  private readonly runAuthConfigs = new Map<string, DockerAuthConfig[]>();
 
   storeCredentials(runId: string, credentials: RegistryCredential[]): void {
     if (credentials.length === 0) {
       return;
     }
 
-    const authConfigs: Docker.AuthConfig[] = credentials.map((cred) => ({
+    const authConfigs: DockerAuthConfig[] = credentials.map((cred) => ({
       username: cred.username,
       password: cred.password,
       serveraddress: cred.registryUrl,
@@ -29,7 +29,7 @@ export class DockerRegistryService {
     );
   }
 
-  getAuthConfig(runId: string, image: string): Docker.AuthConfig | undefined {
+  getAuthConfig(runId: string, image: string): DockerAuthConfig | undefined {
     const configs = this.runAuthConfigs.get(runId);
     if (!configs) {
       return undefined;

@@ -25,7 +25,11 @@ import {
   BrowserConfig,
 } from '../../namespace-deployer/deployment-context.types';
 import { DatabaseConfigService } from '../builders/database-config.service';
+import { DockerRegistryService } from './docker-registry.service';
+import { InstanceItemService } from '../../namespace/instance-item.service';
+import { NamespaceInstanceService } from '../../namespace/namespace-instance.service';
 import { hasUiSteps } from '../../namespace-deployer/ui-step-detection';
+import { InstanceStatus, ItemStatus } from '@prisma/client';
 
 @Injectable()
 export class DockerDeployerService {
@@ -37,106 +41,145 @@ export class DockerDeployerService {
     private readonly caService: DockerCaService,
     private readonly databaseConfig: DatabaseConfigService,
     private readonly logCollector: DockerLogCollectorService,
+    private readonly registryService: DockerRegistryService,
+    private readonly instanceItemService: InstanceItemService,
+    private readonly instanceService: NamespaceInstanceService,
   ) {}
 
   async deploy(ctx: DeploymentContext): Promise<void> {
     const instanceId = ctx.instanceId;
-    const networkName = await this.dockerClient.createNetwork(instanceId);
-    const dockerDnsIP = this.dockerClient.getDockerDnsIP();
-
-    const configPaths = this.dockerConfig.createConfigDir(instanceId);
-    const caBundlePaths = this.caService.prepareCaBundleForInstance(instanceId);
-
-    const serviceItems = ctx.definition.items.filter(
-      (i) => i.type === 'SERVICE',
-    );
-    const allServiceNames = serviceItems.map((i) => sanitizeK8sName(i.name));
-    const allServicePorts = serviceItems
-      .map((i) => i.port)
-      .filter((p): p is number => p != null);
-    const databaseNames = ctx.definition.items
-      .filter((i) => i.type === 'DATABASE')
-      .map((i) => sanitizeK8sName(i.name));
     const attachChromium = hasUiSteps(ctx.definition);
 
-    // 1. Build and write interceptor config
-    await this.writeConfig(ctx, configPaths);
+    try {
+      await this.instanceService.updateInstanceStatus(
+        instanceId,
+        InstanceStatus.STARTING,
+      );
+      await this.instanceService.updateInstanceK8sNamespace(
+        instanceId,
+        `dokkimi-${instanceId}`,
+      );
 
-    // 2. Create global interceptor
-    await this.createGlobalInterceptor(
-      networkName,
-      instanceId,
-      dockerDnsIP,
-      configPaths,
-    );
+      await this.markMockItems(ctx);
 
-    // 3. Create test-agent
-    await this.createTestAgent(
-      networkName,
-      instanceId,
-      attachChromium,
-      configPaths,
-    );
+      // Pull user images (with registry auth if available)
+      await this.pullUserImages(ctx);
 
-    // 4. Deploy services
-    for (const item of ctx.definition.items) {
-      if (item.type === 'MOCK') {
-        continue;
+      const networkName = await this.dockerClient.createNetwork(instanceId);
+      const dockerDnsIP = this.dockerClient.getDockerDnsIP();
+
+      const configPaths = this.dockerConfig.createConfigDir(instanceId);
+      const caBundlePaths =
+        this.caService.prepareCaBundleForInstance(instanceId);
+
+      const serviceItems = ctx.definition.items.filter(
+        (i) => i.type === 'SERVICE',
+      );
+      const allServiceNames = serviceItems.map((i) => sanitizeK8sName(i.name));
+      const allServicePorts = serviceItems
+        .map((i) => i.port)
+        .filter((p): p is number => p != null);
+      const databaseNames = ctx.definition.items
+        .filter((i) => i.type === 'DATABASE')
+        .map((i) => sanitizeK8sName(i.name));
+
+      await this.writeConfig(ctx, configPaths);
+
+      await this.createGlobalInterceptor(
+        networkName,
+        instanceId,
+        dockerDnsIP,
+        configPaths,
+      );
+
+      await this.createTestAgent(
+        networkName,
+        instanceId,
+        attachChromium,
+        configPaths,
+      );
+
+      for (const item of ctx.definition.items) {
+        if (item.type === 'MOCK') {
+          continue;
+        }
+
+        const containerName = sanitizeK8sName(item.name);
+        const instanceItemId = ctx.instanceItemIds.get(item.name);
+
+        if (instanceItemId) {
+          await this.instanceItemService.updateInstanceItemK8sName(
+            instanceItemId,
+            containerName,
+          );
+          await this.instanceItemService.updateInstanceItemStatus(
+            instanceItemId,
+            ItemStatus.STARTING,
+          );
+        }
+
+        if (item.type === 'SERVICE') {
+          const userContainerId = await this.createServiceGroup(
+            networkName,
+            instanceId,
+            item,
+            containerName,
+            instanceItemId,
+            dockerDnsIP,
+            configPaths,
+            caBundlePaths,
+            allServiceNames,
+            allServicePorts,
+            databaseNames,
+          );
+          if (userContainerId) {
+            await this.logCollector.startCollecting(
+              instanceId,
+              userContainerId,
+              item.name,
+              instanceItemId,
+            );
+          }
+        } else if (item.type === 'DATABASE') {
+          await this.createDatabaseGroup(
+            networkName,
+            instanceId,
+            item,
+            containerName,
+            instanceItemId || '',
+            configPaths,
+          );
+        }
       }
 
-      const containerName = sanitizeK8sName(item.name);
-      const instanceItemId = ctx.instanceItemIds.get(item.name);
-
-      if (item.type === 'SERVICE') {
-        const userContainerId = await this.createServiceGroup(
+      if (attachChromium) {
+        await this.createChromiumGroup(
           networkName,
           instanceId,
-          item,
-          containerName,
-          instanceItemId,
           dockerDnsIP,
           configPaths,
           caBundlePaths,
           allServiceNames,
           allServicePorts,
           databaseNames,
-        );
-        if (userContainerId) {
-          await this.logCollector.startCollecting(
-            instanceId,
-            userContainerId,
-            item.name,
-            instanceItemId,
-          );
-        }
-      } else if (item.type === 'DATABASE') {
-        await this.createDatabaseGroup(
-          networkName,
-          instanceId,
-          item,
-          containerName,
-          instanceItemId || '',
-          configPaths,
+          ctx.definition.config?.browser,
         );
       }
-    }
 
-    // 5. Create chromium if needed
-    if (attachChromium) {
-      await this.createChromiumGroup(
-        networkName,
+      await this.instanceService.updateInstanceStatus(
         instanceId,
-        dockerDnsIP,
-        configPaths,
-        caBundlePaths,
-        allServiceNames,
-        allServicePorts,
-        databaseNames,
-        ctx.definition.config?.browser,
+        InstanceStatus.RUNNING,
       );
-    }
 
-    this.logger.log(`Docker deployment complete for instance ${instanceId}`);
+      this.logger.log(`Docker deployment complete for instance ${instanceId}`);
+    } catch (err) {
+      this.logger.error(`Deployment failed for instance ${instanceId}:`, err);
+      await this.instanceService.updateInstanceStatus(
+        instanceId,
+        InstanceStatus.FAILED,
+      );
+      throw err;
+    }
   }
 
   async teardown(instanceId: string): Promise<void> {
@@ -210,10 +253,10 @@ export class DockerDeployerService {
       const strippedTests = ctx.definition.tests.map((test) => ({
         ...test,
         steps: (test.steps ?? []).map((step) => {
-          const { assertions: _assertions, ...executionOnly } = step as Record<
-            string,
-            unknown
-          > & { assertions?: unknown };
+          const { assertions: _assertions, ...executionOnly } =
+            step as unknown as Record<string, unknown> & {
+              assertions?: unknown;
+            };
           return executionOnly;
         }),
       }));
@@ -755,6 +798,48 @@ export class DockerDeployerService {
     }
 
     return initDir;
+  }
+
+  // ============================================
+  // STATUS & IMAGE HELPERS
+  // ============================================
+
+  private async markMockItems(ctx: DeploymentContext): Promise<void> {
+    for (const item of ctx.definition.items) {
+      if (item.type !== 'MOCK') {
+        continue;
+      }
+
+      const instanceItemId = ctx.instanceItemIds.get(item.name);
+      if (!instanceItemId) {
+        continue;
+      }
+
+      const k8sName = sanitizeK8sName(item.name);
+      await this.instanceItemService.updateInstanceItemK8sName(
+        instanceItemId,
+        k8sName,
+      );
+      await this.instanceItemService.updateInstanceItemStatus(
+        instanceItemId,
+        ItemStatus.STARTING,
+      );
+      await this.instanceItemService.updateInstanceItemReadiness(
+        instanceItemId,
+        'READY',
+      );
+    }
+  }
+
+  private async pullUserImages(ctx: DeploymentContext): Promise<void> {
+    const images = ctx.definition.items
+      .filter((i) => i.type === 'SERVICE' && i.image)
+      .map((i) => i.image!);
+
+    for (const image of images) {
+      const auth = this.registryService.getAuthConfig(ctx.runId, image);
+      await this.dockerClient.pullImage(image, auth);
+    }
   }
 
   // ============================================

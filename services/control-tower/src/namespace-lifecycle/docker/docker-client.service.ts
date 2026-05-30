@@ -263,7 +263,10 @@ export class DockerClientService implements OnApplicationBootstrap {
     };
   }
 
-  async pullImage(image: string): Promise<void> {
+  async pullImage(
+    image: string,
+    auth?: { username: string; password: string; serveraddress?: string },
+  ): Promise<void> {
     try {
       // Check if image exists locally first
       await this.docker.getImage(image).inspect();
@@ -273,7 +276,11 @@ export class DockerClientService implements OnApplicationBootstrap {
     }
 
     this.logger.log(`Pulling image: ${image}`);
-    const stream = await this.docker.pull(image);
+    const pullOpts: Record<string, unknown> = {};
+    if (auth) {
+      pullOpts.authconfig = auth;
+    }
+    const stream = await this.docker.pull(image, pullOpts);
     await new Promise<void>((resolve, reject) => {
       this.docker.modem.followProgress(stream, (err: Error | null) =>
         err ? reject(err) : resolve(),

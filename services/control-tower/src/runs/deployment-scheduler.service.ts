@@ -4,7 +4,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { TelemetryService } from '../telemetry/telemetry.service';
 import { InstanceStatus, RunStatus } from '@prisma/client';
 import { RunStorageService } from '../storage/run-storage.service';
-import { NamespaceDeployerService } from '../namespace-deployer/namespace-deployer.service';
+import { DockerDeployerService } from '../namespace-lifecycle/docker/docker-deployer.service';
 import { DeploymentContext } from '../namespace-deployer/deployment-context.types';
 import { rawDefinitionToDeployable } from './definition-converter';
 
@@ -16,7 +16,7 @@ export class DeploymentSchedulerService {
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly deployer: NamespaceDeployerService,
+    private readonly deployer: DockerDeployerService,
     private readonly runStorage: RunStorageService,
     private readonly configService: ConfigService,
     private readonly telemetry: TelemetryService,

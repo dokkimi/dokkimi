@@ -1,25 +1,23 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { InstanceStatus } from '@prisma/client';
+import { InstanceStatus, ItemStatus } from '@prisma/client';
+import { PrismaService } from '../prisma/prisma.service';
 import { NamespaceInstanceService } from '../namespace/namespace-instance.service';
 import { InstanceItemService } from '../namespace/instance-item.service';
-import { KubernetesClientService } from './kubernetes/kubernetes-client.service';
+import { DockerDeployerService } from './docker/docker-deployer.service';
 
 @Injectable()
 export class NamespaceLifecycleService {
   private readonly logger = new Logger(NamespaceLifecycleService.name);
 
   constructor(
-    private readonly k8sClient: KubernetesClientService,
+    private readonly dockerDeployer: DockerDeployerService,
+    private readonly prisma: PrismaService,
     private readonly namespaceInstanceService: NamespaceInstanceService,
     private readonly instanceItemService: InstanceItemService,
   ) {}
 
   async stopInstance(instanceId: string): Promise<void> {
     this.logger.log(`Stopping instance ${instanceId}`);
-
-    const instance =
-      await this.namespaceInstanceService.findInstance(instanceId);
-    const k8sNamespaceName = instance.k8sNamespace || `dokkimi-${instanceId}`;
 
     try {
       await this.namespaceInstanceService.updateInstanceStatus(
@@ -29,14 +27,24 @@ export class NamespaceLifecycleService {
 
       await this.instanceItemService.markAllStopping(instanceId);
 
-      await this.k8sClient.deleteNamespace(k8sNamespaceName);
+      await this.dockerDeployer.teardown(instanceId);
 
-      await this.namespaceInstanceService.updateInstanceStatus(
-        instanceId,
-        InstanceStatus.TERMINATING,
-      );
+      // Docker teardown is synchronous (containers removed immediately),
+      // so we can mark as STOPPED directly — no polling needed.
+      await this.prisma.namespaceInstance.update({
+        where: { id: instanceId },
+        data: {
+          status: InstanceStatus.STOPPED,
+          stoppedAt: new Date(),
+        },
+      });
 
-      this.logger.log(`Instance ${instanceId} termination initiated`);
+      await this.prisma.instanceItem.updateMany({
+        where: { instanceId },
+        data: { status: ItemStatus.STOPPED },
+      });
+
+      this.logger.log(`Instance ${instanceId} stopped`);
     } catch (err) {
       this.logger.error(`Failed to stop instance ${instanceId}:`, err);
 

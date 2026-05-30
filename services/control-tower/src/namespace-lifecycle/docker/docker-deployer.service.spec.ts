@@ -46,6 +46,7 @@ const mockDockerClient = {
   removeNetwork: jest.fn(),
   runContainer: jest.fn().mockResolvedValue('container-id'),
   getDockerDnsIP: jest.fn().mockReturnValue('127.0.0.11'),
+  pullImage: jest.fn().mockResolvedValue(undefined),
 };
 
 const mockDockerConfig = {
@@ -106,6 +107,23 @@ const mockLogCollector = {
   stopCollecting: jest.fn(),
 };
 
+const mockRegistryService = {
+  getAuthConfig: jest.fn().mockReturnValue(undefined),
+  storeCredentials: jest.fn(),
+  clearCredentials: jest.fn(),
+};
+
+const mockInstanceItemService = {
+  updateInstanceItemK8sName: jest.fn().mockResolvedValue(undefined),
+  updateInstanceItemStatus: jest.fn().mockResolvedValue(undefined),
+  updateInstanceItemReadiness: jest.fn().mockResolvedValue(undefined),
+};
+
+const mockInstanceService = {
+  updateInstanceStatus: jest.fn().mockResolvedValue(undefined),
+  updateInstanceK8sNamespace: jest.fn().mockResolvedValue(undefined),
+};
+
 function buildCtx(
   overrides: Partial<DeploymentContext> = {},
 ): DeploymentContext {
@@ -157,6 +175,9 @@ describe('DockerDeployerService', () => {
       mockCaService as any,
       mockDatabaseConfig as any,
       mockLogCollector as any,
+      mockRegistryService as any,
+      mockInstanceItemService as any,
+      mockInstanceService as any,
     );
   });
 
