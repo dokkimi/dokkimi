@@ -85,6 +85,11 @@ const mockDatabaseConfig = {
   }),
 };
 
+const mockLogCollector = {
+  startCollecting: jest.fn().mockResolvedValue(undefined),
+  stopCollecting: jest.fn(),
+};
+
 function buildCtx(overrides: Partial<DeploymentContext> = {}): DeploymentContext {
   return {
     runId: 'run-1',
@@ -133,6 +138,7 @@ describe('DockerDeployerService', () => {
       mockDockerConfig as any,
       mockCaService as any,
       mockDatabaseConfig as any,
+      mockLogCollector as any,
     );
   });
 
@@ -345,10 +351,32 @@ describe('DockerDeployerService', () => {
     });
   });
 
+  describe('log collection', () => {
+    it('should start collecting logs for each service container', async () => {
+      await service.deploy(buildCtx());
+
+      expect(mockLogCollector.startCollecting).toHaveBeenCalledWith(
+        'test-instance',
+        'container-id',
+        'api-gateway',
+        'item-1',
+      );
+      expect(mockLogCollector.startCollecting).toHaveBeenCalledWith(
+        'test-instance',
+        'container-id',
+        'user-service',
+        'item-2',
+      );
+      // Should not collect for databases
+      expect(mockLogCollector.startCollecting).toHaveBeenCalledTimes(2);
+    });
+  });
+
   describe('teardown', () => {
-    it('should remove network and cleanup config dir', async () => {
+    it('should stop log collection, remove network, and cleanup config dir', async () => {
       await service.teardown('test-instance');
 
+      expect(mockLogCollector.stopCollecting).toHaveBeenCalledWith('test-instance');
       expect(mockDockerClient.removeNetwork).toHaveBeenCalledWith('test-instance');
       expect(mockDockerConfig.cleanupConfigDir).toHaveBeenCalledWith('test-instance');
     });

@@ -251,7 +251,6 @@ export class DockerClientService implements OnApplicationBootstrap {
       follow: true,
       stdout: true,
       stderr: true,
-      timestamps: true,
     })) as unknown as NodeJS.ReadableStream;
 
     stream.on('data', onData);

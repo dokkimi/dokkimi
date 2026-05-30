@@ -3,6 +3,7 @@ import { getConfig, buildInterceptorEnvVars, buildTestAgentEnvVars, buildDbProxy
 import { DockerClientService, RunContainerOptions } from './docker-client.service';
 import { DockerConfigService, InstanceConfigPaths } from './docker-config.service';
 import { DockerCaService, CaBundlePaths } from './docker-ca.service';
+import { DockerLogCollectorService } from './docker-log-collector.service';
 import { DOKKIMI_IMAGES, resolveBrowserImage } from '../../constants/image-tags';
 import { sanitizeK8sName } from '../../utils/k8s.utils';
 import { DeploymentContext, DefinitionItem, BrowserConfig } from '../../namespace-deployer/deployment-context.types';
@@ -23,6 +24,7 @@ export class DockerDeployerService {
     private readonly dockerConfig: DockerConfigService,
     private readonly caService: DockerCaService,
     private readonly databaseConfig: DatabaseConfigService,
+    private readonly logCollector: DockerLogCollectorService,
   ) {}
 
   async deploy(ctx: DeploymentContext): Promise<void> {
@@ -66,7 +68,7 @@ export class DockerDeployerService {
       const instanceItemId = ctx.instanceItemIds.get(item.name);
 
       if (item.type === 'SERVICE') {
-        await this.createServiceGroup(
+        const userContainerId = await this.createServiceGroup(
           networkName,
           instanceId,
           item,
@@ -79,6 +81,14 @@ export class DockerDeployerService {
           allServicePorts,
           databaseNames,
         );
+        if (userContainerId) {
+          await this.logCollector.startCollecting(
+            instanceId,
+            userContainerId,
+            item.name,
+            instanceItemId,
+          );
+        }
       } else if (item.type === 'DATABASE') {
         await this.createDatabaseGroup(
           networkName,
@@ -110,6 +120,7 @@ export class DockerDeployerService {
   }
 
   async teardown(instanceId: string): Promise<void> {
+    this.logCollector.stopCollecting(instanceId);
     await this.dockerClient.removeNetwork(instanceId);
     this.dockerConfig.cleanupConfigDir(instanceId);
     this.logger.log(`Teardown complete for instance ${instanceId}`);
@@ -301,10 +312,10 @@ export class DockerDeployerService {
     allServiceNames: string[],
     allServicePorts: number[],
     databaseNames: string[],
-  ): Promise<void> {
+  ): Promise<string | null> {
     if (!item.image) {
       this.logger.warn(`Skipping service ${item.name} — no image specified`);
-      return;
+      return null;
     }
 
     const config = getConfig();
@@ -399,7 +410,7 @@ export class DockerDeployerService {
         : []),
     ];
 
-    await this.dockerClient.runContainer({
+    const userContainerId = await this.dockerClient.runContainer({
       name: userContainerName,
       image: item.image,
       networkName,
@@ -419,6 +430,7 @@ export class DockerDeployerService {
     });
 
     this.logger.log(`Created service group for ${item.name}`);
+    return userContainerId;
   }
 
   // ============================================

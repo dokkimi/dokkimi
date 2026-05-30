@@ -8,6 +8,7 @@ import { DockerConfigService } from './docker/docker-config.service';
 import { DockerCaService } from './docker/docker-ca.service';
 import { DockerRegistryService } from './docker/docker-registry.service';
 import { DockerDeployerService } from './docker/docker-deployer.service';
+import { DockerLogCollectorService } from './docker/docker-log-collector.service';
 import { ServiceDeploymentBuilderService } from './builders/service-deployment-builder.service';
 import { DatabaseDeploymentBuilderService } from './builders/database-deployment-builder.service';
 import { DatabaseConfigService } from './builders/database-config.service';
@@ -18,11 +19,12 @@ import { TestAgentCreatorService } from './resource-creators/test-agent-creator.
 import { ChromiumCreatorService } from './resource-creators/chromium-creator.service';
 import { InstanceItemCreatorService } from './resource-creators/instance-item-creator.service';
 import { NamespaceModule } from '../namespace/namespace.module';
+import { LogProcessingModule } from '../log-processing/log-processing.module';
 import { DokkimiCaService } from './dokkimi-ca.service';
 import { RegistryCredentialsService } from './registry-credentials.service';
 
 @Module({
-  imports: [PrismaModule, forwardRef(() => NamespaceModule)],
+  imports: [PrismaModule, forwardRef(() => NamespaceModule), LogProcessingModule],
   providers: [
     NamespaceLifecycleService,
     KubernetesClientService,
@@ -32,6 +34,7 @@ import { RegistryCredentialsService } from './registry-credentials.service';
     DockerCaService,
     DockerRegistryService,
     DockerDeployerService,
+    DockerLogCollectorService,
     ServiceDeploymentBuilderService,
     DatabaseDeploymentBuilderService,
     DatabaseConfigService,
@@ -53,6 +56,7 @@ import { RegistryCredentialsService } from './registry-credentials.service';
     DockerCaService,
     DockerRegistryService,
     DockerDeployerService,
+    DockerLogCollectorService,
     ConfigMapBuilderService,
     InterceptorCreatorService,
     ServiceInterceptorCreatorService,
