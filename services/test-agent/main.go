@@ -28,18 +28,35 @@ func main() {
 		log.Fatalf("Failed to load configuration: %v", err)
 	}
 
-	// Create ConfigMap reader
-	configMapReader, err := NewConfigMapReader(cfg.K8sNamespace, cfg.ConfigMapName)
-	if err != nil {
-		log.Fatalf("Failed to create ConfigMap reader: %v", err)
-	}
-
 	// Create a root context that cancels on SIGTERM/SIGINT so in-flight
-	// test execution stops promptly when K8s tears down the pod.
+	// test execution stops promptly when the container is torn down.
 	ctx, rootCancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	configMapData, err := configMapReader.ReadConfigMapData(ctx)
-	if err != nil {
-		log.Fatalf("Failed to read ConfigMap data: %v", err)
+
+	isFileMode := cfg.ConfigSource == "file"
+
+	// Read config data — from file or K8s ConfigMap
+	var configMapData *ConfigMapData
+	var configMapReader *ConfigMapReader
+	if isFileMode {
+		log.Printf("Config source: file (%s)", cfg.ConfigFilePath)
+		fileReader := NewFileConfigReader(cfg.ConfigFilePath)
+		var readErr error
+		configMapData, readErr = fileReader.ReadConfigData()
+		if readErr != nil {
+			log.Fatalf("Failed to read config file: %v", readErr)
+		}
+	} else {
+		log.Printf("Config source: configmap (%s/%s)", cfg.K8sNamespace, cfg.ConfigMapName)
+		var createErr error
+		configMapReader, createErr = NewConfigMapReader(cfg.K8sNamespace, cfg.ConfigMapName)
+		if createErr != nil {
+			log.Fatalf("Failed to create ConfigMap reader: %v", createErr)
+		}
+		var readErr error
+		configMapData, readErr = configMapReader.ReadConfigMapData(ctx)
+		if readErr != nil {
+			log.Fatalf("Failed to read ConfigMap data: %v", readErr)
+		}
 	}
 
 	if configMapData.TestConfig == nil {
@@ -116,158 +133,202 @@ func main() {
 			(req.Mode == "all" && (req.StartAtStep != nil || req.StopBefore != nil))
 
 		if !healthChecked {
-			namespaceInstanceId := strings.TrimPrefix(cfg.K8sNamespace, "dokkimi-")
+			if isFileMode {
+				// Docker mode: wait for health checks only (no K8s API verification).
+				// Interceptors still POST to /health/status, so healthTracker works the same way.
+				allReady := false
+				failureMessage := ""
+				select {
+				case <-healthTracker.allReadyChan:
+					allReady = true
+				case <-time.After(timeout):
+					notReady := healthTracker.NotReadyNames()
+					if len(notReady) > 0 {
+						failureMessage = fmt.Sprintf("Startup timeout: %s not ready after %ds", strings.Join(notReady, ", "), testConfig.TimeoutSeconds)
+					} else {
+						failureMessage = fmt.Sprintf("Startup timeout after %ds", testConfig.TimeoutSeconds)
+					}
+				}
 
-			// Wait for health checks, but concurrently poll for fatal pod errors
-			// (e.g. image pull failures) so we can abort early instead of waiting
-			// the full timeout.
-			fatalErrChan := make(chan string, 1)
-			fatalCheckDone := make(chan struct{})
-			go func() {
-				defer close(fatalCheckDone)
-				checker, checkErr := NewPodReadinessChecker(configMapReader.GetClientset(), cfg.K8sNamespace)
-				if checkErr != nil {
+				if !allReady {
+					log.Printf("%s, aborting test execution", failureMessage)
+					testExecutionLogger.LogEvent("HEALTH_TIMEOUT", failureMessage, nil, nil)
+					notificationErr := completionNotifier.NotifyCompletion(
+						req.TestRunID,
+						"failure",
+						failureMessage,
+						nil,
+						false,
+					)
+					if notificationErr != nil {
+						log.Printf("Failed to notify Control Tower: %v", notificationErr)
+					}
 					return
 				}
-				// Start checking after a short delay to let pods begin scheduling
-				time.Sleep(2 * time.Second)
-				ticker := time.NewTicker(2 * time.Second)
-				defer ticker.Stop()
-				timeoutCh := time.After(timeout)
-				for {
-					select {
-					case <-ticker.C:
-						checkCtx, checkCancel := context.WithTimeout(ctx, 5*time.Second)
-						if reason := checker.checkForFatalPodErrors(checkCtx, namespaceInstanceId); reason != "" {
-							fatalErrChan <- reason
+
+				log.Printf("All items reported ready (Docker mode)")
+			} else {
+				// K8s mode: wait for health checks + verify via K8s API
+				namespaceInstanceId := strings.TrimPrefix(cfg.K8sNamespace, "dokkimi-")
+
+				fatalErrChan := make(chan string, 1)
+				fatalCheckDone := make(chan struct{})
+				go func() {
+					defer close(fatalCheckDone)
+					checker, checkErr := NewPodReadinessChecker(configMapReader.GetClientset(), cfg.K8sNamespace)
+					if checkErr != nil {
+						return
+					}
+					time.Sleep(2 * time.Second)
+					ticker := time.NewTicker(2 * time.Second)
+					defer ticker.Stop()
+					timeoutCh := time.After(timeout)
+					for {
+						select {
+						case <-ticker.C:
+							checkCtx, checkCancel := context.WithTimeout(ctx, 5*time.Second)
+							if reason := checker.checkForFatalPodErrors(checkCtx, namespaceInstanceId); reason != "" {
+								fatalErrChan <- reason
+								checkCancel()
+								return
+							}
 							checkCancel()
+						case <-healthTracker.allReadyChan:
+							return
+						case <-timeoutCh:
 							return
 						}
+					}
+				}()
+
+				allReady := false
+				failureMessage := ""
+				select {
+				case <-healthTracker.allReadyChan:
+					allReady = true
+				case reason := <-fatalErrChan:
+					failureMessage = reason
+				case <-time.After(timeout):
+					notReady := healthTracker.NotReadyNames()
+					if len(notReady) > 0 {
+						failureMessage = fmt.Sprintf("Startup timeout: %s not ready after %ds", strings.Join(notReady, ", "), testConfig.TimeoutSeconds)
+					} else {
+						failureMessage = fmt.Sprintf("Startup timeout after %ds", testConfig.TimeoutSeconds)
+					}
+					if checker, checkErr := NewPodReadinessChecker(configMapReader.GetClientset(), cfg.K8sNamespace); checkErr == nil {
+						checkCtx, checkCancel := context.WithTimeout(ctx, 5*time.Second)
+						if reason := checker.checkForFatalPodErrors(checkCtx, namespaceInstanceId); reason != "" {
+							failureMessage = reason
+						}
 						checkCancel()
-					case <-healthTracker.allReadyChan:
-						return
-					case <-timeoutCh:
-						return
 					}
 				}
-			}()
+				<-fatalCheckDone
 
-			// Race: health checks pass vs fatal error detected vs timeout
-			allReady := false
-			failureMessage := ""
-			select {
-			case <-healthTracker.allReadyChan:
-				allReady = true
-			case reason := <-fatalErrChan:
-				failureMessage = reason
-			case <-time.After(timeout):
-				// Build message with names of items that never became ready
-				notReady := healthTracker.NotReadyNames()
-				if len(notReady) > 0 {
-					failureMessage = fmt.Sprintf("Startup timeout: %s not ready after %ds", strings.Join(notReady, ", "), testConfig.TimeoutSeconds)
-				} else {
-					failureMessage = fmt.Sprintf("Startup timeout after %ds", testConfig.TimeoutSeconds)
-				}
-				// One final check for image pull errors for a better message
-				if checker, checkErr := NewPodReadinessChecker(configMapReader.GetClientset(), cfg.K8sNamespace); checkErr == nil {
-					checkCtx, checkCancel := context.WithTimeout(ctx, 5*time.Second)
-					if reason := checker.checkForFatalPodErrors(checkCtx, namespaceInstanceId); reason != "" {
-						failureMessage = reason
+				if !allReady {
+					log.Printf("%s, aborting test execution", failureMessage)
+					testExecutionLogger.LogEvent("HEALTH_TIMEOUT", failureMessage, nil, nil)
+					capturePodLogsAndLog(ctx, configMapReader.GetClientset(), cfg.K8sNamespace, namespaceInstanceId, configMapData, testExecutionLogger)
+					notificationErr := completionNotifier.NotifyCompletion(
+						req.TestRunID,
+						"failure",
+						failureMessage,
+						nil,
+						false,
+					)
+					if notificationErr != nil {
+						log.Printf("Failed to notify Control Tower: %v", notificationErr)
 					}
-					checkCancel()
+					return
 				}
-			}
-			<-fatalCheckDone
 
-			if !allReady {
-				log.Printf("%s, aborting test execution", failureMessage)
-				testExecutionLogger.LogEvent("HEALTH_TIMEOUT", failureMessage, nil, nil)
-				capturePodLogsAndLog(ctx, configMapReader.GetClientset(), cfg.K8sNamespace, namespaceInstanceId, configMapData, testExecutionLogger)
-				notificationErr := completionNotifier.NotifyCompletion(
-					req.TestRunID,
-					"failure",
-					failureMessage,
-					nil,
-					false,
-				)
-				if notificationErr != nil {
-					log.Printf("Failed to notify Control Tower: %v", notificationErr)
+				log.Printf("All items reported ready, verifying with Kubernetes API...")
+
+				podReadinessChecker, err := NewPodReadinessChecker(configMapReader.GetClientset(), cfg.K8sNamespace)
+				if err != nil {
+					log.Printf("Failed to create pod readiness checker: %v, aborting test execution", err)
+					notificationErr := completionNotifier.NotifyCompletion(
+						req.TestRunID,
+						"failure",
+						fmt.Sprintf("Failed to create pod readiness checker: %v", err),
+						nil,
+						false,
+					)
+					if notificationErr != nil {
+						log.Printf("Failed to notify Control Tower: %v", notificationErr)
+					}
+					return
 				}
-				return
-			}
 
-			log.Printf("All items reported ready, verifying with Kubernetes API...")
-
-			podReadinessChecker, err := NewPodReadinessChecker(configMapReader.GetClientset(), cfg.K8sNamespace)
-			if err != nil {
-				log.Printf("Failed to create pod readiness checker: %v, aborting test execution", err)
-				notificationErr := completionNotifier.NotifyCompletion(
-					req.TestRunID,
-					"failure",
-					fmt.Sprintf("Failed to create pod readiness checker: %v", err),
-					nil,
-					false,
-				)
-				if notificationErr != nil {
-					log.Printf("Failed to notify Control Tower: %v", notificationErr)
+				podCtx, podCancel := context.WithTimeout(ctx, timeout)
+				allPodsReady, podFailReason := podReadinessChecker.VerifyAllPodsReadyWithRetry(podCtx, namespaceInstanceId, 8, 1*time.Second)
+				podCancel()
+				if !allPodsReady {
+					log.Printf("Pod readiness check failed: %s", podFailReason)
+					testExecutionLogger.LogEvent("POD_READINESS_FAILED", podFailReason, nil, nil)
+					capturePodLogsAndLog(ctx, configMapReader.GetClientset(), cfg.K8sNamespace, namespaceInstanceId, configMapData, testExecutionLogger)
+					notificationErr := completionNotifier.NotifyCompletion(
+						req.TestRunID,
+						"failure",
+						podFailReason,
+						nil,
+						false,
+					)
+					if notificationErr != nil {
+						log.Printf("Failed to notify Control Tower: %v", notificationErr)
+					}
+					return
 				}
-				return
-			}
 
-			podCtx, podCancel := context.WithTimeout(ctx, timeout)
-			allPodsReady, podFailReason := podReadinessChecker.VerifyAllPodsReadyWithRetry(podCtx, namespaceInstanceId, 8, 1*time.Second)
-			podCancel()
-			if !allPodsReady {
-				log.Printf("Pod readiness check failed: %s", podFailReason)
-				testExecutionLogger.LogEvent("POD_READINESS_FAILED", podFailReason, nil, nil)
-				capturePodLogsAndLog(ctx, configMapReader.GetClientset(), cfg.K8sNamespace, namespaceInstanceId, configMapData, testExecutionLogger)
-				notificationErr := completionNotifier.NotifyCompletion(
-					req.TestRunID,
-					"failure",
-					podFailReason,
-					nil,
-					false,
-				)
-				if notificationErr != nil {
-					log.Printf("Failed to notify Control Tower: %v", notificationErr)
+				log.Printf("All pods verified ready via Kubernetes API")
+
+				routeChecker := NewRouteReadinessChecker(configMapReader.GetClientset(), cfg.K8sNamespace)
+				routeCtx, routeCancel := context.WithTimeout(ctx, timeout)
+				routesReady, routeFailReason := routeChecker.VerifyInterceptorRoutesReady(routeCtx, 8, 250*time.Millisecond)
+				routeCancel()
+				if !routesReady {
+					log.Printf("Interceptor route readiness check failed: %s", routeFailReason)
+					testExecutionLogger.LogEvent("ROUTE_READINESS_FAILED", routeFailReason, nil, nil)
+					capturePodLogsAndLog(ctx, configMapReader.GetClientset(), cfg.K8sNamespace, namespaceInstanceId, configMapData, testExecutionLogger)
+					notificationErr := completionNotifier.NotifyCompletion(
+						req.TestRunID,
+						"failure",
+						routeFailReason,
+						nil,
+						false,
+					)
+					if notificationErr != nil {
+						log.Printf("Failed to notify Control Tower: %v", notificationErr)
+					}
+					return
 				}
-				return
-			}
-
-			log.Printf("All pods verified ready via Kubernetes API")
-
-			routeChecker := NewRouteReadinessChecker(configMapReader.GetClientset(), cfg.K8sNamespace)
-			routeCtx, routeCancel := context.WithTimeout(ctx, timeout)
-			routesReady, routeFailReason := routeChecker.VerifyInterceptorRoutesReady(routeCtx, 8, 250*time.Millisecond)
-			routeCancel()
-			if !routesReady {
-				log.Printf("Interceptor route readiness check failed: %s", routeFailReason)
-				testExecutionLogger.LogEvent("ROUTE_READINESS_FAILED", routeFailReason, nil, nil)
-				capturePodLogsAndLog(ctx, configMapReader.GetClientset(), cfg.K8sNamespace, namespaceInstanceId, configMapData, testExecutionLogger)
-				notificationErr := completionNotifier.NotifyCompletion(
-					req.TestRunID,
-					"failure",
-					routeFailReason,
-					nil,
-					false,
-				)
-				if notificationErr != nil {
-					log.Printf("Failed to notify Control Tower: %v", notificationErr)
-				}
-				return
 			}
 
 			healthChecked = true
 		}
 
-		// Re-read ConfigMap before execution (defensive: picks up latest config on re-runs)
-		latestConfigMapData, readErr := configMapReader.ReadConfigMapData(ctx)
-		if readErr != nil {
-			log.Printf("Warning: failed to re-read ConfigMap before execution: %v, using cached config", readErr)
-			latestConfigMapData = configMapData
+		// Re-read config before execution (defensive: picks up latest config on re-runs)
+		var latestConfigMapData *ConfigMapData
+		if isFileMode {
+			fileReader := NewFileConfigReader(cfg.ConfigFilePath)
+			readData, readErr := fileReader.ReadConfigData()
+			if readErr != nil {
+				log.Printf("Warning: failed to re-read config file before execution: %v, using cached config", readErr)
+				latestConfigMapData = configMapData
+			} else {
+				latestConfigMapData = readData
+			}
+		} else {
+			readData, readErr := configMapReader.ReadConfigMapData(ctx)
+			if readErr != nil {
+				log.Printf("Warning: failed to re-read ConfigMap before execution: %v, using cached config", readErr)
+				latestConfigMapData = configMapData
+			} else {
+				latestConfigMapData = readData
+			}
 		}
 		if latestConfigMapData.TestConfig == nil {
-			log.Printf("Warning: testConfig missing from re-read ConfigMap, using cached config")
+			log.Printf("Warning: testConfig missing from re-read config, using cached config")
 			latestConfigMapData = configMapData
 		}
 

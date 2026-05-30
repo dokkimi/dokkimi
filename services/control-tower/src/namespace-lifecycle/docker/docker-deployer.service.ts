@@ -58,7 +58,7 @@ export class DockerDeployerService {
     );
 
     // 3. Create test-agent
-    await this.createTestAgent(networkName, instanceId, attachChromium);
+    await this.createTestAgent(networkName, instanceId, attachChromium, configPaths);
 
     // 4. Deploy services
     for (const item of ctx.definition.items) {
@@ -264,6 +264,7 @@ export class DockerDeployerService {
     networkName: string,
     instanceId: string,
     hasUi: boolean,
+    configPaths: InstanceConfigPaths,
   ): Promise<void> {
     const config = getConfig();
     const envEntries = buildTestAgentEnvVars(config, {
@@ -287,7 +288,9 @@ export class DockerDeployerService {
       networkName,
       networkAliases: ['test-agent-service'],
       env,
-      binds: [],
+      binds: [
+        `${configPaths.configJsonPath}:/etc/dokkimi/config.json:ro`,
+      ],
       exposedPorts: [config.services.testAgent.port],
       labels: {
         'io.dokkimi.instance-id': instanceId,

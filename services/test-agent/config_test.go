@@ -13,6 +13,8 @@ func TestLoadConfig(t *testing.T) {
 		"CONTROL_TOWER_URL": os.Getenv("CONTROL_TOWER_URL"),
 		"PORT":              os.Getenv("PORT"),
 		"CONFIG_MAP_NAME":   os.Getenv("CONFIG_MAP_NAME"),
+		"CONFIG_SOURCE":     os.Getenv("CONFIG_SOURCE"),
+		"CONFIG_FILE_PATH":  os.Getenv("CONFIG_FILE_PATH"),
 	}
 
 	// Restore original env vars after test
@@ -98,6 +100,39 @@ func TestLoadConfig(t *testing.T) {
 			validate: func(t *testing.T, cfg *Config) {
 				if cfg.ConfigMapName != "custom-config" {
 					t.Errorf("Expected ConfigMapName to be custom-config, got %s", cfg.ConfigMapName)
+				}
+			},
+		},
+		{
+			name: "defaults to configmap source",
+			env: map[string]string{
+				"K8S_NAMESPACE":     "dokkimi-test-namespace",
+				"CONTROL_TOWER_URL": "http://localhost:19001",
+				"PORT":              "8080",
+			},
+			wantErr: false,
+			validate: func(t *testing.T, cfg *Config) {
+				if cfg.ConfigSource != "configmap" {
+					t.Errorf("Expected ConfigSource to default to configmap, got %s", cfg.ConfigSource)
+				}
+			},
+		},
+		{
+			name: "file config source",
+			env: map[string]string{
+				"K8S_NAMESPACE":     "dokkimi-test-namespace",
+				"CONTROL_TOWER_URL": "http://localhost:19001",
+				"PORT":              "8080",
+				"CONFIG_SOURCE":     "file",
+				"CONFIG_FILE_PATH":  "/etc/dokkimi/config.json",
+			},
+			wantErr: false,
+			validate: func(t *testing.T, cfg *Config) {
+				if cfg.ConfigSource != "file" {
+					t.Errorf("Expected ConfigSource to be file, got %s", cfg.ConfigSource)
+				}
+				if cfg.ConfigFilePath != "/etc/dokkimi/config.json" {
+					t.Errorf("Expected ConfigFilePath to be /etc/dokkimi/config.json, got %s", cfg.ConfigFilePath)
 				}
 			},
 		},

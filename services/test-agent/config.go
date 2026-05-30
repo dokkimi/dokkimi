@@ -12,6 +12,10 @@ type Config struct {
 	// Server
 	Port string
 
+	// Config source: "configmap" (K8s, default) or "file" (Docker)
+	ConfigSource   string
+	ConfigFilePath string // Path to config JSON file (when ConfigSource=file)
+
 	// Kubernetes
 	K8sNamespace  string // Kubernetes namespace name (e.g., "dokkimi-abc123")
 	ConfigMapName string // Name of the ConfigMap to read from
@@ -51,10 +55,19 @@ func LoadConfig() (*Config, error) {
 	interceptorURL := os.Getenv("INTERCEPTOR_URL")
 	controlTowerURL := os.Getenv("CONTROL_TOWER_URL")
 
+	configSource := os.Getenv("CONFIG_SOURCE")
+	if configSource == "" {
+		configSource = "configmap"
+	}
+
 	cfg := &Config{
 		// Required fields - Control Tower MUST provide these
 		Port:         os.Getenv("PORT"),
 		K8sNamespace: k8sNamespace,
+
+		// Config source
+		ConfigSource:   configSource,
+		ConfigFilePath: os.Getenv("CONFIG_FILE_PATH"),
 
 		// Optional fields with reasonable defaults
 		ConfigMapName: os.Getenv("CONFIG_MAP_NAME"),

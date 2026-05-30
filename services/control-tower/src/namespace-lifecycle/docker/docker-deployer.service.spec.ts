@@ -168,7 +168,7 @@ describe('DockerDeployerService', () => {
       expect(interceptorCall![0].image).toContain('interceptor');
     });
 
-    it('should create the test-agent', async () => {
+    it('should create the test-agent with config file bind mount', async () => {
       await service.deploy(buildCtx());
 
       const taCall = mockDockerClient.runContainer.mock.calls.find(
@@ -176,6 +176,11 @@ describe('DockerDeployerService', () => {
       );
       expect(taCall).toBeDefined();
       expect(taCall![0].networkAliases).toContain('test-agent-service');
+      expect(taCall![0].binds).toEqual(
+        expect.arrayContaining([
+          expect.stringContaining('config.json:/etc/dokkimi/config.json:ro'),
+        ]),
+      );
     });
 
     it('should create service groups with interceptor + dnsmasq + user container', async () => {
