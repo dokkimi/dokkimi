@@ -84,7 +84,7 @@ export class DockerClientService implements OnApplicationBootstrap {
   async removeNetwork(instanceId: string): Promise<void> {
     const networkName = `${DOKKIMI_NETWORK_PREFIX}${instanceId}`;
 
-    await this.removeAllContainers(networkName);
+    await this.removeAllContainers(instanceId);
 
     const network = await this.findNetwork(networkName);
     if (network) {
@@ -130,7 +130,9 @@ export class DockerClientService implements OnApplicationBootstrap {
         ...opts.labels,
       },
       ExposedPorts:
-        Object.keys(exposedPorts).length > 0 ? exposedPorts : undefined,
+        !isSharedNetworkMode && Object.keys(exposedPorts).length > 0
+          ? exposedPorts
+          : undefined,
       ...(opts.cmd && { Cmd: opts.cmd }),
       ...(opts.entrypoint && { Entrypoint: opts.entrypoint }),
       ...(opts.healthcheck && {
@@ -144,7 +146,7 @@ export class DockerClientService implements OnApplicationBootstrap {
       }),
       HostConfig: {
         Binds: opts.binds,
-        Dns: opts.dns,
+        ...(!isSharedNetworkMode && opts.dns ? { Dns: opts.dns } : {}),
         ExtraHosts: extraHosts.length > 0 ? extraHosts : undefined,
         ...(isSharedNetworkMode
           ? { NetworkMode: opts.networkMode }
@@ -293,10 +295,10 @@ export class DockerClientService implements OnApplicationBootstrap {
   // CLEANUP
   // ============================================
 
-  async removeAllContainers(networkName: string): Promise<void> {
+  async removeAllContainers(instanceId: string): Promise<void> {
     const containers = await this.docker.listContainers({
       all: true,
-      filters: { network: [networkName] },
+      filters: { label: [`io.dokkimi.instance-id=${instanceId}`] },
     });
 
     if (containers.length === 0) {
@@ -316,7 +318,7 @@ export class DockerClientService implements OnApplicationBootstrap {
     );
 
     this.logger.log(
-      `Removed ${containers.length} containers from network ${networkName}`,
+      `Removed ${containers.length} containers for instance ${instanceId}`,
     );
   }
 
@@ -337,7 +339,8 @@ export class DockerClientService implements OnApplicationBootstrap {
 
     for (const net of networks) {
       try {
-        await this.removeAllContainers(net.Name);
+        const instanceId = net.Name.replace(DOKKIMI_NETWORK_PREFIX, '');
+        await this.removeAllContainers(instanceId);
         await this.docker.getNetwork(net.Id).remove();
         this.logger.log(`Cleaned up orphaned network: ${net.Name}`);
       } catch (error) {

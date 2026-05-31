@@ -22,8 +22,10 @@ type Config struct {
 	K8sDNSIP     string // Kubernetes DNS IP (e.g., "10.96.0.10") - used to bypass dnsmasq
 
 	// Environment
-	Namespace string // Namespace ID (e.g., "abc123")
-	Origin    string
+	DeployMode     string // "k8s" (default) or "docker"
+	ConfigFilePath string // Path to config JSON file (Docker mode)
+	Namespace      string // Namespace ID (e.g., "abc123")
+	Origin         string
 
 	// Logging
 	LogActions bool
@@ -64,7 +66,9 @@ func LoadConfig() (*Config, error) {
 		K8sDNSIP:        os.Getenv("K8S_DNS_IP"), // Used to bypass dnsmasq for outbound connections
 
 		// Optional fields
-		Origin:     os.Getenv("ORIGIN"),
+		DeployMode:     os.Getenv("DEPLOY_MODE"),
+		ConfigFilePath: os.Getenv("CONFIG_FILE_PATH"),
+		Origin:         os.Getenv("ORIGIN"),
 		LogActions: os.Getenv("LOG_ACTIONS") != "false", // Default to true if not set
 
 		// HTTP client settings (hardcoded constants - not configurable)

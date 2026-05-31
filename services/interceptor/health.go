@@ -44,6 +44,7 @@ type HealthConfig struct {
 	TestAgentURL        string // Optional: URL for test-agent
 	CheckTimeout        time.Duration
 	Origin              string // Service name to health check (e.g., "service-a")
+	DeployMode          string // "k8s" or "docker"
 	K8sDNSIP            string // K8s DNS IP for resolving service ClusterIP
 	K8sNamespace        string // K8s namespace for service resolution
 }
@@ -164,51 +165,50 @@ func (h *HealthChecker) checkHealth() (ready bool, statusCode int, err error) {
 		return false, 0, fmt.Errorf("ORIGIN not set, cannot perform health check")
 	}
 
-	// Build service FQDN for DNS resolution. In-cluster, Control Tower sets
-	// K8sNamespace and we construct the full DNS name. Outside a cluster (e.g.
-	// unit tests pointing at a local server), K8sNamespace is empty and we use
-	// the provided Origin as-is.
-	var serviceFQDN string
-	if h.config.K8sNamespace != "" {
-		serviceFQDN = fmt.Sprintf("%s.%s.svc.cluster.local", serviceName, h.config.K8sNamespace)
-	} else {
-		serviceFQDN = serviceName
-	}
+	var serviceIP string
 
-	// Resolve service ClusterIP using K8s DNS
-	var dialer *net.Dialer
-	if h.config.K8sDNSIP != "" {
-		dialer = &net.Dialer{
-			Resolver: &net.Resolver{
-				PreferGo: true,
-				Dial: func(ctx context.Context, network, address string) (net.Conn, error) {
-					// Use K8s DNS instead of system resolver
-					d := net.Dialer{}
-					return d.DialContext(ctx, "udp", h.config.K8sDNSIP+":53")
-				},
-			},
+	if h.config.DeployMode == "docker" {
+		// Docker container: mode — interceptor and service share a network namespace
+		serviceIP = "127.0.0.1"
+	} else {
+		// K8s mode — resolve via DNS
+		var serviceFQDN string
+		if h.config.K8sNamespace != "" {
+			serviceFQDN = fmt.Sprintf("%s.%s.svc.cluster.local", serviceName, h.config.K8sNamespace)
+		} else {
+			serviceFQDN = serviceName
 		}
-	} else {
-		dialer = &net.Dialer{}
+
+		var dialer *net.Dialer
+		if h.config.K8sDNSIP != "" {
+			dialer = &net.Dialer{
+				Resolver: &net.Resolver{
+					PreferGo: true,
+					Dial: func(ctx context.Context, network, address string) (net.Conn, error) {
+						d := net.Dialer{}
+						return d.DialContext(ctx, "udp", h.config.K8sDNSIP+":53")
+					},
+				},
+			}
+		} else {
+			dialer = &net.Dialer{}
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		ips, lookupErr := dialer.Resolver.LookupIPAddr(ctx, serviceFQDN)
+		if lookupErr != nil {
+			return false, 0, fmt.Errorf("failed to resolve service %s: %w", serviceFQDN, lookupErr)
+		}
+
+		if len(ips) == 0 {
+			return false, 0, fmt.Errorf("no IP addresses found for service %s", serviceFQDN)
+		}
+
+		serviceIP = ips[0].IP.String()
 	}
 
-	// Resolve service name to IP
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	ips, err := dialer.Resolver.LookupIPAddr(ctx, serviceFQDN)
-	if err != nil {
-		return false, 0, fmt.Errorf("failed to resolve service %s: %w", serviceFQDN, err)
-	}
-
-	if len(ips) == 0 {
-		return false, 0, fmt.Errorf("no IP addresses found for service %s", serviceFQDN)
-	}
-
-	// Use first IP address (ClusterIP)
-	serviceIP := ips[0].IP.String()
-
-	// Build health check URL using resolved ClusterIP and standardized port 80
 	url := fmt.Sprintf("http://%s:%s%s", serviceIP, h.config.ServicePort, h.config.HealthCheckEndpoint)
 
 	req, err := http.NewRequest(http.MethodGet, url, nil)

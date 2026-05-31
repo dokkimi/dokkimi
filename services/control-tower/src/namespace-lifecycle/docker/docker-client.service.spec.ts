@@ -80,7 +80,7 @@ describe('DockerClientService', () => {
 
       expect(mockDocker.listContainers).toHaveBeenCalledWith({
         all: true,
-        filters: { network: ['dokkimi-run-inst-1'] },
+        filters: { label: ['io.dokkimi.instance-id=inst-1'] },
       });
       expect(mockDocker.getContainer).toHaveBeenCalledWith('c1');
       expect(mockDocker.getContainer).toHaveBeenCalledWith('c2');

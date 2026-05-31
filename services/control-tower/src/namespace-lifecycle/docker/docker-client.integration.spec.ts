@@ -53,7 +53,7 @@ describe('DockerClientService (integration)', () => {
       image: TEST_IMAGE,
       networkName: `dokkimi-run-${TEST_INSTANCE_ID}`,
       cmd: ['sh', '-c', 'sleep 30'],
-      labels: { 'test-run': TEST_INSTANCE_ID },
+      labels: { 'test-run': TEST_INSTANCE_ID, 'io.dokkimi.instance-id': TEST_INSTANCE_ID },
     });
 
     expect(containerId).toBeTruthy();
@@ -73,6 +73,7 @@ describe('DockerClientService (integration)', () => {
       networkName: `dokkimi-run-${TEST_INSTANCE_ID}`,
       networkMode: `container:${primaryName}`,
       cmd: ['sh', '-c', 'sleep 30'],
+      labels: { 'io.dokkimi.instance-id': TEST_INSTANCE_ID },
     });
 
     expect(sidecarId).toBeTruthy();
@@ -89,6 +90,7 @@ describe('DockerClientService (integration)', () => {
       networkName: `dokkimi-run-${TEST_INSTANCE_ID}`,
       networkAliases: ['my-service'],
       cmd: ['sh', '-c', 'sleep 30'],
+      labels: { 'io.dokkimi.instance-id': TEST_INSTANCE_ID },
     });
 
     expect(aliasedId).toBeTruthy();
@@ -98,6 +100,7 @@ describe('DockerClientService (integration)', () => {
       name: `test-pinger-${TEST_INSTANCE_ID}`,
       image: TEST_IMAGE,
       networkName: `dokkimi-run-${TEST_INSTANCE_ID}`,
+      labels: { 'io.dokkimi.instance-id': TEST_INSTANCE_ID },
       cmd: [
         'sh',
         '-c',
@@ -121,6 +124,7 @@ describe('DockerClientService (integration)', () => {
       image: TEST_IMAGE,
       networkName: `dokkimi-run-${TEST_INSTANCE_ID}`,
       cmd: ['sh', '-c', 'sleep 30'],
+      labels: { 'io.dokkimi.instance-id': TEST_INSTANCE_ID },
     });
 
     const healthy = await service.waitForHealthy(id, 5000, 200);
@@ -142,6 +146,7 @@ describe('DockerClientService (integration)', () => {
       image: TEST_IMAGE,
       networkName: `dokkimi-run-${TEST_INSTANCE_ID}`,
       cmd: ['sh', '-c', 'echo "HELLO_FROM_DOCKER" && sleep 5'],
+      labels: { 'io.dokkimi.instance-id': TEST_INSTANCE_ID },
     });
 
     const logChunks: string[] = [];
@@ -163,6 +168,7 @@ describe('DockerClientService (integration)', () => {
       image: TEST_IMAGE,
       networkName: `dokkimi-run-${TEST_INSTANCE_ID}`,
       cmd: ['sh', '-c', 'sleep 30'],
+      labels: { 'io.dokkimi.instance-id': TEST_INSTANCE_ID },
     });
 
     await service.removeContainer(id);

@@ -174,6 +174,11 @@ export class DockerDeployerService {
       this.logger.log(`Docker deployment complete for instance ${instanceId}`);
     } catch (err) {
       this.logger.error(`Deployment failed for instance ${instanceId}:`, err);
+      try {
+        await this.teardown(instanceId);
+      } catch (cleanupErr) {
+        this.logger.warn(`Teardown after failed deploy:`, cleanupErr);
+      }
       await this.instanceService.updateInstanceStatus(
         instanceId,
         InstanceStatus.FAILED,
@@ -316,6 +321,8 @@ export class DockerDeployerService {
       env: {
         ...this.envArrayToRecord(envEntries),
         ...this.caService.getInterceptorCaEnvVars(),
+        DEPLOY_MODE: 'docker',
+        CONFIG_FILE_PATH: '/etc/dokkimi/config.json',
       },
       binds: [
         `${configPaths.configJsonPath}:/etc/dokkimi/config.json:ro`,
@@ -404,7 +411,7 @@ export class DockerDeployerService {
       origin: item.name,
       instanceItemName: item.name,
       healthCheckEndpoint: item.healthCheck || undefined,
-      servicePort: '80',
+      servicePort: item.port?.toString() || '80',
       namespaceItemId: instanceItemId,
       testAgentUrl: `http://test-agent-service:${config.services.testAgent.port}`,
     });
@@ -417,6 +424,8 @@ export class DockerDeployerService {
       env: {
         ...this.envArrayToRecord(interceptorEnv),
         ...this.caService.getInterceptorCaEnvVars(),
+        DEPLOY_MODE: 'docker',
+        CONFIG_FILE_PATH: '/etc/dokkimi/config.json',
       },
       binds: [
         `${configPaths.configJsonPath}:/etc/dokkimi/config.json:ro`,
@@ -632,7 +641,7 @@ export class DockerDeployerService {
       origin: 'chromium',
       instanceItemName: 'chromium',
       healthCheckEndpoint: '/json/version',
-      servicePort: '80',
+      servicePort: String(config.services.chromium.port),
       namespaceItemId: 'chromium',
       testAgentUrl: `http://test-agent-service:${config.services.testAgent.port}`,
     });
@@ -645,6 +654,8 @@ export class DockerDeployerService {
       env: {
         ...this.envArrayToRecord(interceptorEnv),
         ...this.caService.getInterceptorCaEnvVars(),
+        DEPLOY_MODE: 'docker',
+        CONFIG_FILE_PATH: '/etc/dokkimi/config.json',
       },
       binds: [
         `${configPaths.configJsonPath}:/etc/dokkimi/config.json:ro`,

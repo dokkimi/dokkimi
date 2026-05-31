@@ -65,31 +65,37 @@ func main() {
 		defer logger.Stop()
 	}
 
-	// Initialize ConfigMap watcher
-	configMapWatcher, err := NewConfigMapWatcher(cfg.K8sNamespace, cache)
-	if err != nil {
-		log.Fatalf("Failed to create ConfigMap watcher: %v", err)
-	}
-	defer configMapWatcher.Stop()
-
-	// Start watching ConfigMap
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	if err := configMapWatcher.Start(ctx); err != nil {
-		log.Fatalf("Failed to start ConfigMap watcher: %v", err)
-	}
-
-	// Wait for initial config to load
-	log.Println("Waiting for ConfigMap to load...")
-	for i := 0; i < 30; i++ {
-		if configMapWatcher.IsInitialized() {
-			log.Println("ConfigMap loaded successfully")
-			break
+	// Load config: file-based in Docker mode, ConfigMap watcher in K8s mode
+	if cfg.DeployMode == "docker" && cfg.ConfigFilePath != "" {
+		loader := NewFileConfigLoader(cfg.ConfigFilePath, cache)
+		if err := loader.Load(); err != nil {
+			log.Fatalf("Failed to load config from file: %v", err)
 		}
-		time.Sleep(1 * time.Second)
-	}
-	if !configMapWatcher.IsInitialized() {
-		log.Printf("Warning: ConfigMap not loaded after 30 seconds, continuing anyway")
+		log.Printf("Config loaded from file: %s", cfg.ConfigFilePath)
+	} else {
+		configMapWatcher, err := NewConfigMapWatcher(cfg.K8sNamespace, cache)
+		if err != nil {
+			log.Fatalf("Failed to create ConfigMap watcher: %v", err)
+		}
+		defer configMapWatcher.Stop()
+
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		if err := configMapWatcher.Start(ctx); err != nil {
+			log.Fatalf("Failed to start ConfigMap watcher: %v", err)
+		}
+
+		log.Println("Waiting for ConfigMap to load...")
+		for i := 0; i < 30; i++ {
+			if configMapWatcher.IsInitialized() {
+				log.Println("ConfigMap loaded successfully")
+				break
+			}
+			time.Sleep(1 * time.Second)
+		}
+		if !configMapWatcher.IsInitialized() {
+			log.Printf("Warning: ConfigMap not loaded after 30 seconds, continuing anyway")
+		}
 	}
 
 	// Initialize test execution logger (only in test mode)
@@ -118,9 +124,10 @@ func main() {
 				ControlTowerURL:     cfg.ControlTowerURL,
 				TestAgentURL:        cfg.TestAgentURL,
 				CheckTimeout:        5 * time.Second,
-				Origin:              cfg.Origin,       // Service name to health check
-				K8sDNSIP:            cfg.K8sDNSIP,     // K8s DNS for resolving service ClusterIP
-				K8sNamespace:        cfg.K8sNamespace, // K8s namespace for service resolution
+				Origin:              cfg.Origin,
+				DeployMode:          cfg.DeployMode,
+				K8sDNSIP:            cfg.K8sDNSIP,
+				K8sNamespace:        cfg.K8sNamespace,
 			}
 			healthChecker = NewHealthChecker(healthConfig)
 			if healthChecker != nil {
@@ -217,9 +224,6 @@ func main() {
 	<-quit
 
 	log.Println("Shutting down server...")
-
-	// Stop ConfigMap watcher
-	configMapWatcher.Stop()
 
 	// Graceful shutdown
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
