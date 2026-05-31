@@ -30,6 +30,7 @@ export interface DatabaseInfo {
   user: string;
   password: string;
   database: string;
+  port: number;
   instanceItemId: string;
 }
 
@@ -108,6 +109,7 @@ export class ConfigMapBuilderService {
           user: dbUser,
           password: dbPassword,
           database: dbName,
+          port: this.getNativeDbPort(normalizedDbType),
           instanceItemId: item.id,
         };
       }
@@ -266,5 +268,20 @@ export class ConfigMapBuilderService {
       return 'mysql';
     }
     return normalized;
+  }
+
+  private getNativeDbPort(normalizedDbType: string): number {
+    switch (normalizedDbType) {
+      case 'postgresql':
+        return 5432;
+      case 'mysql':
+        return 3306;
+      case 'redis':
+        return 6379;
+      case 'mongodb':
+        return 27017;
+      default:
+        return 5432;
+    }
   }
 }

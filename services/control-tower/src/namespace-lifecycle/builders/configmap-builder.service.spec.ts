@@ -173,6 +173,7 @@ describe('ConfigMapBuilderService', () => {
         user: 'dokkimi',
         password: 'dokkimi',
         database: 'dokkimi',
+        port: 5432,
         instanceItemId: 'item-2',
       });
 
@@ -182,15 +183,17 @@ describe('ConfigMapBuilderService', () => {
         user: 'dokkimi',
         password: 'dokkimi',
         database: 'dokkimi',
+        port: 3306,
         instanceItemId: 'item-3',
       });
 
       expect(databaseMap['mongo-db']).toBeDefined();
       expect(databaseMap['mongo-db']).toEqual({
         type: 'mongodb',
-        user: 'dokkimi', // Now uses config defaults instead of empty strings
+        user: 'dokkimi',
         password: 'dokkimi',
         database: 'dokkimi',
+        port: 27017,
         instanceItemId: 'item-4',
       });
     });
@@ -727,6 +730,7 @@ describe('ConfigMapBuilderService', () => {
         user: 'myuser',
         password: 'mypass',
         database: 'mydb',
+        port: 5432,
         instanceItemId: 'item-1',
       });
     });

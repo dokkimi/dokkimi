@@ -20,6 +20,7 @@ import { ChromiumCreatorService } from './resource-creators/chromium-creator.ser
 import { InstanceItemCreatorService } from './resource-creators/instance-item-creator.service';
 import { NamespaceModule } from '../namespace/namespace.module';
 import { LogProcessingModule } from '../log-processing/log-processing.module';
+import { StorageModule } from '../storage/storage.module';
 import { DokkimiCaService } from './dokkimi-ca.service';
 import { RegistryCredentialsService } from './registry-credentials.service';
 
@@ -28,6 +29,7 @@ import { RegistryCredentialsService } from './registry-credentials.service';
     PrismaModule,
     forwardRef(() => NamespaceModule),
     LogProcessingModule,
+    StorageModule,
   ],
   providers: [
     NamespaceLifecycleService,

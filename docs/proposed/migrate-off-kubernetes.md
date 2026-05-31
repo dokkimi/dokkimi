@@ -182,8 +182,8 @@ Docker Network: dokkimi-run-{instanceId}
 │    Network alias: "service-b"
 │
 ├─ [postgres-db-group] (shared network namespace)
-│    ├─ db-proxy-postgres (port 15432 externally, connects to localhost:5432)
-│    └─ postgres (port 5432)
+│    ├─ db-proxy-postgres (listens on 5432, proxies to localhost:55432)
+│    └─ postgres (shifted to port 55432 via PGPORT, only reachable via db-proxy)
 │    Network alias: "postgres-db"
 │
 ├─ [test-agent]
@@ -269,7 +269,13 @@ docker start service-a-${instanceId}
 **Database routing:**
 - dnsmasq config has explicit entry: `server=/postgres-db/127.0.0.11` (forward to Docker DNS, not to interceptor)
 - Docker DNS resolves `postgres-db` → the db-proxy container's IP on the network
-- Service connects to `postgres-db:5432` → hits db-proxy, which proxies to the real database on localhost in its own shared network namespace
+- Service connects to `postgres-db:<proxy-port>` → hits db-proxy, which proxies to the real database on `localhost:<native-port>` in its own shared network namespace
+
+**Important K8s→Docker port mapping difference:** In K8s, a K8s Service maps the well-known port (e.g. 5432 for Postgres) to the db-proxy's actual listen port (e.g. 15432). Callers connect to `postgres-db:5432` and K8s transparently routes to port 15432 on the db-proxy pod. In Docker, we replicate this by shifting the database's internal port and having the db-proxy listen on the standard port:
+- The database container is configured to listen on a non-standard internal port (e.g. Postgres on 55432 via `PGPORT`, MySQL on 33306 via `MYSQL_TCP_PORT`)
+- The db-proxy listens on the standard port (5432, 3306, 6379, 27017) via `QUERY_PORT` env var
+- The db-proxy forwards to the shifted internal port via `DATABASE_PORT` env var
+- Callers use the standard port (e.g. `postgres-db:5432`) and traffic goes through the db-proxy, matching K8s behavior exactly
 
 ---
 

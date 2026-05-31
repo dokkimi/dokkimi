@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"log"
 	"net"
@@ -16,6 +17,8 @@ type ProxyService struct {
 	client      *http.Client
 	mockManager *MockManager
 	urlMap      func() UrlMap
+	origin      string // service name this interceptor belongs to (empty for global)
+	servicePort string // port the local service listens on (e.g. "4000")
 }
 
 // NewProxyService creates a new proxy service
@@ -65,6 +68,8 @@ func NewProxyService(cfg *Config, mockManager *MockManager, urlMap func() UrlMap
 		client:      client,
 		mockManager: mockManager,
 		urlMap:      urlMap,
+		origin:      cfg.Origin,
+		servicePort: cfg.ServicePort,
 	}
 }
 
@@ -109,7 +114,14 @@ func (p *ProxyService) forwardRequest(r *http.Request) (*http.Response, error) {
 		}
 	}
 
-	req.Host = r.Host
+	// Set Host to the target URL's host so downstream interceptors can
+	// identify the service. Without this, the original Host header
+	// (e.g., "interceptor-service:80") would propagate and confuse routing.
+	if parsed, err := url.Parse(targetURL); err == nil && parsed.Host != "" {
+		req.Host = parsed.Host
+	} else {
+		req.Host = r.Host
+	}
 
 	// Forward request
 	resp, err := p.client.Do(req)
@@ -180,6 +192,14 @@ func (p *ProxyService) getTargetURL(r *http.Request) string {
 				r.URL.Path = "/"
 			}
 		}
+	}
+
+	// Per-service interceptor: forward to localhost:servicePort.
+	// All traffic arriving at a per-service interceptor is destined for its
+	// local service — route there directly instead of going back through
+	// DNS/network alias (which would loop in Docker mode).
+	if p.origin != "" && p.servicePort != "" && (serviceName == p.origin || serviceName == "") {
+		return fmt.Sprintf("http://localhost:%s%s?%s", p.servicePort, r.URL.Path, r.URL.RawQuery)
 	}
 
 	// Check if we have a URL mapping

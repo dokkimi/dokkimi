@@ -124,6 +124,12 @@ const mockInstanceService = {
   updateInstanceK8sNamespace: jest.fn().mockResolvedValue(undefined),
 };
 
+const mockRunStorage = {
+  getInitFilesDir: jest
+    .fn()
+    .mockReturnValue('/home/.dokkimi/storage/instances/test-instance/db-init-files/postgres-db'),
+};
+
 function buildCtx(
   overrides: Partial<DeploymentContext> = {},
 ): DeploymentContext {
@@ -178,6 +184,7 @@ describe('DockerDeployerService', () => {
       mockRegistryService as any,
       mockInstanceItemService as any,
       mockInstanceService as any,
+      mockRunStorage as any,
     );
   });
 
