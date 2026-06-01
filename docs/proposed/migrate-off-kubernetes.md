@@ -83,7 +83,15 @@ Docker's built-in DNS resolves container names within a network. If you start a 
 | Multiple containers per pod share `localhost` | `--network=container:<other>` shares network namespace |
 | Pod-level DNS config applies to all containers | DNS config on the "primary" container applies to the shared namespace |
 
-Docker supports sharing a container's network namespace via `--network=container:<id>`. The interceptor container starts first, then the user's service container joins its network namespace — they share `localhost`, same as a K8s pod. The dnsmasq sidecar also joins the same network namespace.
+Docker supports sharing a container's network namespace via `--network=container:<id>`. The user's service container starts first (it's the "primary" — connected to the Docker network with the network alias). dnsmasq joins its namespace to provide DNS routing. This matches K8s, where the user container and dnsmasq shared a pod.
+
+The **interceptor is a separate container** on the Docker network with its own IP — it does NOT share the user container's network namespace. This matches K8s, where the interceptor was a separate pod. dnsmasq routes all outbound DNS to the interceptor's IP, so outbound traffic from the user service flows through the interceptor. Inbound traffic from other services hits the user container directly via its network alias — the interceptor is never in the inbound path.
+
+**Critical caveat:** Docker silently ignores `--dns`, `ExtraHosts`, and `ExposedPorts` on containers using `--network=container:<other>`. The API accepts them without error, but they have no effect. To configure DNS on a shared-network container (dnsmasq joining the user container), bind-mount a custom `/etc/resolv.conf` instead:
+```
+-v ${configDir}/resolv.conf:/etc/resolv.conf:ro
+```
+The `resolv.conf` file contains `nameserver 127.0.0.1` to route DNS through dnsmasq.
 
 ### ConfigMaps → Config Files or Environment Variables
 
@@ -93,6 +101,8 @@ Docker supports sharing a container's network namespace via `--network=container
 | ConfigMap as env vars | `--env` or `--env-file` |
 
 Control Tower already generates the ConfigMap content (urlMap, httpMocks, databaseMap, etc.). Instead of writing it to a K8s ConfigMap, write it to a temp file on the host and bind-mount it into the interceptor container.
+
+**Sidecar config loading:** The interceptor and test-agent both need to switch from K8s ConfigMap watching to file-based config loading. The interceptor requires `DEPLOY_MODE=docker` and `CONFIG_FILE_PATH=/etc/dokkimi/config.json` env vars to select the file-based path. A `FileConfigLoader` reads the JSON file at startup, parsing the same `mocks` and `urlMap` keys that the ConfigMap watcher expects, and populates the `MockCache` identically. The test-agent similarly requires `CONFIG_SOURCE=file` and `CONFIG_FILE_PATH`.
 
 ### Secrets (CA Certs, Registry Creds) → Volume Mounts
 
@@ -141,7 +151,13 @@ RBAC exists because K8s is a multi-tenant system where pods might access the API
 
 ### Probes & Health Reporting → Direct HTTP
 
-The interceptor currently reports health to Control Tower via `POST /health/status`. This works identically over Docker networking — the interceptor container can reach Control Tower at its host-accessible port. No change needed.
+The interceptor currently reports health to Control Tower via `POST /health/status`. This works identically over Docker networking — the interceptor container can reach Control Tower at its host-accessible port.
+
+**Docker-specific change:** The interceptor's `HealthChecker` resolves the service name via K8s DNS in K8s mode. In Docker mode, the interceptor and service share a network namespace, so the health check must target `127.0.0.1:<servicePort>` directly instead of resolving via DNS. The health checker branches on `DEPLOY_MODE` to select the right approach.
+
+**Service port:** The health check must use the service's actual port (e.g., 3000 for Next.js, 9222 for chromium), not port 80. In K8s, the K8s Service mapped port 80 → the real port transparently. In Docker, the interceptor resolves the service via Docker DNS and connects on the real port.
+
+**Control Tower health endpoint:** Control Tower's own `HealthService` checks K8s API connectivity. In Docker mode, this check should degrade gracefully (return "healthy" with a note) rather than reporting "degraded" status.
 
 ### Fluent Bit (Log Collection) → Docker Log Driver or Direct Capture
 
@@ -157,6 +173,13 @@ Alternatively, use Docker's `fluentd` or `syslog` log driver to ship logs direct
 
 Docker pulls images only if not present locally (equivalent to `IfNotPresent`). For explicit freshness, `docker pull` before `docker run`. Same behavior, no configuration needed.
 
+**All image types must be pulled explicitly.** Unlike K8s (which pulls on pod creation), Docker requires an explicit `docker pull` before `docker run` for images not present locally. This includes not just user service images, but also:
+- Database images (e.g., `postgres:15`, `mysql:8`, `mongo:7`, `redis:7`)
+- Infrastructure images (interceptor, dnsmasq, test-agent, all db-proxy variants)
+- Browser images (chromium, if UI tests are present)
+
+A `pullAllImages()` method must pull every image type before deployment begins. Missing this causes "image not found" errors that only manifest on clean machines (locally cached images mask the bug during development).
+
 ---
 
 ## Architecture: Container Topology Per Test Run
@@ -165,24 +188,32 @@ Docker pulls images only if not present locally (equivalent to `IfNotPresent`). 
 Docker Network: dokkimi-run-{instanceId}
 │
 ├─ [interceptor-global]
+│    Standalone container on the network
 │    Ports: 80, 443
 │    Mounts: config.json (urlMap, mocks, dbMap), ca.crt, ca.key
 │    DNS: Docker embedded (resolves other containers by name)
 │
+├─ [service-a-interceptor]
+│    Standalone container on the network (own IP, used in dnsmasq catch-all)
+│    Captures outbound traffic from service-a
+│    Mounts: config.json, ca.crt, ca.key
+│
 ├─ [service-a-group] (shared network namespace)
-│    ├─ service-a-interceptor (ports 80, 443, service port)
-│    ├─ dnsmasq (port 53, routes * → interceptor, db names → Docker DNS)
-│    └─ service-a (user's container, joins interceptor's network ns)
+│    ├─ service-a (user's container — primary, holds network alias)
+│    └─ dnsmasq (port 53, routes * → service-a-interceptor, db names → Docker DNS)
 │    Network alias: "service-a"
+│    resolv.conf bind-mounted with nameserver 127.0.0.1
+│
+├─ [service-b-interceptor]
+│    Standalone container on the network
 │
 ├─ [service-b-group] (shared network namespace)
-│    ├─ service-b-interceptor
-│    ├─ dnsmasq
-│    └─ service-b (user's container)
+│    ├─ service-b (user's container — primary, holds network alias)
+│    └─ dnsmasq
 │    Network alias: "service-b"
 │
 ├─ [postgres-db-group] (shared network namespace)
-│    ├─ db-proxy-postgres (listens on 5432, proxies to localhost:55432)
+│    ├─ db-proxy-postgres (primary, listens on 5432, proxies to localhost:55432)
 │    └─ postgres (shifted to port 55432 via PGPORT, only reachable via db-proxy)
 │    Network alias: "postgres-db"
 │
@@ -190,7 +221,13 @@ Docker Network: dokkimi-run-{instanceId}
 │    Mounts: config.json (testConfig, urlMap)
 │    Communicates with Control Tower via host network
 │
-└─ [chromium] (if UI tests)
+├─ [chromium-interceptor]
+│    Standalone container on the network
+│
+└─ [chromium-group] (shared network namespace, if UI tests)
+     ├─ chromium (primary, holds network alias)
+     └─ dnsmasq (routes * → chromium-interceptor)
+     Network alias: "chromium"
      Port: 9222 (CDP)
 ```
 
@@ -202,92 +239,153 @@ This is the same model as today (CT runs on host, talks to K8s API). The only ch
 
 ### Container Startup Sequence (Concrete Example)
 
-For a service group (e.g., `service-a`), the exact Docker sequence:
+For a service group (e.g., `service-a` running on port 3000), the exact Docker sequence:
 
 ```bash
-# 1. Start the per-service interceptor — this is the "primary" container
-#    that holds the Docker network connection and network alias.
+# 1. Start the per-service interceptor as a STANDALONE container on the network.
+#    It does NOT hold the service's network alias — it only handles outbound traffic.
 docker create \
   --name service-a-interceptor-${instanceId} \
   --network dokkimi-run-${instanceId} \
-  --network-alias service-a \
   -e PORT=80 \
+  -e DEPLOY_MODE=docker \
+  -e CONFIG_FILE_PATH=/etc/dokkimi/config.json \
+  -e ORIGIN=service-a \
   -e CONTROL_TOWER_URL=http://host.docker.internal:19001 \
-  -e DNS_IP=127.0.0.11 \
+  -e K8S_DNS_IP=127.0.0.11 \
   -v ${configDir}/config.json:/etc/dokkimi/config.json:ro \
   -v ${caDir}/ca.crt:/etc/ssl/certs/dokkimi-ca.crt:ro \
   -v ${caDir}/ca.key:/etc/ssl/certs/dokkimi-ca.key:ro \
   ghcr.io/dokkimi/interceptor:latest
 docker start service-a-interceptor-${instanceId}
 
-# 2. Start dnsmasq — joins the interceptor's network namespace (shares localhost)
-docker create \
-  --name service-a-dnsmasq-${instanceId} \
-  --network container:service-a-interceptor-${instanceId} \
-  -v ${configDir}/dnsmasq-service-a.conf:/etc/dnsmasq.conf:ro \
-  andyshinn/dnsmasq:2.83
-docker start service-a-dnsmasq-${instanceId}
+# 2. Get the interceptor's Docker network IP.
+#    dnsmasq's address= directive requires an IP (not a hostname).
+INTERCEPTOR_IP=$(docker inspect -f \
+  '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' \
+  service-a-interceptor-${instanceId})
 
-# 3. Start user's service — also joins interceptor's network namespace
+# 3. Write dnsmasq config that routes all DNS to the interceptor's IP.
+#    Database names and host.docker.internal bypass to Docker DNS.
+cat > ${configDir}/dnsmasq-service-a.conf <<EOF
+listen-address=127.0.0.1
+server=/postgres-db/${DOCKER_DNS_IP}
+server=/host.docker.internal/${DOCKER_DNS_IP}
+address=/#/${INTERCEPTOR_IP}
+cache-size=1000
+no-hosts
+no-resolv
+EOF
+
+# 4. Start user's service — this is the "primary" container that holds
+#    the Docker network connection and network alias.
+#    NOTE: --dns is IGNORED in shared network mode. Must bind-mount resolv.conf.
 docker create \
   --name service-a-${instanceId} \
-  --network container:service-a-interceptor-${instanceId} \
-  --dns 127.0.0.1 \
+  --network dokkimi-run-${instanceId} \
+  --network-alias service-a \
+  -e HOSTNAME=0.0.0.0 \
   -e NODE_EXTRA_CA_CERTS=/etc/ssl/certs/dokkimi-ca.crt \
   -e SSL_CERT_FILE=/ca-bundle/ca-bundle.crt \
+  -v ${configDir}/resolv.conf:/etc/resolv.conf:ro \
   -v ${caDir}/ca-bundle.crt:/ca-bundle/ca-bundle.crt:ro \
   -v ${caDir}/dokkimi-ca.crt:/etc/ssl/certs/dokkimi-ca.crt:ro \
   user-image:tag
 docker start service-a-${instanceId}
+
+# 5. Start dnsmasq — joins the user container's network namespace (shares localhost)
+docker create \
+  --name service-a-dnsmasq-${instanceId} \
+  --network container:service-a-${instanceId} \
+  -v ${configDir}/dnsmasq-service-a.conf:/etc/dnsmasq.conf:ro \
+  andyshinn/dnsmasq:2.83
+docker start service-a-dnsmasq-${instanceId}
 ```
 
-**Why the interceptor is "primary":** It's the container connected to the Docker network with the alias `service-a`. When any other container on the network resolves `service-a`, Docker DNS returns the interceptor's IP. Traffic always hits the interceptor first — same as K8s where the Service pointed to the interceptor's ClusterIP.
+**Why the user container is "primary":** It holds the network alias `service-a`. When another service's interceptor forwards traffic to `service-a`, Docker DNS resolves it to the user container's IP. Inbound traffic goes directly to the user service — the interceptor is never in the inbound path. This matches K8s, where the K8s Service for a user pod routed inbound traffic directly to the user container.
 
-**Why `--dns 127.0.0.1` on the user container:** Forces the user's service to use dnsmasq (running on localhost in the shared network namespace) for DNS. dnsmasq then routes:
-- All HTTP hostnames → `127.0.0.1` (the interceptor, also on localhost)
+**Why the interceptor is standalone:** It's a separate container on the Docker network with its own IP, analogous to a K8s interceptor pod with its own ClusterIP Service. dnsmasq in the user container's namespace routes all outbound DNS to this IP via `address=/#/${INTERCEPTOR_IP}`. When `service-a` calls `http://service-b/api/users`, DNS resolves to the interceptor's IP, the request goes through the interceptor, which logs it, checks for mock matches, and forwards to the real target. Each request is logged exactly once — by the sender's interceptor.
+
+**Why the interceptor starts first:** Its IP must be known before the dnsmasq config can be written. Start the interceptor, inspect its IP via the Docker API (`inspectContainer`), write the dnsmasq config with `address=/#/${interceptorIP}`, then start the user container and dnsmasq.
+
+**Why `resolv.conf` bind-mount (not `--dns`):** Docker silently ignores `--dns` on shared-network containers. The bind-mount forces dnsmasq (at 127.0.0.1) as the nameserver. dnsmasq then routes:
+- All hostnames → the interceptor's IP (via dnsmasq's `address=/#/${INTERCEPTOR_IP}` catch-all)
 - Database names → `127.0.0.11` (Docker's embedded DNS, which resolves to the db-proxy container on the network)
+- `host.docker.internal` → `127.0.0.11` (Docker DNS, which resolves to the host machine)
 
-**Why the interceptor uses `DNS_IP=127.0.0.11`:** When forwarding to an upstream service, the interceptor must bypass dnsmasq (otherwise it would resolve back to itself in a loop). It queries Docker's embedded DNS directly at `127.0.0.11`, which resolves `service-b` → the IP of service-b's interceptor on the Docker network.
+**Why `HOSTNAME=0.0.0.0`:** Some frameworks (e.g., Next.js) use the `HOSTNAME` env var to determine their bind address. Without this, they may bind only to `127.0.0.1`, making them unreachable from the Docker network. Setting it to `0.0.0.0` ensures they bind to all interfaces.
+
+**Why `K8S_DNS_IP=127.0.0.11` on the interceptor:** When forwarding to a target service, the interceptor resolves the target name via Docker's embedded DNS (not dnsmasq, which isn't in its namespace). Docker DNS resolves `service-b` → the user container's IP for service-b. The urlMap URL already contains the real port (e.g. `http://service-b:4000`), so the interceptor forwards directly using the URL from the urlMap — no port guessing needed.
+
+**HTTPS interception (mocks for external APIs):** The interceptor listens on port 443 with dynamically generated TLS certs signed by the Dokkimi CA. When dnsmasq routes `accounts.google.com` to the interceptor's IP, the user service connects to the interceptor on port 443. The user container trusts the Dokkimi CA via `NODE_EXTRA_CA_CERTS` / `SSL_CERT_FILE` bind mounts.
 
 ### Key Networking Details
 
 **Service-to-service routing (full flow):**
 1. `service-a` calls `http://service-b/api/users`
-2. `service-a`'s DNS (`--dns 127.0.0.1`) hits dnsmasq
-3. dnsmasq resolves `service-b` → `127.0.0.1` (catch-all to local interceptor)
-4. `service-a-interceptor` receives the request, logs it, checks mocks
+2. `service-a`'s DNS (via bind-mounted resolv.conf → `127.0.0.1`) hits dnsmasq
+3. dnsmasq returns the interceptor's IP (via `address=/#/${INTERCEPTOR_IP}` catch-all rule)
+4. `service-a-interceptor` receives the request on port 80, logs it (outbound), checks mocks
 5. No mock match → forward to real `service-b`
-6. Interceptor resolves `service-b` via Docker DNS (`127.0.0.11`) → gets `172.18.0.X` (service-b-interceptor's Docker network IP)
-7. Request arrives at `service-b-interceptor`, which forwards to `localhost:<service-port>` (the actual service-b container in the shared network namespace)
-8. Response flows back through both interceptors (both log the traffic)
+6. Interceptor resolves `service-b` via Docker DNS (`127.0.0.11`) → gets service-b's user container IP (since the user container holds the `service-b` network alias)
+7. Interceptor forwards using the URL from the urlMap (e.g. `http://service-b:4000`) — the port is already in the urlMap URL, no separate lookup needed
+8. Request arrives directly at service-b's user container — service-b's interceptor is never in the path
+9. Response flows back through service-a's interceptor only. Each request is logged exactly once.
 
-**Mock DNS routing:**
-- dnsmasq resolves `api.stripe.com` → `127.0.0.1` (the local interceptor)
+This matches K8s exactly: the sending service's interceptor captures and logs the outbound request, and the receiving service gets traffic directly.
+
+**Mock DNS routing (including external HTTPS endpoints):**
+- dnsmasq resolves `api.stripe.com` → the interceptor's IP (catch-all)
 - Interceptor checks mock config, returns mock response
-- Identical to current behavior
+- For HTTPS mocks (e.g., `accounts.google.com`): the interceptor listens on port 443 with dynamically generated TLS certs signed by the Dokkimi CA. The user container trusts the CA via `NODE_EXTRA_CA_CERTS` / `SSL_CERT_FILE` bind mounts.
+- For non-mocked external hosts: the interceptor forwards the request to the real external host, logs it, and returns the response.
 
 **Database routing:**
-- dnsmasq config has explicit entry: `server=/postgres-db/127.0.0.11` (forward to Docker DNS, not to interceptor)
+- dnsmasq config has explicit entry: `server=/postgres-db/${dockerDnsIP}` (forward to Docker DNS, not to interceptor)
 - Docker DNS resolves `postgres-db` → the db-proxy container's IP on the network
-- Service connects to `postgres-db:<proxy-port>` → hits db-proxy, which proxies to the real database on `localhost:<native-port>` in its own shared network namespace
+- Service connects to `postgres-db:<standard-port>` → hits db-proxy, which proxies to the real database on `localhost:<shifted-internal-port>` in its own shared network namespace
+- Database DNS exceptions bypass the interceptor entirely — database traffic is captured by the db-proxy sidecar instead
 
-**Important K8s→Docker port mapping difference:** In K8s, a K8s Service maps the well-known port (e.g. 5432 for Postgres) to the db-proxy's actual listen port (e.g. 15432). Callers connect to `postgres-db:5432` and K8s transparently routes to port 15432 on the db-proxy pod. In Docker, we replicate this by shifting the database's internal port and having the db-proxy listen on the standard port:
-- The database container is configured to listen on a non-standard internal port (e.g. Postgres on 55432 via `PGPORT`, MySQL on 33306 via `MYSQL_TCP_PORT`)
-- The db-proxy listens on the standard port (5432, 3306, 6379, 27017) via `QUERY_PORT` env var
-- The db-proxy forwards to the shifted internal port via `DATABASE_PORT` env var
-- Callers use the standard port (e.g. `postgres-db:5432`) and traffic goes through the db-proxy, matching K8s behavior exactly
+**K8s→Docker port mapping difference (service ports):** In K8s, every K8s Service mapped port 80 → the real container port transparently. The urlMap stored `http://service-name` (port 80 implied). In Docker, there's no port 80 abstraction — the user container listens on its actual port (e.g. 3000, 4000). The urlMap must include the real port: `http://service-name:3000`. The `configmap-builder` must change from `http://${item.k8sName}` to `http://${item.k8sName}:${item.port}`. The interceptor already resolves targets via the urlMap's URL field, so no Go changes are needed for port routing — the port is already in the URL it forwards to. The health checker similarly uses `SERVICE_PORT` from the environment, which already contains the real port.
+
+**K8s→Docker port mapping difference (database port shifting):** In K8s, a K8s Service maps the well-known port (e.g. 5432 for Postgres) to the db-proxy's actual listen port (e.g. 15432). The real database listens on its native port. In Docker, db-proxy and database share a network namespace — they can't both bind the same port. We solve this by shifting the database's internal port:
+
+| Database   | Standard port (db-proxy listens) | Internal port (database listens) | Env var to shift       |
+|------------|----------------------------------|----------------------------------|------------------------|
+| PostgreSQL | 5432                             | 55432                            | `PGPORT`               |
+| MySQL      | 3306                             | 33306                            | `MYSQL_TCP_PORT`       |
+| Redis      | 6379                             | 63790                            | `--port` command arg   |
+| MongoDB    | 27017                            | 27018                            | `--port` command arg   |
+
+The db-proxy receives `QUERY_PORT` (standard port it listens on) and `DATABASE_PORT` (shifted port it forwards to). Callers use the standard port and traffic flows through the db-proxy, matching K8s behavior exactly.
+
+The `configmap-builder` includes a `port` field in the `DatabaseInfo` so the test-agent connects to the correct port for each database type.
+
+**MongoDB special handling:** MongoDB's official Docker image uses `docker-entrypoint.sh`, which starts a temporary `mongod` on port 27017 to run init scripts before restarting for production. This conflicts with db-proxy (which needs to bind 27017). The fix is a custom entrypoint that bypasses `docker-entrypoint.sh` entirely:
+1. Fork `mongod` on the internal port (27018)
+2. Wait for ready, create auth user if configured
+3. Run init scripts (`.sh` and `.js` from `/docker-entrypoint-initdb.d/`)
+4. Shutdown and `exec` the final `mongod` on the internal port (with `--auth` if credentials are set)
+
+**db-proxy startup retry:** The db-proxy starts first (it holds the network alias) but may fail to bind its port if the network namespace isn't fully ready. `BaseProxy.Listen()` retries up to 30 times with 1-second intervals.
+
+**`host.docker.internal` must bypass dnsmasq:** dnsmasq's catch-all rule routes all DNS to the interceptor. Without an exception, `host.docker.internal` lookups would go to the interceptor instead of resolving to the host machine. Fix: add `server=/host.docker.internal/${dockerDnsIP}` to the dnsmasq config so Docker DNS (127.0.0.11) handles the resolution.
+
+**Deploy ordering:** Databases must be deployed before services. Services that depend on databases (e.g., `DB_URL=postgres://postgres-db:5432/mydb`) may crash on startup if the database isn't ready. In K8s, readiness probes and retry logic handled this naturally. In Docker, containers start immediately. The deployment loop runs two passes: first all `DATABASE` items, then all `SERVICE` items.
 
 ---
 
 ## Cleanup/Teardown
 
 ```
-1. docker kill $(docker ps -q --filter network=dokkimi-run-{instanceId})
-2. docker rm $(docker ps -aq --filter network=dokkimi-run-{instanceId})
+1. docker kill $(docker ps -q --filter label=io.dokkimi.instance-id={instanceId})
+2. docker rm $(docker ps -aq --filter label=io.dokkimi.instance-id={instanceId})
 3. docker network rm dokkimi-run-{instanceId}
 ```
 
-Or using the Docker API programmatically: disconnect all containers from the network, remove them, remove the network. Atomic, instant, no polling for namespace deletion.
+**Use labels, not network filters.** Containers in shared network mode (`--network=container:<other>`) are NOT connected to the Docker network directly — they share the primary container's network stack. Filtering by network misses all shared-network containers (user services, databases, dnsmasq, chromium). All containers are tagged with `io.dokkimi.instance-id` at creation time, so label-based filtering catches everything.
+
+**Deployment failure teardown:** If deployment fails partway through (e.g., image pull failure after some containers are already running), the deployer must catch the error and run teardown to clean up orphaned containers and the network. Without this, partial deployments leave resources behind.
 
 ---
 
@@ -437,20 +535,30 @@ If supporting explicit per-definition registry auth (for CI where Docker isn't p
 
 **Build:** A `DockerDeployerService` that orchestrates the startup sequence:
 
-1. Create Docker network
-2. Write config files to temp dir
-3. Write CA bundle to temp dir
-4. Start global interceptor container
-5. For each service: start interceptor → start dnsmasq → start user container (joining interceptor network ns)
-6. For each database: start db-proxy → start database (joining db-proxy network ns)
-7. Start test-agent
-8. Start chromium (if UI tests)
-9. Stream logs from all containers
-10. Wait for test-agent to report completion
+1. Pull all images (service, database, infrastructure, browser)
+2. Create Docker network
+3. Write config files (interceptor config JSON, resolv.conf) to temp dir
+4. Write CA bundle to temp dir
+5. Start global interceptor container
+6. Start test-agent
+7. **For each database:** start db-proxy (primary, holds network alias) → start database (joins db-proxy network ns, on shifted internal port)
+8. **For each service:**
+   a. Start per-service interceptor (standalone on network)
+   b. Inspect interceptor to get its Docker network IP
+   c. Write dnsmasq config with `address=/#/${interceptorIP}` (catch-all routes to this IP)
+   d. Start user container (primary, holds service network alias, bind-mount resolv.conf)
+   e. Start dnsmasq (joins user container's network ns)
+9. Start chromium group (if UI tests): same pattern — interceptor standalone, then chromium + dnsmasq sharing a namespace
+10. Start log collection for all containers (interceptors + user containers)
+11. Wait for test-agent to report completion
 
-The ordering logic is the same as today. The "start" action changes from "create K8s Deployment and wait for readiness" to "docker run and wait for healthcheck."
+**Interceptor IP must be known before dnsmasq config is written.** The per-service interceptor is started first as a standalone container on the Docker network. Its IP is inspected via the Docker API, then written into the dnsmasq catch-all rule (`address=/#/${interceptorIP}`). This is analogous to K8s, where the interceptor's ClusterIP was known and used in the dnsmasq config.
 
-**Effort:** ~200-300 lines. Simpler than current because no async reconciliation — each step is synchronous (container is running or it failed).
+**Databases before services** — services may depend on databases and crash on startup if the database isn't reachable. In K8s, readiness probes masked this. In Docker, containers start immediately.
+
+**Failure handling:** The entire deployment is wrapped in try/catch. On failure, `teardown()` is called to clean up any containers already started, and the instance status is set to FAILED.
+
+**Effort:** ~400-500 lines (more than originally estimated due to database port shifting, MongoDB custom entrypoint, resolv.conf handling, interceptor IP inspection, and deploy ordering logic).
 
 ### Phase 7: Cleanup/Teardown
 
@@ -459,8 +567,10 @@ The ordering logic is the same as today. The "start" action changes from "create
 **Build:** 
 ```typescript
 async stopInstance(instanceId: string) {
+  // Use labels, not network filters — shared-network containers don't show up in network queries
   const containers = await docker.listContainers({ 
-    filters: { network: [`dokkimi-run-${instanceId}`] } 
+    all: true,
+    filters: { label: [`io.dokkimi.instance-id=${instanceId}`] } 
   });
   await Promise.all(containers.map(c => docker.getContainer(c.Id).remove({ force: true })));
   await docker.getNetwork(`dokkimi-run-${instanceId}`).remove();
@@ -487,17 +597,25 @@ stream.on('data', (chunk) => processLog(instanceId, itemId, chunk));
 
 **Current:** Test-agent reads config from a K8s ConfigMap via the K8s API, and discovers services via K8s DNS.
 
-**Change:** Test-agent reads config from a mounted file (`/etc/dokkimi/config.json`) instead of calling the K8s API. Service discovery works via Docker DNS (container names on the network). The test execution logic, HTTP request making, and completion notification are unchanged.
+**Change:** Test-agent reads config from a mounted file (`/etc/dokkimi/config.json`) instead of calling the K8s API. Requires `CONFIG_SOURCE=file` and `CONFIG_FILE_PATH` env vars. Service discovery works via Docker DNS. The test execution logic, HTTP request making, and completion notification are unchanged.
 
-**Effort:** Small change in test-agent's Go code — replace the ConfigMap watcher with a file watcher (or just read-once-at-startup, since config doesn't change mid-run). ~50 lines changed.
+**Database port awareness:** The test-agent's `DatabaseQueryExecutor` previously hardcoded standard ports (5432, 3306, etc.) in connection strings. With port shifting, the `DatabaseInfo` struct now includes a `port` field from the configmap, and all connection strings use it. This affects Postgres, MySQL, Redis, and MongoDB connection builders.
+
+**Effort:** ~100 lines changed (file config reader + port-aware connections).
 
 ### Phase 10: Interceptor Adaptation
 
 **Current:** Interceptor uses `K8S_DNS_IP` env var to resolve upstream services (bypassing dnsmasq to avoid circular routing).
 
-**Change:** Replace with Docker's embedded DNS (`127.0.0.11`). The interceptor resolves upstream service names via Docker DNS instead of kube-dns. Same principle, different IP.
+**Changes required:**
+1. **DNS resolution:** Point `K8S_DNS_IP` at Docker's embedded DNS (`127.0.0.11`) instead of kube-dns. The interceptor is a standalone container on the Docker network (not sharing a namespace with the user container), so it uses Docker DNS directly to resolve target service names.
+2. **Config loading:** New `FileConfigLoader` for Docker mode (reads JSON file instead of watching K8s ConfigMap). Branches on `DEPLOY_MODE=docker`.
+3. **Health checker:** In Docker mode, the interceptor is no longer on localhost with the user service. The health checker must resolve the service name via Docker DNS to get the user container's IP, then hit `http://<ip>:<port><healthEndpoint>`. This is actually closer to the K8s behavior (resolve via DNS) than the previous Docker workaround (localhost).
+4. **Proxy routing:** The interceptor forwards to target services by resolving via Docker DNS and using the port from the urlMap. For its own service (`ORIGIN`), it resolves the service name to the user container's IP (via Docker DNS) and forwards to the real port — no localhost routing needed since they're on separate network stacks.
+5. **Host header propagation:** Must set `Host` to the target service name on forwarded requests so the target service sees the correct Host.
+6. **Location header rewriting:** Must handle `0.0.0.0`, `127.0.0.1`, `localhost` in redirect Location headers, rewriting to the service name from the urlMap. (Services with `HOSTNAME=0.0.0.0` may generate these.)
 
-**Effort:** Change one env var value. The interceptor code already supports configurable DNS resolution — just point it at Docker's DNS instead of kube-dns.
+**Effort:** ~200 lines changed across config.go, main.go, proxy.go, health.go, plus new file_config_loader.go (~76 lines).
 
 ### Phase 11: Remove K8s Dependencies
 
@@ -646,25 +764,25 @@ After migration:
 
 | Phase | Description | Lines (estimate) | Net change |
 |-------|-------------|-----------------|------------|
-| 1 | Docker Client Service | ~350 new | +350 |
+| 1 | Docker Client Service | ~400 new | +400 |
 | 2 | Container Spec Builders | ~500 new | replaces ~800 |
-| 3 | Config as mounted files | ~30 new | replaces ~150 |
+| 3 | Config as mounted files + resolv.conf | ~50 new | replaces ~150 |
 | 4 | CA cert handling | ~50 new | replaces ~200 |
 | 5 | Registry credentials | 0 new | deletes ~200 |
-| 6 | Docker Orchestrator | ~250 new | replaces ~300 |
-| 7 | Cleanup/teardown | ~30 new | replaces ~150 |
+| 6 | Docker Orchestrator (deploy ordering, port shifting, MongoDB entrypoint, failure handling) | ~500 new | replaces ~300 |
+| 7 | Cleanup/teardown (label-based) | ~30 new | replaces ~150 |
 | 8 | Log collection (no fluent-bit) | ~80 new | replaces sidecar |
-| 9 | Test-agent config reading | ~50 changed | — |
-| 10 | Interceptor DNS config | ~5 changed | — |
+| 9 | Test-agent (file config + port-aware DB connections) | ~100 changed | — |
+| 10 | Interceptor (file config, health, proxy routing, Location rewrite, Host header) | ~200 changed + 76 new | — |
 | 11 | Remove K8s code | 0 new | deletes ~1000+ |
 | 12 | GitHub Action (remove k3s) | ~30 new | replaces ~50 |
 | 13 | Update prerequisites & docs | ~10 new | replaces ~30 |
 
-**Total new code:** ~1,340 lines
+**Total new code:** ~1,950 lines
 **Total deleted code:** ~2,880+ lines
-**Net:** ~1,540 fewer lines of infrastructure code
+**Net:** ~930 fewer lines of infrastructure code
 
-The Go sidecars (interceptor, db-proxy, test-agent) need minimal changes — they're already container-native and communicate via HTTP/DNS. The bulk of the work is in Control Tower's TypeScript orchestration layer, replacing K8s API calls with Docker API calls.
+The original estimate underestimated the Go sidecar changes significantly. The interceptor alone required ~200 lines of changes plus a new 76-line file, not a 5-line env var swap. The Docker orchestrator is roughly double the original estimate due to database port shifting logic, MongoDB custom entrypoint generation, deploy ordering, and failure handling. The Go sidecars (interceptor, db-proxy, test-agent) required more changes than anticipated because K8s services and DNS transparently handled port mapping and routing that must be replicated explicitly in Docker.
 
 ---
 
@@ -745,8 +863,11 @@ async cleanupOrphanedResources() {
     filters: { name: ['dokkimi-run-'] }
   });
   for (const net of networks) {
+    // Use labels — network filter misses shared-network containers
+    const instanceId = net.Name.replace('dokkimi-run-', '');
     const containers = await docker.listContainers({
-      filters: { network: [net.Name] }
+      all: true,
+      filters: { label: [`io.dokkimi.instance-id=${instanceId}`] }
     });
     await Promise.all(containers.map(c => docker.getContainer(c.Id).remove({ force: true })));
     await docker.getNetwork(net.Id).remove();
