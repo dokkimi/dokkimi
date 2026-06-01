@@ -127,7 +127,9 @@ const mockInstanceService = {
 const mockRunStorage = {
   getInitFilesDir: jest
     .fn()
-    .mockReturnValue('/home/.dokkimi/storage/instances/test-instance/db-init-files/postgres-db'),
+    .mockReturnValue(
+      '/home/.dokkimi/storage/instances/test-instance/db-init-files/postgres-db',
+    ),
 };
 
 function buildCtx(

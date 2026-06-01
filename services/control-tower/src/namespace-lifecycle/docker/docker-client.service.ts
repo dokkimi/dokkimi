@@ -111,8 +111,9 @@ export class DockerClientService implements OnApplicationBootstrap {
     const isSharedNetworkMode =
       opts.networkMode && opts.networkMode.startsWith('container:');
 
-    const extraHosts =
-      process.platform === 'linux' ? ['host.docker.internal:host-gateway'] : [];
+    const extraHosts = isSharedNetworkMode
+      ? []
+      : ['host.docker.internal:host-gateway'];
 
     const exposedPorts: Record<string, object> = {};
     if (opts.exposedPorts) {

@@ -172,6 +172,19 @@ func (p *ProxyService) rewriteLocationHeader(resp *http.Response) {
 			return
 		}
 	}
+
+	// Localhost-like addresses (0.0.0.0, 127.0.0.1, localhost) mean the service
+	// redirected using its own bind address. Rewrite to this interceptor's origin
+	// so the redirect is routable from other containers.
+	if p.origin != "" && (hostname == "0.0.0.0" || hostname == "127.0.0.1" || hostname == "localhost") {
+		if info, exists := urlMap[p.origin]; exists {
+			parsed.Host = p.origin
+			parsed.Scheme = info.Scheme
+			rewritten := parsed.String()
+			resp.Header.Set("Location", rewritten)
+			log.Printf("[Interceptor] Rewrote Location (localhost): %s -> %s", location, rewritten)
+		}
+	}
 }
 
 // getTargetURL determines the target URL for the request

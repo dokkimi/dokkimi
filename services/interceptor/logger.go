@@ -39,14 +39,17 @@ type Logger struct {
 }
 
 // NewLogger creates a new async logger
-func NewLogger(logEndpointURL string, timeout time.Duration) *Logger {
+func NewLogger(logEndpointURL string, timeout time.Duration, client *http.Client) *Logger {
+	if client == nil {
+		client = &http.Client{Timeout: timeout}
+	} else {
+		client.Timeout = timeout
+	}
 	logger := &Logger{
 		logEndpointURL: logEndpointURL,
-		httpClient: &http.Client{
-			Timeout: timeout,
-		},
-		logChan:  make(chan HttpLogMessage, 1000), // Buffered channel
-		stopChan: make(chan struct{}),
+		httpClient:     client,
+		logChan:        make(chan HttpLogMessage, 1000), // Buffered channel
+		stopChan:       make(chan struct{}),
 	}
 
 	// Start background worker

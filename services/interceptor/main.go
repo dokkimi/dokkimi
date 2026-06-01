@@ -61,7 +61,7 @@ func main() {
 	// Initialize logger (only if logging is enabled)
 	var logger *Logger
 	if cfg.LogActions {
-		logger = NewLogger(cfg.ControlTowerURL, cfg.LoggingTimeout)
+		logger = NewLogger(cfg.ControlTowerURL, cfg.LoggingTimeout, nil)
 		defer logger.Stop()
 	}
 
@@ -101,7 +101,7 @@ func main() {
 	// Initialize test execution logger (only in test mode)
 	var testExecutionLogger *TestExecutionLogger
 	if cfg.TestAgentURL != "" && cfg.ControlTowerURL != "" {
-		testExecutionLogger = NewTestExecutionLogger(cfg.ControlTowerURL, cfg.Namespace)
+		testExecutionLogger = NewTestExecutionLogger(cfg.ControlTowerURL, cfg.Namespace, nil)
 		defer testExecutionLogger.Stop()
 		log.Printf("Test execution logger started for instance %s", cfg.Namespace)
 	}
@@ -129,7 +129,7 @@ func main() {
 				K8sDNSIP:            cfg.K8sDNSIP,
 				K8sNamespace:        cfg.K8sNamespace,
 			}
-			healthChecker = NewHealthChecker(healthConfig)
+			healthChecker = NewHealthChecker(healthConfig, nil)
 			if healthChecker != nil {
 				healthChecker.Start()
 				defer healthChecker.Stop()

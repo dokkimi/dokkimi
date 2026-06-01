@@ -50,17 +50,20 @@ type HealthConfig struct {
 }
 
 // NewHealthChecker creates a new health checker
-func NewHealthChecker(cfg *HealthConfig) *HealthChecker {
+func NewHealthChecker(cfg *HealthConfig, ctClient *http.Client) *HealthChecker {
 	if cfg == nil || cfg.HealthCheckEndpoint == "" || cfg.ServicePort == "" || cfg.InstanceItemName == "" {
-		// Health checking is optional - return nil if not configured
 		return nil
 	}
 
+	if ctClient == nil {
+		ctClient = &http.Client{Timeout: cfg.CheckTimeout}
+	} else {
+		ctClient.Timeout = cfg.CheckTimeout
+	}
+
 	checker := &HealthChecker{
-		config: cfg,
-		httpClient: &http.Client{
-			Timeout: cfg.CheckTimeout,
-		},
+		config:     cfg,
+		httpClient: ctClient,
 		state:            StateBooting,
 		lastStatus:       false,
 		consecutiveReady: 0,
@@ -139,6 +142,12 @@ func (h *HealthChecker) performCheck() {
 	startTime := time.Now()
 	ready, statusCode, err := h.checkHealth()
 	checkDuration := int(time.Since(startTime).Milliseconds())
+
+	if err != nil {
+		log.Printf("Health check [%s]: ready=%v status=%d duration=%dms err=%v", h.config.InstanceItemName, ready, statusCode, checkDuration, err)
+	} else if !ready {
+		log.Printf("Health check [%s]: ready=%v status=%d duration=%dms", h.config.InstanceItemName, ready, statusCode, checkDuration)
+	}
 
 	// Update state based on result
 	h.updateState(ready)

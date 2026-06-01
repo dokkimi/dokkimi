@@ -53,7 +53,10 @@ describe('DockerClientService (integration)', () => {
       image: TEST_IMAGE,
       networkName: `dokkimi-run-${TEST_INSTANCE_ID}`,
       cmd: ['sh', '-c', 'sleep 30'],
-      labels: { 'test-run': TEST_INSTANCE_ID, 'io.dokkimi.instance-id': TEST_INSTANCE_ID },
+      labels: {
+        'test-run': TEST_INSTANCE_ID,
+        'io.dokkimi.instance-id': TEST_INSTANCE_ID,
+      },
     });
 
     expect(containerId).toBeTruthy();

@@ -12,6 +12,7 @@ export interface InstanceConfigPaths {
   configDir: string;
   configJsonPath: string;
   dnsmasqDir: string;
+  resolvConfPath: string;
 }
 
 @Injectable()
@@ -27,10 +28,14 @@ export class DockerConfigService {
     fs.mkdirSync(configDir, { recursive: true });
     fs.mkdirSync(dnsmasqDir, { recursive: true });
 
+    const resolvConfPath = path.join(configDir, 'resolv.conf');
+    fs.writeFileSync(resolvConfPath, 'nameserver 127.0.0.1\n');
+
     return {
       configDir,
       configJsonPath: path.join(configDir, 'config.json'),
       dnsmasqDir,
+      resolvConfPath,
     };
   }
 

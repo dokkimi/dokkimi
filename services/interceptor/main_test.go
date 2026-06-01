@@ -27,7 +27,7 @@ func TestHandleRequest(t *testing.T) {
 	urlMapFunc := func() UrlMap { return make(UrlMap) }
 	mockManager := NewMockManager(cache, nil, "test-origin", urlMapFunc)
 	proxyService := NewProxyService(cfg, mockManager, urlMapFunc)
-	logger := NewLogger("http://localhost:5000", 5*time.Second)
+	logger := NewLogger("http://localhost:5000", 5*time.Second, nil)
 	defer logger.Stop()
 
 	tests := []struct {
@@ -202,7 +202,7 @@ func TestHandleRequest_ResponseBodyBuffering(t *testing.T) {
 	cache.SetMocks(mocks)
 
 	proxyService := NewProxyService(cfg, mockManager, urlMapFunc)
-	logger := NewLogger("http://localhost:5000", 5*time.Second)
+	logger := NewLogger("http://localhost:5000", 5*time.Second, nil)
 	defer logger.Stop()
 
 	req := httptest.NewRequest("GET", "http://example.com/test", nil)

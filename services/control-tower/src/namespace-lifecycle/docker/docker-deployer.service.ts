@@ -1,5 +1,4 @@
 import * as fs from 'fs';
-import * as path from 'path';
 import { Injectable, Logger } from '@nestjs/common';
 import {
   getConfig,
@@ -67,6 +66,13 @@ export class DockerDeployerService {
       // Pull user images (with registry auth if available)
       await this.pullUserImages(ctx);
 
+      if (attachChromium) {
+        const browserImage = resolveBrowserImage(
+          ctx.definition.config?.browser,
+        );
+        await this.dockerClient.pullImage(browserImage);
+      }
+
       const networkName = await this.dockerClient.createNetwork(instanceId);
       const dockerDnsIP = this.dockerClient.getDockerDnsIP();
 
@@ -101,8 +107,9 @@ export class DockerDeployerService {
         configPaths,
       );
 
+      // Deploy databases first so services can connect on startup
       for (const item of ctx.definition.items) {
-        if (item.type === 'MOCK') {
+        if (item.type !== 'DATABASE') {
           continue;
         }
 
@@ -120,8 +127,36 @@ export class DockerDeployerService {
           );
         }
 
-        if (item.type === 'SERVICE') {
-          const userContainerId = await this.createServiceGroup(
+        await this.createDatabaseGroup(
+          networkName,
+          instanceId,
+          item,
+          containerName,
+          instanceItemId || '',
+        );
+      }
+
+      for (const item of ctx.definition.items) {
+        if (item.type !== 'SERVICE') {
+          continue;
+        }
+
+        const containerName = sanitizeK8sName(item.name);
+        const instanceItemId = ctx.instanceItemIds.get(item.name);
+
+        if (instanceItemId) {
+          await this.instanceItemService.updateInstanceItemK8sName(
+            instanceItemId,
+            containerName,
+          );
+          await this.instanceItemService.updateInstanceItemStatus(
+            instanceItemId,
+            ItemStatus.STARTING,
+          );
+        }
+
+        const { userContainerId, interceptorName } =
+          await this.createServiceGroup(
             networkName,
             instanceId,
             item,
@@ -134,22 +169,20 @@ export class DockerDeployerService {
             allServicePorts,
             databaseNames,
           );
-          if (userContainerId) {
-            await this.logCollector.startCollecting(
-              instanceId,
-              userContainerId,
-              item.name,
-              instanceItemId,
-            );
-          }
-        } else if (item.type === 'DATABASE') {
-          await this.createDatabaseGroup(
-            networkName,
+        if (userContainerId) {
+          await this.logCollector.startCollecting(
             instanceId,
-            item,
-            containerName,
-            instanceItemId || '',
-            configPaths,
+            userContainerId,
+            item.name,
+            instanceItemId,
+          );
+        }
+        if (interceptorName) {
+          await this.logCollector.startCollecting(
+            instanceId,
+            interceptorName,
+            `${item.name}-interceptor`,
+            undefined,
           );
         }
       }
@@ -395,10 +428,10 @@ export class DockerDeployerService {
     allServiceNames: string[],
     allServicePorts: number[],
     databaseNames: string[],
-  ): Promise<string | null> {
+  ): Promise<{ userContainerId: string | null; interceptorName: string }> {
     if (!item.image) {
       this.logger.warn(`Skipping service ${item.name} — no image specified`);
-      return null;
+      return { userContainerId: null, interceptorName: '' };
     }
 
     const config = getConfig();
@@ -423,6 +456,7 @@ export class DockerDeployerService {
       image: DOKKIMI_IMAGES.interceptor,
       networkName,
       networkAliases: [containerName],
+      dns: ['127.0.0.1'],
       env: {
         ...this.envArrayToRecord(interceptorEnv),
         ...this.caService.getInterceptorCaEnvVars(),
@@ -473,6 +507,7 @@ export class DockerDeployerService {
     const userContainerName = `${containerName}-${instanceId}`;
     const userEnv: Record<string, string> = {
       ...this.caService.getServiceCaEnvVars(),
+      HOSTNAME: '0.0.0.0',
     };
 
     // Add user-defined env vars (override defaults)
@@ -492,6 +527,7 @@ export class DockerDeployerService {
 
     const userBinds = [
       ...this.caService.getServiceCaBinds(caBundlePaths),
+      `${configPaths.resolvConfPath}:/etc/resolv.conf:ro`,
       ...(item.localDevPath && item.mountPath
         ? [`${item.localDevPath}:${item.mountPath}`]
         : []),
@@ -516,8 +552,17 @@ export class DockerDeployerService {
       },
     });
 
+    // Verify containers are running after startup
+    const interceptorInfo =
+      await this.dockerClient.inspectContainer(interceptorName);
+    const containerInfo =
+      await this.dockerClient.inspectContainer(userContainerName);
+    this.logger.log(
+      `Service group ${item.name}: interceptor=${interceptorInfo?.state ?? 'NOT_FOUND'} ip=${interceptorInfo?.ip ?? 'none'}, user=${containerInfo?.state ?? 'NOT_FOUND'} ip=${containerInfo?.ip ?? 'none'}`,
+    );
+
     this.logger.log(`Created service group for ${item.name}`);
-    return userContainerId;
+    return { userContainerId, interceptorName };
   }
 
   // ============================================
@@ -530,7 +575,6 @@ export class DockerDeployerService {
     item: DefinitionItem,
     containerName: string,
     instanceItemId: string,
-    configPaths: InstanceConfigPaths,
   ): Promise<void> {
     if (!item.database) {
       this.logger.warn(`Skipping database ${item.name} — no database type`);
@@ -728,6 +772,7 @@ export class DockerDeployerService {
       networkMode: `container:${interceptorName}`,
       dns: ['127.0.0.1'],
       cmd: ['--disable-dev-shm-usage', '--ignore-certificate-errors'],
+      binds: [`${configPaths.resolvConfPath}:/etc/resolv.conf:ro`],
       exposedPorts: [chromiumPort],
       labels: {
         'io.dokkimi.instance-id': instanceId,
@@ -757,6 +802,10 @@ export class DockerDeployerService {
     for (const dbName of databaseNames) {
       lines.push(`server=/${dbName}/${dockerDnsIP}`);
     }
+
+    // host.docker.internal must resolve via Docker DNS so the interceptor's
+    // logger and health checker can reach Control Tower on the host machine.
+    lines.push(`server=/host.docker.internal/${dockerDnsIP}`);
 
     // Catch-all: route all other domains to localhost (the interceptor on shared network ns)
     lines.push('address=/#/127.0.0.1');
@@ -811,10 +860,18 @@ export class DockerDeployerService {
 
   private getDbInternalPort(databaseType: string): number {
     const dbType = databaseType.toLowerCase();
-    if (dbType === 'postgres' || dbType === 'postgresql') return 55432;
-    if (dbType === 'mysql' || dbType === 'mariadb') return 33306;
-    if (dbType === 'redis') return 63790;
-    if (dbType === 'mongodb') return 27018;
+    if (dbType === 'postgres' || dbType === 'postgresql') {
+      return 55432;
+    }
+    if (dbType === 'mysql' || dbType === 'mariadb') {
+      return 33306;
+    }
+    if (dbType === 'redis') {
+      return 63790;
+    }
+    if (dbType === 'mongodb') {
+      return 27018;
+    }
     return 18080;
   }
 
@@ -894,7 +951,6 @@ exec mongod --port ${internalPort} --bind_ip_all`;
     }
     return '/docker-entrypoint-initdb.d';
   }
-
 
   // ============================================
   // STATUS & IMAGE HELPERS
