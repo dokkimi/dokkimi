@@ -68,10 +68,10 @@ import CodeBlock from '../../components/CodeBlock.astro';
 }`} lang="json" />
 
   <h2>DNS and inter-service communication</h2>
-  <p>Service names are DNS hostnames within the namespace. Use the <code>name</code> of another item as the hostname when one service connects to another. For example, if you have a database item named <code>postgres-db</code>, your service connects to it at <code>postgres-db:5432</code>.</p>
+  <p>Service names are DNS hostnames within the Docker network. Use the <code>name</code> of another item as the hostname when one service connects to another. For example, if you have a database item named <code>postgres-db</code>, your service connects to it at <code>postgres-db:5432</code>.</p>
 
   <h2>Naming rules</h2>
-  <p>Item names must be lowercase, alphanumeric with hyphens, start and end with an alphanumeric character, and be 1-63 characters long. They're used as Kubernetes DNS names.</p>
+  <p>Item names must be lowercase, alphanumeric with hyphens, start and end with an alphanumeric character, and be 1-63 characters long. They're used as DNS hostnames in the Docker network.</p>
   <p>Pattern: <code>^[a-z0-9][a-z0-9-]*[a-z0-9]$</code></p>
   <ul>
     <li>Good: <code>my-service</code>, <code>api-gateway</code>, <code>user-svc</code></li>

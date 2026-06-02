@@ -152,9 +152,7 @@ describe('PrismaService', () => {
     it('throws descriptive error when migrations table missing (SQLite)', async () => {
       __mockClient.$queryRawUnsafe
         .mockResolvedValueOnce([{ '1': 1 }])
-        .mockRejectedValue(
-          new Error('no such table: _prisma_migrations'),
-        );
+        .mockRejectedValue(new Error('no such table: _prisma_migrations'));
 
       const service = new PrismaService(makeConfigService('file:test.db'));
 
@@ -182,9 +180,7 @@ describe('PrismaService', () => {
     it('re-throws non-schema errors', async () => {
       __mockClient.$queryRawUnsafe
         .mockResolvedValueOnce([{ '1': 1 }])
-        .mockRejectedValue(
-          new Error('permission denied'),
-        );
+        .mockRejectedValue(new Error('permission denied'));
 
       const service = new PrismaService(makeConfigService('file:test.db'));
 

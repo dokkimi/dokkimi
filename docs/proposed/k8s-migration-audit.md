@@ -156,24 +156,24 @@ All of these are expected remaining work per the migration doc. The K8s code is 
 
 These are real issues that are low-severity or acceptable tradeoffs for a local dev tool.
 
-| Issue | File | Notes |
-|---|---|---|
-| MongoDB entrypoint shell injection | `docker-deployer.service.ts` | `dbUser`/`dbPassword` with single quotes would break the shell string. Defaults (`dokkimi`/`dokkimi`) are safe. Consider escaping if custom creds are supported. |
-| Temp files use default permissions | `docker-config.service.ts` | `/tmp/dokkimi-{instanceId}` created with default perms. Predictable path. Low risk for a local dev tool, but `mkdtemp` or `mode: 0o700` would be more robust. |
-| Log collector cross-chunk frame splits | `docker-log-collector.service.ts` | Docker multiplexed log streams could split a frame header across two data callbacks. Rare in practice but would produce garbled log entries. |
-| `host.docker.internal` injected unconditionally | `docker-client.service.ts` | Migration doc says Linux-only. Code injects it for all platforms. Works on macOS but is technically unnecessary — Docker Desktop handles it natively. |
-| Domain entries in urlMap missing port | `configmap-builder.service.ts` | k8sName entries include port, but domain entries do not. Interceptor's `appendServicePort()` handles this for k8sName-based routing, but domain-based routing may default to 80/443. |
+| Issue                                           | File                              | Notes                                                                                                                                                                                |
+| ----------------------------------------------- | --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| MongoDB entrypoint shell injection              | `docker-deployer.service.ts`      | `dbUser`/`dbPassword` with single quotes would break the shell string. Defaults (`dokkimi`/`dokkimi`) are safe. Consider escaping if custom creds are supported.                     |
+| Temp files use default permissions              | `docker-config.service.ts`        | `/tmp/dokkimi-{instanceId}` created with default perms. Predictable path. Low risk for a local dev tool, but `mkdtemp` or `mode: 0o700` would be more robust.                        |
+| Log collector cross-chunk frame splits          | `docker-log-collector.service.ts` | Docker multiplexed log streams could split a frame header across two data callbacks. Rare in practice but would produce garbled log entries.                                         |
+| `host.docker.internal` injected unconditionally | `docker-client.service.ts`        | Migration doc says Linux-only. Code injects it for all platforms. Works on macOS but is technically unnecessary — Docker Desktop handles it natively.                                |
+| Domain entries in urlMap missing port           | `configmap-builder.service.ts`    | k8sName entries include port, but domain entries do not. Interceptor's `appendServicePort()` handles this for k8sName-based routing, but domain-based routing may default to 80/443. |
 
 ---
 
 ## Test Coverage Gaps
 
-| Area | Gap |
-|---|---|
-| `pullAllImages` | No test that all image types (infra, user, DB, browser) are pulled |
-| User-defined env var merging | Array and object env var formats (deployer lines 519-530) untested |
-| Go `FileConfigLoader` | No dedicated tests for malformed JSON, missing keys, or partial config |
-| Go `rewriteLocationHeader` | Localhost/0.0.0.0/127.0.0.1 rewrite paths untested in proxy_test.go |
+| Area                         | Gap                                                                    |
+| ---------------------------- | ---------------------------------------------------------------------- |
+| `pullAllImages`              | No test that all image types (infra, user, DB, browser) are pulled     |
+| User-defined env var merging | Array and object env var formats (deployer lines 519-530) untested     |
+| Go `FileConfigLoader`        | No dedicated tests for malformed JSON, missing keys, or partial config |
+| Go `rewriteLocationHeader`   | Localhost/0.0.0.0/127.0.0.1 rewrite paths untested in proxy_test.go    |
 
 ---
 

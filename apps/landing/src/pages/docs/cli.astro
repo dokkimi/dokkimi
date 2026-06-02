@@ -154,8 +154,7 @@ dokkimi dump .dokkimi/auth.json -o out.json  # Specific definitions only`} lang=
   <ul>
     <li>Node.js version (20+ required)</li>
     <li>Docker daemon is running</li>
-    <li>Kubernetes cluster is reachable</li>
-    <li>Cluster has sufficient resources</li>
+    <li>Docker has sufficient resources</li>
     <li>Dokkimi internal components are deployed</li>
   </ul>
   <p>Each check reports pass, warn, or fail with a fix suggestion.</p>
@@ -174,13 +173,12 @@ dokkimi validate .dokkimi/auth.json  # Validate a specific file`} lang="bash" />
   <p>Shows the current state of Dokkimi services and any running test instances.</p>
 
   <h3>dokkimi clean</h3>
-  <p>Stops all running instances, destroys their namespaces, and cleans up cluster resources.</p>
+  <p>Stops all running instances, removes their Docker networks and containers, and cleans up resources.</p>
 
   <h3>dokkimi config</h3>
   <p>Interactive settings editor. Opens a full-screen menu with three categories:</p>
   <ul>
-    <li><strong>Concurrency</strong> — max parallel namespaces and max booting namespaces</li>
-    <li><strong>Kubernetes context</strong> — select which context Dokkimi uses from your kubeconfig file</li>
+    <li><strong>Concurrency</strong> — max parallel environments and max booting environments</li>
     <li><strong>Telemetry</strong> — enable or disable anonymous usage telemetry</li>
   </ul>
   <p>Settings are saved to <code>~/.dokkimi/config.json</code>. After making changes, you can reboot Dokkimi services immediately or exit with a reminder to run <code>dokkimi reboot</code>.</p>

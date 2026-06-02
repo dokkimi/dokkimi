@@ -83,45 +83,28 @@ function checkDockerMemory(): Check {
   }
 }
 
-function checkKubernetes(): Check {
-  if (!isCommandAvailable('kubectl')) {
-    return {
-      name: 'Kubernetes',
-      pass: false,
-      detail: 'kubectl not installed',
-      fix: 'Enable Kubernetes in Docker Desktop → Settings → Kubernetes',
-    };
-  }
-
+function checkDockerVersion(): Check {
   try {
-    const output = execSilent('kubectl cluster-info', { timeout: 10000 });
-    if (output.includes('is running at')) {
-      return { name: 'Kubernetes', pass: true, detail: 'cluster reachable' };
-    }
-    return {
-      name: 'Kubernetes',
-      pass: false,
-      detail: 'cluster not reachable',
-      fix: 'Enable Kubernetes in Docker Desktop → Settings → Kubernetes',
-    };
-  } catch {
-    return {
-      name: 'Kubernetes',
-      pass: false,
-      detail: 'cluster not reachable',
-      fix: 'Enable Kubernetes in Docker Desktop → Settings → Kubernetes',
-    };
-  }
-}
-
-function checkKubeContext(): Check {
-  try {
-    const context = execSilent('kubectl config current-context', {
+    const output = execSilent('docker version --format "{{.Server.Version}}"', {
       timeout: 5000,
     });
-    return { name: 'K8s Context', pass: true, detail: context };
+    const version = output.trim().replace(/"/g, '');
+    const major = parseInt(version.split('.')[0], 10);
+    if (!isNaN(major) && major < 20) {
+      return {
+        name: 'Docker Version',
+        pass: false,
+        detail: `v${version} (minimum 20.10+)`,
+        fix: 'Update Docker Desktop to the latest version',
+      };
+    }
+    return { name: 'Docker Version', pass: true, detail: `v${version}` };
   } catch {
-    return { name: 'K8s Context', pass: true, detail: 'unable to detect' };
+    return {
+      name: 'Docker Version',
+      pass: true,
+      detail: 'unable to detect',
+    };
   }
 }
 
@@ -269,16 +252,10 @@ export async function doctor(args: string[]): Promise<void> {
   const dockerCheck = checkDocker();
   checks.push(dockerCheck);
 
-  // Docker memory (only if Docker is running)
   if (dockerCheck.pass) {
     checks.push(checkDockerMemory());
+    checks.push(checkDockerVersion());
   }
-
-  // Kubernetes
-  checks.push(checkKubernetes());
-
-  // K8s context (informational)
-  checks.push(checkKubeContext());
 
   // Disk space
   checks.push(checkDiskSpace());
@@ -396,11 +373,7 @@ function buildTelemetryMap(checks: Check[]): Record<string, boolean | string> {
   const result: Record<string, boolean | string> = {};
   for (const check of checks) {
     const key = check.name.toLowerCase().replace(/[^a-z0-9]/g, '_');
-    if (check.name === 'K8s Context') {
-      result[key] = check.detail;
-    } else {
-      result[key] = check.pass;
-    }
+    result[key] = check.pass;
   }
   return result;
 }

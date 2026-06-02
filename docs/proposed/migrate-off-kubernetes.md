@@ -9,12 +9,14 @@ Dokkimi currently requires a running Kubernetes cluster to create isolated test 
 ### 1. Test Startup Time
 
 **Current (K8s):**
+
 - Namespace creation + service account setup: ~500ms
 - Scheduler → kubelet → container start per pod: ~2-5s each
 - Readiness probe convergence: ~2-10s (depends on initialDelaySeconds + intervals)
 - Total for a 3-service environment: **15-45 seconds**
 
 **Proposed (Docker):**
+
 - `docker network create`: ~50ms
 - `docker run` per container (cached image): ~200-500ms
 - DNS available immediately (Docker embedded DNS)
@@ -25,12 +27,14 @@ The difference compounds with test parallelism. Running 10 test suites concurren
 ### 2. User Installation Simplicity
 
 **Current requirements:**
+
 - Docker (for building images)
 - A running Kubernetes cluster (minikube, kind, Docker Desktop K8s, or remote)
 - kubectl configured with appropriate context
 - Sufficient cluster resources for multiple namespaces
 
 **Proposed requirements:**
+
 - Docker
 
 That's it. No cluster, no kubeconfig, no context switching, no resource quotas to manage. The barrier to first test run drops from "configure a K8s cluster" to "have Docker installed."
@@ -57,30 +61,30 @@ Every K8s feature currently used maps to a Docker-native equivalent:
 
 ### Namespace Isolation → Docker Networks
 
-| K8s | Docker |
-|-----|--------|
-| One namespace per test run | One Docker network per test run |
+| K8s                                                        | Docker                                                                  |
+| ---------------------------------------------------------- | ----------------------------------------------------------------------- |
+| One namespace per test run                                 | One Docker network per test run                                         |
 | Pods within namespace can reach each other by service name | Containers on same network can reach each other by container name/alias |
-| Pods across namespaces cannot communicate | Containers on different networks cannot communicate |
-| `kubectl delete namespace X` removes everything | `docker network rm X` + `docker rm` removes everything |
+| Pods across namespaces cannot communicate                  | Containers on different networks cannot communicate                     |
+| `kubectl delete namespace X` removes everything            | `docker network rm X` + `docker rm` removes everything                  |
 
 Docker networks provide identical network-level isolation. Two containers on different networks cannot communicate — period. Same guarantee as K8s namespaces with default network policies.
 
 ### Service Discovery (DNS) → Docker Embedded DNS
 
-| K8s | Docker |
-|-----|--------|
-| `<service>.<namespace>.svc.cluster.local` | Container name or network alias |
+| K8s                                          | Docker                                                             |
+| -------------------------------------------- | ------------------------------------------------------------------ |
+| `<service>.<namespace>.svc.cluster.local`    | Container name or network alias                                    |
 | CoreDNS resolves service names to ClusterIPs | Docker's embedded DNS (127.0.0.11) resolves container names to IPs |
-| Services load-balance across pod IPs | Single container per "service" — no load balancing needed |
+| Services load-balance across pod IPs         | Single container per "service" — no load balancing needed          |
 
 Docker's built-in DNS resolves container names within a network. If you start a container with `--name payment-service --network dokkimi-run-abc`, other containers on that network can reach it at `payment-service`. No external DNS server needed.
 
 ### Sidecar Pattern → Shared Network Namespace
 
-| K8s | Docker |
-|-----|--------|
-| Multiple containers per pod share `localhost` | `--network=container:<other>` shares network namespace |
+| K8s                                            | Docker                                                                |
+| ---------------------------------------------- | --------------------------------------------------------------------- |
+| Multiple containers per pod share `localhost`  | `--network=container:<other>` shares network namespace                |
 | Pod-level DNS config applies to all containers | DNS config on the "primary" container applies to the shared namespace |
 
 Docker supports sharing a container's network namespace via `--network=container:<id>`. The user's service container starts first (it's the "primary" — connected to the Docker network with the network alias). dnsmasq joins its namespace to provide DNS routing. This matches K8s, where the user container and dnsmasq shared a pod.
@@ -88,17 +92,19 @@ Docker supports sharing a container's network namespace via `--network=container
 The **interceptor is a separate container** on the Docker network with its own IP — it does NOT share the user container's network namespace. This matches K8s, where the interceptor was a separate pod. dnsmasq routes all outbound DNS to the interceptor's IP, so outbound traffic from the user service flows through the interceptor. Inbound traffic from other services hits the user container directly via its network alias — the interceptor is never in the inbound path.
 
 **Critical caveat:** Docker silently ignores `--dns`, `ExtraHosts`, and `ExposedPorts` on containers using `--network=container:<other>`. The API accepts them without error, but they have no effect. To configure DNS on a shared-network container (dnsmasq joining the user container), bind-mount a custom `/etc/resolv.conf` instead:
+
 ```
 -v ${configDir}/resolv.conf:/etc/resolv.conf:ro
 ```
+
 The `resolv.conf` file contains `nameserver 127.0.0.1` to route DNS through dnsmasq.
 
 ### ConfigMaps → Config Files or Environment Variables
 
-| K8s | Docker |
-|-----|--------|
+| K8s                       | Docker                                                                                                                 |
+| ------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
 | ConfigMap mounted as file | `--mount type=bind,src=<host-path>,dst=<container-path>` or `--mount type=tmpfs` with content written by Control Tower |
-| ConfigMap as env vars | `--env` or `--env-file` |
+| ConfigMap as env vars     | `--env` or `--env-file`                                                                                                |
 
 Control Tower already generates the ConfigMap content (urlMap, httpMocks, databaseMap, etc.). Instead of writing it to a K8s ConfigMap, write it to a temp file on the host and bind-mount it into the interceptor container.
 
@@ -106,11 +112,11 @@ Control Tower already generates the ConfigMap content (urlMap, httpMocks, databa
 
 ### Secrets (CA Certs, Registry Creds) → Volume Mounts
 
-| K8s | Docker |
-|-----|--------|
-| Secret mounted as volume | Bind-mount from host filesystem |
+| K8s                                       | Docker                                                                        |
+| ----------------------------------------- | ----------------------------------------------------------------------------- |
+| Secret mounted as volume                  | Bind-mount from host filesystem                                               |
 | dokkimi-ca-cert distributed per namespace | CA cert file written once to temp dir, mounted into all containers in the run |
-| registry-creds for private images | `docker login` (already authenticated) or `--auth` on pull |
+| registry-creds for private images         | `docker login` (already authenticated) or `--auth` on pull                    |
 
 The Dokkimi CA generation stays the same (node-forge in Control Tower). Instead of storing it in a K8s Secret and copying between namespaces, write `ca.crt` and `ca.key` to a temp directory and bind-mount into containers that need them.
 
@@ -118,11 +124,12 @@ For private registries: Docker already handles authentication via `~/.docker/con
 
 ### Init Containers → Multi-stage Container Start
 
-| K8s | Docker |
-|-----|--------|
+| K8s                                             | Docker                                                                                                 |
+| ----------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
 | Init container runs before main, shares volumes | Run a prep container first, output to a shared volume, then start main containers mounting that volume |
 
 The CA bundle init container (combines system CAs + Dokkimi CA, creates Java truststore) can either:
+
 1. Run as a short-lived Docker container that writes to a named volume, then main containers mount that volume.
 2. Be done by Control Tower directly on the host (generate the combined bundle, write to temp dir, bind-mount).
 
@@ -130,17 +137,17 @@ Option 2 is simpler — Control Tower already has the CA cert and can produce th
 
 ### Deployments (Restart Policy) → Docker Restart Policies
 
-| K8s | Docker |
-|-----|--------|
+| K8s                                                   | Docker                                               |
+| ----------------------------------------------------- | ---------------------------------------------------- |
 | Deployment with replicas=1 auto-restarts crashed pods | `--restart=on-failure` or `--restart=unless-stopped` |
 
 For test environments that live minutes, restart isn't critical — a crashed container likely means the test should fail, not retry. But `--restart=on-failure:3` gives equivalent behavior if needed.
 
 ### Health/Readiness Probes → Docker Healthchecks
 
-| K8s | Docker |
-|-----|--------|
-| Liveness probe (restart on failure) | `--health-cmd` + `--restart=on-failure` |
+| K8s                                        | Docker                                                           |
+| ------------------------------------------ | ---------------------------------------------------------------- |
+| Liveness probe (restart on failure)        | `--health-cmd` + `--restart=on-failure`                          |
 | Readiness probe (gate traffic until ready) | `--health-cmd` + wait for "healthy" status before starting tests |
 
 Docker healthchecks report container health state. Control Tower (or test-agent) polls `docker inspect` for health status before starting test execution — same as waiting for readiness probes today.
@@ -161,8 +168,8 @@ The interceptor currently reports health to Control Tower via `POST /health/stat
 
 ### Fluent Bit (Log Collection) → Docker Log Driver or Direct Capture
 
-| K8s | Docker |
-|-----|--------|
+| K8s                                          | Docker                                                       |
+| -------------------------------------------- | ------------------------------------------------------------ |
 | fluent-bit sidecar tails /var/log/containers | `docker logs --follow <container>` streamed by Control Tower |
 
 Docker provides native log access via the Docker API (`/containers/{id}/logs`). Control Tower can stream logs from each container directly — no fluent-bit sidecar needed. This eliminates one container per service/database.
@@ -174,6 +181,7 @@ Alternatively, use Docker's `fluentd` or `syslog` log driver to ship logs direct
 Docker pulls images only if not present locally (equivalent to `IfNotPresent`). For explicit freshness, `docker pull` before `docker run`. Same behavior, no configuration needed.
 
 **All image types must be pulled explicitly.** Unlike K8s (which pulls on pod creation), Docker requires an explicit `docker pull` before `docker run` for images not present locally. This includes not just user service images, but also:
+
 - Database images (e.g., `postgres:15`, `mysql:8`, `mongo:7`, `redis:7`)
 - Infrastructure images (interceptor, dnsmasq, test-agent, all db-proxy variants)
 - Browser images (chromium, if UI tests are present)
@@ -309,6 +317,7 @@ docker start service-a-dnsmasq-${instanceId}
 **Why the interceptor starts first:** Its IP must be known before the dnsmasq config can be written. Start the interceptor, inspect its IP via the Docker API (`inspectContainer`), write the dnsmasq config with `address=/#/${interceptorIP}`, then start the user container and dnsmasq.
 
 **Why `resolv.conf` bind-mount (not `--dns`):** Docker silently ignores `--dns` on shared-network containers. The bind-mount forces dnsmasq (at 127.0.0.1) as the nameserver. dnsmasq then routes:
+
 - All hostnames → the interceptor's IP (via dnsmasq's `address=/#/${INTERCEPTOR_IP}` catch-all)
 - Database names → `127.0.0.11` (Docker's embedded DNS, which resolves to the db-proxy container on the network)
 - `host.docker.internal` → `127.0.0.11` (Docker DNS, which resolves to the host machine)
@@ -322,6 +331,7 @@ docker start service-a-dnsmasq-${instanceId}
 ### Key Networking Details
 
 **Service-to-service routing (full flow):**
+
 1. `service-a` calls `http://service-b/api/users`
 2. `service-a`'s DNS (via bind-mounted resolv.conf → `127.0.0.1`) hits dnsmasq
 3. dnsmasq returns the interceptor's IP (via `address=/#/${INTERCEPTOR_IP}` catch-all rule)
@@ -335,12 +345,14 @@ docker start service-a-dnsmasq-${instanceId}
 This matches K8s exactly: the sending service's interceptor captures and logs the outbound request, and the receiving service gets traffic directly.
 
 **Mock DNS routing (including external HTTPS endpoints):**
+
 - dnsmasq resolves `api.stripe.com` → the interceptor's IP (catch-all)
 - Interceptor checks mock config, returns mock response
 - For HTTPS mocks (e.g., `accounts.google.com`): the interceptor listens on port 443 with dynamically generated TLS certs signed by the Dokkimi CA. The user container trusts the CA via `NODE_EXTRA_CA_CERTS` / `SSL_CERT_FILE` bind mounts.
 - For non-mocked external hosts: the interceptor forwards the request to the real external host, logs it, and returns the response.
 
 **Database routing:**
+
 - dnsmasq config has explicit entry: `server=/postgres-db/${dockerDnsIP}` (forward to Docker DNS, not to interceptor)
 - Docker DNS resolves `postgres-db` → the db-proxy container's IP on the network
 - Service connects to `postgres-db:<standard-port>` → hits db-proxy, which proxies to the real database on `localhost:<shifted-internal-port>` in its own shared network namespace
@@ -350,18 +362,19 @@ This matches K8s exactly: the sending service's interceptor captures and logs th
 
 **K8s→Docker port mapping difference (database port shifting):** In K8s, a K8s Service maps the well-known port (e.g. 5432 for Postgres) to the db-proxy's actual listen port (e.g. 15432). The real database listens on its native port. In Docker, db-proxy and database share a network namespace — they can't both bind the same port. We solve this by shifting the database's internal port:
 
-| Database   | Standard port (db-proxy listens) | Internal port (database listens) | Env var to shift       |
-|------------|----------------------------------|----------------------------------|------------------------|
-| PostgreSQL | 5432                             | 55432                            | `PGPORT`               |
-| MySQL      | 3306                             | 33306                            | `MYSQL_TCP_PORT`       |
-| Redis      | 6379                             | 63790                            | `--port` command arg   |
-| MongoDB    | 27017                            | 27018                            | `--port` command arg   |
+| Database   | Standard port (db-proxy listens) | Internal port (database listens) | Env var to shift     |
+| ---------- | -------------------------------- | -------------------------------- | -------------------- |
+| PostgreSQL | 5432                             | 55432                            | `PGPORT`             |
+| MySQL      | 3306                             | 33306                            | `MYSQL_TCP_PORT`     |
+| Redis      | 6379                             | 63790                            | `--port` command arg |
+| MongoDB    | 27017                            | 27018                            | `--port` command arg |
 
 The db-proxy receives `QUERY_PORT` (standard port it listens on) and `DATABASE_PORT` (shifted port it forwards to). Callers use the standard port and traffic flows through the db-proxy, matching K8s behavior exactly.
 
 The `configmap-builder` includes a `port` field in the `DatabaseInfo` so the test-agent connects to the correct port for each database type.
 
 **MongoDB special handling:** MongoDB's official Docker image uses `docker-entrypoint.sh`, which starts a temporary `mongod` on port 27017 to run init scripts before restarting for production. This conflicts with db-proxy (which needs to bind 27017). The fix is a custom entrypoint that bypasses `docker-entrypoint.sh` entirely:
+
 1. Fork `mongod` on the internal port (27018)
 2. Wait for ready, create auth user if configured
 3. Run init scripts (`.sh` and `.js` from `/docker-entrypoint-initdb.d/`)
@@ -394,6 +407,7 @@ The `configmap-builder` includes a `port` field in the `DatabaseInfo` so the tes
 ### 1. No Production Environment Parity (for K8s users)
 
 If a user's production runs on K8s, testing on plain Docker means the test environment differs from production in:
+
 - No K8s DNS search domains (`svc.cluster.local`)
 - No K8s service accounts or projected volumes
 - No K8s init container ordering guarantees (must be replicated manually)
@@ -416,6 +430,7 @@ This is a real cost, but it's a future-product concern, not a current-product co
 ### 4. Docker-in-Docker Complications (CI Environments)
 
 Some CI systems (GitHub Actions, GitLab CI) run jobs inside containers. Running Docker inside Docker requires either:
+
 - Docker socket mounting (`-v /var/run/docker.sock:/var/run/docker.sock`) — works but has security implications
 - Docker-in-Docker (dind) — adds another layer
 
@@ -499,7 +514,10 @@ The logic for computing env vars, building dnsmasq configs, and generating inter
 ```typescript
 const configDir = path.join(os.tmpdir(), `dokkimi-${instanceId}`);
 fs.mkdirSync(configDir, { recursive: true });
-fs.writeFileSync(path.join(configDir, 'config.json'), JSON.stringify(configData));
+fs.writeFileSync(
+  path.join(configDir, 'config.json'),
+  JSON.stringify(configData),
+);
 // Mount: -v ${configDir}/config.json:/etc/dokkimi/config.json:ro
 ```
 
@@ -509,7 +527,8 @@ fs.writeFileSync(path.join(configDir, 'config.json'), JSON.stringify(configData)
 
 **Replace:** `dokkimi-ca.service.ts` (the K8s secret storage part)
 
-**Change:** 
+**Change:**
+
 - CA generation stays the same (node-forge, RSA 4096)
 - Instead of storing in a K8s Secret in `dokkimi-system` and copying per namespace, store CA cert + key in `~/.dokkimi/ca/` (persistent across runs)
 - CA bundle preparation (combining system CAs + Dokkimi CA) done by Control Tower directly:
@@ -564,13 +583,14 @@ If supporting explicit per-definition registry auth (for CI where Docker isn't p
 
 **Replace:** `namespace-lifecycle.service.ts` (the K8s deletion + polling logic)
 
-**Build:** 
+**Build:**
+
 ```typescript
 async stopInstance(instanceId: string) {
   // Use labels, not network filters — shared-network containers don't show up in network queries
-  const containers = await docker.listContainers({ 
+  const containers = await docker.listContainers({
     all: true,
-    filters: { label: [`io.dokkimi.instance-id=${instanceId}`] } 
+    filters: { label: [`io.dokkimi.instance-id=${instanceId}`] }
   });
   await Promise.all(containers.map(c => docker.getContainer(c.Id).remove({ force: true })));
   await docker.getNetwork(`dokkimi-run-${instanceId}`).remove();
@@ -586,8 +606,13 @@ async stopInstance(instanceId: string) {
 **Replace:** Fluent-bit sidecar container in every pod
 
 **Build:** Control Tower streams logs via Docker API:
+
 ```typescript
-const stream = await container.logs({ follow: true, stdout: true, stderr: true });
+const stream = await container.logs({
+  follow: true,
+  stdout: true,
+  stderr: true,
+});
 stream.on('data', (chunk) => processLog(instanceId, itemId, chunk));
 ```
 
@@ -608,6 +633,7 @@ stream.on('data', (chunk) => processLog(instanceId, itemId, chunk));
 **Current:** Interceptor uses `K8S_DNS_IP` env var to resolve upstream services (bypassing dnsmasq to avoid circular routing).
 
 **Changes required:**
+
 1. **DNS resolution:** Point `K8S_DNS_IP` at Docker's embedded DNS (`127.0.0.11`) instead of kube-dns. The interceptor is a standalone container on the Docker network (not sharing a namespace with the user container), so it uses Docker DNS directly to resolve target service names.
 2. **Config loading:** New `FileConfigLoader` for Docker mode (reads JSON file instead of watching K8s ConfigMap). Branches on `DEPLOY_MODE=docker`.
 3. **Health checker:** In Docker mode, the interceptor is no longer on localhost with the user service. The health checker must resolve the service name via Docker DNS to get the user container's IP, then hit `http://<ip>:<port><healthEndpoint>`. This is actually closer to the K8s behavior (resolve via DNS) than the previous Docker workaround (localhost).
@@ -742,15 +768,18 @@ runs:
 **Replace:** `scripts/npm-readme.md`, `dokkimi doctor` checks
 
 The npm README currently lists prerequisites as:
+
 - Node.js 20+
 - Docker Desktop with Kubernetes enabled
 - kubectl
 
 After migration:
+
 - Node.js 20+
 - Docker
 
 **Changes:**
+
 1. **`scripts/npm-readme.md`** — remove "Docker Desktop with Kubernetes enabled" and "kubectl" from prerequisites. Replace with just "Docker". Update the project description from "isolated Kubernetes sandboxes" to "isolated Docker sandboxes" (or similar). Remove `dokkimi uninstall` from the commands table (no cluster resources to uninstall).
 2. **`dokkimi doctor`** — remove K8s-related checks (cluster reachable, context valid, kubectl installed). Keep Docker socket check. Add a check for minimum Docker version (20.10+ for `host.docker.internal` on Linux).
 3. **`dokkimi config`** — remove K8s context picker. No kubeconfig interaction needed.
@@ -762,21 +791,21 @@ After migration:
 
 ## Summary of Effort
 
-| Phase | Description | Lines (estimate) | Net change |
-|-------|-------------|-----------------|------------|
-| 1 | Docker Client Service | ~400 new | +400 |
-| 2 | Container Spec Builders | ~500 new | replaces ~800 |
-| 3 | Config as mounted files + resolv.conf | ~50 new | replaces ~150 |
-| 4 | CA cert handling | ~50 new | replaces ~200 |
-| 5 | Registry credentials | 0 new | deletes ~200 |
-| 6 | Docker Orchestrator (deploy ordering, port shifting, MongoDB entrypoint, failure handling) | ~500 new | replaces ~300 |
-| 7 | Cleanup/teardown (label-based) | ~30 new | replaces ~150 |
-| 8 | Log collection (no fluent-bit) | ~80 new | replaces sidecar |
-| 9 | Test-agent (file config + port-aware DB connections) | ~100 changed | — |
-| 10 | Interceptor (file config, health, proxy routing, Location rewrite, Host header) | ~200 changed + 76 new | — |
-| 11 | Remove K8s code | 0 new | deletes ~1000+ |
-| 12 | GitHub Action (remove k3s) | ~30 new | replaces ~50 |
-| 13 | Update prerequisites & docs | ~10 new | replaces ~30 |
+| Phase | Description                                                                                | Lines (estimate)      | Net change       |
+| ----- | ------------------------------------------------------------------------------------------ | --------------------- | ---------------- |
+| 1     | Docker Client Service                                                                      | ~400 new              | +400             |
+| 2     | Container Spec Builders                                                                    | ~500 new              | replaces ~800    |
+| 3     | Config as mounted files + resolv.conf                                                      | ~50 new               | replaces ~150    |
+| 4     | CA cert handling                                                                           | ~50 new               | replaces ~200    |
+| 5     | Registry credentials                                                                       | 0 new                 | deletes ~200     |
+| 6     | Docker Orchestrator (deploy ordering, port shifting, MongoDB entrypoint, failure handling) | ~500 new              | replaces ~300    |
+| 7     | Cleanup/teardown (label-based)                                                             | ~30 new               | replaces ~150    |
+| 8     | Log collection (no fluent-bit)                                                             | ~80 new               | replaces sidecar |
+| 9     | Test-agent (file config + port-aware DB connections)                                       | ~100 changed          | —                |
+| 10    | Interceptor (file config, health, proxy routing, Location rewrite, Host header)            | ~200 changed + 76 new | —                |
+| 11    | Remove K8s code                                                                            | 0 new                 | deletes ~1000+   |
+| 12    | GitHub Action (remove k3s)                                                                 | ~30 new               | replaces ~50     |
+| 13    | Update prerequisites & docs                                                                | ~10 new               | replaces ~30     |
 
 **Total new code:** ~1,950 lines
 **Total deleted code:** ~2,880+ lines
@@ -889,22 +918,21 @@ The proposal assumes `host.docker.internal` resolves to the host from within con
 The `DockerClientService` (Phase 1) should detect the platform and inject this flag automatically on Linux:
 
 ```typescript
-const extraHosts = process.platform === 'linux' 
-  ? ['host.docker.internal:host-gateway'] 
-  : [];
+const extraHosts =
+  process.platform === 'linux' ? ['host.docker.internal:host-gateway'] : [];
 ```
 
 ### CI Compatibility Matrix
 
 Docker-in-Docker (Con #4) is the most likely friction point for real users. Document explicit support status:
 
-| CI Provider | Docker Available? | Notes |
-|-------------|------------------|-------|
-| GitHub Actions | Yes (socket mounted by default) | Works out of the box |
-| GitLab CI (Docker executor) | Yes (via `services: [docker:dind]` or socket mount) | Requires runner config |
-| CircleCI | Yes (`setup_remote_docker` or machine executor) | Remote Docker adds latency |
-| Jenkins | Depends on agent config | Socket mount most common |
-| Corporate/self-hosted | Often restricted | May need admin approval for socket mount |
+| CI Provider                 | Docker Available?                                   | Notes                                    |
+| --------------------------- | --------------------------------------------------- | ---------------------------------------- |
+| GitHub Actions              | Yes (socket mounted by default)                     | Works out of the box                     |
+| GitLab CI (Docker executor) | Yes (via `services: [docker:dind]` or socket mount) | Requires runner config                   |
+| CircleCI                    | Yes (`setup_remote_docker` or machine executor)     | Remote Docker adds latency               |
+| Jenkins                     | Depends on agent config                             | Socket mount most common                 |
+| Corporate/self-hosted       | Often restricted                                    | May need admin approval for socket mount |
 
 ### Replace `cluster-watcher` With Container Exit Detection
 
@@ -915,6 +943,7 @@ Replace with: after test-agent posts `/test-complete`, Control Tower initiates t
 ### Remove K8s Context From CLI Settings
 
 The `dokkimi config` command currently has a Kubernetes context picker. After migration:
+
 - Remove the K8s context setting entirely
 - Simplify `ensureServicesRunning()` from "check Docker + check K8s" to just "check Docker"
 - Remove `dokkimi doctor` K8s-related checks (cluster reachable, context valid, resource quotas)

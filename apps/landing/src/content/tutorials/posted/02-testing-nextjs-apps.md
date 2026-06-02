@@ -69,7 +69,7 @@ SELECT setval('users_id_seq', 10);
 SELECT setval('posts_id_seq', 10);
 ```
 
-The `setval` calls bump the sequences so new inserts don't collide with the seeded IDs. This file runs when Dokkimi creates the database pod, before any tests execute.
+The `setval` calls bump the sequences so new inserts don't collide with the seeded IDs. This file runs when Dokkimi creates the database container, before any tests execute.
 
 ## Defining the services
 
@@ -121,7 +121,7 @@ database: postgres
 initFilePath: ../init/seed.sql
 ```
 
-The environment variables use Kubernetes service names (`http://api-gateway:3000`, `postgresql://...@postgres-db:5432/...`) because inside the Dokkimi namespace, each service is reachable by its `name`. This matches how you'd configure services in a real Kubernetes deployment.
+The environment variables use service names (`http://api-gateway:3000`, `postgresql://...@postgres-db:5432/...`) because inside the Dokkimi environment, each service is reachable by its `name`. This matches how you'd configure services in any container-based deployment.
 
 ## Testing API routes directly
 
@@ -233,7 +233,7 @@ The `extract` on the first step captures the new post's ID, and the database ste
 
 ## Adding UI tests
 
-Once your API layer is solid, add UI tests for the critical user flows. Dokkimi drives a real Chromium browser inside the same Kubernetes namespace as your services, so the browser has the same network access as a real user.
+Once your API layer is solid, add UI tests for the critical user flows. Dokkimi drives a real Chromium browser inside the same Docker network as your services, so the browser has the same network access as a real user.
 
 Here's a test that loads a post page and verifies it rendered correctly:
 
@@ -423,7 +423,7 @@ This catches a common class of bugs: the server-side fetch returns the right dat
 
 - **Use `data-testid` attributes.** CSS selectors break when you restyle. Test IDs are stable and make your intent clear.
 - **Seed your database with realistic data.** The closer your test data is to production, the more useful your tests are. Include edge cases in the seed — posts with long titles, users with empty bios, unpublished drafts.
-- **Set environment variables to Kubernetes service names.** `http://api-gateway:3000`, not `http://localhost:3000`. This is the most common setup mistake when moving from local development to Dokkimi.
+- **Set environment variables to service names.** `http://api-gateway:3000`, not `http://localhost:3000`. This is the most common setup mistake when moving from local development to Dokkimi.
 - **Start with API route tests.** They're faster, easier to debug, and catch most integration bugs. Once your API layer is solid, add UI tests for the flows that matter most to users.
 - **Use database steps to verify writes.** Don't just check the HTTP response — query the database directly to confirm the data was actually persisted correctly. The response might look right while the data is wrong.
 - **Use screenshots as baselines.** Dokkimi's artifact pipeline can diff screenshots across runs, catching visual regressions alongside functional ones.

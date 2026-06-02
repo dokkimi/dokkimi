@@ -2,7 +2,7 @@
 
 **The only testing framework that does integration, E2E, and visual regression testing. All without a staging environment.**
 
-Dokkimi spins up isolated Kubernetes sandboxes from simple YAML/JSON definitions. It deploys your services, databases, and mocks into dedicated namespaces, drives a real browser through your UI, intercepts all inter-service HTTP traffic, and runs automated test suites that assert on responses, traffic patterns, database state, and screenshots.
+Dokkimi spins up isolated Docker environments from simple YAML/JSON definitions. It deploys your services, databases, and mocks into dedicated networks, drives a real browser through your UI, intercepts all inter-service HTTP traffic, and runs automated test suites that assert on responses, traffic patterns, database state, and screenshots.
 
 ## Why Dokkimi?
 
@@ -16,7 +16,7 @@ Dokkimi gives you **isolated test environments on demand**:
 - **Mock external APIs** — intercept calls to external APIs such as Stripe, Auth0, Twilio, and more. Return controlled responses. No test accounts needed.
 - **Body-aware mock routing** — return different mock responses from the same endpoint based on request body content. Test LLM prompt routing, GraphQL queries, and RPC-style APIs where every call hits one URL.
 - **Database seeding & queries** — seed Postgres, MySQL, MongoDB, or Redis before tests with custom data. Query directly in assertions to verify content.
-- **Isolated environments** — every test run gets its own namespace with dedicated services, databases, and browser. No shared state. No corrupted tests.
+- **Isolated environments** — every test run gets its own Docker network with dedicated services, databases, and browser. No shared state. No corrupted tests.
 - **Variable extraction** — extract values from responses using JSONPath + regex capture groups, then use them in subsequent steps.
 - **Parallel test execution** — run steps in parallel within a test, and run multiple test definitions concurrently.
 - **Zero code changes** — your services run unmodified. Dokkimi wires up sidecars, routing, DNS, browser, and cleanup.
@@ -37,8 +37,7 @@ yarn add -D dokkimi
 ## Prerequisites
 
 - Node.js 20+
-- Docker Desktop with Kubernetes enabled
-- kubectl
+- Docker
 
 Run `dokkimi doctor` after installing to verify your setup.
 

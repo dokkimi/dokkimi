@@ -10,7 +10,7 @@ slug: 'parallel-test-execution'
 Dokkimi supports parallelism at two levels:
 
 1. **Within a test** — run multiple actions concurrently using the `parallel` action type.
-2. **Across tests** — run multiple test definitions concurrently, each in its own namespace.
+2. **Across tests** — run multiple test definitions concurrently, each in its own isolated environment.
 
 Both are designed to keep your feedback loop short as your test suite grows.
 
@@ -99,7 +99,7 @@ At a higher level, you can run multiple test definitions at the same time:
 dokkimi run
 ```
 
-When you run without a specific target, Dokkimi discovers all test definitions under `.dokkimi/` and runs them concurrently. Each definition gets its own isolated namespace, so there's no interference between them.
+When you run without a specific target, Dokkimi discovers all test definitions under `.dokkimi/` and runs them concurrently. Each definition gets its own isolated Docker network, so there's no interference between them.
 
 This is the primary way to scale your test suite. Each test definition is self-contained — its own services, databases, and mocks — so they're naturally parallelizable.
 
@@ -109,10 +109,10 @@ To get the most out of parallel execution:
 
 - **One workflow per definition.** Don't put unrelated tests in the same definition file. Separate "checkout flow" from "user registration" into different definitions so they can run in parallel.
 - **Share service definitions with `$ref`.** Your API gateway definition doesn't need to be duplicated across test files. Put shared items in a `shared/` folder and reference them.
-- **Keep namespaces small.** Each namespace runs real containers. If one definition deploys 15 services and another deploys 2, the small one will finish long before the large one. Break up large topologies where possible.
+- **Keep environments small.** Each environment runs real containers. If one definition deploys 15 services and another deploys 2, the small one will finish long before the large one. Break up large topologies where possible.
 
 ## Resource considerations
 
-Each parallel test definition creates its own Kubernetes namespace with its own set of pods. On a local machine, you're limited by CPU and memory. A few concurrent namespaces work fine on a modern laptop. For larger suites, cloud execution (coming soon) will provide elastic resources.
+Each parallel test definition creates its own isolated Docker environment with its own set of containers. On a local machine, you're limited by CPU and memory. A few concurrent environments work fine on a modern laptop. For larger suites, cloud execution (coming soon) will provide elastic resources.
 
-Run `dokkimi doctor` to see your cluster's available resources and how many concurrent namespaces it can comfortably support.
+Run `dokkimi doctor` to see your available resources and how many concurrent environments it can comfortably support.

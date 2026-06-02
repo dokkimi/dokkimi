@@ -201,7 +201,6 @@ describe('DockerClientService', () => {
       expect(mockNetwork.disconnect).not.toHaveBeenCalled();
       expect(mockNetwork.connect).not.toHaveBeenCalled();
     });
-
   });
 
   describe('removeContainer', () => {

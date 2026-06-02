@@ -183,7 +183,9 @@ describe('DockerDeployerService', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    mockDockerClient.createNetwork.mockResolvedValue('dokkimi-run-test-instance');
+    mockDockerClient.createNetwork.mockResolvedValue(
+      'dokkimi-run-test-instance',
+    );
     mockDockerClient.runContainer.mockResolvedValue('container-id');
     mockDockerClient.inspectContainer.mockResolvedValue({
       id: 'container-id',
@@ -522,7 +524,6 @@ describe('DockerDeployerService', () => {
       const teardownIdx = callOrder.indexOf('teardown');
       expect(interceptorIdx).toBeLessThan(teardownIdx);
     });
-
   });
 
   describe('dnsmasq config', () => {

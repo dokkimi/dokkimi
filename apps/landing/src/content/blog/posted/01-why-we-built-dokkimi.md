@@ -23,7 +23,7 @@ You end up with a testing strategy that's fast but fake (unit tests) or real but
 
 ## What if you could have both?
 
-That's the idea behind Dokkimi. For each test run, Dokkimi spins up an isolated Kubernetes namespace with your actual services, real databases, a traffic interceptor that captures every HTTP call between them, and optionally a real Chromium browser for E2E UI testing.
+That's the idea behind Dokkimi. For each test run, Dokkimi spins up an isolated Docker environment with your actual services, real databases, a traffic interceptor that captures every HTTP call between them, and optionally a real Chromium browser for E2E UI testing.
 
 You write assertions against real traffic — "when I POST to the API gateway, verify that the order service called the payment service with the right amount." You drive a browser through your UI and screenshot it for visual regression. You query the database directly to verify writes. No mocks of your own code. No shared state. No drift.
 
@@ -42,7 +42,7 @@ assertions:
 ## How it works in practice
 
 1. You define your services, databases, mocks, and UI flows in YAML files under `.dokkimi/`.
-2. `dokkimi run` deploys everything into a fresh namespace with sidecar interceptors (and a headless browser if your test includes UI actions).
+2. `dokkimi run` deploys everything into a fresh environment with sidecar interceptors (and a headless browser if your test includes UI actions).
 3. Your test steps execute — HTTP requests, database queries, browser interactions, and screenshots — while the interceptor logs all inter-service traffic.
 4. Assertions run against responses, captured traffic, database state, and screenshot diffs. Console log assertions are supported too.
 5. Everything is torn down automatically.

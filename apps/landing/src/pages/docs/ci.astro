@@ -5,7 +5,7 @@ import CodeBlock from '../../components/CodeBlock.astro';
 
 <DocsLayout title="CI Pipeline — Dokkimi Docs" description="Run Dokkimi integration tests in GitHub Actions and other CI systems.">
   <h1>CI Pipeline</h1>
-  <p class="subtitle">Run your Dokkimi tests in CI. No config files, no cluster expertise required.</p>
+  <p class="subtitle">Run your Dokkimi tests in CI. No config files, no infrastructure expertise required.</p>
 
   <h2>GitHub Action (recommended)</h2>
   <p>The simplest way to run Dokkimi in CI is with the <a href="https://github.com/dokkimi/github-action">official GitHub Action</a>. Add one step to your workflow:</p>
@@ -27,7 +27,7 @@ jobs:
         with:
           tests: .dokkimi/`} lang="yaml" />
 
-  <p>That's it. The action installs k3s, sets up a single-node Kubernetes cluster, installs the Dokkimi CLI, pulls sidecar images, and runs your tests. Results stream to the GitHub Actions log.</p>
+  <p>That's it. The action installs the Dokkimi CLI, pulls sidecar images, and runs your tests. Results stream to the GitHub Actions log.</p>
 
   <h3>Configuration</h3>
   <p>Override defaults with <code>with:</code> inputs — no config files needed:</p>
@@ -47,8 +47,8 @@ jobs:
     </thead>
     <tbody>
       <tr><td><code>tests</code></td><td><em>required</em></td><td>Path to <code>.dokkimi/</code> directory or a specific definition file</td></tr>
-      <tr><td><code>max-parallel</code></td><td><code>6</code></td><td>Maximum concurrent test namespaces</td></tr>
-      <tr><td><code>max-booting</code></td><td><code>2</code></td><td>Maximum namespaces booting simultaneously</td></tr>
+      <tr><td><code>max-parallel</code></td><td><code>6</code></td><td>Maximum concurrent test environments</td></tr>
+      <tr><td><code>max-booting</code></td><td><code>2</code></td><td>Maximum environments booting simultaneously</td></tr>
       <tr><td><code>timeout</code></td><td><code>30000</code></td><td>HTTP request timeout in milliseconds</td></tr>
       <tr><td><code>viewport-width</code></td><td><code>1280</code></td><td>Default browser viewport width for UI tests</td></tr>
       <tr><td><code>viewport-height</code></td><td><code>720</code></td><td>Default browser viewport height for UI tests</td></tr>
@@ -94,40 +94,25 @@ jobs:
     tests: .dokkimi/api-tests/`} lang="yaml" />
 
   <h2 id="manual-setup">Manual setup</h2>
-  <p>If you're not using the GitHub Action — or you're on a different CI system — you can set up the pipeline yourself. The key components are k3s, the Dokkimi CLI, and a few environment variables.</p>
+  <p>If you're not using the GitHub Action — or you're on a different CI system — you can set up the pipeline yourself. The key components are Docker, the Dokkimi CLI, and a few environment variables.</p>
 
-  <h3>Step 1: Install k3s</h3>
-  <p>k3s is a lightweight Kubernetes distribution that runs as a single binary. The <code>--docker</code> flag tells it to use the host's Docker daemon, so your locally-built images are available to pods immediately — no image loading or registry needed.</p>
-
-  <CodeBlock code={`curl -sfL https://get.k3s.io | \\
-  INSTALL_K3S_EXEC="--docker --disable=traefik --write-kubeconfig-mode=644" sh -
-
-export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
-until kubectl get nodes | grep -q ' Ready'; do sleep 2; done`} lang="bash" />
-
-  <h3>Step 2: Detect the node IP</h3>
-  <p>Pods running inside k3s need to reach Control Tower on the host. The node's InternalIP is the reliable way to do this — it works across all container runtimes and CI environments:</p>
-
-  <CodeBlock code={`NODE_IP=$(kubectl get node -o jsonpath='{.items[0].status.addresses[?(@.type=="InternalIP")].address}')
-export CONTROL_TOWER_HOST=$NODE_IP`} lang="bash" />
-
-  <h3>Step 3: Install Dokkimi</h3>
+  <h3>Step 1: Install Dokkimi</h3>
 
   <CodeBlock code="npm install -g dokkimi" lang="bash" />
 
-  <h3>Step 4: Build your images</h3>
-  <p>Build your service images on the runner. Since k3s uses the host Docker daemon, pods can pull them directly — no <code>docker push</code> or <code>kind load</code> needed.</p>
+  <h3>Step 2: Build your images</h3>
+  <p>Build your service images on the runner. Since Dokkimi uses the host Docker daemon, your locally-built images are available immediately — no registry needed.</p>
 
   <CodeBlock code={`docker build -t my-app:latest .`} lang="bash" />
 
-  <h3>Step 5: Pre-pull external images</h3>
+  <h3>Step 3: Pre-pull external images</h3>
   <p>Dokkimi sidecars depend on a few external images. Pre-pulling them avoids timeouts during test runs:</p>
 
   <CodeBlock code={`docker pull busybox:1.37
 docker pull fluent/fluent-bit:3.2
 docker pull andyshinn/dnsmasq:2.83`} lang="bash" />
 
-  <h3>Step 6: Run tests</h3>
+  <h3>Step 4: Run tests</h3>
   <p>The <code>--ci</code> flag enables CI-optimized output (no spinners, no interactive prompts):</p>
 
   <CodeBlock code="dokkimi run .dokkimi/ --ci" lang="bash" />
@@ -140,9 +125,9 @@ docker pull andyshinn/dnsmasq:2.83`} lang="bash" />
       <tr><th>Variable</th><th>Default</th><th>Description</th></tr>
     </thead>
     <tbody>
-      <tr><td><code>CONTROL_TOWER_HOST</code></td><td><code>localhost</code></td><td>Host IP that pods use to reach Control Tower</td></tr>
-      <tr><td><code>DOKKIMI_MAX_CONCURRENT_NAMESPACES</code></td><td><code>6</code></td><td>Max parallel test namespaces</td></tr>
-      <tr><td><code>DOKKIMI_MAX_BOOTING_NAMESPACES</code></td><td><code>2</code></td><td>Max namespaces booting at once</td></tr>
+      <tr><td><code>CONTROL_TOWER_HOST</code></td><td><code>localhost</code></td><td>Host IP that containers use to reach Control Tower</td></tr>
+      <tr><td><code>DOKKIMI_MAX_CONCURRENT_NAMESPACES</code></td><td><code>6</code></td><td>Max parallel test environments</td></tr>
+      <tr><td><code>DOKKIMI_MAX_BOOTING_NAMESPACES</code></td><td><code>2</code></td><td>Max environments booting at once</td></tr>
       <tr><td><code>DOKKIMI_HTTP_TIMEOUT</code></td><td><code>30000</code></td><td>HTTP request timeout (ms)</td></tr>
       <tr><td><code>DOKKIMI_DEFAULT_VIEWPORT_WIDTH</code></td><td><code>1280</code></td><td>Default browser viewport width for UI tests</td></tr>
       <tr><td><code>DOKKIMI_DEFAULT_VIEWPORT_HEIGHT</code></td><td><code>720</code></td><td>Default browser viewport height for UI tests</td></tr>
@@ -178,16 +163,6 @@ jobs:
           sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/share/powershell
           docker builder prune -af
 
-      - name: Install k3s
-        run: |
-          curl -sfL https://get.k3s.io | \\
-            INSTALL_K3S_EXEC="--docker --disable=traefik --write-kubeconfig-mode=644" sh -
-          export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
-          until kubectl get nodes | grep -q ' Ready'; do sleep 2; done
-          echo "KUBECONFIG=/etc/rancher/k3s/k3s.yaml" >> $GITHUB_ENV
-          NODE_IP=$(kubectl get node -o jsonpath='{.items[0].status.addresses[?(@.type=="InternalIP")].address}')
-          echo "CONTROL_TOWER_HOST=$NODE_IP" >> $GITHUB_ENV
-
       - name: Pull external images
         run: |
           docker pull busybox:1.37
@@ -203,14 +178,12 @@ jobs:
 
       - name: Cleanup
         if: always()
-        run: |
-          dokkimi clean 2>/dev/null || true
-          /usr/local/bin/k3s-uninstall.sh || true`} lang="yaml" />
+        run: dokkimi clean 2>/dev/null || true`} lang="yaml" />
 
-  <p>The <code>dokkimi clean</code> command tears down any remaining test namespaces and releases cluster resources. Always run it in your cleanup step to avoid leaking pods if a test run is interrupted.</p>
+  <p>The <code>dokkimi clean</code> command tears down any remaining test environments and releases resources. Always run it in your cleanup step to avoid leaking containers if a test run is interrupted.</p>
 
   <h2>GitLab CI</h2>
-  <p>The same manual approach works in GitLab CI. You need a <strong>shell executor</strong> with Docker installed — k3s requires host-level access that isn't available inside a standard Docker-in-Docker container:</p>
+  <p>The same manual approach works in GitLab CI. You need a <strong>shell executor</strong> with Docker installed:</p>
 
   <CodeBlock code={`integration-tests:
   tags:
@@ -223,19 +196,14 @@ jobs:
     - sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc || true
     - docker builder prune -af
   script:
-    - curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="--docker --disable=traefik --write-kubeconfig-mode=644" sudo sh -
-    - export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
-    - until kubectl get nodes | grep -q ' Ready'; do sleep 2; done
-    - export CONTROL_TOWER_HOST=$(kubectl get node -o jsonpath='{.items[0].status.addresses[?(@.type=="InternalIP")].address}')
     - docker pull busybox:1.37 && docker pull fluent/fluent-bit:3.2 && docker pull andyshinn/dnsmasq:2.83
     - npm install -g dokkimi
     - dokkimi run .dokkimi/ --ci
   after_script:
-    - dokkimi clean 2>/dev/null || true
-    - sudo /usr/local/bin/k3s-uninstall.sh || true`} lang="yaml" />
+    - dokkimi clean 2>/dev/null || true`} lang="yaml" />
 
   <h2>Private images</h2>
-  <p>If your service definitions reference images from a private registry, there are two places authentication is needed: the CI runner (for <code>docker build</code> and <code>docker pull</code>) and the k3s cluster (for pods pulling images at runtime).</p>
+  <p>If your service definitions reference images from a private registry, you need to authenticate on the CI runner for <code>docker build</code> and <code>docker pull</code>.</p>
 
   <h3>Log in on the CI runner</h3>
   <p>Add a registry login step <strong>before</strong> you build or pull any private images. This example uses GitHub Container Registry, but the same pattern works for DockerHub, AWS ECR, or any OCI registry:</p>
@@ -265,38 +233,18 @@ jobs:
 
   <p>With the GitHub Action, add the login step before <code>dokkimi/github-action@v1</code>. For manual setups, add it before any <code>docker build</code> or <code>docker pull</code> commands.</p>
 
-  <h3>Create a Kubernetes image pull secret</h3>
-  <p>If your <code>.dokkimi/</code> definitions reference private images that pods need to pull at runtime (not just images you built locally on the runner), k3s also needs registry credentials. Create an image pull secret after the cluster is ready:</p>
-
-  <CodeBlock code={`- name: Create image pull secret
-  run: |
-    kubectl create secret docker-registry registry-creds \\
-      --docker-server=ghcr.io \\
-      --docker-username=\${{ github.actor }} \\
-      --docker-password=\${{ secrets.GITHUB_TOKEN }}`} lang="yaml" />
-
-  <p>Then reference it in your service definition:</p>
-
-  <CodeBlock code={`services:
-  - name: my-service
-    image: ghcr.io/my-org/my-service:latest
-    imagePullSecret: registry-creds`} lang="yaml" />
-
   <div class="callout">
-    <p><strong>You don't need image pull secrets for locally-built images.</strong> When k3s runs with <code>--docker</code>, any image you build on the runner with <code>docker build</code> is already available to pods. Image pull secrets are only needed for images that pods pull from a remote registry at runtime.</p>
+    <p><strong>You don't need registry auth for locally-built images.</strong> Any image you build on the runner with <code>docker build</code> is already available to Dokkimi. Registry login is only needed for images that need to be pulled from a remote registry.</p>
   </div>
 
   <h2>Tips</h2>
 
   <h3>Free disk space on GitHub Actions</h3>
-  <p>GitHub runners have limited disk. If you're building multiple Docker images, free space before installing k3s:</p>
+  <p>GitHub runners have limited disk. If you're building multiple Docker images, free space early in your workflow:</p>
   <CodeBlock code={`- name: Free disk space
   run: |
     sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/share/powershell
     docker builder prune -af`} lang="yaml" />
-
-  <h3>Why k3s with <code>--docker</code>?</h3>
-  <p>CI runners already have Docker installed. The <code>--docker</code> flag tells k3s to use the host's Docker daemon instead of containerd. This means images you build with <code>docker build</code> are immediately available to Kubernetes pods — no registry, no <code>kind load</code>, no extra steps.</p>
 
   <h3>UI test viewport</h3>
   <p>Dokkimi sets a default browser viewport of 1280×720 for UI tests. Override it globally via environment variables, or per-test with the <code>viewport</code> sub-step:</p>

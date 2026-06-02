@@ -194,96 +194,45 @@ function isDockerRunning(): boolean {
   }
 }
 
-function isKubernetesRunning(): boolean {
-  try {
-    const output = execSilent('kubectl cluster-info', { timeout: 10000 });
-    return output.includes('is running at');
-  } catch {
-    return false;
-  }
-}
-
-async function ensureDockerAndK8sRunning(
+async function ensureDockerRunning(
   timeoutMs: number = 120000,
   signal?: AbortSignal,
 ): Promise<void> {
-  // Fail fast if required binaries are not installed
   if (!isCommandAvailable('docker')) {
     throw new Error(
       'Docker is not installed. Install Docker Desktop from https://www.docker.com/products/docker-desktop/',
     );
   }
-  if (!isCommandAvailable('kubectl')) {
-    throw new Error(
-      'kubectl is not installed. Enable Kubernetes in Docker Desktop (Settings → Kubernetes → Enable Kubernetes).',
-    );
-  }
 
-  const needsDockerStart = !isDockerRunning();
-
-  if (needsDockerStart) {
-    console.log('[Dokkimi] Docker is not running. Starting Docker...');
-    startDocker();
-  }
-
-  if (!needsDockerStart && isKubernetesRunning()) {
+  if (isDockerRunning()) {
     return;
   }
 
+  console.log('[Dokkimi] Docker is not running. Starting Docker...');
+  startDocker();
+
   const deadline = Date.now() + timeoutMs;
-  let dockerReady = !needsDockerStart;
-  let dockerBecameReadyAt: number | null = dockerReady ? Date.now() : null;
   let pollCount = 0;
 
   while (Date.now() < deadline) {
     signal?.throwIfAborted();
 
-    if (!dockerReady) {
-      dockerReady = isDockerRunning();
-      if (dockerReady) {
-        dockerBecameReadyAt = Date.now();
-        console.log('[Dokkimi] Docker is ready. Waiting for Kubernetes...');
-      }
-    }
-
-    if (dockerReady && isKubernetesRunning()) {
-      console.log('[Dokkimi] Kubernetes is ready.');
+    if (isDockerRunning()) {
+      console.log('[Dokkimi] Docker is ready.');
       return;
-    }
-
-    // If Docker has been running for 15s and K8s still isn't up,
-    // it's likely not enabled — fail early with a clear message.
-    if (dockerReady && dockerBecameReadyAt) {
-      const k8sWait = Date.now() - dockerBecameReadyAt;
-      if (k8sWait > 15000) {
-        throw new Error(
-          'Kubernetes is not running. Enable it in Docker Desktop (Settings → Kubernetes → Enable Kubernetes), then restart Docker Desktop.',
-        );
-      }
     }
 
     pollCount++;
     if (pollCount % 5 === 0) {
       const elapsed = Math.round((Date.now() - (deadline - timeoutMs)) / 1000);
-      if (!dockerReady) {
-        console.log(`[Dokkimi] Waiting for Docker... (${elapsed}s elapsed)`);
-      } else {
-        console.log(
-          `[Dokkimi] Waiting for Kubernetes... (${elapsed}s elapsed)`,
-        );
-      }
+      console.log(`[Dokkimi] Waiting for Docker... (${elapsed}s elapsed)`);
     }
 
     await new Promise((resolve) => setTimeout(resolve, 2000));
   }
 
-  if (!dockerReady) {
-    throw new Error(
-      'Timed out waiting for Docker to start. Please start Docker Desktop manually.',
-    );
-  }
   throw new Error(
-    'Timed out waiting for Kubernetes. Ensure Kubernetes is enabled in Docker Desktop settings.',
+    'Timed out waiting for Docker to start. Please start Docker Desktop manually.',
   );
 }
 
@@ -376,9 +325,7 @@ export async function ensureServicesRunning(
   timeoutMs: number = 60000,
   signal?: AbortSignal,
 ): Promise<void> {
-  // Start Docker before acquiring the lock — lets Docker boot in parallel
-  // with any other caller that may already hold the lock.
-  await ensureDockerAndK8sRunning(120000, signal);
+  await ensureDockerRunning(120000, signal);
 
   const lockTimeoutMs = timeoutMs + 60000;
   const releaseLock = await acquireLock(lockTimeoutMs, signal);
