@@ -6,7 +6,10 @@ import {
   buildTestAgentEnvVars,
   buildDbProxyEnvVars,
 } from '@dokkimi/config';
-import { DockerClientService } from './docker-client.service';
+import {
+  DockerClientService,
+  RunContainerOptions,
+} from './docker-client.service';
 import {
   DockerConfigService,
   InstanceConfigPaths,
@@ -85,54 +88,53 @@ export class DockerDeployerService {
 
       await this.writeConfig(ctx, configPaths);
 
-      await this.createGlobalInterceptor(
-        networkName,
-        instanceId,
-        dockerDnsIP,
-        configPaths,
-      );
-
-      await this.createTestAgent(
-        networkName,
-        instanceId,
-        attachChromium,
-        configPaths,
-      );
-
-      // Deploy databases first so services can connect on startup
-      for (const item of ctx.definition.items) {
-        if (item.type !== 'DATABASE') {
-          continue;
-        }
-
-        const containerName = sanitizeK8sName(item.name);
-        const instanceItemId = ctx.instanceItemIds.get(item.name);
-
-        if (instanceItemId) {
-          await this.instanceItemService.updateInstanceItemK8sName(
-            instanceItemId,
-            containerName,
-          );
-          await this.instanceItemService.updateInstanceItemStatus(
-            instanceItemId,
-            ItemStatus.STARTING,
-          );
-        }
-
-        await this.createDatabaseGroup(
+      // Phase 1: Global interceptor + test-agent (independent, parallel)
+      await Promise.all([
+        this.createGlobalInterceptor(
           networkName,
           instanceId,
-          item,
-          containerName,
-          instanceItemId || '',
-        );
-      }
+          dockerDnsIP,
+          configPaths,
+        ),
+        this.createTestAgent(
+          networkName,
+          instanceId,
+          attachChromium,
+          configPaths,
+        ),
+      ]);
 
-      for (const item of ctx.definition.items) {
-        if (item.type !== 'SERVICE') {
-          continue;
-        }
+      // Phase 2: All databases in parallel
+      const dbItems = ctx.definition.items.filter((i) => i.type === 'DATABASE');
+      await Promise.all(
+        dbItems.map(async (item) => {
+          const containerName = sanitizeK8sName(item.name);
+          const instanceItemId = ctx.instanceItemIds.get(item.name);
 
+          if (instanceItemId) {
+            await this.instanceItemService.updateInstanceItemK8sName(
+              instanceItemId,
+              containerName,
+            );
+            await this.instanceItemService.updateInstanceItemStatus(
+              instanceItemId,
+              ItemStatus.STARTING,
+            );
+          }
+
+          await this.createDatabaseGroup(
+            networkName,
+            instanceId,
+            item,
+            containerName,
+            instanceItemId || '',
+          );
+        }),
+      );
+
+      // Phase 3: All services + chromium in parallel
+      const svcItems = ctx.definition.items.filter((i) => i.type === 'SERVICE');
+      const servicePromises = svcItems.map(async (item) => {
         const containerName = sanitizeK8sName(item.name);
         const instanceItemId = ctx.instanceItemIds.get(item.name);
 
@@ -177,21 +179,23 @@ export class DockerDeployerService {
             undefined,
           );
         }
-      }
+      });
 
-      if (attachChromium) {
-        await this.createChromiumGroup(
-          networkName,
-          instanceId,
-          dockerDnsIP,
-          configPaths,
-          caBundlePaths,
-          allServiceNames,
-          allServicePorts,
-          databaseNames,
-          ctx.definition.config?.browser,
-        );
-      }
+      const chromiumPromise = attachChromium
+        ? this.createChromiumGroup(
+            networkName,
+            instanceId,
+            dockerDnsIP,
+            configPaths,
+            caBundlePaths,
+            allServiceNames,
+            allServicePorts,
+            databaseNames,
+            ctx.definition.config?.browser,
+          )
+        : Promise.resolve();
+
+      await Promise.all([...servicePromises, chromiumPromise]);
 
       await this.instanceService.updateInstanceStatus(
         instanceId,
@@ -651,6 +655,12 @@ export class DockerDeployerService {
       ? this.buildMongoEntrypoint(internalPort, dbEnv, initFileMountPath)
       : undefined;
 
+    const dbHealthcheck = this.getDatabaseHealthcheck(
+      item.database,
+      internalPort,
+      dbEnv,
+    );
+
     await this.dockerClient.runContainer({
       name: dbContainerName,
       image: dbConfig.image,
@@ -663,6 +673,7 @@ export class DockerDeployerService {
         : dbCmd
           ? { cmd: dbCmd }
           : {}),
+      healthcheck: dbHealthcheck,
       exposedPorts: [internalPort],
       labels: {
         'io.dokkimi.instance-id': instanceId,
@@ -671,9 +682,56 @@ export class DockerDeployerService {
       },
     });
 
+    await this.dockerClient.waitForHealthy(dbContainerName, 60000, 1000);
+
     this.logger.log(
       `Created database group for ${item.name} (${item.database})`,
     );
+  }
+
+  private getDatabaseHealthcheck(
+    databaseType: string,
+    internalPort: number,
+    env: Record<string, string>,
+  ): RunContainerOptions['healthcheck'] | undefined {
+    const dbType = databaseType.toLowerCase();
+    if (dbType === 'postgres' || dbType === 'postgresql') {
+      return {
+        test: [
+          'CMD-SHELL',
+          `pg_isready -p ${internalPort} -U ${env.POSTGRES_USER || 'dokkimi'}`,
+        ],
+        intervalMs: 1000,
+        timeoutMs: 3000,
+        retries: 30,
+        startPeriodMs: 1000,
+      };
+    }
+    if (dbType === 'mysql' || dbType === 'mariadb') {
+      return {
+        test: [
+          'CMD-SHELL',
+          `mysqladmin ping -P ${internalPort} -u${env.MYSQL_USER || 'root'} -p${env.MYSQL_ROOT_PASSWORD || env.MYSQL_PASSWORD || 'dokkimi'} --silent`,
+        ],
+        intervalMs: 2000,
+        timeoutMs: 5000,
+        retries: 30,
+        startPeriodMs: 5000,
+      };
+    }
+    if (dbType === 'mongodb') {
+      return {
+        test: [
+          'CMD-SHELL',
+          `mongosh --port ${internalPort} --eval "db.adminCommand('ping')" --quiet`,
+        ],
+        intervalMs: 1000,
+        timeoutMs: 3000,
+        retries: 30,
+        startPeriodMs: 2000,
+      };
+    }
+    return undefined;
   }
 
   // ============================================
@@ -991,6 +1049,8 @@ exec mongod --port ${internalPort} --bind_ip_all`;
     ctx: DeploymentContext,
     attachChromium: boolean,
   ): Promise<void> {
+    const pulls: Array<Promise<void>> = [];
+
     // Infrastructure images (interceptor, test-agent, dnsmasq, db-proxies)
     const infraImages = new Set<string>([
       DOKKIMI_IMAGES.interceptor,
@@ -998,7 +1058,6 @@ exec mongod --port ${internalPort} --bind_ip_all`;
       DOKKIMI_IMAGES.dnsmasq,
     ]);
 
-    // Add db-proxy images for each database type in the definition
     for (const item of ctx.definition.items) {
       if (item.type === 'DATABASE' && item.database) {
         infraImages.add(this.getDbProxyImage(item.database));
@@ -1010,18 +1069,19 @@ exec mongod --port ${internalPort} --bind_ip_all`;
     }
 
     for (const image of infraImages) {
-      await this.dockerClient.pullImage(image);
+      pulls.push(this.dockerClient.pullImage(image));
     }
 
     // User service images (with registry auth if available)
     for (const item of ctx.definition.items) {
       if (item.type === 'SERVICE' && item.image) {
         const auth = this.registryService.getAuthConfig(ctx.runId, item.image);
-        await this.dockerClient.pullImage(item.image, auth);
+        pulls.push(this.dockerClient.pullImage(item.image, auth));
       }
     }
 
     // Database images
+    const dbImages = new Set<string>();
     for (const item of ctx.definition.items) {
       if (item.type !== 'DATABASE' || !item.database) {
         continue;
@@ -1035,8 +1095,13 @@ exec mongod --port ${internalPort} --bind_ip_all`;
         },
         item.version ?? undefined,
       );
-      await this.dockerClient.pullImage(dbConfig.image);
+      if (!dbImages.has(dbConfig.image)) {
+        dbImages.add(dbConfig.image);
+        pulls.push(this.dockerClient.pullImage(dbConfig.image));
+      }
     }
+
+    await Promise.all(pulls);
   }
 
   // ============================================

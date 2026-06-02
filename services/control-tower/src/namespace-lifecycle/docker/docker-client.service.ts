@@ -167,10 +167,38 @@ export class DockerClientService implements OnApplicationBootstrap {
       NetworkingConfig: networkingConfig,
     };
 
-    const container = await this.docker.createContainer(createOptions);
-    await container.start();
-    this.logger.log(`Started container: ${opts.name}`);
-    return container.id;
+    const maxRetries = 3;
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        const container = await this.docker.createContainer(createOptions);
+        await container.start();
+        this.logger.log(`Started container: ${opts.name}`);
+        return container.id;
+      } catch (error: unknown) {
+        const isNetworkNotFound =
+          error instanceof Error &&
+          error.message?.includes('network') &&
+          error.message?.includes('not found');
+
+        if (!isNetworkNotFound || attempt === maxRetries) {
+          throw error;
+        }
+
+        this.logger.warn(
+          `Container ${opts.name} failed to start (attempt ${attempt}/${maxRetries}), retrying...`,
+        );
+
+        try {
+          await this.removeContainer(opts.name);
+        } catch {
+          // Container may not have been created
+        }
+
+        await this.sleep(500 * attempt);
+      }
+    }
+
+    throw new Error(`Failed to start container ${opts.name} after ${maxRetries} attempts`);
   }
 
   async removeContainer(nameOrId: string): Promise<void> {
@@ -308,7 +336,7 @@ export class DockerClientService implements OnApplicationBootstrap {
     await Promise.all(
       containers.map(async (c) => {
         try {
-          await this.docker.getContainer(c.Id).remove({ force: true });
+          await this.docker.getContainer(c.Id).remove({ force: true, v: true });
         } catch (error: unknown) {
           if (!this.is404(error)) {
             this.logger.warn(`Failed to remove container ${c.Id}: ${error}`);

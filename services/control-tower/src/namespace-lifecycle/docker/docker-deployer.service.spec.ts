@@ -53,6 +53,7 @@ const mockDockerClient = {
   }),
   getDockerDnsIP: jest.fn().mockReturnValue('127.0.0.11'),
   pullImage: jest.fn().mockResolvedValue(undefined),
+  waitForHealthy: jest.fn().mockResolvedValue(true),
 };
 
 const mockDockerConfig = {
