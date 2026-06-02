@@ -121,12 +121,24 @@ All of these are expected remaining work per the migration doc. The K8s code is 
 
 ---
 
-## Phase 12: GitHub Action (not yet done)
+## Phase 12: GitHub Action and CI (not yet done)
 
-- **File:** `github-action/action.yml`
+### `github-action/action.yml` (user-facing action)
+
 - **Status:** Completely unchanged on this branch. Still installs k3s, sets KUBECONFIG, pulls fluent-bit/busybox, runs k3s-uninstall.sh.
 - **Impact:** Anyone using the Dokkimi GitHub Action will get a broken experience — k3s is installed but never used, wrong images are pulled, CONTROL_TOWER_HOST is set from a K8s node IP that CT ignores.
-- [ ] Rewrite to Docker-only flow (migration doc lines 632-739 has the exact replacement YAML)
+- [ ] Remove "Install k3s" step (k3s install, KUBECONFIG, CONTROL_TOWER_HOST)
+- [ ] Update "Pull external images" — remove busybox and fluent-bit, keep dnsmasq
+- [ ] Remove k3s-uninstall from cleanup
+- [ ] Update description from "Install k3s, set up a single-node Kubernetes cluster" to Docker-only
+
+### `.github/workflows/ci.yml` (internal CI)
+
+- **Status:** `integration-tests` job still installs k3s, sets KUBECONFIG/CONTROL_TOWER_HOST, pulls busybox/fluent-bit, and runs k3s-uninstall on cleanup.
+- [ ] Remove "Install k3s" step and KUBECONFIG/CONTROL_TOWER_HOST env setup
+- [ ] Update "Pull external images" — remove busybox and fluent-bit
+- [ ] Remove k3s-uninstall from cleanup
+- [ ] Remove `DOKKIMI_MAX_CONCURRENT_NAMESPACES` / `DOKKIMI_MAX_BOOTING_NAMESPACES` env vars or rename to Docker-appropriate names once config keys are renamed in Phase 11
 - [ ] Delete `.github/kind-config.yaml` if it exists
 
 ---
