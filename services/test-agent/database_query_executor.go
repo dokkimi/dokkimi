@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	_ "github.com/go-sql-driver/mysql"
@@ -27,6 +28,7 @@ type DatabaseQueryExecutor struct {
 	logEndpointURL string
 	databaseMap    map[string]DatabaseInfo
 	instanceId     string
+	mu             sync.Mutex
 	pgPools        map[string]*sql.DB       // cached postgres connection pools, keyed by database name
 	mysqlPools     map[string]*sql.DB       // cached mysql connection pools, keyed by database name
 	redisClients   map[string]*redis.Client // cached redis clients, keyed by database name
@@ -116,6 +118,9 @@ func (e *DatabaseQueryExecutor) ExecuteQuery(
 
 // getPostgresPool returns a cached *sql.DB pool for the given database, creating one on first use.
 func (e *DatabaseQueryExecutor) getPostgresPool(databaseName string) (*sql.DB, error) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
 	if db, ok := e.pgPools[databaseName]; ok {
 		return db, nil
 	}
@@ -168,6 +173,9 @@ func (e *DatabaseQueryExecutor) Close() {
 
 // getMysqlPool returns a cached *sql.DB pool for the given MySQL database, creating one on first use.
 func (e *DatabaseQueryExecutor) getMysqlPool(databaseName string) (*sql.DB, error) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
 	if db, ok := e.mysqlPools[databaseName]; ok {
 		return db, nil
 	}
@@ -449,6 +457,9 @@ func convertPostgresParams(query string, params map[string]interface{}) (string,
 
 // getRedisClient returns a cached redis.Client for the given database, creating one on first use.
 func (e *DatabaseQueryExecutor) getRedisClient(databaseName string) (*redis.Client, error) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
 	if client, ok := e.redisClients[databaseName]; ok {
 		return client, nil
 	}
@@ -573,6 +584,9 @@ func normalizeRedisResult(command string, result interface{}) []map[string]inter
 
 // getMongoClient returns a cached mongo.Client for the given database, creating one on first use.
 func (e *DatabaseQueryExecutor) getMongoClient(databaseName string) (*mongo.Client, error) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
 	if client, ok := e.mongoClients[databaseName]; ok {
 		return client, nil
 	}

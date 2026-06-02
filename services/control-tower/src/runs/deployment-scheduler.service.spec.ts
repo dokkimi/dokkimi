@@ -11,6 +11,7 @@ describe('DeploymentSchedulerService', () => {
     },
     namespaceInstance: {
       update: jest.fn(),
+      updateMany: jest.fn().mockResolvedValue({ count: 1 }),
     },
     instanceItem: {
       findMany: jest.fn(),
@@ -117,12 +118,12 @@ describe('DeploymentSchedulerService', () => {
 
       await service.deployPendingInstances('run-1');
 
-      expect(mockPrisma.namespaceInstance.update).toHaveBeenCalledWith({
-        where: { id: 'inst-1' },
+      expect(mockPrisma.namespaceInstance.updateMany).toHaveBeenCalledWith({
+        where: { id: 'inst-1', status: InstanceStatus.PENDING },
         data: { status: InstanceStatus.STARTING },
       });
-      expect(mockPrisma.namespaceInstance.update).toHaveBeenCalledWith({
-        where: { id: 'inst-2' },
+      expect(mockPrisma.namespaceInstance.updateMany).toHaveBeenCalledWith({
+        where: { id: 'inst-2', status: InstanceStatus.PENDING },
         data: { status: InstanceStatus.STARTING },
       });
     });
@@ -147,9 +148,9 @@ describe('DeploymentSchedulerService', () => {
 
       await service.deployPendingInstances('run-1');
 
-      expect(mockPrisma.namespaceInstance.update).toHaveBeenCalledTimes(1);
-      expect(mockPrisma.namespaceInstance.update).toHaveBeenCalledWith({
-        where: { id: 'inst-2' },
+      expect(mockPrisma.namespaceInstance.updateMany).toHaveBeenCalledTimes(1);
+      expect(mockPrisma.namespaceInstance.updateMany).toHaveBeenCalledWith({
+        where: { id: 'inst-2', status: InstanceStatus.PENDING },
         data: { status: InstanceStatus.STARTING },
       });
     });
@@ -226,8 +227,8 @@ describe('DeploymentSchedulerService', () => {
 
       await service.deployPendingInstances('run-1');
 
-      expect(mockPrisma.namespaceInstance.update).toHaveBeenCalledWith({
-        where: { id: 'inst-1' },
+      expect(mockPrisma.namespaceInstance.updateMany).toHaveBeenCalledWith({
+        where: { id: 'inst-1', status: InstanceStatus.PENDING },
         data: { status: InstanceStatus.STARTING },
       });
     });

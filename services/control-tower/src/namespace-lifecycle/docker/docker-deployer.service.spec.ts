@@ -53,7 +53,6 @@ const mockDockerClient = {
   }),
   getDockerDnsIP: jest.fn().mockReturnValue('127.0.0.11'),
   pullImage: jest.fn().mockResolvedValue(undefined),
-  waitForHealthy: jest.fn().mockResolvedValue(true),
 };
 
 const mockDockerConfig = {
@@ -184,6 +183,16 @@ describe('DockerDeployerService', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    mockDockerClient.createNetwork.mockResolvedValue('dokkimi-run-test-instance');
+    mockDockerClient.runContainer.mockResolvedValue('container-id');
+    mockDockerClient.inspectContainer.mockResolvedValue({
+      id: 'container-id',
+      name: 'interceptor',
+      ip: '172.18.0.2',
+      state: 'running',
+    });
+    mockDockerClient.getDockerDnsIP.mockReturnValue('127.0.0.11');
+    mockDockerClient.pullImage.mockResolvedValue(undefined);
     service = new DockerDeployerService(
       mockDockerClient as any,
       mockDockerConfig as any,
@@ -457,6 +466,63 @@ describe('DockerDeployerService', () => {
         'test-instance',
       );
     });
+  });
+
+  describe('deployment failure', () => {
+    it('should teardown and set status to FAILED when container start fails', async () => {
+      mockDockerClient.runContainer
+        .mockResolvedValueOnce('interceptor-id')
+        .mockResolvedValueOnce('test-agent-id')
+        .mockRejectedValueOnce(new Error('container start failed'));
+
+      await expect(service.deploy(buildCtx())).rejects.toThrow(
+        'container start failed',
+      );
+
+      expect(mockLogCollector.stopCollecting).toHaveBeenCalledWith(
+        'test-instance',
+      );
+      expect(mockDockerClient.removeNetwork).toHaveBeenCalledWith(
+        'test-instance',
+      );
+      expect(mockDockerConfig.cleanupConfigDir).toHaveBeenCalledWith(
+        'test-instance',
+      );
+      expect(mockInstanceService.updateInstanceStatus).toHaveBeenCalledWith(
+        'test-instance',
+        'FAILED',
+      );
+    });
+
+    it('should wait for all parallel containers before teardown', async () => {
+      const callOrder: string[] = [];
+
+      mockDockerClient.runContainer.mockImplementation(async (opts: any) => {
+        if (opts.name === 'interceptor-test-instance') {
+          callOrder.push('interceptor-start');
+          return 'interceptor-id';
+        }
+        if (opts.name === 'test-agent-test-instance') {
+          callOrder.push('test-agent-start');
+          throw new Error('test-agent failed');
+        }
+        callOrder.push(`${opts.name}-start`);
+        return 'container-id';
+      });
+
+      mockDockerClient.removeNetwork.mockImplementation(async () => {
+        callOrder.push('teardown');
+      });
+
+      await expect(service.deploy(buildCtx())).rejects.toThrow(
+        'test-agent failed',
+      );
+
+      const interceptorIdx = callOrder.indexOf('interceptor-start');
+      const teardownIdx = callOrder.indexOf('teardown');
+      expect(interceptorIdx).toBeLessThan(teardownIdx);
+    });
+
   });
 
   describe('dnsmasq config', () => {

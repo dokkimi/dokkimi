@@ -91,10 +91,16 @@ export class DeploymentSchedulerService {
         continue;
       }
 
-      await this.prisma.namespaceInstance.update({
-        where: { id: instance.id },
+      // Atomic claim: only set STARTING if still PENDING.
+      // Prevents duplicate deploys when concurrent callers race.
+      const claimed = await this.prisma.namespaceInstance.updateMany({
+        where: { id: instance.id, status: InstanceStatus.PENDING },
         data: { status: InstanceStatus.STARTING },
       });
+      if (claimed.count === 0) {
+        continue;
+      }
+
       const ctx = await this.rebuildDeploymentContext(runId, instance.id);
       this.deployInBackground(ctx, runId);
       deployed++;

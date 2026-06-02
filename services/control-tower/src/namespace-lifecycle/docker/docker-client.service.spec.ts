@@ -202,32 +202,6 @@ describe('DockerClientService', () => {
       expect(mockNetwork.connect).not.toHaveBeenCalled();
     });
 
-    it('should configure healthcheck when provided', async () => {
-      await service.runContainer({
-        name: 'service-a',
-        image: 'user-image:tag',
-        networkName: 'dokkimi-run-inst-1',
-        healthcheck: {
-          test: ['CMD', 'curl', '-f', 'http://localhost/health'],
-          intervalMs: 5000,
-          timeoutMs: 3000,
-          retries: 3,
-          startPeriodMs: 2000,
-        },
-      });
-
-      expect(mockDocker.createContainer).toHaveBeenCalledWith(
-        expect.objectContaining({
-          Healthcheck: {
-            Test: ['CMD', 'curl', '-f', 'http://localhost/health'],
-            Interval: 5000 * 1_000_000,
-            Timeout: 3000 * 1_000_000,
-            Retries: 3,
-            StartPeriod: 2000 * 1_000_000,
-          },
-        }),
-      );
-    });
   });
 
   describe('removeContainer', () => {
@@ -272,7 +246,6 @@ describe('DockerClientService', () => {
         name: 'service-a',
         ip: '172.18.0.5',
         state: 'running',
-        health: 'healthy',
       });
     });
 
@@ -283,41 +256,6 @@ describe('DockerClientService', () => {
 
       const info = await service.inspectContainer('nonexistent');
       expect(info).toBeNull();
-    });
-  });
-
-  describe('waitForHealthy', () => {
-    it('should return true immediately for running container without healthcheck', async () => {
-      mockContainer.inspect.mockResolvedValue({
-        Id: 'c-123',
-        Name: '/svc',
-        State: { Status: 'running' },
-        NetworkSettings: { Networks: {} },
-      });
-
-      const result = await service.waitForHealthy('svc', 5000, 100);
-      expect(result).toBe(true);
-    });
-
-    it('should return false for non-existent container', async () => {
-      const error = new Error('not found') as Error & { statusCode: number };
-      error.statusCode = 404;
-      mockContainer.inspect.mockRejectedValue(error);
-
-      const result = await service.waitForHealthy('gone', 1000, 100);
-      expect(result).toBe(false);
-    });
-
-    it('should return false for stopped container', async () => {
-      mockContainer.inspect.mockResolvedValue({
-        Id: 'c-123',
-        Name: '/svc',
-        State: { Status: 'exited' },
-        NetworkSettings: { Networks: {} },
-      });
-
-      const result = await service.waitForHealthy('svc', 1000, 100);
-      expect(result).toBe(false);
     });
   });
 

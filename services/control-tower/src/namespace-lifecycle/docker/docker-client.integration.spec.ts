@@ -121,28 +121,6 @@ describe('DockerClientService (integration)', () => {
     expect(logText).toContain('REACHABLE');
   }, 15_000);
 
-  it('should wait for healthy container (no healthcheck = immediate)', async () => {
-    const id = await service.runContainer({
-      name: `test-healthy-${TEST_INSTANCE_ID}`,
-      image: TEST_IMAGE,
-      networkName: `dokkimi-run-${TEST_INSTANCE_ID}`,
-      cmd: ['sh', '-c', 'sleep 30'],
-      labels: { 'io.dokkimi.instance-id': TEST_INSTANCE_ID },
-    });
-
-    const healthy = await service.waitForHealthy(id, 5000, 200);
-    expect(healthy).toBe(true);
-  });
-
-  it('should return false from waitForHealthy for non-existent container', async () => {
-    const healthy = await service.waitForHealthy(
-      'nonexistent-container-xyz',
-      1000,
-      200,
-    );
-    expect(healthy).toBe(false);
-  });
-
   it('should stream logs from a container', async () => {
     const id = await service.runContainer({
       name: `test-logger-${TEST_INSTANCE_ID}`,

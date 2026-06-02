@@ -6,10 +6,7 @@ import {
   buildTestAgentEnvVars,
   buildDbProxyEnvVars,
 } from '@dokkimi/config';
-import {
-  DockerClientService,
-  RunContainerOptions,
-} from './docker-client.service';
+import { DockerClientService } from './docker-client.service';
 import {
   DockerConfigService,
   InstanceConfigPaths,
@@ -75,13 +72,6 @@ export class DockerDeployerService {
       const caBundlePaths =
         this.caService.prepareCaBundleForInstance(instanceId);
 
-      const serviceItems = ctx.definition.items.filter(
-        (i) => i.type === 'SERVICE',
-      );
-      const allServiceNames = serviceItems.map((i) => sanitizeK8sName(i.name));
-      const allServicePorts = serviceItems
-        .map((i) => i.port)
-        .filter((p): p is number => p != null);
       const databaseNames = ctx.definition.items
         .filter((i) => i.type === 'DATABASE')
         .map((i) => sanitizeK8sName(i.name));
@@ -174,8 +164,6 @@ export class DockerDeployerService {
             dockerDnsIP,
             configPaths,
             caBundlePaths,
-            allServiceNames,
-            allServicePorts,
             databaseNames,
           );
         if (userContainerId) {
@@ -203,8 +191,6 @@ export class DockerDeployerService {
             dockerDnsIP,
             configPaths,
             caBundlePaths,
-            allServiceNames,
-            allServicePorts,
             databaseNames,
             ctx.definition.config?.browser,
           )
@@ -226,6 +212,8 @@ export class DockerDeployerService {
         InstanceStatus.RUNNING,
       );
 
+      this.monitorForCrashedContainers(instanceId);
+
       this.logger.log(`Docker deployment complete for instance ${instanceId}`);
     } catch (err) {
       this.logger.error(`Deployment failed for instance ${instanceId}:`, err);
@@ -240,6 +228,40 @@ export class DockerDeployerService {
       );
       throw err;
     }
+  }
+
+  private monitorForCrashedContainers(instanceId: string): void {
+    const checkInterval = setInterval(async () => {
+      try {
+        const instance = await this.instanceService.findInstance(instanceId);
+        if (
+          !instance ||
+          instance.status === 'STOPPED' ||
+          instance.status === 'FAILED'
+        ) {
+          clearInterval(checkInterval);
+          return;
+        }
+
+        const exited = await this.dockerClient.getExitedContainers(instanceId);
+        const crashedServices = exited.filter(
+          (c) => c.role === 'service' || c.role === 'database',
+        );
+        if (crashedServices.length > 0) {
+          clearInterval(checkInterval);
+          const names = crashedServices.map((c) => c.name).join(', ');
+          const errorMsg = `Container(s) crashed: ${names}`;
+          this.logger.error(`${errorMsg} (instance ${instanceId})`);
+          await this.instanceService.updateInstanceStatus(
+            instanceId,
+            InstanceStatus.FAILED,
+          );
+          await this.teardown(instanceId);
+        }
+      } catch {
+        clearInterval(checkInterval);
+      }
+    }, 3000);
   }
 
   async teardown(instanceId: string): Promise<void> {
@@ -445,8 +467,6 @@ export class DockerDeployerService {
     dockerDnsIP: string,
     configPaths: InstanceConfigPaths,
     caBundlePaths: CaBundlePaths,
-    allServiceNames: string[],
-    allServicePorts: number[],
     databaseNames: string[],
   ): Promise<{ userContainerId: string | null; interceptorName: string }> {
     if (!item.image) {
@@ -503,7 +523,6 @@ export class DockerDeployerService {
 
     // 3. Build and write dnsmasq config routing all DNS to interceptor's IP
     const dnsmasqConf = this.buildDnsmasqConfig(
-      containerName,
       dockerDnsIP,
       databaseNames,
       interceptorIP,
@@ -679,12 +698,6 @@ export class DockerDeployerService {
       ? this.buildMongoEntrypoint(internalPort, dbEnv, initFileMountPath)
       : undefined;
 
-    const dbHealthcheck = this.getDatabaseHealthcheck(
-      item.database,
-      internalPort,
-      dbEnv,
-    );
-
     await this.dockerClient.runContainer({
       name: dbContainerName,
       image: dbConfig.image,
@@ -697,7 +710,6 @@ export class DockerDeployerService {
         : dbCmd
           ? { cmd: dbCmd }
           : {}),
-      healthcheck: dbHealthcheck,
       exposedPorts: [internalPort],
       labels: {
         'io.dokkimi.instance-id': instanceId,
@@ -706,79 +718,9 @@ export class DockerDeployerService {
       },
     });
 
-    const healthy = await this.dockerClient.waitForHealthy(
-      dbContainerName,
-      30000,
-      2000,
-    );
-    if (!healthy) {
-      this.logger.warn(
-        `Database ${item.name} (${item.database}) healthcheck did not pass within 30s — proceeding (db-proxy handles readiness)`,
-      );
-    }
-
     this.logger.log(
       `Created database group for ${item.name} (${item.database})`,
     );
-  }
-
-  private getDatabaseHealthcheck(
-    databaseType: string,
-    internalPort: number,
-    env: Record<string, string>,
-  ): RunContainerOptions['healthcheck'] | undefined {
-    const dbType = databaseType.toLowerCase();
-    if (dbType === 'postgres' || dbType === 'postgresql') {
-      return {
-        test: [
-          'CMD-SHELL',
-          `pg_isready -p ${internalPort} -U ${env.POSTGRES_USER || 'dokkimi'}`,
-        ],
-        intervalMs: 2000,
-        timeoutMs: 5000,
-        retries: 15,
-        startPeriodMs: 5000,
-      };
-    }
-    if (dbType === 'mysql' || dbType === 'mariadb') {
-      return {
-        test: [
-          'CMD-SHELL',
-          `mysqladmin ping -P ${internalPort} -u${env.MYSQL_USER || 'root'} -p${env.MYSQL_ROOT_PASSWORD || env.MYSQL_PASSWORD || 'dokkimi'} --silent`,
-        ],
-        intervalMs: 2000,
-        timeoutMs: 5000,
-        retries: 30,
-        startPeriodMs: 5000,
-      };
-    }
-    if (dbType === 'mongodb') {
-      return {
-        test: [
-          'CMD-SHELL',
-          `mongosh --port ${internalPort} --eval "db.adminCommand('ping')" --quiet`,
-        ],
-        intervalMs: 1000,
-        timeoutMs: 3000,
-        retries: 30,
-        startPeriodMs: 2000,
-      };
-    }
-    if (dbType === 'redis') {
-      const redisPassword = env.REDIS_PASSWORD || '';
-      const authFlag = redisPassword ? `-a ${redisPassword} --no-auth-warning` : '';
-      return {
-        test: [
-          'CMD-SHELL',
-          `redis-cli -p ${internalPort} ${authFlag} ping`.trim(),
-        ],
-        intervalMs: 2000,
-        timeoutMs: 3000,
-        retries: 15,
-        startPeriodMs: 3000,
-      };
-    }
-    return undefined;
   }
 
   // ============================================
@@ -791,8 +733,6 @@ export class DockerDeployerService {
     dockerDnsIP: string,
     configPaths: InstanceConfigPaths,
     caBundlePaths: CaBundlePaths,
-    allServiceNames: string[],
-    allServicePorts: number[],
     databaseNames: string[],
     browser?: BrowserConfig,
   ): Promise<void> {
@@ -847,7 +787,6 @@ export class DockerDeployerService {
 
     // 3. Build dnsmasq config routing all DNS to interceptor's IP
     const dnsmasqConf = this.buildDnsmasqConfig(
-      'chromium',
       dockerDnsIP,
       databaseNames,
       interceptorIP,
@@ -866,7 +805,11 @@ export class DockerDeployerService {
       networkName,
       networkAliases: ['chromium'],
       cmd: ['--disable-dev-shm-usage', '--ignore-certificate-errors'],
-      binds: [`${configPaths.resolvConfPath}:/etc/resolv.conf:ro`],
+      env: this.caService.getServiceCaEnvVars(),
+      binds: [
+        `${configPaths.resolvConfPath}:/etc/resolv.conf:ro`,
+        ...this.caService.getServiceCaBinds(caBundlePaths),
+      ],
       exposedPorts: [chromiumPort],
       labels: {
         'io.dokkimi.instance-id': instanceId,
@@ -896,7 +839,6 @@ export class DockerDeployerService {
   // ============================================
 
   private buildDnsmasqConfig(
-    serviceName: string,
     dockerDnsIP: string,
     databaseNames: string[],
     interceptorIP: string,
@@ -950,23 +892,6 @@ export class DockerDeployerService {
     }
   }
 
-  private getDbProxyPort(databaseType: string): number {
-    const dbType = databaseType.toLowerCase();
-    if (dbType === 'postgres' || dbType === 'postgresql') {
-      return 15432;
-    }
-    if (dbType === 'mysql' || dbType === 'mariadb') {
-      return 13306;
-    }
-    if (dbType === 'redis') {
-      return 16379;
-    }
-    if (dbType === 'mongodb') {
-      return 17017;
-    }
-    return 8080;
-  }
-
   private getDbInternalPort(databaseType: string): number {
     const dbType = databaseType.toLowerCase();
     if (dbType === 'postgres' || dbType === 'postgresql') {
@@ -1007,9 +932,6 @@ export class DockerDeployerService {
       const args = baseCommand ? [...baseCommand] : ['redis-server'];
       args.push('--port', String(internalPort));
       return args;
-    }
-    if (dbType === 'mongodb') {
-      return ['mongod', '--port', String(internalPort), '--bind_ip_all'];
     }
     return baseCommand;
   }

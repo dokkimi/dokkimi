@@ -11,13 +11,6 @@ export interface RunContainerOptions {
   dns?: string[];
   /** Join another container's network namespace instead of the run network. */
   networkMode?: string;
-  healthcheck?: {
-    test: string[];
-    intervalMs?: number;
-    timeoutMs?: number;
-    retries?: number;
-    startPeriodMs?: number;
-  };
   labels?: Record<string, string>;
   cmd?: string[];
   entrypoint?: string[];
@@ -29,7 +22,6 @@ export interface ContainerInfo {
   name: string;
   ip: string;
   state: string;
-  health?: string;
 }
 
 const DOKKIMI_NETWORK_PREFIX = 'dokkimi-run-';
@@ -68,16 +60,27 @@ export class DockerClientService implements OnApplicationBootstrap {
       return networkName;
     }
 
-    await this.docker.createNetwork({
-      Name: networkName,
-      Driver: 'bridge',
-      Labels: {
-        [DOKKIMI_LABEL]: 'true',
-        'io.dokkimi.instance-id': instanceId,
-      },
-    });
+    try {
+      await this.docker.createNetwork({
+        Name: networkName,
+        Driver: 'bridge',
+        Labels: {
+          [DOKKIMI_LABEL]: 'true',
+          'io.dokkimi.instance-id': instanceId,
+        },
+      });
+      this.logger.log(`Created Docker network: ${networkName}`);
+    } catch (error: unknown) {
+      const is409 =
+        error instanceof Error &&
+        'statusCode' in error &&
+        (error as { statusCode: number }).statusCode === 409;
+      if (!is409) {
+        throw error;
+      }
+      this.logger.log(`Docker network ${networkName} already exists (409)`);
+    }
 
-    this.logger.log(`Created Docker network: ${networkName}`);
     return networkName;
   }
 
@@ -147,15 +150,6 @@ export class DockerClientService implements OnApplicationBootstrap {
           : undefined,
       ...(opts.cmd && { Cmd: opts.cmd }),
       ...(opts.entrypoint && { Entrypoint: opts.entrypoint }),
-      ...(opts.healthcheck && {
-        Healthcheck: {
-          Test: opts.healthcheck.test,
-          Interval: (opts.healthcheck.intervalMs ?? 5000) * 1_000_000,
-          Timeout: (opts.healthcheck.timeoutMs ?? 3000) * 1_000_000,
-          Retries: opts.healthcheck.retries ?? 3,
-          StartPeriod: (opts.healthcheck.startPeriodMs ?? 2000) * 1_000_000,
-        },
-      }),
       HostConfig: {
         Binds: opts.binds,
         ...(!isSharedNetworkMode && opts.dns ? { Dns: opts.dns } : {}),
@@ -167,40 +161,10 @@ export class DockerClientService implements OnApplicationBootstrap {
       NetworkingConfig: networkingConfig,
     };
 
-    const maxRetries = 3;
-    for (let attempt = 1; attempt <= maxRetries; attempt++) {
-      try {
-        const container = await this.docker.createContainer(createOptions);
-        await container.start();
-        this.logger.log(`Started container: ${opts.name}`);
-        return container.id;
-      } catch (error: unknown) {
-        const isNetworkNotFound =
-          error instanceof Error &&
-          error.message?.includes('network') &&
-          error.message?.includes('not found');
-
-        if (!isNetworkNotFound || attempt === maxRetries) {
-          throw error;
-        }
-
-        this.logger.warn(
-          `Container ${opts.name} failed to start (attempt ${attempt}/${maxRetries}), retrying...`,
-        );
-
-        try {
-          await this.removeContainer(opts.name);
-        } catch {
-          // Container may not have been created
-        }
-
-        await this.sleep(500 * attempt);
-      }
-    }
-
-    throw new Error(
-      `Failed to start container ${opts.name} after ${maxRetries} attempts`,
-    );
+    const container = await this.docker.createContainer(createOptions);
+    await container.start();
+    this.logger.log(`Started container: ${opts.name}`);
+    return container.id;
   }
 
   async removeContainer(nameOrId: string): Promise<void> {
@@ -230,7 +194,6 @@ export class DockerClientService implements OnApplicationBootstrap {
         name: info.Name.replace(/^\//, ''),
         ip,
         state: info.State?.Status || 'unknown',
-        health: info.State?.Health?.Status,
       };
     } catch (error: unknown) {
       if (this.is404(error)) {
@@ -238,40 +201,6 @@ export class DockerClientService implements OnApplicationBootstrap {
       }
       throw error;
     }
-  }
-
-  async waitForHealthy(
-    nameOrId: string,
-    timeoutMs: number = 60000,
-    pollIntervalMs: number = 1000,
-  ): Promise<boolean> {
-    const start = Date.now();
-
-    while (Date.now() - start < timeoutMs) {
-      const info = await this.inspectContainer(nameOrId);
-      if (!info) {
-        return false;
-      }
-
-      if (info.state === 'exited' || info.state === 'dead') {
-        return false;
-      }
-
-      if (info.state === 'running') {
-        // No healthcheck configured — treat as healthy once running
-        if (!info.health) {
-          return true;
-        }
-
-        if (info.health === 'healthy') {
-          return true;
-        }
-      }
-
-      await this.sleep(pollIntervalMs);
-    }
-
-    return false;
   }
 
   async streamLogs(
@@ -381,6 +310,22 @@ export class DockerClientService implements OnApplicationBootstrap {
     }
   }
 
+  async getExitedContainers(
+    instanceId: string,
+  ): Promise<Array<{ name: string; role: string }>> {
+    const containers = await this.docker.listContainers({
+      all: true,
+      filters: {
+        label: [`io.dokkimi.instance-id=${instanceId}`],
+        status: ['exited', 'dead'],
+      },
+    });
+    return containers.map((c) => ({
+      name: c.Labels['io.dokkimi.item-name'] || c.Names[0]?.replace(/^\//, ''),
+      role: c.Labels['io.dokkimi.role'] || 'unknown',
+    }));
+  }
+
   // ============================================
   // DOCKER DNS
   // ============================================
@@ -408,9 +353,5 @@ export class DockerClientService implements OnApplicationBootstrap {
       'statusCode' in error &&
       (error as { statusCode: number }).statusCode === 404
     );
-  }
-
-  private sleep(ms: number): Promise<void> {
-    return new Promise((resolve) => setTimeout(resolve, ms));
   }
 }
