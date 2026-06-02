@@ -106,7 +106,7 @@ export class DockerDeployerService {
 
       // Phase 2: All databases in parallel
       const dbItems = ctx.definition.items.filter((i) => i.type === 'DATABASE');
-      await Promise.all(
+      const phase2Results = await Promise.allSettled(
         dbItems.map(async (item) => {
           const containerName = sanitizeK8sName(item.name);
           const instanceItemId = ctx.instanceItemIds.get(item.name);
@@ -131,8 +131,17 @@ export class DockerDeployerService {
           );
         }),
       );
+      const phase2Error = phase2Results.find(
+        (r) => r.status === 'rejected',
+      ) as PromiseRejectedResult | undefined;
+      if (phase2Error) {
+        throw phase2Error.reason;
+      }
 
       // Phase 3: All services + chromium in parallel
+      // Use allSettled so that if one container fails, we don't tear down the
+      // network while other containers are still starting (which causes
+      // cascading "network not found" errors).
       const svcItems = ctx.definition.items.filter((i) => i.type === 'SERVICE');
       const servicePromises = svcItems.map(async (item) => {
         const containerName = sanitizeK8sName(item.name);
@@ -195,7 +204,16 @@ export class DockerDeployerService {
           )
         : Promise.resolve();
 
-      await Promise.all([...servicePromises, chromiumPromise]);
+      const phase3Results = await Promise.allSettled([
+        ...servicePromises,
+        chromiumPromise,
+      ]);
+      const phase3Error = phase3Results.find(
+        (r) => r.status === 'rejected',
+      ) as PromiseRejectedResult | undefined;
+      if (phase3Error) {
+        throw phase3Error.reason;
+      }
 
       await this.instanceService.updateInstanceStatus(
         instanceId,

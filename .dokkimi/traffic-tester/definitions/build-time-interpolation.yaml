@@ -1,0 +1,25 @@
+name: build-time-interpolation
+description: |
+  Validates that build-time interpolation from config.yaml env vars works
+  correctly. The service image uses REGISTRY which should resolve to
+  ghcr.io/dokkimi at build time.
+config:
+  timeoutSeconds: 60
+items:
+  - $ref: ../shared/base-service-interpolated.yaml
+tests:
+  - name: Service with interpolated image responds
+    steps:
+      - name: Health check on service using config.yaml REGISTRY var
+        action:
+          type: httpRequest
+          method: GET
+          url: service-interpolated/health
+        assertions:
+          - assertions:
+              - path: response.status
+                operator: eq
+                value: 200
+              - path: response.body
+                operator: eq
+                value: OK

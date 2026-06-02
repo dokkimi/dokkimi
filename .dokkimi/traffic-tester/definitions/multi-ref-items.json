@@ -41,6 +41,11 @@
                   "path": "response.status",
                   "operator": "eq",
                   "value": 200
+                },
+                {
+                  "path": "response.body",
+                  "operator": "eq",
+                  "value": "OK"
                 }
               ]
             }

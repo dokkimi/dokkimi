@@ -1,0 +1,6 @@
+name: Health check
+description: GET the /health endpoint and assert 200 OK
+action:
+  type: httpRequest
+  method: GET
+  url: '{{serviceName}}/health'

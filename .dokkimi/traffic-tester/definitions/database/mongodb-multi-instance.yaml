@@ -16,7 +16,7 @@ items:
 tests:
   - name: Each instance has independent data
     steps:
-      - name: Parallel requests
+      - name: Insert into both instances
         action:
           type: parallel
           actions:
@@ -26,16 +26,38 @@ tests:
             - type: dbQuery
               database: analytics-mongo
               query: '{"operation":"insertOne","collection":"events","document":{"eventId":"E-001","source":"analytics"}}'
-      - name: Parallel requests
+      - name: Read back from orders-mongo
         action:
-          type: parallel
-          actions:
-            - type: dbQuery
-              database: orders-mongo
-              query: '{"operation":"find","collection":"orders","filter":{"orderId":"M-001"}}'
-            - type: dbQuery
-              database: analytics-mongo
-              query: '{"operation":"find","collection":"events","filter":{"eventId":"E-001"}}'
+          type: dbQuery
+          database: orders-mongo
+          query: '{"operation":"find","collection":"orders","filter":{"orderId":"M-001"}}'
+        assertions:
+          - assertions:
+              - path: success
+                operator: eq
+                value: true
+              - path: data
+                operator: length
+                value: 1
+              - path: data[0].source
+                operator: eq
+                value: orders
+      - name: Read back from analytics-mongo
+        action:
+          type: dbQuery
+          database: analytics-mongo
+          query: '{"operation":"find","collection":"events","filter":{"eventId":"E-001"}}'
+        assertions:
+          - assertions:
+              - path: success
+                operator: eq
+                value: true
+              - path: data
+                operator: length
+                value: 1
+              - path: data[0].source
+                operator: eq
+                value: analytics
   - name: Data from instance A is not in instance B
     steps:
       - name: Insert a unique key into orders-mongo
@@ -64,7 +86,7 @@ tests:
 
   - name: Parallel writes to both instances
     steps:
-      - name: Parallel requests
+      - name: Parallel inserts
         action:
           type: parallel
           actions:
@@ -74,19 +96,35 @@ tests:
             - type: dbQuery
               database: analytics-mongo
               query: '{"operation":"insertOne","collection":"parallel","document":{"id":"p1","instance":"analytics"}}'
-      - name: Parallel requests
+      - name: Read back from orders-mongo
         action:
-          type: parallel
-          actions:
-            - type: dbQuery
-              database: orders-mongo
-              query: '{"operation":"find","collection":"parallel","filter":{"id":"p1"}}'
-            - type: dbQuery
-              database: analytics-mongo
-              query: '{"operation":"find","collection":"parallel","filter":{"id":"p1"}}'
+          type: dbQuery
+          database: orders-mongo
+          query: '{"operation":"find","collection":"parallel","filter":{"id":"p1"}}'
+        assertions:
+          - assertions:
+              - path: data
+                operator: length
+                value: 1
+              - path: data[0].instance
+                operator: eq
+                value: orders
+      - name: Read back from analytics-mongo
+        action:
+          type: dbQuery
+          database: analytics-mongo
+          query: '{"operation":"find","collection":"parallel","filter":{"id":"p1"}}'
+        assertions:
+          - assertions:
+              - path: data
+                operator: length
+                value: 1
+              - path: data[0].instance
+                operator: eq
+                value: analytics
   - name: Different collections per instance
     steps:
-      - name: Parallel requests
+      - name: Insert into different collections
         action:
           type: parallel
           actions:
@@ -96,13 +134,29 @@ tests:
             - type: dbQuery
               database: analytics-mongo
               query: '{"operation":"insertOne","collection":"metrics","document":{"metric":"pageviews","value":42}}'
-      - name: Parallel requests
+      - name: Read back shipment from orders-mongo
         action:
-          type: parallel
-          actions:
-            - type: dbQuery
-              database: orders-mongo
-              query: '{"operation":"find","collection":"shipments","filter":{"trackingId":"TRK-001"}}'
-            - type: dbQuery
-              database: analytics-mongo
-              query: '{"operation":"find","collection":"metrics","filter":{"metric":"pageviews"}}'
+          type: dbQuery
+          database: orders-mongo
+          query: '{"operation":"find","collection":"shipments","filter":{"trackingId":"TRK-001"}}'
+        assertions:
+          - assertions:
+              - path: data
+                operator: length
+                value: 1
+              - path: data[0].carrier
+                operator: eq
+                value: FedEx
+      - name: Read back metric from analytics-mongo
+        action:
+          type: dbQuery
+          database: analytics-mongo
+          query: '{"operation":"find","collection":"metrics","filter":{"metric":"pageviews"}}'
+        assertions:
+          - assertions:
+              - path: data
+                operator: length
+                value: 1
+              - path: data[0].value
+                operator: eq
+                value: 42

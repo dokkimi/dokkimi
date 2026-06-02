@@ -1,0 +1,5 @@
+type: SERVICE
+name: service-interpolated
+image: ${{REGISTRY}}/traffic-tester:0.1.0
+port: 4000
+healthCheck: /health
