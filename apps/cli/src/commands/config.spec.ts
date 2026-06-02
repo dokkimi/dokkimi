@@ -9,7 +9,6 @@ jest.mock('@dokkimi/config');
 jest.mock('@dokkimi/telemetry');
 jest.mock('@dokkimi/service-manager');
 
-import * as fs from 'fs';
 import { loadConfig } from '@dokkimi/config';
 import { selectMenu } from '../lib/menu';
 import { numberInput } from '../lib/number-input';
@@ -278,5 +277,4 @@ describe('configCommand', () => {
     expect(mockSetConcurrency).not.toHaveBeenCalled();
     expect(mockShutdown).not.toHaveBeenCalled();
   });
-
 });
