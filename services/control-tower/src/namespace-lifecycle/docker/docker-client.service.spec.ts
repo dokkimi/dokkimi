@@ -84,7 +84,10 @@ describe('DockerClientService', () => {
       });
       expect(mockDocker.getContainer).toHaveBeenCalledWith('c1');
       expect(mockDocker.getContainer).toHaveBeenCalledWith('c2');
-      expect(mockContainer.remove).toHaveBeenCalledWith({ force: true, v: true });
+      expect(mockContainer.remove).toHaveBeenCalledWith({
+        force: true,
+        v: true,
+      });
       expect(mockNetwork.remove).toHaveBeenCalled();
     });
 
@@ -232,7 +235,10 @@ describe('DockerClientService', () => {
       await service.removeContainer('container-123');
 
       expect(mockDocker.getContainer).toHaveBeenCalledWith('container-123');
-      expect(mockContainer.remove).toHaveBeenCalledWith({ force: true, v: true });
+      expect(mockContainer.remove).toHaveBeenCalledWith({
+        force: true,
+        v: true,
+      });
     });
 
     it('should silently handle 404 (already removed)', async () => {
@@ -333,7 +339,10 @@ describe('DockerClientService', () => {
         filters: { label: ['io.dokkimi.managed'] },
       });
       expect(mockDocker.getContainer).toHaveBeenCalledWith('c1');
-      expect(mockContainer.remove).toHaveBeenCalledWith({ force: true, v: true });
+      expect(mockContainer.remove).toHaveBeenCalledWith({
+        force: true,
+        v: true,
+      });
       // Both networks should be removed
       expect(mockNetwork.remove).toHaveBeenCalledTimes(2);
     });

@@ -89,7 +89,7 @@ export class DockerDeployerService {
       await this.writeConfig(ctx, configPaths);
 
       // Phase 1: Global interceptor + test-agent (independent, parallel)
-      await Promise.all([
+      const phase1Results = await Promise.allSettled([
         this.createGlobalInterceptor(
           networkName,
           instanceId,
@@ -103,6 +103,12 @@ export class DockerDeployerService {
           configPaths,
         ),
       ]);
+      const phase1Error = phase1Results.find((r) => r.status === 'rejected') as
+        | PromiseRejectedResult
+        | undefined;
+      if (phase1Error) {
+        throw phase1Error.reason;
+      }
 
       // Phase 2: All databases in parallel
       const dbItems = ctx.definition.items.filter((i) => i.type === 'DATABASE');
@@ -131,9 +137,9 @@ export class DockerDeployerService {
           );
         }),
       );
-      const phase2Error = phase2Results.find(
-        (r) => r.status === 'rejected',
-      ) as PromiseRejectedResult | undefined;
+      const phase2Error = phase2Results.find((r) => r.status === 'rejected') as
+        | PromiseRejectedResult
+        | undefined;
       if (phase2Error) {
         throw phase2Error.reason;
       }
@@ -208,9 +214,9 @@ export class DockerDeployerService {
         ...servicePromises,
         chromiumPromise,
       ]);
-      const phase3Error = phase3Results.find(
-        (r) => r.status === 'rejected',
-      ) as PromiseRejectedResult | undefined;
+      const phase3Error = phase3Results.find((r) => r.status === 'rejected') as
+        | PromiseRejectedResult
+        | undefined;
       if (phase3Error) {
         throw phase3Error.reason;
       }
@@ -700,7 +706,16 @@ export class DockerDeployerService {
       },
     });
 
-    await this.dockerClient.waitForHealthy(dbContainerName, 60000, 1000);
+    const healthy = await this.dockerClient.waitForHealthy(
+      dbContainerName,
+      30000,
+      2000,
+    );
+    if (!healthy) {
+      this.logger.warn(
+        `Database ${item.name} (${item.database}) healthcheck did not pass within 30s — proceeding (db-proxy handles readiness)`,
+      );
+    }
 
     this.logger.log(
       `Created database group for ${item.name} (${item.database})`,
@@ -719,10 +734,10 @@ export class DockerDeployerService {
           'CMD-SHELL',
           `pg_isready -p ${internalPort} -U ${env.POSTGRES_USER || 'dokkimi'}`,
         ],
-        intervalMs: 1000,
-        timeoutMs: 3000,
-        retries: 30,
-        startPeriodMs: 1000,
+        intervalMs: 2000,
+        timeoutMs: 5000,
+        retries: 15,
+        startPeriodMs: 5000,
       };
     }
     if (dbType === 'mysql' || dbType === 'mariadb') {
@@ -747,6 +762,20 @@ export class DockerDeployerService {
         timeoutMs: 3000,
         retries: 30,
         startPeriodMs: 2000,
+      };
+    }
+    if (dbType === 'redis') {
+      const redisPassword = env.REDIS_PASSWORD || '';
+      const authFlag = redisPassword ? `-a ${redisPassword} --no-auth-warning` : '';
+      return {
+        test: [
+          'CMD-SHELL',
+          `redis-cli -p ${internalPort} ${authFlag} ping`.trim(),
+        ],
+        intervalMs: 2000,
+        timeoutMs: 3000,
+        retries: 15,
+        startPeriodMs: 3000,
       };
     }
     return undefined;

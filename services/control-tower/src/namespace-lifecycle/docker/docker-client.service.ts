@@ -198,7 +198,9 @@ export class DockerClientService implements OnApplicationBootstrap {
       }
     }
 
-    throw new Error(`Failed to start container ${opts.name} after ${maxRetries} attempts`);
+    throw new Error(
+      `Failed to start container ${opts.name} after ${maxRetries} attempts`,
+    );
   }
 
   async removeContainer(nameOrId: string): Promise<void> {
@@ -251,17 +253,19 @@ export class DockerClientService implements OnApplicationBootstrap {
         return false;
       }
 
-      if (info.state !== 'running') {
+      if (info.state === 'exited' || info.state === 'dead') {
         return false;
       }
 
-      // No healthcheck configured — treat as healthy once running
-      if (!info.health) {
-        return true;
-      }
+      if (info.state === 'running') {
+        // No healthcheck configured — treat as healthy once running
+        if (!info.health) {
+          return true;
+        }
 
-      if (info.health === 'healthy') {
-        return true;
+        if (info.health === 'healthy') {
+          return true;
+        }
       }
 
       await this.sleep(pollIntervalMs);

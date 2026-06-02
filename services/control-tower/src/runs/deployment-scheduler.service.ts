@@ -143,7 +143,8 @@ export class DeploymentSchedulerService {
       if (isTerminal) {
         if (
           inst.status === InstanceStatus.FAILED ||
-          inst.testStatus === 'FAILED'
+          inst.testStatus === 'FAILED' ||
+          (inst.status === InstanceStatus.STOPPED && !inst.testStatus)
         ) {
           anyFailed = true;
         }
