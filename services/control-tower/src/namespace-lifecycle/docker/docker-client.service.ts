@@ -122,6 +122,17 @@ export class DockerClientService implements OnApplicationBootstrap {
       }
     }
 
+    const networkingConfig =
+      !isSharedNetworkMode && opts.networkAliases?.length
+        ? {
+            EndpointsConfig: {
+              [opts.networkName]: {
+                Aliases: opts.networkAliases,
+              },
+            },
+          }
+        : undefined;
+
     const createOptions: Docker.ContainerCreateOptions = {
       name: opts.name,
       Image: opts.image,
@@ -153,22 +164,10 @@ export class DockerClientService implements OnApplicationBootstrap {
           ? { NetworkMode: opts.networkMode }
           : { NetworkMode: opts.networkName }),
       },
+      NetworkingConfig: networkingConfig,
     };
 
     const container = await this.docker.createContainer(createOptions);
-
-    // When not using shared network mode, connect to the run network with aliases
-    if (!isSharedNetworkMode && opts.networkAliases?.length) {
-      const network = await this.findNetwork(opts.networkName);
-      if (network) {
-        await network.disconnect({ Container: container.id });
-        await network.connect({
-          Container: container.id,
-          EndpointConfig: { Aliases: opts.networkAliases },
-        });
-      }
-    }
-
     await container.start();
     this.logger.log(`Started container: ${opts.name}`);
     return container.id;
@@ -177,7 +176,7 @@ export class DockerClientService implements OnApplicationBootstrap {
   async removeContainer(nameOrId: string): Promise<void> {
     try {
       const container = this.docker.getContainer(nameOrId);
-      await container.remove({ force: true });
+      await container.remove({ force: true, v: true });
       this.logger.log(`Removed container: ${nameOrId}`);
     } catch (error: unknown) {
       if (this.is404(error)) {

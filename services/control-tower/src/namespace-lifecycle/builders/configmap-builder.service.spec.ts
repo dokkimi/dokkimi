@@ -66,11 +66,11 @@ describe('ConfigMapBuilderService', () => {
         string,
         ServiceInfo
       >;
-      // All services expose port 80 (standardized) - no port in URL needed
       expect(urlMap['test-service']).toEqual({
         scheme: 'http',
         url: 'http://test-service',
         name: 'Test Service',
+        port: 8080,
         instanceItemId: 'item-1',
       });
       expect(urlMap['test.example.com']).toEqual({
@@ -83,6 +83,7 @@ describe('ConfigMapBuilderService', () => {
         scheme: 'http',
         url: 'http://another-service',
         name: 'Another Service',
+        port: 9090,
         instanceItemId: 'item-2',
       });
 

@@ -45,6 +45,12 @@ const mockDockerClient = {
   createNetwork: jest.fn().mockResolvedValue('dokkimi-run-test-instance'),
   removeNetwork: jest.fn(),
   runContainer: jest.fn().mockResolvedValue('container-id'),
+  inspectContainer: jest.fn().mockResolvedValue({
+    id: 'container-id',
+    name: 'interceptor',
+    ip: '172.18.0.2',
+    state: 'running',
+  }),
   getDockerDnsIP: jest.fn().mockReturnValue('127.0.0.11'),
   pullImage: jest.fn().mockResolvedValue(undefined),
 };
@@ -259,41 +265,39 @@ describe('DockerDeployerService', () => {
       expect(containerNames).toContain('user-service-test-instance');
     });
 
-    it('should set service interceptor as primary with network alias', async () => {
+    it('should set user container as primary with network alias', async () => {
       await service.deploy(buildCtx());
+
+      const userCall = mockDockerClient.runContainer.mock.calls.find(
+        (call: any[]) => call[0].name === 'api-gateway-test-instance',
+      );
+      expect(userCall![0].networkAliases).toContain('api-gateway');
+      expect(userCall![0].networkMode).toBeUndefined();
 
       const interceptorCall = mockDockerClient.runContainer.mock.calls.find(
         (call: any[]) =>
           call[0].name === 'api-gateway-interceptor-test-instance',
       );
-      expect(interceptorCall![0].networkAliases).toContain('api-gateway');
+      expect(interceptorCall![0].networkAliases).toBeUndefined();
     });
 
-    it('should join dnsmasq and user container to interceptor network namespace', async () => {
+    it('should join dnsmasq to user container network namespace', async () => {
       await service.deploy(buildCtx());
 
       const dnsmasqCall = mockDockerClient.runContainer.mock.calls.find(
         (call: any[]) => call[0].name === 'api-gateway-dnsmasq-test-instance',
       );
       expect(dnsmasqCall![0].networkMode).toBe(
-        'container:api-gateway-interceptor-test-instance',
-      );
-
-      const userCall = mockDockerClient.runContainer.mock.calls.find(
-        (call: any[]) => call[0].name === 'api-gateway-test-instance',
-      );
-      expect(userCall![0].networkMode).toBe(
-        'container:api-gateway-interceptor-test-instance',
+        'container:api-gateway-test-instance',
       );
     });
 
-    it('should set --dns 127.0.0.1 on user service containers', async () => {
+    it('should inspect interceptor to get IP for dnsmasq config', async () => {
       await service.deploy(buildCtx());
 
-      const userCall = mockDockerClient.runContainer.mock.calls.find(
-        (call: any[]) => call[0].name === 'api-gateway-test-instance',
+      expect(mockDockerClient.inspectContainer).toHaveBeenCalledWith(
+        'api-gateway-interceptor-test-instance',
       );
-      expect(userCall![0].dns).toEqual(['127.0.0.1']);
     });
 
     it('should mount CA binds on user service containers', async () => {
@@ -433,8 +437,8 @@ describe('DockerDeployerService', () => {
         'user-service',
         'item-2',
       );
-      // Should not collect for databases
-      expect(mockLogCollector.startCollecting).toHaveBeenCalledTimes(2);
+      // 2 user containers + 2 interceptors = 4 calls
+      expect(mockLogCollector.startCollecting).toHaveBeenCalledTimes(4);
     });
   });
 
@@ -471,8 +475,8 @@ describe('DockerDeployerService', () => {
       const configContent = apiGwCall![2] as string;
       // Should forward database names to Docker DNS
       expect(configContent).toContain('server=/postgres-db/127.0.0.11');
-      // Should catch-all to localhost (interceptor)
-      expect(configContent).toContain('address=/#/127.0.0.1');
+      // Should catch-all to interceptor's IP (from inspectContainer mock)
+      expect(configContent).toContain('address=/#/172.18.0.2');
     });
   });
 });

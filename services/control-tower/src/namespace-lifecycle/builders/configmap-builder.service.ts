@@ -20,6 +20,7 @@ export interface ServiceInfo {
   scheme: string;
   url: string;
   name: string;
+  port?: number;
   instanceItemId?: string;
 }
 
@@ -75,11 +76,11 @@ export class ConfigMapBuilderService {
       if (item.type === 'SERVICE' && item.k8sName && item.port) {
         // Use k8sName as the key (this is the Kubernetes service name)
         // The value maps to the service information
-        // All services expose port 80 (standardized) - no need to specify port in URL
         urlMap[item.k8sName] = {
           scheme: 'http',
           url: `http://${item.k8sName}`,
-          name: item.name, // User-friendly name
+          name: item.name,
+          port: item.port,
           instanceItemId: item.id,
         };
 

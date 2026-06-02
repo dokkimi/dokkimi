@@ -46,6 +46,7 @@ CREATE TYPE public."RunStatus" AS ENUM (
 CREATE TABLE public.runs (
     id text NOT NULL,
     status public."RunStatus" DEFAULT 'PENDING'::public."RunStatus" NOT NULL,
+    "projectPath" text,
     "createdAt" timestamp(3) without time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
     "completedAt" timestamp(3) without time zone,
     "cancelledAt" timestamp(3) without time zone
@@ -185,6 +186,7 @@ ALTER TABLE ONLY public.assertion_results
 
 -- Indexes: runs
 CREATE INDEX runs_status_idx ON public.runs USING btree (status);
+CREATE INDEX "runs_projectPath_idx" ON public.runs USING btree ("projectPath");
 
 -- Indexes: namespace_instances
 CREATE INDEX "namespace_instances_runId_idx" ON public.namespace_instances USING btree ("runId");

@@ -86,6 +86,10 @@ func (p *ProxyService) HandleRequest(r *http.Request) (*http.Response, error) {
 
 // forwardRequest forwards the request to the target service
 func (p *ProxyService) forwardRequest(r *http.Request) (*http.Response, error) {
+	// Extract target service name before getTargetURL modifies the path
+	urlMap := p.urlMap()
+	targetServiceName := extractServiceNameFromRequest(r, urlMap)
+
 	// Determine target URL
 	targetURL := p.getTargetURL(r)
 	log.Printf("[Interceptor] Forwarding request: %s %s -> %s", r.Method, r.URL.Path, targetURL)
@@ -132,7 +136,7 @@ func (p *ProxyService) forwardRequest(r *http.Request) (*http.Response, error) {
 
 	log.Printf("[Interceptor] Received response from %s: status=%d", targetURL, resp.StatusCode)
 
-	p.rewriteLocationHeader(resp)
+	p.rewriteLocationHeader(resp, targetServiceName)
 
 	return resp, nil
 }
@@ -141,7 +145,7 @@ func (p *ProxyService) forwardRequest(r *http.Request) (*http.Response, error) {
 // headers back to service names from the urlMap. Pods may generate redirects
 // using their own hostname (e.g., "nextjs-demo-8d4698b56-892gj:3000") which
 // is not routable from outside the pod.
-func (p *ProxyService) rewriteLocationHeader(resp *http.Response) {
+func (p *ProxyService) rewriteLocationHeader(resp *http.Response, targetServiceName string) {
 	location := resp.Header.Get("Location")
 	if location == "" {
 		return
@@ -173,16 +177,19 @@ func (p *ProxyService) rewriteLocationHeader(resp *http.Response) {
 		}
 	}
 
-	// Localhost-like addresses (0.0.0.0, 127.0.0.1, localhost) mean the service
-	// redirected using its own bind address. Rewrite to this interceptor's origin
-	// so the redirect is routable from other containers.
-	if p.origin != "" && (hostname == "0.0.0.0" || hostname == "127.0.0.1" || hostname == "localhost") {
-		if info, exists := urlMap[p.origin]; exists {
-			parsed.Host = p.origin
-			parsed.Scheme = info.Scheme
-			rewritten := parsed.String()
-			resp.Header.Set("Location", rewritten)
-			log.Printf("[Interceptor] Rewrote Location (localhost): %s -> %s", location, rewritten)
+	// Localhost-like addresses (0.0.0.0, 127.0.0.1, localhost) mean the target
+	// service redirected using its own bind address. Rewrite to the target
+	// service name (from the request Host header) so the redirect is routable.
+	if hostname == "0.0.0.0" || hostname == "127.0.0.1" || hostname == "localhost" {
+		targetName := targetServiceName
+		if targetName != "" {
+			if info, exists := urlMap[targetName]; exists {
+				parsed.Host = targetName
+				parsed.Scheme = info.Scheme
+				rewritten := parsed.String()
+				resp.Header.Set("Location", rewritten)
+				log.Printf("[Interceptor] Rewrote Location (localhost): %s -> %s", location, rewritten)
+			}
 		}
 	}
 }
@@ -207,27 +214,24 @@ func (p *ProxyService) getTargetURL(r *http.Request) string {
 		}
 	}
 
-	// Per-service interceptor: forward to localhost:servicePort.
-	// All traffic arriving at a per-service interceptor is destined for its
-	// local service — route there directly instead of going back through
-	// DNS/network alias (which would loop in Docker mode).
-	if p.origin != "" && p.servicePort != "" && (serviceName == p.origin || serviceName == "") {
-		return fmt.Sprintf("http://localhost:%s%s?%s", p.servicePort, r.URL.Path, r.URL.RawQuery)
+	// Per-service interceptor: if traffic is for our own service, use the urlMap URL.
+	if p.origin != "" && (serviceName == p.origin || serviceName == "") {
+		if serviceInfo, exists := urlMap[p.origin]; exists {
+			baseURL := resolveBaseURL(serviceInfo)
+			return baseURL + r.URL.Path + "?" + r.URL.RawQuery
+		}
 	}
 
 	// Check if we have a URL mapping
 	if serviceInfo, exists := urlMap[serviceName]; exists {
 		baseURL := serviceInfo.URL
 		if baseURL == "" {
-			// If URL is not provided, construct from scheme and host
 			scheme := serviceInfo.Scheme
 			if scheme == "" {
 				scheme = "http"
 			}
 			baseURL = scheme + "://" + r.Host
 		}
-		// If baseURL already contains a scheme (starts with http:// or https://), use it directly
-		// Otherwise, prepend the scheme
 		if !strings.HasPrefix(baseURL, "http://") && !strings.HasPrefix(baseURL, "https://") {
 			scheme := serviceInfo.Scheme
 			if scheme == "" {
@@ -235,6 +239,7 @@ func (p *ProxyService) getTargetURL(r *http.Request) string {
 			}
 			baseURL = scheme + "://" + baseURL
 		}
+		baseURL = appendServicePort(baseURL, serviceInfo.Port)
 		return baseURL + r.URL.Path + "?" + r.URL.RawQuery
 	}
 
@@ -357,4 +362,33 @@ func isHopByHopHeader(key string) bool {
 		}
 	}
 	return false
+}
+
+// appendServicePort appends the real service port to a URL when the urlMap
+// stores port-less URLs (callers connect on port 80 via the interceptor) but
+// the interceptor needs to forward to the service's actual port.
+func appendServicePort(baseURL string, port int) string {
+	if port == 0 {
+		return baseURL
+	}
+	parsed, err := url.Parse(baseURL)
+	if err != nil {
+		return baseURL
+	}
+	parsed.Host = parsed.Hostname() + ":" + fmt.Sprintf("%d", port)
+	return parsed.String()
+}
+
+// resolveBaseURL normalizes a ServiceInfo into a full base URL with scheme and
+// real service port for forwarding.
+func resolveBaseURL(info ServiceInfo) string {
+	baseURL := info.URL
+	if !strings.HasPrefix(baseURL, "http://") && !strings.HasPrefix(baseURL, "https://") {
+		scheme := info.Scheme
+		if scheme == "" {
+			scheme = "http"
+		}
+		baseURL = scheme + "://" + baseURL
+	}
+	return appendServicePort(baseURL, info.Port)
 }

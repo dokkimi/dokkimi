@@ -268,15 +268,16 @@ func TestProxyService_getTargetURL(t *testing.T) {
 	cache := NewMockCache(5 * time.Minute)
 
 	urlMap := UrlMap{
-		"example": ServiceInfo{ // Service name only (not FQDN)
+		"example": ServiceInfo{
 			Scheme: "https",
 			URL:    "target.example.com",
 			Name:   "example",
 		},
-		"nginx-test": ServiceInfo{ // Service name only (not FQDN)
+		"nginx-test": ServiceInfo{
 			Scheme: "http",
-			URL:    "http://nginx-test:80",
+			URL:    "http://nginx-test",
 			Name:   "nginx-test",
+			Port:   80,
 		},
 		"test": ServiceInfo{
 			Scheme: "http",
@@ -287,6 +288,12 @@ func TestProxyService_getTargetURL(t *testing.T) {
 			Scheme: "",
 			URL:    "empty.com",
 			Name:   "empty",
+		},
+		"nextjs-app": ServiceInfo{
+			Scheme: "http",
+			URL:    "http://nextjs-app",
+			Name:   "nextjs-app",
+			Port:   3000,
 		},
 	}
 
@@ -363,6 +370,15 @@ func TestProxyService_getTargetURL(t *testing.T) {
 				return req
 			}(),
 			want: "http://test.com:9090/path?", // When URL is empty, uses r.Host which includes port
+		},
+		{
+			name: "with URL mapping and Port field, appends real port for forwarding",
+			request: func() *http.Request {
+				req := httptest.NewRequest("GET", "http://nextjs-app/login", nil)
+				req.Host = "nextjs-app"
+				return req
+			}(),
+			want: "http://nextjs-app:3000/login?",
 		},
 	}
 
@@ -549,7 +565,7 @@ func TestProxyService_rewriteLocationHeader(t *testing.T) {
 			if tt.location != "" {
 				resp.Header.Set("Location", tt.location)
 			}
-			proxy.rewriteLocationHeader(resp)
+			proxy.rewriteLocationHeader(resp, "")
 			got := resp.Header.Get("Location")
 			if got != tt.want {
 				t.Errorf("rewriteLocationHeader() Location = %q, want %q", got, tt.want)

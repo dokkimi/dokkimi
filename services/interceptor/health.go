@@ -174,49 +174,47 @@ func (h *HealthChecker) checkHealth() (ready bool, statusCode int, err error) {
 		return false, 0, fmt.Errorf("ORIGIN not set, cannot perform health check")
 	}
 
-	var serviceIP string
-
+	// Resolve service name to IP via DNS.
+	// Docker mode: use Docker DNS (K8S_DNS_IP=127.0.0.11) to resolve the service name directly.
+	// K8s mode: use K8s DNS to resolve the FQDN (service.namespace.svc.cluster.local).
+	var serviceFQDN string
 	if h.config.DeployMode == "docker" {
-		// Docker container: mode — interceptor and service share a network namespace
-		serviceIP = "127.0.0.1"
+		serviceFQDN = serviceName
+	} else if h.config.K8sNamespace != "" {
+		serviceFQDN = fmt.Sprintf("%s.%s.svc.cluster.local", serviceName, h.config.K8sNamespace)
 	} else {
-		// K8s mode — resolve via DNS
-		var serviceFQDN string
-		if h.config.K8sNamespace != "" {
-			serviceFQDN = fmt.Sprintf("%s.%s.svc.cluster.local", serviceName, h.config.K8sNamespace)
-		} else {
-			serviceFQDN = serviceName
-		}
-
-		var dialer *net.Dialer
-		if h.config.K8sDNSIP != "" {
-			dialer = &net.Dialer{
-				Resolver: &net.Resolver{
-					PreferGo: true,
-					Dial: func(ctx context.Context, network, address string) (net.Conn, error) {
-						d := net.Dialer{}
-						return d.DialContext(ctx, "udp", h.config.K8sDNSIP+":53")
-					},
-				},
-			}
-		} else {
-			dialer = &net.Dialer{}
-		}
-
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-
-		ips, lookupErr := dialer.Resolver.LookupIPAddr(ctx, serviceFQDN)
-		if lookupErr != nil {
-			return false, 0, fmt.Errorf("failed to resolve service %s: %w", serviceFQDN, lookupErr)
-		}
-
-		if len(ips) == 0 {
-			return false, 0, fmt.Errorf("no IP addresses found for service %s", serviceFQDN)
-		}
-
-		serviceIP = ips[0].IP.String()
+		serviceFQDN = serviceName
 	}
+
+	var dialer *net.Dialer
+	if h.config.K8sDNSIP != "" {
+		dialer = &net.Dialer{
+			Resolver: &net.Resolver{
+				PreferGo: true,
+				Dial: func(ctx context.Context, network, address string) (net.Conn, error) {
+					d := net.Dialer{}
+					return d.DialContext(ctx, "udp", h.config.K8sDNSIP+":53")
+				},
+			},
+		}
+	} else {
+		dialer = &net.Dialer{}
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	ips, lookupErr := dialer.Resolver.LookupIPAddr(ctx, serviceFQDN)
+	if lookupErr != nil {
+		return false, 0, fmt.Errorf("failed to resolve service %s: %w", serviceFQDN, lookupErr)
+	}
+
+	if len(ips) == 0 {
+		return false, 0, fmt.Errorf("no IP addresses found for service %s", serviceFQDN)
+	}
+
+	var serviceIP string
+	serviceIP = ips[0].IP.String()
 
 	url := fmt.Sprintf("http://%s:%s%s", serviceIP, h.config.ServicePort, h.config.HealthCheckEndpoint)
 

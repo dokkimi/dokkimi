@@ -63,15 +63,7 @@ export class DockerDeployerService {
 
       await this.markMockItems(ctx);
 
-      // Pull user images (with registry auth if available)
-      await this.pullUserImages(ctx);
-
-      if (attachChromium) {
-        const browserImage = resolveBrowserImage(
-          ctx.definition.config?.browser,
-        );
-        await this.dockerClient.pullImage(browserImage);
-      }
+      await this.pullAllImages(ctx, attachChromium);
 
       const networkName = await this.dockerClient.createNetwork(instanceId);
       const dockerDnsIP = this.dockerClient.getDockerDnsIP();
@@ -436,7 +428,7 @@ export class DockerDeployerService {
 
     const config = getConfig();
 
-    // 1. Start per-service interceptor (primary container, holds network alias)
+    // 1. Start per-service interceptor (standalone container on the network, own IP)
     const interceptorName = `${containerName}-interceptor-${instanceId}`;
     const interceptorEnv = buildInterceptorEnvVars(config, {
       namespace: instanceId,
@@ -455,8 +447,6 @@ export class DockerDeployerService {
       name: interceptorName,
       image: DOKKIMI_IMAGES.interceptor,
       networkName,
-      networkAliases: [containerName],
-      dns: ['127.0.0.1'],
       env: {
         ...this.envArrayToRecord(interceptorEnv),
         ...this.caService.getInterceptorCaEnvVars(),
@@ -475,11 +465,20 @@ export class DockerDeployerService {
       },
     });
 
-    // 2. Build and write dnsmasq config for this service
+    // 2. Inspect interceptor to get its Docker network IP for dnsmasq config
+    const interceptorInfo =
+      await this.dockerClient.inspectContainer(interceptorName);
+    const interceptorIP = interceptorInfo?.ip;
+    if (!interceptorIP) {
+      throw new Error(`Failed to get IP for interceptor ${interceptorName}`);
+    }
+
+    // 3. Build and write dnsmasq config routing all DNS to interceptor's IP
     const dnsmasqConf = this.buildDnsmasqConfig(
       containerName,
       dockerDnsIP,
       databaseNames,
+      interceptorIP,
     );
     const dnsmasqConfPath = this.dockerConfig.writeDnsmasqConfig(
       configPaths,
@@ -487,23 +486,7 @@ export class DockerDeployerService {
       dnsmasqConf,
     );
 
-    // 3. Start dnsmasq (joins interceptor's network namespace)
-    const dnsmasqName = `${containerName}-dnsmasq-${instanceId}`;
-    await this.dockerClient.runContainer({
-      name: dnsmasqName,
-      image: DOKKIMI_IMAGES.dnsmasq,
-      networkName,
-      networkMode: `container:${interceptorName}`,
-      cmd: ['-k'],
-      binds: [`${dnsmasqConfPath}:/etc/dnsmasq.conf:ro`],
-      labels: {
-        'io.dokkimi.instance-id': instanceId,
-        'io.dokkimi.role': 'dnsmasq',
-        'io.dokkimi.item-name': item.name,
-      },
-    });
-
-    // 4. Start user's service container (joins interceptor's network namespace)
+    // 4. Start user's service container (primary — holds network alias)
     const userContainerName = `${containerName}-${instanceId}`;
     const userEnv: Record<string, string> = {
       ...this.caService.getServiceCaEnvVars(),
@@ -537,8 +520,7 @@ export class DockerDeployerService {
       name: userContainerName,
       image: item.image,
       networkName,
-      networkMode: `container:${interceptorName}`,
-      dns: ['127.0.0.1'],
+      networkAliases: [containerName],
       env: userEnv,
       binds: userBinds,
       exposedPorts: [
@@ -552,13 +534,24 @@ export class DockerDeployerService {
       },
     });
 
-    // Verify containers are running after startup
-    const interceptorInfo =
-      await this.dockerClient.inspectContainer(interceptorName);
-    const containerInfo =
-      await this.dockerClient.inspectContainer(userContainerName);
+    // 5. Start dnsmasq (joins user container's network namespace)
+    const dnsmasqName = `${containerName}-dnsmasq-${instanceId}`;
+    await this.dockerClient.runContainer({
+      name: dnsmasqName,
+      image: DOKKIMI_IMAGES.dnsmasq,
+      networkName,
+      networkMode: `container:${userContainerName}`,
+      cmd: ['-k'],
+      binds: [`${dnsmasqConfPath}:/etc/dnsmasq.conf:ro`],
+      labels: {
+        'io.dokkimi.instance-id': instanceId,
+        'io.dokkimi.role': 'dnsmasq',
+        'io.dokkimi.item-name': item.name,
+      },
+    });
+
     this.logger.log(
-      `Service group ${item.name}: interceptor=${interceptorInfo?.state ?? 'NOT_FOUND'} ip=${interceptorInfo?.ip ?? 'none'}, user=${containerInfo?.state ?? 'NOT_FOUND'} ip=${containerInfo?.ip ?? 'none'}`,
+      `Service group ${item.name}: interceptor=${interceptorInfo.state} ip=${interceptorIP}, user=${userContainerName}`,
     );
 
     this.logger.log(`Created service group for ${item.name}`);
@@ -717,11 +710,11 @@ export class DockerDeployerService {
       testAgentUrl: `http://test-agent-service:${config.services.testAgent.port}`,
     });
 
+    // 1. Start interceptor (standalone on network, own IP)
     await this.dockerClient.runContainer({
       name: interceptorName,
       image: DOKKIMI_IMAGES.interceptor,
       networkName,
-      networkAliases: ['chromium'],
       env: {
         ...this.envArrayToRecord(interceptorEnv),
         ...this.caService.getInterceptorCaEnvVars(),
@@ -739,11 +732,20 @@ export class DockerDeployerService {
       },
     });
 
-    // 2. Dnsmasq for chromium
+    // 2. Inspect interceptor to get its Docker network IP
+    const interceptorInfo =
+      await this.dockerClient.inspectContainer(interceptorName);
+    const interceptorIP = interceptorInfo?.ip;
+    if (!interceptorIP) {
+      throw new Error(`Failed to get IP for interceptor ${interceptorName}`);
+    }
+
+    // 3. Build dnsmasq config routing all DNS to interceptor's IP
     const dnsmasqConf = this.buildDnsmasqConfig(
       'chromium',
       dockerDnsIP,
       databaseNames,
+      interceptorIP,
     );
     const dnsmasqConfPath = this.dockerConfig.writeDnsmasqConfig(
       configPaths,
@@ -751,32 +753,33 @@ export class DockerDeployerService {
       dnsmasqConf,
     );
 
+    // 4. Start chromium browser (primary — holds network alias)
+    const chromiumContainerName = `chromium-${instanceId}`;
     await this.dockerClient.runContainer({
-      name: `chromium-dnsmasq-${instanceId}`,
-      image: DOKKIMI_IMAGES.dnsmasq,
-      networkName,
-      networkMode: `container:${interceptorName}`,
-      cmd: ['-k'],
-      binds: [`${dnsmasqConfPath}:/etc/dnsmasq.conf:ro`],
-      labels: {
-        'io.dokkimi.instance-id': instanceId,
-        'io.dokkimi.role': 'chromium-dnsmasq',
-      },
-    });
-
-    // 3. Chromium browser (joins interceptor's network namespace)
-    await this.dockerClient.runContainer({
-      name: `chromium-${instanceId}`,
+      name: chromiumContainerName,
       image: browserImage,
       networkName,
-      networkMode: `container:${interceptorName}`,
-      dns: ['127.0.0.1'],
+      networkAliases: ['chromium'],
       cmd: ['--disable-dev-shm-usage', '--ignore-certificate-errors'],
       binds: [`${configPaths.resolvConfPath}:/etc/resolv.conf:ro`],
       exposedPorts: [chromiumPort],
       labels: {
         'io.dokkimi.instance-id': instanceId,
         'io.dokkimi.role': 'chromium',
+      },
+    });
+
+    // 5. Start dnsmasq (joins chromium's network namespace)
+    await this.dockerClient.runContainer({
+      name: `chromium-dnsmasq-${instanceId}`,
+      image: DOKKIMI_IMAGES.dnsmasq,
+      networkName,
+      networkMode: `container:${chromiumContainerName}`,
+      cmd: ['-k'],
+      binds: [`${dnsmasqConfPath}:/etc/dnsmasq.conf:ro`],
+      labels: {
+        'io.dokkimi.instance-id': instanceId,
+        'io.dokkimi.role': 'chromium-dnsmasq',
       },
     });
 
@@ -791,6 +794,7 @@ export class DockerDeployerService {
     serviceName: string,
     dockerDnsIP: string,
     databaseNames: string[],
+    interceptorIP: string,
   ): string {
     const config = getConfig();
     const dnsNameserver = config.network.dns.nameserver;
@@ -807,8 +811,8 @@ export class DockerDeployerService {
     // logger and health checker can reach Control Tower on the host machine.
     lines.push(`server=/host.docker.internal/${dockerDnsIP}`);
 
-    // Catch-all: route all other domains to localhost (the interceptor on shared network ns)
-    lines.push('address=/#/127.0.0.1');
+    // Catch-all: route all other domains to the interceptor's IP
+    lines.push(`address=/#/${interceptorIP}`);
 
     lines.push('cache-size=1000');
     lines.push('no-hosts');
@@ -983,14 +987,55 @@ exec mongod --port ${internalPort} --bind_ip_all`;
     }
   }
 
-  private async pullUserImages(ctx: DeploymentContext): Promise<void> {
-    const images = ctx.definition.items
-      .filter((i) => i.type === 'SERVICE' && i.image)
-      .map((i) => i.image!);
+  private async pullAllImages(
+    ctx: DeploymentContext,
+    attachChromium: boolean,
+  ): Promise<void> {
+    // Infrastructure images (interceptor, test-agent, dnsmasq, db-proxies)
+    const infraImages = new Set<string>([
+      DOKKIMI_IMAGES.interceptor,
+      DOKKIMI_IMAGES.testAgent,
+      DOKKIMI_IMAGES.dnsmasq,
+    ]);
 
-    for (const image of images) {
-      const auth = this.registryService.getAuthConfig(ctx.runId, image);
-      await this.dockerClient.pullImage(image, auth);
+    // Add db-proxy images for each database type in the definition
+    for (const item of ctx.definition.items) {
+      if (item.type === 'DATABASE' && item.database) {
+        infraImages.add(this.getDbProxyImage(item.database));
+      }
+    }
+
+    if (attachChromium) {
+      infraImages.add(resolveBrowserImage(ctx.definition.config?.browser));
+    }
+
+    for (const image of infraImages) {
+      await this.dockerClient.pullImage(image);
+    }
+
+    // User service images (with registry auth if available)
+    for (const item of ctx.definition.items) {
+      if (item.type === 'SERVICE' && item.image) {
+        const auth = this.registryService.getAuthConfig(ctx.runId, item.image);
+        await this.dockerClient.pullImage(item.image, auth);
+      }
+    }
+
+    // Database images
+    for (const item of ctx.definition.items) {
+      if (item.type !== 'DATABASE' || !item.database) {
+        continue;
+      }
+      const dbConfig = this.databaseConfig.getConfig(
+        item.database,
+        {
+          dbName: item.dbName ?? undefined,
+          dbUser: item.dbUser ?? undefined,
+          dbPassword: item.dbPassword ?? undefined,
+        },
+        item.version ?? undefined,
+      );
+      await this.dockerClient.pullImage(dbConfig.image);
     }
   }
 

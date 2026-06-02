@@ -176,11 +176,7 @@ describe('DockerClientService', () => {
       );
     });
 
-    it('should set network aliases when provided', async () => {
-      mockDocker.listNetworks.mockResolvedValue([
-        { Name: 'dokkimi-run-inst-1', Id: 'net-1' },
-      ]);
-
+    it('should set network aliases via NetworkingConfig', async () => {
       await service.runContainer({
         name: 'service-a-interceptor',
         image: 'ghcr.io/dokkimi/interceptor:latest',
@@ -188,13 +184,19 @@ describe('DockerClientService', () => {
         networkAliases: ['service-a'],
       });
 
-      expect(mockNetwork.disconnect).toHaveBeenCalledWith({
-        Container: 'container-123',
-      });
-      expect(mockNetwork.connect).toHaveBeenCalledWith({
-        Container: 'container-123',
-        EndpointConfig: { Aliases: ['service-a'] },
-      });
+      expect(mockDocker.createContainer).toHaveBeenCalledWith(
+        expect.objectContaining({
+          NetworkingConfig: {
+            EndpointsConfig: {
+              'dokkimi-run-inst-1': {
+                Aliases: ['service-a'],
+              },
+            },
+          },
+        }),
+      );
+      expect(mockNetwork.disconnect).not.toHaveBeenCalled();
+      expect(mockNetwork.connect).not.toHaveBeenCalled();
     });
 
     it('should configure healthcheck when provided', async () => {
@@ -230,7 +232,7 @@ describe('DockerClientService', () => {
       await service.removeContainer('container-123');
 
       expect(mockDocker.getContainer).toHaveBeenCalledWith('container-123');
-      expect(mockContainer.remove).toHaveBeenCalledWith({ force: true });
+      expect(mockContainer.remove).toHaveBeenCalledWith({ force: true, v: true });
     });
 
     it('should silently handle 404 (already removed)', async () => {
