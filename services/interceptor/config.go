@@ -69,7 +69,7 @@ func LoadConfig() (*Config, error) {
 		DeployMode:     os.Getenv("DEPLOY_MODE"),
 		ConfigFilePath: os.Getenv("CONFIG_FILE_PATH"),
 		Origin:         os.Getenv("ORIGIN"),
-		LogActions: os.Getenv("LOG_ACTIONS") != "false", // Default to true if not set
+		LogActions:     os.Getenv("LOG_ACTIONS") != "false", // Default to true if not set
 
 		// HTTP client settings (hardcoded constants - not configurable)
 		RequestTimeout:    30 * time.Second,

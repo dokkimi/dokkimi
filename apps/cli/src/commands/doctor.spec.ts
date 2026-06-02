@@ -43,11 +43,8 @@ function setupAllPassing() {
     if (cmd.includes('docker system info')) {
       return '8589934592';
     } // 8GB
-    if (cmd.includes('kubectl cluster-info')) {
-      return 'Kubernetes is running at https://127.0.0.1:6443';
-    }
-    if (cmd.includes('kubectl config current-context')) {
-      return 'docker-desktop';
+    if (cmd.includes('docker version')) {
+      return '27.0.3';
     }
     return '';
   });
@@ -108,12 +105,6 @@ describe('doctor', () => {
       if (cmd === 'docker info') {
         throw new Error('not found');
       }
-      if (cmd.includes('kubectl cluster-info')) {
-        return 'Kubernetes is running at https://127.0.0.1:6443';
-      }
-      if (cmd.includes('kubectl config current-context')) {
-        return 'docker-desktop';
-      }
       return '';
     });
     mockIsCommand.mockImplementation((cmd: string) => {
@@ -131,33 +122,6 @@ describe('doctor', () => {
       .map((c: unknown[]) => c.join(' '))
       .join('\n');
     expect(allLogs).toContain('not installed');
-  });
-
-  it('Kubernetes not reachable reports failure and exits 1', async () => {
-    setupAllPassing();
-    mockExecSilent.mockImplementation((cmd: string) => {
-      if (cmd === 'docker info') {
-        return 'ok';
-      }
-      if (cmd.includes('docker system info')) {
-        return '8589934592';
-      }
-      if (cmd.includes('kubectl cluster-info')) {
-        throw new Error('unreachable');
-      }
-      if (cmd.includes('kubectl config current-context')) {
-        return 'docker-desktop';
-      }
-      return '';
-    });
-
-    await expect(doctor([])).rejects.toThrow('process.exit');
-
-    expect(exitSpy).toHaveBeenCalledWith(1);
-    const allLogs = consoleSpy.mock.calls
-      .map((c: unknown[]) => c.join(' '))
-      .join('\n');
-    expect(allLogs).toContain('cluster not reachable');
   });
 
   it('low disk space reports failure and exits 1', async () => {

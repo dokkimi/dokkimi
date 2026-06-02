@@ -14,9 +14,9 @@ func TestFileConfigReader_ReadConfigData(t *testing.T) {
 
 		data := map[string]string{
 			"expectedNamespaceItemIds": `["item-1","item-2"]`,
-			"testConfig":              `{"testRunId":"run-1","timeoutSeconds":60,"executionMode":"auto","tests":[]}`,
-			"urlMap":                  `{"api-gateway":{"scheme":"http","url":"http://api-gateway","name":"api-gateway","instanceItemId":"item-1"}}`,
-			"databaseMap":             `{"postgres-db":{"type":"postgresql","user":"dokkimi","password":"dokkimi","database":"dokkimi","instanceItemId":"item-2"}}`,
+			"testConfig":               `{"testRunId":"run-1","timeoutSeconds":60,"executionMode":"auto","tests":[]}`,
+			"urlMap":                   `{"api-gateway":{"scheme":"http","url":"http://api-gateway","name":"api-gateway","instanceItemId":"item-1"}}`,
+			"databaseMap":              `{"postgres-db":{"type":"postgresql","user":"dokkimi","password":"dokkimi","database":"dokkimi","instanceItemId":"item-2"}}`,
 		}
 		raw, _ := json.Marshal(data)
 		os.WriteFile(configPath, raw, 0644)

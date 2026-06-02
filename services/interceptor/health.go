@@ -62,8 +62,8 @@ func NewHealthChecker(cfg *HealthConfig, ctClient *http.Client) *HealthChecker {
 	}
 
 	checker := &HealthChecker{
-		config:     cfg,
-		httpClient: ctClient,
+		config:           cfg,
+		httpClient:       ctClient,
 		state:            StateBooting,
 		lastStatus:       false,
 		consecutiveReady: 0,

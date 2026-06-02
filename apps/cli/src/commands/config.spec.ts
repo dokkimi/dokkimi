@@ -14,12 +14,7 @@ import { loadConfig } from '@dokkimi/config';
 import { selectMenu } from '../lib/menu';
 import { numberInput } from '../lib/number-input';
 import { enterAltScreen, exitAltScreen } from '../lib/terminal';
-import {
-  getConcurrencyPrefs,
-  setConcurrencyPrefs,
-  getKubeconfigPrefs,
-  setKubeconfigPrefs,
-} from '@dokkimi/config';
+import { getConcurrencyPrefs, setConcurrencyPrefs } from '@dokkimi/config';
 import {
   isTelemetryEnabled,
   setTelemetryEnabled,
@@ -38,8 +33,6 @@ const mockEnterAlt = enterAltScreen as jest.Mock;
 const mockExitAlt = exitAltScreen as jest.Mock;
 const mockGetConcurrency = getConcurrencyPrefs as jest.Mock;
 const mockSetConcurrency = setConcurrencyPrefs as jest.Mock;
-const mockGetKubeconfig = getKubeconfigPrefs as jest.Mock;
-const mockSetKubeconfig = setKubeconfigPrefs as jest.Mock;
 const mockIsTelemetry = isTelemetryEnabled as jest.Mock;
 const mockSetTelemetry = setTelemetryEnabled as jest.Mock;
 const mockTrack = trackEvent as jest.Mock;
@@ -62,7 +55,6 @@ beforeEach(() => {
     .mockImplementation(() => true);
 
   mockGetConcurrency.mockReturnValue({});
-  mockGetKubeconfig.mockReturnValue({});
   mockIsTelemetry.mockReturnValue(true);
   mockLoadConfig.mockReturnValue({
     services: { controlTower: { host: 'localhost', port: 19001 } },
@@ -104,12 +96,10 @@ describe('configCommand', () => {
     expect(mockExitAlt).toHaveBeenCalled();
     expect(mockSelectMenu).toHaveBeenCalledTimes(1);
 
-    // Menu should have 3 items: concurrency, kubernetes, telemetry
     const items = mockSelectMenu.mock.calls[0][0];
-    expect(items).toHaveLength(3);
+    expect(items).toHaveLength(2);
     expect(items[0].label).toContain('Concurrency');
-    expect(items[1].label).toContain('Kubernetes');
-    expect(items[2].label).toContain('Telemetry');
+    expect(items[1].label).toContain('Telemetry');
   });
 
   it('updates concurrency setting (maxNamespaces)', async () => {
@@ -289,80 +279,4 @@ describe('configCommand', () => {
     expect(mockShutdown).not.toHaveBeenCalled();
   });
 
-  it('kubernetes menu shows error when kubeconfig cannot be read', async () => {
-    (fs.readFileSync as jest.Mock).mockImplementation(() => {
-      throw new Error('ENOENT');
-    });
-
-    mockSelectMenu
-      .mockResolvedValueOnce({ value: 'kubernetes', index: 1 })
-      .mockResolvedValueOnce(null) // error menu dismiss
-      .mockResolvedValueOnce(null); // top-level exit
-
-    await configCommand([]);
-
-    expect(mockSetKubeconfig).not.toHaveBeenCalled();
-    expect(mockShutdown).not.toHaveBeenCalled();
-  });
-
-  it('kubernetes menu selects a context', async () => {
-    (fs.readFileSync as jest.Mock).mockReturnValue(
-      'contexts:\n  - name: docker-desktop\n  - name: minikube\ncurrent-context: docker-desktop',
-    );
-    mockGetKubeconfig.mockReturnValue({});
-
-    mockSelectMenu
-      .mockResolvedValueOnce({ value: 'kubernetes', index: 1 })
-      .mockResolvedValueOnce({ value: 'minikube', index: 1 }) // select minikube
-      .mockResolvedValueOnce(null)
-      .mockResolvedValueOnce({ value: 'exit', index: 1 });
-
-    await configCommand([]);
-
-    expect(mockSetKubeconfig).toHaveBeenCalledWith({ context: 'minikube' });
-    expect(mockTrack).toHaveBeenCalledWith('cli_config_changed', {
-      category: 'kubernetes',
-      setting: 'context',
-      value: 'minikube',
-    });
-  });
-
-  it('kubernetes menu selects default context', async () => {
-    (fs.readFileSync as jest.Mock).mockReturnValue(
-      'contexts:\n  - name: docker-desktop\ncurrent-context: docker-desktop',
-    );
-    mockGetKubeconfig.mockReturnValue({ context: 'docker-desktop' });
-
-    mockSelectMenu
-      .mockResolvedValueOnce({ value: 'kubernetes', index: 1 })
-      .mockResolvedValueOnce({ value: '__default__', index: 0 })
-      .mockResolvedValueOnce(null)
-      .mockResolvedValueOnce({ value: 'exit', index: 1 });
-
-    await configCommand([]);
-
-    expect(mockSetKubeconfig).toHaveBeenCalledWith({});
-    expect(mockTrack).toHaveBeenCalledWith('cli_config_changed', {
-      category: 'kubernetes',
-      setting: 'context',
-      value: 'default',
-    });
-  });
-
-  it('kubernetes no-op when selecting already-active context', async () => {
-    (fs.readFileSync as jest.Mock).mockReturnValue(
-      'contexts:\n  - name: minikube\ncurrent-context: minikube',
-    );
-    mockGetKubeconfig.mockReturnValue({ context: 'minikube' });
-
-    mockSelectMenu
-      .mockResolvedValueOnce({ value: 'kubernetes', index: 1 })
-      .mockResolvedValueOnce({ value: 'minikube', index: 1 })
-      .mockResolvedValueOnce(null);
-
-    await configCommand([]);
-
-    expect(mockSetKubeconfig).not.toHaveBeenCalled();
-    expect(mockShutdown).not.toHaveBeenCalled();
-  });
 });
