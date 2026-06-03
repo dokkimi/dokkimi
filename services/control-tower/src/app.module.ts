@@ -29,19 +29,16 @@ import { getConfig, getConcurrencyPrefs } from '@dokkimi/config';
             STORAGE_DIR: config.storage.dir,
             INIT_FILES_DIR: config.storage.initFilesDir,
             MAX_CONCURRENT_NAMESPACES:
-              getConcurrencyPrefs().maxNamespaces ??
-              config.kubernetes.maxConcurrentNamespaces,
+              getConcurrencyPrefs().maxConcurrentTests ??
+              config.concurrency.maxConcurrentTests,
             MAX_BOOTING_NAMESPACES:
-              getConcurrencyPrefs().maxBooting ??
-              config.kubernetes.maxBootingNamespaces,
+              getConcurrencyPrefs().maxBootingTests ??
+              config.concurrency.maxBootingTests,
             CIRCUIT_BREAKER_TIMEOUT: config.circuitBreaker?.timeout ?? 3000,
             CIRCUIT_BREAKER_ERROR_THRESHOLD:
               config.circuitBreaker?.errorThresholdPercentage ?? 50,
             CIRCUIT_BREAKER_RESET_TIMEOUT:
               config.circuitBreaker?.resetTimeout ?? 30000,
-            IDLE_POLL_INTERVAL_MS: config.clusterWatcher?.idlePollIntervalMs,
-            ACTIVE_POLL_INTERVAL_MS:
-              config.clusterWatcher?.activePollIntervalMs,
           };
         },
       ],

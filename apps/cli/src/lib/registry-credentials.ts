@@ -33,10 +33,10 @@ export function resolveRegistryCredentials(): RegistryCredential[] {
 // ---------------------------------------------------------------------------
 
 /**
- * Normalizes a registry URL for use in K8s dockerconfigjson secrets.
- * Docker credential helpers return URLs with https:// prefix, but K8s
- * matches image references by hostname. Docker Hub's special URL is
- * kept as-is since K8s recognizes it.
+ * Normalizes a registry URL to a hostname for image matching.
+ * Docker credential helpers return URLs with https:// prefix, but
+ * image references use plain hostnames. Docker Hub's special URL is
+ * kept as-is since Docker recognizes it.
  */
 function normalizeRegistryUrl(url: string): string {
   // Keep Docker Hub's canonical URL as-is

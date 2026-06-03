@@ -36,7 +36,7 @@ func (f *FileConfigLoader) Load() error {
 		return fmt.Errorf("failed to parse config file: %w", err)
 	}
 
-	if mocksData, ok := configData[ConfigMapKeyMocks]; ok {
+	if mocksData, ok := configData["httpMocks"]; ok {
 		var mocks []MockEndpoint
 		if err := json.Unmarshal([]byte(mocksData), &mocks); err != nil {
 			return fmt.Errorf("failed to parse mocks: %w", err)
@@ -47,7 +47,7 @@ func (f *FileConfigLoader) Load() error {
 		f.cache.SetMocks([]MockEndpoint{})
 	}
 
-	if urlMapData, ok := configData[ConfigMapKeyUrlMap]; ok {
+	if urlMapData, ok := configData["urlMap"]; ok {
 		var urlMap UrlMap
 		if err := json.Unmarshal([]byte(urlMapData), &urlMap); err != nil {
 			return fmt.Errorf("failed to parse URL map: %w", err)

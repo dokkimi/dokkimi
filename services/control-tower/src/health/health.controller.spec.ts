@@ -44,11 +44,6 @@ describe('HealthController', () => {
             message: 'Database connection successful',
             latency: 10,
           },
-          kubernetes: {
-            status: 'healthy' as const,
-            message: 'Kubernetes API connection successful',
-            latency: 20,
-          },
           prisma: {
             status: 'healthy' as const,
             message: 'Prisma client connection successful',

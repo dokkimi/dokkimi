@@ -2,7 +2,7 @@ name: postgres-multi-instance
 description: |
   Two independent PostgreSQL instances in the same namespace, each with
   its own schema and seed data. Validates that the wire protocol proxy,
-  K8s Service routing, health checks, and test-agent connection pooling
+  Docker DNS routing, health checks, and test-agent connection pooling
   all work correctly when multiple postgres databases coexist.
 config:
   timeoutSeconds: 120

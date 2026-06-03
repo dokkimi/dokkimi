@@ -154,8 +154,8 @@ func TestHealthChecker_checkHealth(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Each subtest gets its own httptest server bound to 127.0.0.1.
-			// Leaving K8sNamespace and K8sDNSIP empty makes checkHealth treat
-			// Origin as a direct hostname instead of a cluster-local FQDN.
+			// Leaving DNSIP empty makes checkHealth treat Origin as a direct
+			// hostname instead of resolving via Docker DNS.
 			testServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.WriteHeader(tt.statusCode)
 			}))

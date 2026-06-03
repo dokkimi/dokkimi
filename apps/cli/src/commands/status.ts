@@ -42,21 +42,16 @@ export async function status(args: string[]): Promise<void> {
     process.exit(0);
   }
 
-  // Check K8s connectivity via CT health endpoint
   const ctUrl = buildServiceUrl(config.services.controlTower);
   const health = await fetchJson<{
     status: string;
     uptime: number;
     checks: {
       database: { status: string };
-      kubernetes: { status: string };
       prisma: { status: string };
     };
   }>(`${ctUrl}/health`);
 
-  const kubernetes = health
-    ? health.checks.kubernetes.status === 'healthy'
-    : undefined;
   const database = health
     ? health.checks.database.status === 'healthy'
     : undefined;
@@ -76,7 +71,6 @@ export async function status(args: string[]): Promise<void> {
     console.log(
       JSON.stringify({
         running: true,
-        ...(kubernetes !== undefined ? { kubernetes } : {}),
         ...(database !== undefined ? { database } : {}),
         instances,
       }),
@@ -94,14 +88,6 @@ export async function status(args: string[]): Promise<void> {
   }
 
   if (health) {
-    if (kubernetes) {
-      console.log('\x1b[32m✓\x1b[0m Kubernetes connected');
-    } else {
-      console.log('\x1b[31m✗\x1b[0m Kubernetes not connected');
-      console.log(
-        '  \x1b[90mEnsure Docker Desktop has Kubernetes enabled.\x1b[0m',
-      );
-    }
     if (!database) {
       console.log('\x1b[31m✗\x1b[0m Database not available');
     }

@@ -121,34 +121,25 @@ All of these are expected remaining work per the migration doc. The K8s code is 
 
 ---
 
-## Phase 12: GitHub Action and CI (not yet done)
+## Phase 12: GitHub Action and CI — DONE
 
-### `github-action/action.yml` (user-facing action)
-
-- **Status:** Completely unchanged on this branch. Still installs k3s, sets KUBECONFIG, pulls fluent-bit/busybox, runs k3s-uninstall.sh.
-- **Impact:** Anyone using the Dokkimi GitHub Action will get a broken experience — k3s is installed but never used, wrong images are pulled, CONTROL_TOWER_HOST is set from a K8s node IP that CT ignores.
-- [ ] Remove "Install k3s" step (k3s install, KUBECONFIG, CONTROL_TOWER_HOST)
-- [ ] Update "Pull external images" — remove busybox and fluent-bit, keep dnsmasq
-- [ ] Remove k3s-uninstall from cleanup
-- [ ] Update description from "Install k3s, set up a single-node Kubernetes cluster" to Docker-only
-
-### `.github/workflows/ci.yml` (internal CI)
-
-- **Status:** `integration-tests` job still installs k3s, sets KUBECONFIG/CONTROL_TOWER_HOST, pulls busybox/fluent-bit, and runs k3s-uninstall on cleanup.
-- [ ] Remove "Install k3s" step and KUBECONFIG/CONTROL_TOWER_HOST env setup
-- [ ] Update "Pull external images" — remove busybox and fluent-bit
-- [ ] Remove k3s-uninstall from cleanup
-- [ ] Remove `DOKKIMI_MAX_CONCURRENT_NAMESPACES` / `DOKKIMI_MAX_BOOTING_NAMESPACES` env vars or rename to Docker-appropriate names once config keys are renamed in Phase 11
-- [ ] Delete `.github/kind-config.yaml` if it exists
+- [x] `github-action/action.yml` — removed k3s install, KUBECONFIG, CONTROL_TOWER_HOST, busybox/fluent-bit pulls, k3s-uninstall. Updated description to Docker-only.
+- [x] `.github/workflows/ci.yml` — removed k3s install, KUBECONFIG/CONTROL_TOWER_HOST, busybox/fluent-bit pulls, k3s-uninstall from integration-tests job.
+- [x] `.github/kind-config.yaml` — deleted.
+- [x] `shared/service-manager/index.ts` — replaced `ensureDockerAndK8sRunning` with `ensureDockerRunning`. Removed kubectl check, K8s polling, and all K8s error messages.
 
 ---
 
-## Phase 13: Documentation and CLI (not yet done)
+## Phase 13: Documentation and CLI — DONE
 
-- [ ] `scripts/npm-readme.md` — remove "Docker Desktop with Kubernetes enabled" and "kubectl" from prerequisites, replace with "Docker"
-- [ ] `dokkimi doctor` — remove `checkKubernetes()` and `checkKubeContext()` hard-failure checks, add Docker version check (20.10+)
-- [ ] `dokkimi config` — remove K8s context picker
-- [ ] `scripts/publish-package.json` — remove "kubernetes" from package keywords
+- [x] `scripts/npm-readme.md` — updated description to "Docker environments", prerequisites simplified to "Docker"
+- [x] `scripts/publish-package.json` — updated description, removed "kubernetes"/"k8s" keywords
+- [x] `dokkimi doctor` — replaced `checkKubernetes()`/`checkKubeContext()` with `checkDockerVersion()` (20.10+)
+- [x] `dokkimi config` — removed K8s context picker, kubeconfig imports, yaml dependency
+- [x] Landing page — updated index, HowItWorks, Pricing, docs pages (6 files)
+- [x] Blog posts — updated all K8s references to Docker equivalents (5 files)
+- [x] Tutorial — updated nextjs tutorial (1 file)
+- [x] Dockerfile — removed unused `nest-cli.json`, moved `definition-validator`/`definition-resolver` to stubs
 
 ---
 

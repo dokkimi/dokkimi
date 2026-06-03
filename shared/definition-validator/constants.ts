@@ -1,4 +1,4 @@
-/** Kubernetes DNS label naming convention */
+/** DNS label naming convention */
 export const ITEM_NAME_RE = /^[a-z0-9]([-a-z0-9]*[a-z0-9])?$/;
 export const ITEM_NAME_MAX_LENGTH = 63;
 export const DEFINITION_NAME_MAX_LENGTH = 100;

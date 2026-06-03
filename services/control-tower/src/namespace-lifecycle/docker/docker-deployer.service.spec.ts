@@ -1,5 +1,5 @@
 import { DockerDeployerService } from './docker-deployer.service';
-import { DeploymentContext } from '../../namespace-deployer/deployment-context.types';
+import { DeploymentContext } from '../deployment-context.types';
 
 jest.mock('dockerode', () => jest.fn(() => ({})));
 
@@ -30,7 +30,7 @@ jest.mock('@dokkimi/config', () => ({
   ]),
   buildTestAgentEnvVars: jest.fn().mockReturnValue([
     { name: 'PORT', value: '8080' },
-    { name: 'K8S_NAMESPACE', value: 'dokkimi-run-test-instance' },
+    { name: 'NAMESPACE', value: 'test-instance' },
   ]),
   buildDbProxyEnvVars: jest.fn().mockReturnValue([
     { name: 'DATABASE_TYPE', value: 'postgres' },
@@ -120,14 +120,14 @@ const mockRegistryService = {
 };
 
 const mockInstanceItemService = {
-  updateInstanceItemK8sName: jest.fn().mockResolvedValue(undefined),
+  updateInstanceItemContainerName: jest.fn().mockResolvedValue(undefined),
   updateInstanceItemStatus: jest.fn().mockResolvedValue(undefined),
   updateInstanceItemReadiness: jest.fn().mockResolvedValue(undefined),
 };
 
 const mockInstanceService = {
   updateInstanceStatus: jest.fn().mockResolvedValue(undefined),
-  updateInstanceK8sNamespace: jest.fn().mockResolvedValue(undefined),
+  updateInstanceDockerNetwork: jest.fn().mockResolvedValue(undefined),
 };
 
 const mockRunStorage = {
@@ -144,7 +144,6 @@ function buildCtx(
   return {
     runId: 'run-1',
     instanceId: 'test-instance',
-    k8sNamespaceName: 'dokkimi-run-test-instance',
     instanceItemIds: new Map([
       ['api-gateway', 'item-1'],
       ['user-service', 'item-2'],

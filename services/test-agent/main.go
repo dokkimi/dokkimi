@@ -11,8 +11,6 @@ import (
 	"sync"
 	"syscall"
 	"time"
-
-	"k8s.io/client-go/kubernetes"
 )
 
 // Version is set at build time via -ldflags "-X main.Version=..."
@@ -32,31 +30,15 @@ func main() {
 	// test execution stops promptly when the container is torn down.
 	ctx, rootCancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 
-	isFileMode := cfg.ConfigSource == "file"
-
-	// Read config data — from file or K8s ConfigMap
-	var configMapData *ConfigMapData
-	var configMapReader *ConfigMapReader
-	if isFileMode {
-		log.Printf("Config source: file (%s)", cfg.ConfigFilePath)
-		fileReader := NewFileConfigReader(cfg.ConfigFilePath)
-		var readErr error
-		configMapData, readErr = fileReader.ReadConfigData()
-		if readErr != nil {
-			log.Fatalf("Failed to read config file: %v", readErr)
-		}
-	} else {
-		log.Printf("Config source: configmap (%s/%s)", cfg.K8sNamespace, cfg.ConfigMapName)
-		var createErr error
-		configMapReader, createErr = NewConfigMapReader(cfg.K8sNamespace, cfg.ConfigMapName)
-		if createErr != nil {
-			log.Fatalf("Failed to create ConfigMap reader: %v", createErr)
-		}
-		var readErr error
-		configMapData, readErr = configMapReader.ReadConfigMapData(ctx)
-		if readErr != nil {
-			log.Fatalf("Failed to read ConfigMap data: %v", readErr)
-		}
+	// Read config from file
+	if cfg.ConfigFilePath == "" {
+		log.Fatalf("CONFIG_FILE_PATH is required")
+	}
+	log.Printf("Config source: file (%s)", cfg.ConfigFilePath)
+	fileReader := NewFileConfigReader(cfg.ConfigFilePath)
+	configMapData, readErr := fileReader.ReadConfigData()
+	if readErr != nil {
+		log.Fatalf("Failed to read config file: %v", readErr)
 	}
 
 	if configMapData.TestConfig == nil {
@@ -133,9 +115,7 @@ func main() {
 			(req.Mode == "all" && (req.StartAtStep != nil || req.StopBefore != nil))
 
 		if !healthChecked {
-			if isFileMode {
-				// Docker mode: wait for health checks only (no K8s API verification).
-				// Interceptors still POST to /health/status, so healthTracker works the same way.
+			{
 				allReady := false
 				failureMessage := ""
 				select {
@@ -166,162 +146,18 @@ func main() {
 					return
 				}
 
-				log.Printf("All items reported ready (Docker mode)")
-			} else {
-				// K8s mode: wait for health checks + verify via K8s API
-				namespaceInstanceId := strings.TrimPrefix(cfg.K8sNamespace, "dokkimi-")
-
-				fatalErrChan := make(chan string, 1)
-				fatalCheckDone := make(chan struct{})
-				go func() {
-					defer close(fatalCheckDone)
-					checker, checkErr := NewPodReadinessChecker(configMapReader.GetClientset(), cfg.K8sNamespace)
-					if checkErr != nil {
-						return
-					}
-					time.Sleep(2 * time.Second)
-					ticker := time.NewTicker(2 * time.Second)
-					defer ticker.Stop()
-					timeoutCh := time.After(timeout)
-					for {
-						select {
-						case <-ticker.C:
-							checkCtx, checkCancel := context.WithTimeout(ctx, 5*time.Second)
-							if reason := checker.checkForFatalPodErrors(checkCtx, namespaceInstanceId); reason != "" {
-								fatalErrChan <- reason
-								checkCancel()
-								return
-							}
-							checkCancel()
-						case <-healthTracker.allReadyChan:
-							return
-						case <-timeoutCh:
-							return
-						}
-					}
-				}()
-
-				allReady := false
-				failureMessage := ""
-				select {
-				case <-healthTracker.allReadyChan:
-					allReady = true
-				case reason := <-fatalErrChan:
-					failureMessage = reason
-				case <-time.After(timeout):
-					notReady := healthTracker.NotReadyNames()
-					if len(notReady) > 0 {
-						failureMessage = fmt.Sprintf("Startup timeout: %s not ready after %ds", strings.Join(notReady, ", "), testConfig.TimeoutSeconds)
-					} else {
-						failureMessage = fmt.Sprintf("Startup timeout after %ds", testConfig.TimeoutSeconds)
-					}
-					if checker, checkErr := NewPodReadinessChecker(configMapReader.GetClientset(), cfg.K8sNamespace); checkErr == nil {
-						checkCtx, checkCancel := context.WithTimeout(ctx, 5*time.Second)
-						if reason := checker.checkForFatalPodErrors(checkCtx, namespaceInstanceId); reason != "" {
-							failureMessage = reason
-						}
-						checkCancel()
-					}
-				}
-				<-fatalCheckDone
-
-				if !allReady {
-					log.Printf("%s, aborting test execution", failureMessage)
-					testExecutionLogger.LogEvent("HEALTH_TIMEOUT", failureMessage, nil, nil)
-					capturePodLogsAndLog(ctx, configMapReader.GetClientset(), cfg.K8sNamespace, namespaceInstanceId, configMapData, testExecutionLogger)
-					notificationErr := completionNotifier.NotifyCompletion(
-						req.TestRunID,
-						"failure",
-						failureMessage,
-						nil,
-						false,
-					)
-					if notificationErr != nil {
-						log.Printf("Failed to notify Control Tower: %v", notificationErr)
-					}
-					return
-				}
-
-				log.Printf("All items reported ready, verifying with Kubernetes API...")
-
-				podReadinessChecker, err := NewPodReadinessChecker(configMapReader.GetClientset(), cfg.K8sNamespace)
-				if err != nil {
-					log.Printf("Failed to create pod readiness checker: %v, aborting test execution", err)
-					notificationErr := completionNotifier.NotifyCompletion(
-						req.TestRunID,
-						"failure",
-						fmt.Sprintf("Failed to create pod readiness checker: %v", err),
-						nil,
-						false,
-					)
-					if notificationErr != nil {
-						log.Printf("Failed to notify Control Tower: %v", notificationErr)
-					}
-					return
-				}
-
-				podCtx, podCancel := context.WithTimeout(ctx, timeout)
-				allPodsReady, podFailReason := podReadinessChecker.VerifyAllPodsReadyWithRetry(podCtx, namespaceInstanceId, 8, 1*time.Second)
-				podCancel()
-				if !allPodsReady {
-					log.Printf("Pod readiness check failed: %s", podFailReason)
-					testExecutionLogger.LogEvent("POD_READINESS_FAILED", podFailReason, nil, nil)
-					capturePodLogsAndLog(ctx, configMapReader.GetClientset(), cfg.K8sNamespace, namespaceInstanceId, configMapData, testExecutionLogger)
-					notificationErr := completionNotifier.NotifyCompletion(
-						req.TestRunID,
-						"failure",
-						podFailReason,
-						nil,
-						false,
-					)
-					if notificationErr != nil {
-						log.Printf("Failed to notify Control Tower: %v", notificationErr)
-					}
-					return
-				}
-
-				log.Printf("All pods verified ready via Kubernetes API")
-
-				routeChecker := NewRouteReadinessChecker(configMapReader.GetClientset(), cfg.K8sNamespace)
-				routeCtx, routeCancel := context.WithTimeout(ctx, timeout)
-				routesReady, routeFailReason := routeChecker.VerifyInterceptorRoutesReady(routeCtx, 8, 250*time.Millisecond)
-				routeCancel()
-				if !routesReady {
-					log.Printf("Interceptor route readiness check failed: %s", routeFailReason)
-					testExecutionLogger.LogEvent("ROUTE_READINESS_FAILED", routeFailReason, nil, nil)
-					capturePodLogsAndLog(ctx, configMapReader.GetClientset(), cfg.K8sNamespace, namespaceInstanceId, configMapData, testExecutionLogger)
-					notificationErr := completionNotifier.NotifyCompletion(
-						req.TestRunID,
-						"failure",
-						routeFailReason,
-						nil,
-						false,
-					)
-					if notificationErr != nil {
-						log.Printf("Failed to notify Control Tower: %v", notificationErr)
-					}
-					return
-				}
+				log.Printf("All items reported ready")
 			}
-
 			healthChecked = true
 		}
 
-		// Re-read config before execution (defensive: picks up latest config on re-runs)
+		// Re-read config before execution
 		var latestConfigMapData *ConfigMapData
-		if isFileMode {
+		{
 			fileReader := NewFileConfigReader(cfg.ConfigFilePath)
 			readData, readErr := fileReader.ReadConfigData()
 			if readErr != nil {
 				log.Printf("Warning: failed to re-read config file before execution: %v, using cached config", readErr)
-				latestConfigMapData = configMapData
-			} else {
-				latestConfigMapData = readData
-			}
-		} else {
-			readData, readErr := configMapReader.ReadConfigMapData(ctx)
-			if readErr != nil {
-				log.Printf("Warning: failed to re-read ConfigMap before execution: %v, using cached config", readErr)
 				latestConfigMapData = configMapData
 			} else {
 				latestConfigMapData = readData
@@ -509,11 +345,11 @@ func main() {
 // buildItemIdToNameMap builds a reverse lookup from instance item ID to human-readable name
 func buildItemIdToNameMap(configMapData *ConfigMapData) map[string]string {
 	m := make(map[string]string)
-	for k8sName, entry := range configMapData.URLMap {
+	for serviceName, entry := range configMapData.URLMap {
 		if entry.InstanceItemID != "" {
 			name := entry.Name
 			if name == "" {
-				name = k8sName
+				name = serviceName
 			}
 			m[entry.InstanceItemID] = name
 		}
@@ -524,27 +360,6 @@ func buildItemIdToNameMap(configMapData *ConfigMapData) map[string]string {
 		}
 	}
 	return m
-}
-
-// capturePodLogsAndLog captures container logs from failing pods and sends them
-// as POD_LOGS events via the test execution logger. Flushes the logger to ensure
-// logs reach Control Tower before it triggers namespace teardown.
-func capturePodLogsAndLog(
-	ctx context.Context,
-	clientset *kubernetes.Clientset,
-	namespace string,
-	instanceId string,
-	configMapData *ConfigMapData,
-	logger *TestExecutionLogger,
-) {
-	entries := CapturePodLogs(ctx, clientset, namespace, instanceId, configMapData.URLMap, configMapData.DatabaseMap)
-	for _, entry := range entries {
-		msg := FormatPodLogMessage(entry)
-		logger.LogEvent("POD_LOGS", msg, nil, nil)
-	}
-	if len(entries) > 0 {
-		logger.Flush()
-	}
 }
 
 // handleHealthStatus handles health status updates from interceptors/sidecars

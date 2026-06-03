@@ -6,7 +6,7 @@ How Dokkimi works, from `dokkimi run` to test results.
 
 ## System Overview
 
-Dokkimi deploys user-defined services into isolated Kubernetes namespaces, intercepts all traffic between them, runs test steps, validates assertions, and reports results. It runs in two modes:
+Dokkimi deploys user-defined services into isolated Docker networks, intercepts all traffic between them, runs test steps, validates assertions, and reports results. It runs in two modes:
 
 - **Local** — Control Tower runs locally as a background daemon, SQLite for storage
 
@@ -18,31 +18,30 @@ PostgreSQL is only used when Control Tower is packaged into a Docker image and t
 
 ### Node.js / NestJS
 
-Backend is a single service — **Control Tower** on port `19001`. Log ingestion, test
-validation, and K8s cluster watching live as feature modules inside it.
+Backend is a single service — **Control Tower** on port `19001`. Log ingestion and test
+validation live as feature modules inside it.
 
-| Service                | Port  | Responsibility                                                                                                                                                    |
-| ---------------------- | ----- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Control Tower (CT)** | 19001 | REST API, K8s orchestration, namespace lifecycle, ConfigMap management, log ingestion, test-completion + assertion validation, K8s namespace-termination polling. |
+| Service                | Port  | Responsibility                                                                                                                                                 |
+| ---------------------- | ----- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Control Tower (CT)** | 19001 | REST API, Docker orchestration, namespace lifecycle, config file management, log ingestion, test-completion + assertion validation, container exit monitoring. |
 
 CT's internal feature modules:
 
-| Module                                | Responsibility                                                                                                          |
-| ------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
-| `namespace/` + `namespace-lifecycle/` | K8s orchestration                                                                                                       |
-| `runs/`                               | Run creation, deployment, status, stop/delete                                                                           |
-| `log-processing/` (formerly LPS)      | Log ingestion (`POST /logs/*`), writes to DB                                                                            |
-| `log-query/`                          | Log read path (`GET /logs/*/instance/:id`)                                                                              |
-| `test-validation/` (formerly TVS)     | Assertion matching, updates test status, calls `RunsService` in-process                                                 |
-| `cluster-watcher/` (formerly CWS)     | Polls K8s for TERMINATING namespaces; marks instances STOPPED and calls `RunsService.handleInstancesStopped` in-process |
-| `health/`                             | Single aggregated `/health`; readiness updates from sidecars via `POST /health/status`                                  |
+| Module                                | Responsibility                                                                         |
+| ------------------------------------- | -------------------------------------------------------------------------------------- |
+| `namespace/` + `namespace-lifecycle/` | Docker orchestration (create networks, start/stop containers)                          |
+| `runs/`                               | Run creation, deployment, status, stop/delete                                          |
+| `log-processing/` (formerly LPS)      | Log ingestion (`POST /logs/*`), writes to DB                                           |
+| `log-query/`                          | Log read path (`GET /logs/*/instance/:id`)                                             |
+| `test-validation/` (formerly TVS)     | Assertion matching, updates test status, calls `RunsService` in-process                |
+| `health/`                             | Single aggregated `/health`; readiness updates from sidecars via `POST /health/status` |
 
-### Go (run inside K8s pods as sidecars)
+### Go (run inside Docker containers as sidecars)
 
 | Service         | Responsibility                                                                                                                                                                                                         |
 | --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Interceptor** | HTTP traffic interception, mock responses, log publishing to Control Tower. Two variants: shared (external traffic) and sidecar (service-to-service)                                                                   |
-| **Test Agent**  | Reads test config from ConfigMap, executes HTTP requests in sequence, POSTs `/test-complete` to Control Tower                                                                                                          |
+| **Test Agent**  | Reads test config from bind-mounted config file, executes HTTP requests in sequence, POSTs `/test-complete` to Control Tower                                                                                           |
 | **DB Proxy**    | Wire protocol proxy sidecar for databases. Transparent TCP proxy that parses each database's native wire protocol to extract and log queries without modifying traffic. Variants for PostgreSQL, MySQL, MongoDB, Redis |
 
 ### Applications
@@ -70,30 +69,29 @@ User runs: dokkimi run [target]
                 ▼
 ┌─ Control Tower ───────────────────────────┐
 │ 1. Create Run record (PENDING → RUNNING)  │
-│ 2. Create K8s namespace                   │
+│ 2. Create Docker network                  │
 │ 3. For each service in definition:        │
-│    - Create Deployment with sidecars:     │
+│    - Start containers with sidecars:      │
 │      * Sidecar Interceptor (HTTP logging) │
-│      * Fluent Bit (console log capture)   │
 │      * DNSMasq (service discovery)        │
 │      * DB Proxy (for databases)           │
-│    - Create ConfigMap (test config)       │
-│ 4. Deploy Test Agent pod                  │
+│    - Bind-mount config file (test config) │
+│ 4. Start Test Agent container             │
 └───────────────┬───────────────────────────┘
                 │
                 ▼
-┌─ Inside K8s Namespace ────────────────────┐
+┌─ Inside Docker Network ──────────────────┐
 │                                           │
 │  Services start → health checks pass      │
 │                                           │
 │  Test Agent:                              │
-│    1. Reads test steps from ConfigMap     │
+│    1. Reads test steps from config file   │
 │    2. Executes HTTP requests in order     │
 │    3. Interceptors capture all traffic    │
 │    4. POSTs /test-complete to CT          │
 │                                           │
 │  Interceptors → POST /logs/* → CT         │
-│  Fluent Bit  → POST /logs/console → CT    │
+│  Docker API  → console log streaming → CT │
 │  DB Proxy    → POST /logs/database → CT   │
 └───────────────┬───────────────────────────┘
                 │
@@ -117,12 +115,12 @@ User runs: dokkimi run [target]
                 │
                 ▼
 ┌─ Cleanup ─────────────────────────────────┐
-│ CT runs: stops instance (K8s namespace    │
-│          deletion)                        │
-│ cluster-watcher module polls K8s,         │
-│   detects namespace is gone,              │
-│   calls RunsService.handleInstances-      │
-│   Stopped in-process                      │
+│ CT runs: stops instance (Docker container │
+│          removal + network cleanup)       │
+│ Container exit monitoring detects         │
+│   containers have stopped, calls          │
+│   RunsService.handleInstancesStopped      │
+│   in-process                              │
 └───────────────┬───────────────────────────┘
                 │
                 ▼
@@ -133,39 +131,42 @@ User runs: dokkimi run [target]
 
 ---
 
-## K8s Namespace Structure
+## Docker Network Structure
 
-Each test run gets an isolated namespace. A typical namespace contains:
+Each test run gets an isolated Docker network. Container topology:
 
 ```
-dokkimi-{run-id}/
-├── user-service (Deployment)
-│   ├── main container (user's image)
-│   ├── sidecar-interceptor (Go, captures HTTP)
-│   ├── fluent-bit (captures stdout/stderr)
-│   └── dnsmasq (DNS routing)
-├── postgres-db (Deployment)
-│   ├── postgres container
-│   └── db-proxy sidecar (health + queries)
-├── shared-interceptor (Deployment)
+dokkimi-{run-id} (Docker network)
+│
+├── interceptor (standalone container on network)
 │   └── interceptor (external traffic + mocks)
-├── test-agent (Deployment)
+│
+├── user-service group (shared network namespace)
+│   ├── user-service (primary container, network alias)
+│   └── dnsmasq (joins user container's network namespace)
+│
+├── postgres-db group (shared network namespace)
+│   ├── db-proxy (primary container, network alias)
+│   └── postgres (joins db-proxy's network namespace)
+│
+├── test-agent (standalone container on network)
 │   └── test-agent (executes test steps)
-├── dokkimi-interceptor-config (ConfigMap)
-│   ├── testConfig (test steps for test-agent)
-│   ├── httpMocks (mock rules for interceptors)
-│   ├── urlMap (service discovery routing)
-│   └── databaseMap (database connection info)
-└── Ingress (external access routing)
+│
+└── bind-mounted config files
+    ├── testConfig (test steps for test-agent)
+    ├── httpMocks (mock rules for interceptors)
+    ├── urlMap (service discovery routing)
+    └── databaseMap (database connection info)
 ```
 
 ### Sidecar Pattern
 
-Every user service gets three sidecars:
+Every user service gets two sidecars:
 
-1. **Sidecar Interceptor** — sits between the service and all outbound HTTP. Captures request/response pairs, POSTs them to Control Tower's `log-processing` module, and can serve mock responses based on ConfigMap rules.
-2. **Fluent Bit** — tails the container's stdout/stderr, forwards structured console logs to Control Tower.
-3. **DNSMasq** — rewrites DNS so service-to-service calls route through the interceptor.
+1. **Sidecar Interceptor** — sits between the service and all outbound HTTP. Captures request/response pairs, POSTs them to Control Tower's `log-processing` module, and can serve mock responses based on config file rules.
+2. **DNSMasq** — rewrites DNS so service-to-service calls route through the interceptor. Joins the user container's network namespace.
+
+Console logs are collected via the Docker API (log streaming), replacing the previous Fluent Bit sidecar approach.
 
 Databases additionally get a **DB Proxy** sidecar — a transparent wire protocol proxy that sits between the application and the database. Client connections hit the proxy port, which forwards traffic to the real database while parsing the native wire protocol (MongoDB OP_MSG, PostgreSQL frontend/backend messages, MySQL packet protocol, Redis RESP) to extract queries and results for logging. The proxy also runs adaptive health checks (1.5s polling while booting, 20s once healthy) and reports readiness to Control Tower. MongoDB uses a sentinel document written by the final init script to ensure health checks don't pass before database initialization completes.
 
@@ -188,7 +189,7 @@ All variants log asynchronously via a buffered channel (capacity 1000) and POST 
 
 SQLite, single file at `~/.dokkimi/dokkimi.db`. A PostgreSQL Prisma schema also exists for when Control Tower runs inside a Docker image (tested by Dokkimi's own definitions), but normal usage is always SQLite.
 
-Log ingestion is HTTP-only — interceptors, Fluent Bit, and DB Proxy POST to Control Tower.
+Log ingestion is HTTP-only — interceptors and DB Proxy POST to Control Tower. Console logs are collected via Docker API log streaming.
 
 ---
 
@@ -197,16 +198,15 @@ Log ingestion is HTTP-only — interceptors, Fluent Bit, and DB Proxy POST to Co
 | From            | To                             | Method               | Purpose                                                                                |
 | --------------- | ------------------------------ | -------------------- | -------------------------------------------------------------------------------------- |
 | CLI             | Control Tower                  | HTTP REST            | Create runs, submit definitions, poll results                                          |
-| Control Tower   | K8s API                        | K8s Client           | Create/delete namespaces, deployments, ConfigMaps                                      |
+| Control Tower   | Docker API                     | dockerode            | Create/delete networks, start/stop containers, stream logs                             |
 | Test Agent      | Interceptor                    | HTTP                 | Test step execution — requests route through the interceptor, enabling traffic capture |
 | Interceptor     | Control Tower `/logs/*`        | HTTP POST            | HTTP traffic logs                                                                      |
-| Fluent Bit      | Control Tower `/logs/console`  | HTTP POST            | Console logs                                                                           |
+| Docker API      | Control Tower `/logs/console`  | Log streaming        | Console logs (collected via Docker API)                                                |
 | DB Proxy        | Control Tower `/logs/database` | HTTP POST            | Database logs                                                                          |
 | Sidecars        | Control Tower `/health/status` | HTTP POST            | Readiness updates                                                                      |
 | Test Agent      | Control Tower `/test-complete` | HTTP POST            | Test completion notification                                                           |
 | CT modules      | DB                             | Prisma               | Query HTTP logs, write assertion results                                               |
 | test-validation | RunsService (in-process)       | direct injected call | Signal validation complete → CT updates run status                                     |
-| cluster-watcher | RunsService (in-process)       | direct injected call | Signal instance STOPPED → CT advances run                                              |
 
 ---
 
@@ -215,7 +215,7 @@ Log ingestion is HTTP-only — interceptors, Fluent Bit, and DB Proxy POST to Co
 The CLI uses `@dokkimi/service-manager` to manage Control Tower as a background daemon:
 
 1. **Startup**: `dokkimi run` calls `ensureServicesRunning()` which:
-   - Checks Docker and K8s are running (auto-starts Docker on macOS)
+   - Checks Docker is running (auto-starts Docker on macOS)
    - Runs Prisma migrations if needed
    - Health-checks each service at its configured port
    - Spawns any unhealthy services as detached child processes
@@ -280,14 +280,14 @@ dokkimi/
 
 ## Key Design Decisions
 
-1. **Namespace-per-run isolation** — each test run gets its own K8s namespace. Services can't interfere with each other across runs.
+1. **Network-per-run isolation** — each test run gets its own Docker network. Services can't interfere with each other across runs.
 
 2. **Sidecar interceptors over shared proxy** — each service gets its own interceptor sidecar for service-to-service traffic. A shared interceptor handles external/mock traffic. This avoids a single point of failure and enables per-service traffic capture.
 
-3. **Separation of concerns via modules** — CT ships as one process, but log ingestion, test validation, and cluster watching are isolated NestJS modules with narrow public surfaces. This keeps the code organized while avoiding inter-service HTTP overhead.
+3. **Separation of concerns via modules** — CT ships as one process, but log ingestion and test validation are isolated NestJS modules with narrow public surfaces. This keeps the code organized while avoiding inter-service HTTP overhead.
 
-4. **ConfigMap-driven test execution** — test steps are written to a ConfigMap that the test-agent reads. This decouples test configuration from the agent binary and allows dynamic updates.
+4. **File-driven test execution** — test steps are written to bind-mounted config files that the test-agent reads. This decouples test configuration from the agent binary.
 
-5. **HTTP POST for log ingestion** — interceptor sidecars, Fluent Bit, and DB Proxy all post directly to Control Tower's log-processing module.
+5. **HTTP POST for log ingestion** — interceptor sidecars and DB Proxy post directly to Control Tower's log-processing module. Console logs are collected via Docker API log streaming.
 
 6. **Wire protocol proxies over query-execution endpoints** — DB Proxy variants parse each database's native wire protocol (MongoDB OP_MSG, PostgreSQL messages, MySQL packets, Redis RESP) to transparently intercept and log queries. This means applications connect normally to the proxy port with no driver changes, and the proxy forwards traffic unmodified while extracting query text, results, duration, and errors for logging.

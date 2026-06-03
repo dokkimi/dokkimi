@@ -68,12 +68,12 @@ export class InstanceItemService {
   }
 
   /**
-   * Updates instance item K8s name
+   * Updates instance item container name
    */
-  async updateInstanceItemK8sName(itemId: string, k8sName: string) {
+  async updateInstanceItemContainerName(itemId: string, containerName: string) {
     return this.prisma.instanceItem.update({
       where: { id: itemId },
-      data: { k8sName },
+      data: { containerName },
     });
   }
 }

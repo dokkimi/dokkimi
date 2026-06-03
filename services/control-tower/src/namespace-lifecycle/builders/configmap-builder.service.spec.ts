@@ -25,7 +25,7 @@ describe('ConfigMapBuilderService', () => {
         {
           id: 'item-1',
           type: 'SERVICE' as const,
-          k8sName: 'test-service',
+          containerName: 'test-service',
           name: 'Test Service',
           port: 8080,
           domain: 'test.example.com',
@@ -33,7 +33,7 @@ describe('ConfigMapBuilderService', () => {
         {
           id: 'item-2',
           type: 'SERVICE' as const,
-          k8sName: 'another-service',
+          containerName: 'another-service',
           name: 'Another Service',
           port: 9090,
           domain: null,
@@ -58,8 +58,8 @@ describe('ConfigMapBuilderService', () => {
       expect(configMap.metadata?.name).toBe('dokkimi-interceptor-config');
       expect(configMap.metadata?.namespace).toBe(namespace);
       expect(configMap.metadata?.labels).toEqual({
-        'app.kubernetes.io/name': 'dokkimi',
-        'app.kubernetes.io/component': 'interceptor-config',
+        'app.dokkimi.io/name': 'dokkimi',
+        'app.dokkimi.io/component': 'interceptor-config',
       });
 
       const urlMap = JSON.parse(configMap.data?.urlMap || '{}') as Record<
@@ -98,7 +98,7 @@ describe('ConfigMapBuilderService', () => {
         {
           id: 'item-1',
           type: 'SERVICE' as const,
-          k8sName: 'test-service',
+          containerName: 'test-service',
           name: 'Test Service',
           port: 8080,
           domain: null,
@@ -106,7 +106,7 @@ describe('ConfigMapBuilderService', () => {
         {
           id: 'item-2',
           type: 'DATABASE' as const,
-          k8sName: 'test-db',
+          containerName: 'test-db',
           name: 'Test DB',
           port: null,
           domain: null,
@@ -128,7 +128,7 @@ describe('ConfigMapBuilderService', () => {
         {
           id: 'item-1',
           type: 'SERVICE' as const,
-          k8sName: 'test-service',
+          containerName: 'test-service',
           name: 'Test Service',
           port: 8080,
           domain: null,
@@ -136,7 +136,7 @@ describe('ConfigMapBuilderService', () => {
         {
           id: 'item-2',
           type: 'DATABASE' as const,
-          k8sName: 'postgres-db',
+          containerName: 'postgres-db',
           name: 'PostgreSQL DB',
           database: 'postgres',
           port: null,
@@ -145,7 +145,7 @@ describe('ConfigMapBuilderService', () => {
         {
           id: 'item-3',
           type: 'DATABASE' as const,
-          k8sName: 'mysql-db',
+          containerName: 'mysql-db',
           name: 'MySQL DB',
           database: 'mysql',
           port: null,
@@ -154,7 +154,7 @@ describe('ConfigMapBuilderService', () => {
         {
           id: 'item-4',
           type: 'DATABASE' as const,
-          k8sName: 'mongo-db',
+          containerName: 'mongo-db',
           name: 'MongoDB',
           database: 'mongodb',
           port: null,
@@ -204,7 +204,7 @@ describe('ConfigMapBuilderService', () => {
         {
           id: 'item-1',
           type: 'DATABASE' as const,
-          k8sName: 'postgres-db',
+          containerName: 'postgres-db',
           name: 'Postgres DB',
           database: 'postgres', // Should normalize to postgresql
           port: null,
@@ -213,7 +213,7 @@ describe('ConfigMapBuilderService', () => {
         {
           id: 'item-2',
           type: 'DATABASE' as const,
-          k8sName: 'mongo-db',
+          containerName: 'mongo-db',
           name: 'Mongo DB',
           database: 'mongodb',
           port: null,
@@ -222,7 +222,7 @@ describe('ConfigMapBuilderService', () => {
         {
           id: 'item-3',
           type: 'DATABASE' as const,
-          k8sName: 'mariadb-db',
+          containerName: 'mariadb-db',
           name: 'MariaDB',
           database: 'mariadb', // Should normalize to mysql
           port: null,
@@ -246,7 +246,7 @@ describe('ConfigMapBuilderService', () => {
         {
           id: 'item-1',
           type: 'SERVICE' as const,
-          k8sName: 'test-service',
+          containerName: 'test-service',
           name: 'Test Service',
           port: 8080,
           domain: null,
@@ -258,12 +258,12 @@ describe('ConfigMapBuilderService', () => {
       expect(configMap.data?.databaseMap).toBeUndefined();
     });
 
-    it('should exclude databases without k8sName or id', () => {
+    it('should exclude databases without containerName or id', () => {
       const items = [
         {
           id: 'item-1',
           type: 'DATABASE' as const,
-          k8sName: undefined as unknown as string, // Missing k8sName
+          containerName: undefined as unknown as string, // Missing containerName
           name: 'Test DB',
           database: 'postgres',
           port: null,
@@ -272,7 +272,7 @@ describe('ConfigMapBuilderService', () => {
         {
           id: undefined, // Missing id
           type: 'DATABASE' as const,
-          k8sName: 'another-db',
+          containerName: 'another-db',
           name: 'Another DB',
           database: 'mysql',
           port: null,
@@ -281,7 +281,7 @@ describe('ConfigMapBuilderService', () => {
         {
           id: 'item-3',
           type: 'DATABASE' as const,
-          k8sName: 'valid-db',
+          containerName: 'valid-db',
           name: 'Valid DB',
           database: 'postgresql',
           port: null,
@@ -300,12 +300,12 @@ describe('ConfigMapBuilderService', () => {
       expect(databaseMap['valid-db']).toBeDefined();
     });
 
-    it('should exclude services without k8sName or port', () => {
+    it('should exclude services without containerName or port', () => {
       const items = [
         {
           id: 'item-1',
           type: 'SERVICE' as const,
-          k8sName: undefined as unknown as string,
+          containerName: undefined as unknown as string,
           name: 'Test Service',
           port: 8080,
           domain: null,
@@ -313,7 +313,7 @@ describe('ConfigMapBuilderService', () => {
         {
           id: 'item-2',
           type: 'SERVICE' as const,
-          k8sName: 'another-service',
+          containerName: 'another-service',
           name: 'Another Service',
           port: null,
           domain: null,
@@ -321,7 +321,7 @@ describe('ConfigMapBuilderService', () => {
         {
           id: 'item-3',
           type: 'SERVICE' as const,
-          k8sName: 'valid-service',
+          containerName: 'valid-service',
           name: 'Valid Service',
           port: 9090,
           domain: null,
@@ -359,7 +359,7 @@ describe('ConfigMapBuilderService', () => {
         {
           id: 'item-1',
           type: 'SERVICE' as const,
-          k8sName: 'test-service',
+          containerName: 'test-service',
           name: 'Test Service',
           port: 8080,
           domain: null,
@@ -379,7 +379,7 @@ describe('ConfigMapBuilderService', () => {
         {
           id: 'item-1',
           type: 'SERVICE' as const,
-          k8sName: 'test-service',
+          containerName: 'test-service',
           name: 'Test Service',
           port: 8080,
           domain: 'api.example.com',
@@ -406,7 +406,7 @@ describe('ConfigMapBuilderService', () => {
         {
           id: 'item-1',
           type: 'SERVICE' as const,
-          k8sName: 'test-service',
+          containerName: 'test-service',
           name: 'Test Service',
           port: 8080,
           domain: null,
@@ -432,7 +432,7 @@ describe('ConfigMapBuilderService', () => {
         {
           id: 'item-1',
           type: 'SERVICE' as const,
-          k8sName: 'test-service',
+          containerName: 'test-service',
           name: 'Test Service',
           port: 8080,
           domain: null,
@@ -450,7 +450,7 @@ describe('ConfigMapBuilderService', () => {
         {
           id: 'item-1',
           type: 'SERVICE' as const,
-          k8sName: 'test-service',
+          containerName: 'test-service',
           name: 'Test Service',
           port: 8080,
           domain: null,
@@ -473,7 +473,7 @@ describe('ConfigMapBuilderService', () => {
         {
           id: 'item-1',
           type: 'SERVICE' as const,
-          k8sName: 'test-service',
+          containerName: 'test-service',
           name: 'Test Service',
           port: 8080,
           domain: null,
@@ -495,7 +495,7 @@ describe('ConfigMapBuilderService', () => {
         {
           id: 'item-1',
           type: 'SERVICE' as const,
-          k8sName: 'test-service',
+          containerName: 'test-service',
           name: 'Test Service',
           port: 8080,
           domain: null,
@@ -519,7 +519,7 @@ describe('ConfigMapBuilderService', () => {
         {
           id: 'item-1',
           type: 'SERVICE' as const,
-          k8sName: 'test-service',
+          containerName: 'test-service',
           name: 'Test Service',
           port: 8080,
           domain: null,
@@ -538,7 +538,7 @@ describe('ConfigMapBuilderService', () => {
         {
           id: 'item-1',
           type: 'SERVICE' as const,
-          k8sName: 'test-service',
+          containerName: 'test-service',
           name: 'Test Service',
           port: 8080,
           domain: null,
@@ -555,12 +555,12 @@ describe('ConfigMapBuilderService', () => {
   describe('buildInterceptorConfigMap - podNameToNamespaceItemId', () => {
     const namespace = 'dokkimi-test-namespace';
 
-    it('should build podNameToNamespaceItemId mapping for all items with k8sName and id', () => {
+    it('should build podNameToNamespaceItemId mapping for all items with containerName and id', () => {
       const items = [
         {
           id: 'item-1',
           type: 'SERVICE' as const,
-          k8sName: 'svc-one',
+          containerName: 'svc-one',
           name: 'Service One',
           port: 8080,
           domain: null,
@@ -568,7 +568,7 @@ describe('ConfigMapBuilderService', () => {
         {
           id: 'item-2',
           type: 'DATABASE' as const,
-          k8sName: 'db-one',
+          containerName: 'db-one',
           name: 'DB One',
           database: 'postgres',
           port: null,
@@ -585,12 +585,12 @@ describe('ConfigMapBuilderService', () => {
       expect(podMap['db-one']).toBe('item-2');
     });
 
-    it('should skip items missing k8sName or id from podNameToNamespaceItemId', () => {
+    it('should skip items missing containerName or id from podNameToNamespaceItemId', () => {
       const items = [
         {
           id: undefined,
           type: 'SERVICE' as const,
-          k8sName: 'no-id-svc',
+          containerName: 'no-id-svc',
           name: 'No ID',
           port: 8080,
           domain: null,
@@ -598,15 +598,15 @@ describe('ConfigMapBuilderService', () => {
         {
           id: 'item-2',
           type: 'SERVICE' as const,
-          k8sName: undefined as unknown as string,
-          name: 'No K8sName',
+          containerName: undefined as unknown as string,
+          name: 'No ContainerName',
           port: 8080,
           domain: null,
         },
         {
           id: 'item-3',
           type: 'SERVICE' as const,
-          k8sName: 'valid-svc',
+          containerName: 'valid-svc',
           name: 'Valid',
           port: 8080,
           domain: null,
@@ -710,7 +710,7 @@ describe('ConfigMapBuilderService', () => {
         {
           id: 'item-1',
           type: 'DATABASE' as const,
-          k8sName: 'custom-db',
+          containerName: 'custom-db',
           name: 'Custom DB',
           database: 'postgres',
           dbName: 'mydb',
@@ -741,7 +741,7 @@ describe('ConfigMapBuilderService', () => {
         {
           id: 'item-1',
           type: 'DATABASE' as const,
-          k8sName: 'no-type-db',
+          containerName: 'no-type-db',
           name: 'No Type DB',
           port: null,
           domain: null,
@@ -761,7 +761,7 @@ describe('ConfigMapBuilderService', () => {
         {
           id: 'item-1',
           type: 'DATABASE' as const,
-          k8sName: 'redis-db',
+          containerName: 'redis-db',
           name: 'Redis',
           database: 'redis',
           port: null,
@@ -795,7 +795,7 @@ describe('ConfigMapBuilderService', () => {
     const namespace = 'dokkimi-test-namespace';
 
     it('should build credentials ConfigMap with correct metadata', () => {
-      const databases = [{ name: 'My DB', k8sName: 'my-db' }];
+      const databases = [{ name: 'My DB', containerName: 'my-db' }];
 
       const configMap = service.buildDbCredentialsConfigMap(
         namespace,
@@ -805,13 +805,13 @@ describe('ConfigMapBuilderService', () => {
       expect(configMap.metadata?.name).toBe('dokkimi-db-credentials');
       expect(configMap.metadata?.namespace).toBe(namespace);
       expect(configMap.metadata?.labels).toEqual({
-        'app.kubernetes.io/name': 'dokkimi',
-        'app.kubernetes.io/component': 'db-credentials',
+        'app.dokkimi.io/name': 'dokkimi',
+        'app.dokkimi.io/component': 'db-credentials',
       });
     });
 
     it('should use config defaults when db credentials are not provided', () => {
-      const databases = [{ name: 'Default DB', k8sName: 'default-db' }];
+      const databases = [{ name: 'Default DB', containerName: 'default-db' }];
 
       const configMap = service.buildDbCredentialsConfigMap(
         namespace,
@@ -832,7 +832,7 @@ describe('ConfigMapBuilderService', () => {
       const databases = [
         {
           name: 'Custom DB',
-          k8sName: 'custom-db',
+          containerName: 'custom-db',
           dbName: 'production',
           dbUser: 'admin',
           dbPassword: 'secret123',
@@ -856,11 +856,11 @@ describe('ConfigMapBuilderService', () => {
 
     it('should handle multiple databases with mixed credentials', () => {
       const databases = [
-        { name: 'DB 1', k8sName: 'db-one', dbName: 'custom_db' },
-        { name: 'DB 2', k8sName: 'db-two' },
+        { name: 'DB 1', containerName: 'db-one', dbName: 'custom_db' },
+        { name: 'DB 2', containerName: 'db-two' },
         {
           name: 'DB 3',
-          k8sName: 'db-three',
+          containerName: 'db-three',
           dbUser: 'custom_user',
           dbPassword: 'custom_pass',
         },

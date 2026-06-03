@@ -13,12 +13,12 @@ config/
 
 ## Configuration File
 
-`config.yaml` contains local/CLI defaults. Cloud deployments override specific values via environment variables set on containers (the standard K8s pattern).
+`config.yaml` contains local/CLI defaults. Cloud deployments override specific values via environment variables set on containers.
 
 Key sections:
 
 - **services** — ports and hosts for Control Tower, interceptor, test agent, chromium
-- **kubernetes** — namespace prefix, DNS, concurrency limits
+- **concurrency** — concurrency limits for test runs
 - **database** — default credentials and Dokkimi app database URL (SQLite locally, Prisma reads `DATABASE_URL` from env for cloud)
 - **storage** — local storage paths for run artifacts and init files
 - **logging** — format and level
@@ -50,14 +50,14 @@ loadConfig(undefined, { ci: true });
 
 The config loader applies env var overrides after loading the YAML file. These are used by cloud deployments where containers set env vars:
 
-| Env Var                             | Config Path                          |
-| ----------------------------------- | ------------------------------------ |
-| `CONTROL_TOWER_HOST`                | `services.controlTower.host`         |
-| `CONTROL_TOWER_PORT`                | `services.controlTower.port`         |
-| `DOKKIMI_MAX_CONCURRENT_NAMESPACES` | `kubernetes.maxConcurrentNamespaces` |
-| `DOKKIMI_MAX_BOOTING_NAMESPACES`    | `kubernetes.maxBootingNamespaces`    |
+| Env Var                             | Config Path                      |
+| ----------------------------------- | -------------------------------- |
+| `CONTROL_TOWER_HOST`                | `services.controlTower.host`     |
+| `CONTROL_TOWER_PORT`                | `services.controlTower.port`     |
+| `DOKKIMI_MAX_CONCURRENT_NAMESPACES` | `concurrency.maxConcurrentTests` |
+| `DOKKIMI_MAX_BOOTING_NAMESPACES`    | `concurrency.maxBootingTests`    |
 
-CI mode (via `loadConfig(undefined, { ci: true })` or `process.env.CI`) sets concurrency defaults (`maxConcurrentNamespaces: 3`, `maxBootingNamespaces: 1`) unless explicitly overridden.
+CI mode (via `loadConfig(undefined, { ci: true })` or `process.env.CI`) sets concurrency defaults (`maxConcurrentTests: 3`, `maxBootingTests: 1`) unless explicitly overridden.
 
 ## Configuration Values
 
@@ -67,5 +67,5 @@ CI mode (via `loadConfig(undefined, { ci: true })` or `process.env.CI`) sets con
 | ------------- | ----- | ----------------------------- |
 | Control Tower | 19001 | Main API server               |
 | Interceptor   | 80    | Traffic interception sidecar  |
-| Test Agent    | 80    | Test execution pod            |
+| Test Agent    | 80    | Test execution container      |
 | Chromium      | 9222  | Headless browser for UI tests |

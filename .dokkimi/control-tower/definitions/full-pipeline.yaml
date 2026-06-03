@@ -8,7 +8,6 @@ items:
   - $ref: ../shared/postgres-db.json
   - $ref: ../shared/mysql-db.yaml
   - $ref: ../shared/redis-cache.yaml
-  - $ref: ../shared/mock-k8s-api.yaml
   - $ref: ../shared/mock-posthog.yaml
 tests:
   - name: Control Tower healthy

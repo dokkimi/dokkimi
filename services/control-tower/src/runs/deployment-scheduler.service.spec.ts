@@ -155,7 +155,7 @@ describe('DeploymentSchedulerService', () => {
       });
     });
 
-    it('respects maxConcurrentNamespaces limit', async () => {
+    it('respects maxConcurrentTests limit', async () => {
       mockPrisma.run.findUnique.mockResolvedValue({
         id: 'run-1',
         status: RunStatus.RUNNING,
@@ -175,7 +175,7 @@ describe('DeploymentSchedulerService', () => {
       expect(mockPrisma.namespaceInstance.update).not.toHaveBeenCalled();
     });
 
-    it('respects maxBootingNamespaces limit', async () => {
+    it('respects maxBootingTests limit', async () => {
       mockPrisma.run.findUnique.mockResolvedValue({
         id: 'run-1',
         status: RunStatus.RUNNING,

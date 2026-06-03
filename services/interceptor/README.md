@@ -2,20 +2,20 @@
 
 ## Overview
 
-Interceptor is a lightweight Go service that runs as a separate pod for each service in Kubernetes. It intercepts all HTTP and HTTPS traffic from the service, logs requests/responses to the Control Tower, and can mock API responses based on configured mock endpoints. It acts as a transparent proxy that enables request/response logging and API mocking capabilities, including TLS-terminating MITM for outbound HTTPS calls.
+Interceptor is a lightweight Go service that runs as a standalone container for each service. It intercepts all HTTP and HTTPS traffic from the service, logs requests/responses to the Control Tower, and can mock API responses based on configured mock endpoints. It acts as a transparent proxy that enables request/response logging and API mocking capabilities, including TLS-terminating MITM for outbound HTTPS calls.
 
 ## Architecture
 
 - **Language**: Go 1.21+
 - **Framework**: Standard library HTTP (no external framework)
-- **Deployment**: Separate pod for each service (1:1 ratio)
+- **Deployment**: Standalone container for each service (1:1 ratio)
 - **Ports**: Listens on port 80 (HTTP) and port 443 (HTTPS, enabled when CA cert/key are mounted)
 - **Communication**: HTTP client calls to Control Tower and Proxy Service
 - **Dependencies**: Minimal (only `github.com/google/uuid`)
 
 ### Deployment Model: Separate Pods
 
-**Each service has its own dedicated interceptor pod that monitors all outbound traffic from that service.**
+**Each service has its own dedicated interceptor container that monitors all outbound traffic from that service.**
 
 This architecture provides:
 
@@ -43,7 +43,7 @@ When a CA cert and key are mounted (via `DOKKIMI_CA_CERT_PATH` / `DOKKIMI_CA_KEY
 - Caches the cert per hostname for ~1 hour to avoid regenerating on every connection
 - After the handshake completes, the request flows through the same proxy/mock/log pipeline as HTTP
 
-The CA itself is generated once per cluster by Control Tower and stored in the `dokkimi-ca` Kubernetes Secret. Service pods automatically receive the CA via mounted file plus `NODE_EXTRA_CA_CERTS`, `SSL_CERT_FILE`, and (for JVM services) a keytool-updated truststore — so the certs the interceptor presents are trusted with no per-service configuration. If the CA env vars are not set, HTTPS interception is disabled and the interceptor logs `"No CA cert/key found, HTTPS interception disabled"` at startup.
+The CA itself is generated once by Control Tower and stored on the host filesystem. Service containers automatically receive the CA via bind-mounted file plus `NODE_EXTRA_CA_CERTS`, `SSL_CERT_FILE`, and (for JVM services) a keytool-updated truststore — so the certs the interceptor presents are trusted with no per-service configuration. If the CA env vars are not set, HTTPS interception is disabled and the interceptor logs `"No CA cert/key found, HTTPS interception disabled"` at startup.
 
 ### 2. Request/Response Logging
 
@@ -77,9 +77,9 @@ The CA itself is generated once per cluster by Control Tower and stored in the `
 
 ### 6. Health Checks
 
-- `/health` endpoint for Kubernetes liveness/readiness probes
+- `/health` endpoint for readiness tracking
 - Returns `{"status":"healthy"}` with HTTP 200 when service is operational
-- Used by Kubernetes to detect and restart unhealthy pods
+- Used by the health tracker to detect unhealthy containers
 
 ## Project Structure
 
@@ -114,13 +114,13 @@ All other functionality uses Go standard library.
 - `CONTROL_TOWER_URI` - Control Tower API endpoint (e.g., `http://localhost:5000`)
 - `API_KEY` - API key for authentication
 - `PROXY_SERVICE_URI` - Proxy Service API endpoint (e.g., `http://localhost:5001`)
-- `NAMESPACE` - Kubernetes namespace identifier
+- `NAMESPACE` - Instance identifier
 
 ### Optional
 
 - `PORT` - HTTP server port (default: `80`)
-- `DOKKIMI_CA_CERT_PATH` - Path to the Dokkimi CA certificate (PEM). Required to enable HTTPS interception on port 443. In Kubernetes this is mounted from the `dokkimi-ca` Secret at `/etc/dokkimi/ca/tls.crt`.
-- `DOKKIMI_CA_KEY_PATH` - Path to the Dokkimi CA private key (PEM, PKCS1 or PKCS8). Required to enable HTTPS interception. Mounted at `/etc/dokkimi/ca/tls.key`.
+- `DOKKIMI_CA_CERT_PATH` - Path to the Dokkimi CA certificate (PEM). Required to enable HTTPS interception on port 443. Bind-mounted from the host at `/etc/dokkimi/ca/tls.crt`.
+- `DOKKIMI_CA_KEY_PATH` - Path to the Dokkimi CA private key (PEM, PKCS1 or PKCS8). Required to enable HTTPS interception. Bind-mounted from the host at `/etc/dokkimi/ca/tls.key`.
 - `ORIGIN` - Origin identifier (e.g., `"dokkimi"` for ingress requests)
 - `ORIGIN_DOMAIN` - Domain of the origin service
 - `LOG_ACTIONS` - Enable/disable logging (default: `true`, set to `"false"` to disable)
@@ -202,9 +202,9 @@ docker run -p 80:80 -p 443:443 \
 
 To run HTTP-only (no HTTPS interception), drop the `-p 443:443`, the `-v` mount, and the two `DOKKIMI_CA_*` env vars.
 
-### Kubernetes
+### Docker
 
-The interceptor is deployed as a separate pod for each service. See Control Tower's Kubernetes service for deployment configuration.
+The interceptor is deployed as a standalone container for each service. See Control Tower's container orchestration service for deployment configuration.
 
 ## Testing
 

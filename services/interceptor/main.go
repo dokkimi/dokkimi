@@ -65,38 +65,15 @@ func main() {
 		defer logger.Stop()
 	}
 
-	// Load config: file-based in Docker mode, ConfigMap watcher in K8s mode
-	if cfg.DeployMode == "docker" && cfg.ConfigFilePath != "" {
-		loader := NewFileConfigLoader(cfg.ConfigFilePath, cache)
-		if err := loader.Load(); err != nil {
-			log.Fatalf("Failed to load config from file: %v", err)
-		}
-		log.Printf("Config loaded from file: %s", cfg.ConfigFilePath)
-	} else {
-		configMapWatcher, err := NewConfigMapWatcher(cfg.K8sNamespace, cache)
-		if err != nil {
-			log.Fatalf("Failed to create ConfigMap watcher: %v", err)
-		}
-		defer configMapWatcher.Stop()
-
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
-		if err := configMapWatcher.Start(ctx); err != nil {
-			log.Fatalf("Failed to start ConfigMap watcher: %v", err)
-		}
-
-		log.Println("Waiting for ConfigMap to load...")
-		for i := 0; i < 30; i++ {
-			if configMapWatcher.IsInitialized() {
-				log.Println("ConfigMap loaded successfully")
-				break
-			}
-			time.Sleep(1 * time.Second)
-		}
-		if !configMapWatcher.IsInitialized() {
-			log.Printf("Warning: ConfigMap not loaded after 30 seconds, continuing anyway")
-		}
+	// Load config from file
+	if cfg.ConfigFilePath == "" {
+		log.Fatalf("CONFIG_FILE_PATH is required")
 	}
+	loader := NewFileConfigLoader(cfg.ConfigFilePath, cache)
+	if err := loader.Load(); err != nil {
+		log.Fatalf("Failed to load config from file: %v", err)
+	}
+	log.Printf("Config loaded from file: %s", cfg.ConfigFilePath)
 
 	// Initialize test execution logger (only in test mode)
 	var testExecutionLogger *TestExecutionLogger
@@ -125,9 +102,7 @@ func main() {
 				TestAgentURL:        cfg.TestAgentURL,
 				CheckTimeout:        5 * time.Second,
 				Origin:              cfg.Origin,
-				DeployMode:          cfg.DeployMode,
-				K8sDNSIP:            cfg.K8sDNSIP,
-				K8sNamespace:        cfg.K8sNamespace,
+				DNSIP:               cfg.DNSIP,
 			}
 			healthChecker = NewHealthChecker(healthConfig, nil)
 			if healthChecker != nil {

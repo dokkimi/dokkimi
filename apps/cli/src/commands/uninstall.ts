@@ -23,7 +23,7 @@ export async function uninstall(args: string[]): Promise<void> {
     console.log('');
     console.log('Remove Dokkimi from your system:');
     console.log('  - Stop Dokkimi');
-    console.log('  - Clean up K8s namespaces');
+    console.log('  - Clean up Docker containers and networks');
     console.log('  - Remove Dokkimi Docker images');
     console.log('  - Remove ~/.dokkimi/ data directory');
     console.log('');
@@ -40,7 +40,7 @@ export async function uninstall(args: string[]): Promise<void> {
   );
   console.log('');
   console.log('  1. Stop Dokkimi');
-  console.log('  2. Delete all dokkimi-* Kubernetes namespaces');
+  console.log('  2. Clean up Docker containers and networks');
   console.log('  3. Remove Dokkimi Docker images');
   console.log(`  4. Remove ${DOKKIMI_DIR}/`);
   console.log('  5. Remove AI config pointers');
@@ -54,10 +54,8 @@ export async function uninstall(args: string[]): Promise<void> {
   }
 
   // Track and flush before cleanup (which deletes ~/.dokkimi/ including telemetry state)
-  const namespaces = findDokkimiNamespaces();
   trackEvent('cli_uninstall', {
     confirmed: true,
-    namespaces_found: namespaces.length,
   });
   await shutdownTelemetry();
 
@@ -72,22 +70,36 @@ export async function uninstall(args: string[]): Promise<void> {
     console.log('       Dokkimi was not running.');
   }
 
-  // 2. Clean K8s namespaces
-  console.log('[2/5] Cleaning Kubernetes namespaces...');
-  const remainingNamespaces = findDokkimiNamespaces();
-  if (remainingNamespaces.length > 0) {
-    for (const ns of remainingNamespaces) {
+  // 2. Clean Docker containers and networks
+  console.log('[2/5] Cleaning Docker containers and networks...');
+  const containers = findDokkimiContainers();
+  const networks = findDokkimiNetworks();
+  if (containers.length > 0) {
+    for (const name of containers) {
       try {
-        execSilent(`kubectl delete namespace ${ns} --wait=false`, {
-          timeout: 10000,
-        });
-        console.log(`       Deleted ${ns}`);
+        execSilent(`docker rm -f ${name}`, { timeout: 10000 });
+        console.log(`       Removed container ${name}`);
       } catch {
-        console.log(`       Failed to delete ${ns} (may need manual cleanup)`);
+        console.log(
+          `       Failed to remove ${name} (may need manual cleanup)`,
+        );
       }
     }
-  } else {
-    console.log('       No namespaces found.');
+  }
+  if (networks.length > 0) {
+    for (const name of networks) {
+      try {
+        execSilent(`docker network rm ${name}`, { timeout: 10000 });
+        console.log(`       Removed network ${name}`);
+      } catch {
+        console.log(
+          `       Failed to remove ${name} (may need manual cleanup)`,
+        );
+      }
+    }
+  }
+  if (containers.length === 0 && networks.length === 0) {
+    console.log('       No Docker resources found.');
   }
 
   // 3. Remove Docker images
@@ -205,19 +217,31 @@ function removeLlmConfigPointers(): void {
   }
 }
 
-function findDokkimiNamespaces(): string[] {
+function findDokkimiContainers(): string[] {
   try {
     const output = execSilent(
-      'kubectl get namespaces -o jsonpath=\'{range .items[*]}{.metadata.name}{"\\n"}{end}\'',
+      'docker ps -a --filter "label=dokkimi" --format "{{.Names}}"',
       { timeout: 10000 },
     );
     if (!output) {
       return [];
     }
-    return output
-      .split('\n')
-      .map((ns) => ns.trim())
-      .filter((ns) => ns.startsWith('dokkimi-') && ns !== 'dokkimi-system');
+    return output.split('\n').filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
+function findDokkimiNetworks(): string[] {
+  try {
+    const output = execSilent(
+      'docker network ls --filter "label=dokkimi" --format "{{.Name}}"',
+      { timeout: 10000 },
+    );
+    if (!output) {
+      return [];
+    }
+    return output.split('\n').filter(Boolean);
   } catch {
     return [];
   }

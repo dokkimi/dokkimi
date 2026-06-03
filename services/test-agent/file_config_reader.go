@@ -8,8 +8,7 @@ import (
 )
 
 // FileConfigReader reads configuration from a JSON file on disk.
-// The file uses the same structure as a K8s ConfigMap data field:
-// each top-level key maps to a JSON-stringified value.
+// Each top-level key maps to a JSON-stringified value.
 type FileConfigReader struct {
 	filePath string
 }

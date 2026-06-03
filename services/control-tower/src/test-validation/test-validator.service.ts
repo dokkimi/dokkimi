@@ -139,7 +139,7 @@ export class TestValidatorService {
         return hostname.split(':')[0];
       } catch {
         // Not a valid URL, try to extract from path
-        // For K8s DNS: service-name.namespace.svc.cluster.local
+        // For DNS: extract service name from FQDN-style hostname
         const match = log.url.match(/([^./]+)\./);
         if (match) {
           return match[1];

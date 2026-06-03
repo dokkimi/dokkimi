@@ -1,7 +1,31 @@
 import { Injectable } from '@nestjs/common';
-import * as k8s from '@kubernetes/client-node';
 import { getConfig, buildServiceUrl } from '@dokkimi/config';
-import { ItemDefinitionLike } from './deployment-builder.types';
+
+export interface ItemDefinitionLike {
+  name: string;
+  containerName: string;
+  type: string;
+  description?: string | null;
+  image?: string | null;
+  port?: number | null;
+  debugPort?: number | null;
+  healthCheck?: string | null;
+  uiPath?: string | null;
+  domain?: string | null;
+  env?: any;
+  minCpu?: number | null;
+  minMemory?: number | null;
+  maxCpu?: number | null;
+  maxMemory?: number | null;
+  localDevPath?: string | null;
+  mountPath?: string | null;
+  database?: string | null;
+  initFiles?: { filename: string }[] | null;
+  dbName?: string | null;
+  dbUser?: string | null;
+  dbPassword?: string | null;
+  id?: string;
+}
 
 export interface MockEndpoint {
   method: string;
@@ -56,29 +80,27 @@ export class ConfigMapBuilderService {
       variables?: Record<string, string>;
     },
     expectedNamespaceItemIds?: string[],
-  ): k8s.V1ConfigMap {
+  ): { metadata?: Record<string, unknown>; data?: Record<string, string> } {
     // Build URL map from config items
     const urlMap: UrlMap = {};
     const databaseMap: DatabaseMap = {};
 
-    // Build pod name to instanceItemId mapping
-    // Pod names follow pattern: <k8sName>-<hash>-<hash>
-    // We map by deployment name (k8sName) prefix to instanceItemId
+    // Build container name to instanceItemId mapping
     const podNameToNamespaceItemId: Record<string, string> = {};
 
     for (const item of items) {
       // Add to pod name mapping (for both services and databases)
       // Use item.id which should be the instanceItemId
-      if (item.k8sName && item.id) {
-        podNameToNamespaceItemId[item.k8sName] = item.id;
+      if (item.containerName && item.id) {
+        podNameToNamespaceItemId[item.containerName] = item.id;
       }
 
-      if (item.type === 'SERVICE' && item.k8sName && item.port) {
-        // Use k8sName as the key (this is the Kubernetes service name)
+      if (item.type === 'SERVICE' && item.containerName && item.port) {
+        // Use containerName as the key (this is the container/service name)
         // The value maps to the service information
-        urlMap[item.k8sName] = {
+        urlMap[item.containerName] = {
           scheme: 'http',
-          url: `http://${item.k8sName}`,
+          url: `http://${item.containerName}`,
           name: item.name,
           port: item.port,
           instanceItemId: item.id,
@@ -93,7 +115,7 @@ export class ConfigMapBuilderService {
             instanceItemId: item.id,
           };
         }
-      } else if (item.type === 'DATABASE' && item.k8sName && item.id) {
+      } else if (item.type === 'DATABASE' && item.containerName && item.id) {
         // Build database map entry
         // Extract database type from item (should have a database field)
         const dbType = item.database || 'postgres';
@@ -105,7 +127,7 @@ export class ConfigMapBuilderService {
         const dbUser = item.dbUser ?? config.database.defaultUser;
         const dbPassword = item.dbPassword ?? config.database.defaultPassword;
 
-        databaseMap[item.k8sName] = {
+        databaseMap[item.containerName] = {
           type: normalizedDbType,
           user: dbUser,
           password: dbPassword,
@@ -154,8 +176,8 @@ export class ConfigMapBuilderService {
         name: 'dokkimi-interceptor-config',
         namespace,
         labels: {
-          'app.kubernetes.io/name': 'dokkimi',
-          'app.kubernetes.io/component': 'interceptor-config',
+          'app.dokkimi.io/name': 'dokkimi',
+          'app.dokkimi.io/component': 'interceptor-config',
         },
       },
       data,
@@ -218,24 +240,24 @@ export class ConfigMapBuilderService {
 
   /**
    * Builds a ConfigMap containing database credentials
-   * Keys use k8sName (sanitized service name), not user-friendly name
+   * Keys use sanitized service name, not user-friendly name
    * Fallback to config.database.default* happens here in Control Tower
    */
   buildDbCredentialsConfigMap(
     namespace: string,
     databases: Array<{
       name: string;
-      k8sName: string; // IMPORTANT: Use k8sName as the key
+      containerName: string; // IMPORTANT: Use containerName as the key
       dbName?: string | null;
       dbUser?: string | null;
       dbPassword?: string | null;
     }>,
-  ): k8s.V1ConfigMap {
+  ): { metadata?: Record<string, unknown>; data?: Record<string, string> } {
     const config = getConfig(); // Control Tower has access to YAML config
 
     const credentials: Record<string, object> = {};
     for (const db of databases) {
-      credentials[db.k8sName] = {
+      credentials[db.containerName] = {
         dbName: db.dbName || config.database.defaultName,
         dbUser: db.dbUser || config.database.defaultUser,
         dbPassword: db.dbPassword || config.database.defaultPassword,
@@ -247,8 +269,8 @@ export class ConfigMapBuilderService {
         name: 'dokkimi-db-credentials',
         namespace,
         labels: {
-          'app.kubernetes.io/name': 'dokkimi',
-          'app.kubernetes.io/component': 'db-credentials',
+          'app.dokkimi.io/name': 'dokkimi',
+          'app.dokkimi.io/component': 'db-credentials',
         },
       },
       data: {

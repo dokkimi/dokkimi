@@ -10,18 +10,13 @@ export interface TelemetryPrefs {
   firstRunNoticeSeen: boolean;
 }
 
-export interface KubeconfigPrefs {
-  context?: string;
-}
-
 export interface ConcurrencyPrefs {
-  maxNamespaces?: number;
-  maxBooting?: number;
+  maxConcurrentTests?: number;
+  maxBootingTests?: number;
 }
 
 export interface UserPrefs {
   telemetry?: TelemetryPrefs;
-  kubeconfig?: KubeconfigPrefs;
   concurrency?: ConcurrencyPrefs;
 }
 
@@ -74,20 +69,6 @@ export function setTelemetryPrefs(telemetry: TelemetryPrefs): void {
   updateUserPrefs((prefs) => ({ ...prefs, telemetry }));
 }
 
-export function getKubeconfigPrefs(): KubeconfigPrefs {
-  return getUserPrefs().kubeconfig ?? {};
-}
-
-export function setKubeconfigPrefs(kubeconfig: KubeconfigPrefs): void {
-  updateUserPrefs((prefs) => {
-    if (!kubeconfig.context) {
-      const { kubeconfig: _, ...rest } = prefs;
-      return rest;
-    }
-    return { ...prefs, kubeconfig };
-  });
-}
-
 export function getConcurrencyPrefs(): ConcurrencyPrefs {
   return getUserPrefs().concurrency ?? {};
 }
@@ -95,11 +76,11 @@ export function getConcurrencyPrefs(): ConcurrencyPrefs {
 export function setConcurrencyPrefs(concurrency: ConcurrencyPrefs): void {
   updateUserPrefs((prefs) => {
     const cleaned = { ...concurrency };
-    if (cleaned.maxNamespaces === undefined) {
-      delete cleaned.maxNamespaces;
+    if (cleaned.maxConcurrentTests === undefined) {
+      delete cleaned.maxConcurrentTests;
     }
-    if (cleaned.maxBooting === undefined) {
-      delete cleaned.maxBooting;
+    if (cleaned.maxBootingTests === undefined) {
+      delete cleaned.maxBootingTests;
     }
     if (Object.keys(cleaned).length === 0) {
       const { concurrency: _, ...rest } = prefs;

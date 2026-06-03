@@ -5,8 +5,8 @@ import * as path from 'path';
 import {
   ConfigMapBuilderService,
   MockEndpoint,
+  ItemDefinitionLike,
 } from '../builders/configmap-builder.service';
-import { ItemDefinitionLike } from '../builders/deployment-builder.types';
 
 export interface InstanceConfigPaths {
   configDir: string;

@@ -6,10 +6,10 @@ import {
 } from './go-service-env.types';
 
 /**
- * Converts env vars object to K8s env array format
+ * Converts env vars object to env array format
  * Filters out undefined optional values
  */
-function toK8sEnvArray<T extends Record<string, string | undefined>>(
+function toEnvArray<T extends Record<string, string | undefined>>(
   envVars: T,
 ): Array<{ name: string; value: string }> {
   return Object.entries(envVars)
@@ -19,9 +19,8 @@ function toK8sEnvArray<T extends Record<string, string | undefined>>(
 
 export interface InterceptorConfig {
   namespace: string;
-  k8sNamespace: string;
   apiKey: string;
-  k8sDnsIP: string; // Dynamically discovered kube-dns ClusterIP
+  dnsIP?: string; // DNS IP for resolving service names (e.g. Docker DNS 127.0.0.11)
   namespaceItemId?: string;
   instanceItemName?: string;
   origin?: string;
@@ -46,21 +45,14 @@ export function buildInterceptorEnvVars(
   if (!runtimeConfig.namespace) {
     throw new Error('namespace is required for Interceptor');
   }
-  if (!runtimeConfig.k8sNamespace) {
-    throw new Error('k8sNamespace is required for Interceptor');
-  }
-  if (!runtimeConfig.k8sDnsIP) {
-    throw new Error('k8sDnsIP is required for Interceptor');
-  }
 
   // TypeScript enforces all required fields are present!
   const envVars: InterceptorEnvVars = {
     PORT: config.services.interceptor.port.toString(),
     CONTROL_TOWER_URL: buildServiceUrl(config.services.controlTower, true),
-    K8S_NAMESPACE: runtimeConfig.k8sNamespace,
     NAMESPACE: runtimeConfig.namespace,
     API_KEY: runtimeConfig.apiKey,
-    K8S_DNS_IP: runtimeConfig.k8sDnsIP, // Dynamically discovered kube-dns ClusterIP
+    DNS_IP: runtimeConfig.dnsIP,
     // Optional fields
     ORIGIN: runtimeConfig.origin,
     ORIGIN_DOMAIN: runtimeConfig.originDomain,
@@ -72,15 +64,15 @@ export function buildInterceptorEnvVars(
     TEST_AGENT_URL: runtimeConfig.testAgentUrl,
   };
 
-  return toK8sEnvArray(envVars);
+  return toEnvArray(envVars);
 }
 
 export interface TestAgentConfig {
-  k8sNamespace: string;
+  namespace: string;
   /**
    * CDP endpoint for the co-located chromium sidecar. Only set when the run's
-   * definition has UI steps and Control Tower has attached a chromium container
-   * to the test-agent pod. Undefined for API/DB-only runs.
+   * definition has UI steps and Control Tower has attached a chromium container.
+   * Undefined for API/DB-only runs.
    */
   browserURL?: string;
   defaultViewportWidth?: number;
@@ -92,22 +84,20 @@ export function buildTestAgentEnvVars(
   runtimeConfig: TestAgentConfig,
 ): Array<{ name: string; value: string }> {
   // Runtime validation for critical fields
-  if (!runtimeConfig.k8sNamespace) {
-    throw new Error('k8sNamespace is required for TestAgent');
+  if (!runtimeConfig.namespace) {
+    throw new Error('namespace is required for TestAgent');
   }
 
   const envVars: TestAgentEnvVars = {
     PORT: config.services.testAgent.port.toString(),
-    K8S_NAMESPACE: runtimeConfig.k8sNamespace,
     CONTROL_TOWER_URL: buildServiceUrl(config.services.controlTower, true),
     CONFIG_MAP_NAME: 'dokkimi-interceptor-config',
-    INTERCEPTOR_URL: `http://interceptor-service.${runtimeConfig.k8sNamespace}.svc.cluster.local:${config.services.interceptor.port}`,
     BROWSER_URL: runtimeConfig.browserURL,
     DEFAULT_VIEWPORT_WIDTH: runtimeConfig.defaultViewportWidth?.toString(),
     DEFAULT_VIEWPORT_HEIGHT: runtimeConfig.defaultViewportHeight?.toString(),
   };
 
-  return toK8sEnvArray(envVars);
+  return toEnvArray(envVars);
 }
 
 export interface DbProxyConfig {
@@ -171,5 +161,5 @@ export function buildDbProxyEnvVars(
     DB_NAME: runtimeConfig.dbName,
   };
 
-  return toK8sEnvArray(envVars);
+  return toEnvArray(envVars);
 }

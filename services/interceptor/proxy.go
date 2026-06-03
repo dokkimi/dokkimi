@@ -23,24 +23,24 @@ type ProxyService struct {
 
 // NewProxyService creates a new proxy service
 func NewProxyService(cfg *Config, mockManager *MockManager, urlMap func() UrlMap) *ProxyService {
-	// Create a custom dialer that bypasses dnsmasq by using K8s DNS directly
+	// Create a custom dialer that bypasses dnsmasq by using Docker DNS directly
 	// This prevents the circular routing issue where dnsmasq resolves service names
 	// to 127.0.0.1, causing the interceptor to route traffic back to itself
 	var dialer *net.Dialer
-	if cfg.K8sDNSIP != "" {
-		log.Printf("[Interceptor] Using custom DNS resolver: %s:53 (bypassing dnsmasq)", cfg.K8sDNSIP)
+	if cfg.DNSIP != "" {
+		log.Printf("[Interceptor] Using custom DNS resolver: %s:53 (bypassing dnsmasq)", cfg.DNSIP)
 		dialer = &net.Dialer{
 			Resolver: &net.Resolver{
 				PreferGo: true,
 				Dial: func(ctx context.Context, network, address string) (net.Conn, error) {
-					// Always use K8s DNS instead of the system resolver (dnsmasq)
+					// Always use Docker DNS instead of the system resolver (dnsmasq)
 					d := net.Dialer{}
-					return d.DialContext(ctx, "udp", cfg.K8sDNSIP+":53")
+					return d.DialContext(ctx, "udp", cfg.DNSIP+":53")
 				},
 			},
 		}
 	} else {
-		log.Printf("[Interceptor] K8S_DNS_IP not set, using system DNS resolver")
+		log.Printf("[Interceptor] DNS IP not set, using system DNS resolver")
 		dialer = &net.Dialer{}
 	}
 
@@ -141,10 +141,9 @@ func (p *ProxyService) forwardRequest(r *http.Request) (*http.Response, error) {
 	return resp, nil
 }
 
-// rewriteLocationHeader translates pod-internal hostnames in redirect Location
-// headers back to service names from the urlMap. Pods may generate redirects
-// using their own hostname (e.g., "nextjs-demo-8d4698b56-892gj:3000") which
-// is not routable from outside the pod.
+// rewriteLocationHeader translates container-internal hostnames in redirect Location
+// headers back to service names from the urlMap. Containers may generate redirects
+// using their own hostname which is not routable from outside the container.
 func (p *ProxyService) rewriteLocationHeader(resp *http.Response, targetServiceName string) {
 	location := resp.Header.Get("Location")
 	if location == "" {
@@ -164,7 +163,7 @@ func (p *ProxyService) rewriteLocationHeader(resp *http.Response, targetServiceN
 		return
 	}
 
-	// Pod hostnames follow "<k8sName>-<replicaset-hash>-<pod-hash>".
+	// Container hostnames may follow "<containerName>-<hash>" patterns.
 	// Find the urlMap key that is a prefix of the hostname.
 	for serviceName, info := range urlMap {
 		if strings.HasPrefix(hostname, serviceName+"-") {
@@ -288,7 +287,7 @@ func extractServiceNameFromRequest(r *http.Request, urlMap UrlMap) string {
 	// e.g., http://traffic-tester-2/test -> Host: traffic-tester-2
 	if r.Host != "" {
 		hostname := stripPortFromHost(r.Host)
-		// Look up directly in urlMap (hostname should match k8sName)
+		// Look up directly in urlMap (hostname should match container name)
 		if _, exists := urlMap[hostname]; exists {
 			return hostname
 		}
@@ -320,7 +319,7 @@ func extractServiceNameFromRequest(r *http.Request, urlMap UrlMap) string {
 	return ""
 }
 
-// normalizeForUrlMap normalizes a name to match K8s service naming conventions
+// normalizeForUrlMap normalizes a name to match Docker service naming conventions
 // (lowercase, replace invalid chars with -)
 func normalizeForUrlMap(name string) string {
 	name = strings.ToLower(name)

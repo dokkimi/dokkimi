@@ -66,7 +66,6 @@ describe('status', () => {
           uptime: 3600,
           checks: {
             database: { status: 'healthy' },
-            kubernetes: { status: 'healthy' },
             prisma: { status: 'healthy' },
           },
         });
@@ -111,7 +110,6 @@ describe('status', () => {
           uptime: 100,
           checks: {
             database: { status: 'healthy' },
-            kubernetes: { status: 'healthy' },
             prisma: { status: 'healthy' },
           },
         });
@@ -159,7 +157,6 @@ describe('status', () => {
           uptime: 100,
           checks: {
             database: { status: 'healthy' },
-            kubernetes: { status: 'healthy' },
             prisma: { status: 'healthy' },
           },
         });
@@ -214,7 +211,6 @@ describe('status', () => {
           uptime: 100,
           checks: {
             database: { status: 'healthy' },
-            kubernetes: { status: 'healthy' },
             prisma: { status: 'healthy' },
           },
         });
@@ -246,7 +242,6 @@ describe('status', () => {
           uptime: 100,
           checks: {
             database: { status: 'healthy' },
-            kubernetes: { status: 'healthy' },
             prisma: { status: 'healthy' },
           },
         });

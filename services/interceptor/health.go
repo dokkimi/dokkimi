@@ -44,9 +44,7 @@ type HealthConfig struct {
 	TestAgentURL        string // Optional: URL for test-agent
 	CheckTimeout        time.Duration
 	Origin              string // Service name to health check (e.g., "service-a")
-	DeployMode          string // "k8s" or "docker"
-	K8sDNSIP            string // K8s DNS IP for resolving service ClusterIP
-	K8sNamespace        string // K8s namespace for service resolution
+	DNSIP               string // DNS IP for resolving service names (Docker: 127.0.0.11)
 }
 
 // NewHealthChecker creates a new health checker
@@ -165,35 +163,26 @@ func (h *HealthChecker) performCheck() {
 }
 
 // checkHealth performs the actual HTTP health check
-// For per-service interceptors, resolves the service name using K8s DNS and calls it remotely
+// For per-service interceptors, resolves the service name using Docker DNS and calls it remotely
 func (h *HealthChecker) checkHealth() (ready bool, statusCode int, err error) {
-	// Resolve service name to ClusterIP using K8s DNS
+	// Resolve service name to container IP using Docker DNS
 	serviceName := h.config.Origin
 	if serviceName == "" {
 		// If ORIGIN is not set, this is the shared interceptor - skip health check
 		return false, 0, fmt.Errorf("ORIGIN not set, cannot perform health check")
 	}
 
-	// Resolve service name to IP via DNS.
-	// Docker mode: use Docker DNS (K8S_DNS_IP=127.0.0.11) to resolve the service name directly.
-	// K8s mode: use K8s DNS to resolve the FQDN (service.namespace.svc.cluster.local).
-	var serviceFQDN string
-	if h.config.DeployMode == "docker" {
-		serviceFQDN = serviceName
-	} else if h.config.K8sNamespace != "" {
-		serviceFQDN = fmt.Sprintf("%s.%s.svc.cluster.local", serviceName, h.config.K8sNamespace)
-	} else {
-		serviceFQDN = serviceName
-	}
+	// Resolve service name to IP via Docker DNS
+	serviceFQDN := serviceName
 
 	var dialer *net.Dialer
-	if h.config.K8sDNSIP != "" {
+	if h.config.DNSIP != "" {
 		dialer = &net.Dialer{
 			Resolver: &net.Resolver{
 				PreferGo: true,
 				Dial: func(ctx context.Context, network, address string) (net.Conn, error) {
 					d := net.Dialer{}
-					return d.DialContext(ctx, "udp", h.config.K8sDNSIP+":53")
+					return d.DialContext(ctx, "udp", h.config.DNSIP+":53")
 				},
 			},
 		}

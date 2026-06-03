@@ -15,8 +15,6 @@ const SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', 
 const POLL_INTERVAL_MS = 2000;
 const RENDER_INTERVAL_MS = 100;
 const MAX_POLL_TIME_MS = 60000;
-const DOKKIMI_NS_PREFIX = 'dokkimi-';
-const SYSTEM_NAMESPACE = 'dokkimi-system';
 
 const TERMINAL_STATUSES = new Set(['STOPPED', 'FAILED']);
 
@@ -37,7 +35,6 @@ export async function clean(args: string[]): Promise<void> {
     console.log('Usage: dokkimi clean [options]');
     console.log('');
     console.log('Stop all running instances and clean up resources.');
-    console.log('Directly cleans K8s namespaces if Dokkimi is not running.');
     console.log('');
     console.log('Options:');
     console.log('  --force, -f    Skip confirmation prompt');
@@ -55,13 +52,13 @@ export async function clean(args: string[]): Promise<void> {
   // Check CT is running
   const ctCheck = await checkService('Dokkimi', ctUrl);
 
-  // Find orphaned K8s namespaces regardless of CT status
-  const orphanedNamespaces = findDokkimiNamespaces();
+  // Find orphaned Docker resources regardless of CT status
+  const orphanedContainers = findDokkimiContainers();
 
   if (jsonMode) {
     const nothingToClean = ctCheck.healthy
-      ? await isNothingToCleanCT(ctUrl, orphanedNamespaces)
-      : orphanedNamespaces.length === 0;
+      ? await isNothingToCleanCT(ctUrl, orphanedContainers)
+      : orphanedContainers.length === 0;
 
     if (nothingToClean) {
       console.log(JSON.stringify({ success: true }));
@@ -77,9 +74,9 @@ export async function clean(args: string[]): Promise<void> {
     let error: string | undefined;
     try {
       if (ctCheck.healthy) {
-        await cleanViaCT(ctUrl, true, orphanedNamespaces);
+        await cleanViaCT(ctUrl, true, orphanedContainers);
       } else {
-        await cleanDirectK8s(true, orphanedNamespaces);
+        await cleanDirectDocker(true, orphanedContainers);
       }
     } catch (err) {
       success = false;
@@ -97,31 +94,31 @@ export async function clean(args: string[]): Promise<void> {
   }
 
   if (ctCheck.healthy) {
-    await cleanViaCT(ctUrl, force, orphanedNamespaces);
+    await cleanViaCT(ctUrl, force, orphanedContainers);
   } else {
-    await cleanDirectK8s(force, orphanedNamespaces);
+    await cleanDirectDocker(force, orphanedContainers);
   }
 }
 
 async function isNothingToCleanCT(
   ctUrl: string,
-  orphanedNamespaces: string[],
+  orphanedContainers: string[],
 ): Promise<boolean> {
   const projectPath = getProjectPath();
   const latestRun = await fetchJson<RunStatus>(
     latestRunUrl(ctUrl, projectPath),
   );
   const instanceCount = latestRun?.instances?.length ?? 0;
-  return instanceCount === 0 && orphanedNamespaces.length === 0;
+  return instanceCount === 0 && orphanedContainers.length === 0;
 }
 
 /**
- * Clean via CT API (graceful path), then clean any remaining K8s namespaces.
+ * Clean via CT API (graceful path), then clean any remaining Docker resources.
  */
 async function cleanViaCT(
   ctUrl: string,
   force: boolean,
-  orphanedNamespaces: string[],
+  orphanedContainers: string[],
 ): Promise<void> {
   const projectPath = getProjectPath();
   const latestRun = await fetchJson<RunStatus>(
@@ -136,17 +133,11 @@ async function cleanViaCT(
     ? latestRun!.instances.filter((i) => TERMINAL_STATUSES.has(i.status))
     : [];
 
-  // Figure out which namespaces CT doesn't know about
-  const ctInstanceIds = new Set((latestRun?.instances ?? []).map((i) => i.id));
-  const unknownNamespaces = orphanedNamespaces.filter(
-    (ns) => !ctInstanceIds.has(ns.replace(DOKKIMI_NS_PREFIX, '')),
-  );
-
   const totalToClean =
-    active.length + stopped.length + unknownNamespaces.length;
+    active.length + stopped.length + orphanedContainers.length;
 
   if (totalToClean === 0) {
-    console.log('No instances or namespaces found. Nothing to clean.');
+    console.log('No instances or containers found. Nothing to clean.');
     process.exit(0);
   }
 
@@ -161,9 +152,9 @@ async function cleanViaCT(
       `Found ${stopped.length} stopped instance${stopped.length === 1 ? '' : 's'} to delete.`,
     );
   }
-  if (unknownNamespaces.length > 0) {
+  if (orphanedContainers.length > 0) {
     console.log(
-      `Found ${unknownNamespaces.length} orphaned K8s namespace${unknownNamespaces.length === 1 ? '' : 's'}.`,
+      `Found ${orphanedContainers.length} orphaned Docker container${orphanedContainers.length === 1 ? '' : 's'}.`,
     );
   }
   console.log('');
@@ -207,7 +198,7 @@ async function cleanViaCT(
           const name = inst.name.padEnd(30);
           const isDone = TERMINAL_STATUSES.has(inst.status);
           const prefix = isDone
-            ? '\x1b[32m\u2714\x1b[0m'
+            ? '\x1b[32m✔\x1b[0m'
             : `\x1b[36m${spinner}\x1b[0m`;
           const color = isDone ? '\x1b[32m' : statusColor(inst.status);
           const statusText = `${color}${inst.status.padEnd(12)}\x1b[0m`;
@@ -227,7 +218,7 @@ async function cleanViaCT(
         if (Date.now() - startTime > MAX_POLL_TIME_MS) {
           console.log('');
           console.log(
-            '\x1b[33mTimeout waiting for graceful stop. Forcing K8s cleanup...\x1b[0m',
+            '\x1b[33mTimeout waiting for graceful stop. Forcing Docker cleanup...\x1b[0m',
           );
           break;
         }
@@ -245,18 +236,8 @@ async function cleanViaCT(
     await fetchAction(`${ctUrl}/runs/${runId}`, 'DELETE');
   }
 
-  // Phase 2: Force-delete any remaining K8s namespaces
-  const remaining = findDokkimiNamespaces();
-  if (remaining.length > 0) {
-    console.log('');
-    console.log(
-      `Cleaning ${remaining.length} remaining K8s namespace${remaining.length === 1 ? '' : 's'}...`,
-    );
-    deleteNamespaces(remaining);
-  }
-
-  // Phase 3: Clean up orphaned registry credential secrets from dokkimi-system
-  deleteOrphanedRegistrySecrets();
+  // Phase 2: Force-remove any remaining Docker containers and networks
+  cleanupDokkimiDockerResources();
 
   console.log('');
   console.log(
@@ -266,28 +247,32 @@ async function cleanViaCT(
 }
 
 /**
- * Clean directly via kubectl when CT is not running.
+ * Clean directly via Docker when CT is not running.
  */
-async function cleanDirectK8s(
+async function cleanDirectDocker(
   force: boolean,
-  namespaces: string[],
+  containers: string[],
 ): Promise<void> {
-  if (namespaces.length === 0) {
-    console.log('No Dokkimi namespaces found. Nothing to clean.');
-    process.exit(0);
+  if (containers.length === 0) {
+    // Also check for orphaned networks
+    const networks = findDokkimiNetworks();
+    if (networks.length === 0) {
+      console.log('No Dokkimi containers or networks found. Nothing to clean.');
+      process.exit(0);
+    }
   }
 
   console.log('');
   console.log(
-    `Dokkimi is not running. Found ${namespaces.length} K8s namespace${namespaces.length === 1 ? '' : 's'} to clean up directly.`,
+    `Dokkimi is not running. Found Docker resources to clean up directly.`,
   );
-  for (const ns of namespaces) {
-    console.log(`  \x1b[90m${ns}\x1b[0m`);
+  if (containers.length > 0) {
+    console.log(`  ${containers.length} container(s)`);
   }
   console.log('');
 
   if (!force) {
-    const answer = await prompt('Delete all Dokkimi namespaces? (Y/n) ');
+    const answer = await prompt('Delete all Dokkimi Docker resources? (Y/n) ');
     if (answer === 'n' || answer === 'no') {
       console.log('Aborted.');
       process.exit(0);
@@ -295,10 +280,7 @@ async function cleanDirectK8s(
   }
 
   const startTime = Date.now();
-  deleteNamespaces(namespaces);
-
-  // Clean up orphaned registry credential secrets from dokkimi-system
-  deleteOrphanedRegistrySecrets();
+  cleanupDokkimiDockerResources();
 
   console.log('');
   console.log(
@@ -308,68 +290,67 @@ async function cleanDirectK8s(
 }
 
 // ---------------------------------------------------------------------------
-// K8s helpers
+// Docker helpers
 // ---------------------------------------------------------------------------
 
-function findDokkimiNamespaces(): string[] {
+function findDokkimiContainers(): string[] {
   try {
     const output = execSilent(
-      "kubectl get namespaces -o jsonpath='{.items[*].metadata.name}'",
+      'docker ps -a --filter "label=dokkimi" --format "{{.Names}}"',
       { timeout: 10000 },
     );
-    return output
-      .split(/\s+/)
-      .filter(
-        (ns: string) =>
-          ns.startsWith(DOKKIMI_NS_PREFIX) && ns !== SYSTEM_NAMESPACE,
-      );
+    return output.split('\n').filter(Boolean);
   } catch {
     return [];
   }
 }
 
-function deleteOrphanedRegistrySecrets(): void {
+function findDokkimiNetworks(): string[] {
   try {
     const output = execSilent(
-      `kubectl get secrets -n ${SYSTEM_NAMESPACE} -l dokkimi.io/resource-type=registry-credentials -o jsonpath='{.items[*].metadata.name}'`,
+      'docker network ls --filter "label=dokkimi" --format "{{.Name}}"',
       { timeout: 10000 },
     );
-    const secrets = output.split(/\s+/).filter(Boolean);
-    if (secrets.length === 0) {
-      return;
-    }
-
-    console.log('');
-    console.log(
-      `Cleaning ${secrets.length} orphaned registry secret${secrets.length === 1 ? '' : 's'}...`,
-    );
-    for (const name of secrets) {
-      try {
-        execSilent(`kubectl delete secret ${name} -n ${SYSTEM_NAMESPACE}`, {
-          timeout: 10000,
-        });
-      } catch (err) {
-        console.log(
-          `  \x1b[33mFailed to delete secret ${name}: ${err instanceof Error ? err.message : err}\x1b[0m`,
-        );
-      }
-    }
+    return output.split('\n').filter(Boolean);
   } catch {
-    // kubectl not available or dokkimi-system doesn't exist — skip silently
+    return [];
   }
 }
 
-function deleteNamespaces(namespaces: string[]): void {
-  for (const ns of namespaces) {
-    try {
-      console.log(`  Deleting ${ns}...`);
-      execSilent(`kubectl delete namespace ${ns} --wait=false`, {
-        timeout: 15000,
-      });
-    } catch (err) {
-      console.log(
-        `  \x1b[33mFailed to delete ${ns}: ${err instanceof Error ? err.message : err}\x1b[0m`,
-      );
+function cleanupDokkimiDockerResources(): void {
+  // Remove containers
+  const containers = findDokkimiContainers();
+  if (containers.length > 0) {
+    console.log('');
+    console.log(
+      `Removing ${containers.length} Docker container${containers.length === 1 ? '' : 's'}...`,
+    );
+    for (const name of containers) {
+      try {
+        execSilent(`docker rm -f ${name}`, { timeout: 10000 });
+      } catch (err) {
+        console.log(
+          `  \x1b[33mFailed to remove container ${name}: ${err instanceof Error ? err.message : err}\x1b[0m`,
+        );
+      }
+    }
+  }
+
+  // Remove networks
+  const networks = findDokkimiNetworks();
+  if (networks.length > 0) {
+    console.log('');
+    console.log(
+      `Removing ${networks.length} Docker network${networks.length === 1 ? '' : 's'}...`,
+    );
+    for (const name of networks) {
+      try {
+        execSilent(`docker network rm ${name}`, { timeout: 10000 });
+      } catch (err) {
+        console.log(
+          `  \x1b[33mFailed to remove network ${name}: ${err instanceof Error ? err.message : err}\x1b[0m`,
+        );
+      }
     }
   }
 }

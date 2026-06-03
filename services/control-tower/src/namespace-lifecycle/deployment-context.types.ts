@@ -9,13 +9,11 @@ import { TestDefinition } from '@dokkimi/config';
  *
  * Contains two concerns:
  * 1. What to deploy — a fully resolved definition with init file content
- * 2. Runtime identity — IDs and config baked into K8s resources for log correlation
+ * 2. Runtime identity — IDs for log correlation and test execution
  */
 export interface DeploymentContext {
-  // Runtime identity
   runId: string;
   instanceId: string;
-  k8sNamespaceName: string;
 
   /**
    * Item name -> InstanceItem DB row ID.
@@ -63,7 +61,7 @@ export interface DeployableDefinition {
 
 /**
  * An item in the resolved definition. All fields from the definition file.
- * Contains no runtime IDs, no k8sNames, no absolute paths — those are
+ * Contains no runtime IDs, no container names, no absolute paths — those are
  * computed by the deployer.
  */
 export interface DefinitionItem {

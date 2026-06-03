@@ -5,7 +5,7 @@ import { findDokkimiBin } from '../lib/find-bin';
 export function registerDoctor(server: McpServer): void {
   server.tool(
     'doctor',
-    'Runs environment pre-flight checks (Docker, Kubernetes, disk space, database, etc.) and returns structured results. Call this to diagnose why run_tests might be failing.',
+    'Runs environment pre-flight checks (Docker, disk space, database, etc.) and returns structured results. Call this to diagnose why run_tests might be failing.',
     {},
     async () => {
       const bin = findDokkimiBin();

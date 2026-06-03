@@ -24,8 +24,6 @@ describe('DatabaseConfigService', () => {
       expect(config.environment.POSTGRES_DB).toBe('dokkimi');
       expect(config.environment.POSTGRES_USER).toBe('dokkimi');
       expect(config.ports).toEqual([5432]);
-      expect(config.volumeMounts).toBeDefined();
-      expect(config.volumes).toBeDefined();
     });
 
     it('should return MySQL config', () => {

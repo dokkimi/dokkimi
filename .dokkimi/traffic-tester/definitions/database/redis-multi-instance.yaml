@@ -1,7 +1,7 @@
 name: redis-multi-instance
 description: |
   Two independent Redis instances in the same namespace. Validates that
-  the wire protocol proxy, K8s Service routing, health checks, and
+  the wire protocol proxy, Docker DNS routing, health checks, and
   test-agent connection management all work correctly when multiple
   Redis databases coexist. Each instance has its own keyspace.
 config:

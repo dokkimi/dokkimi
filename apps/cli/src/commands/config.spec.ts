@@ -101,14 +101,14 @@ describe('configCommand', () => {
     expect(items[1].label).toContain('Telemetry');
   });
 
-  it('updates concurrency setting (maxNamespaces)', async () => {
-    mockGetConcurrency.mockReturnValue({ maxNamespaces: 6 });
+  it('updates concurrency setting (maxConcurrentTests)', async () => {
+    mockGetConcurrency.mockReturnValue({ maxConcurrentTests: 6 });
 
     // Top menu -> select concurrency
     mockSelectMenu
       .mockResolvedValueOnce({ value: 'concurrency', index: 0 })
-      // Concurrency sub-menu -> select maxNamespaces
-      .mockResolvedValueOnce({ value: 'maxNamespaces', index: 0 })
+      // Concurrency sub-menu -> select maxConcurrentTests
+      .mockResolvedValueOnce({ value: 'maxConcurrentTests', index: 0 })
       // Back to top menu -> escape
       .mockResolvedValueOnce(null)
       // Reboot prompt -> exit without rebooting
@@ -119,11 +119,11 @@ describe('configCommand', () => {
     await configCommand([]);
 
     expect(mockSetConcurrency).toHaveBeenCalledWith(
-      expect.objectContaining({ maxNamespaces: 10 }),
+      expect.objectContaining({ maxConcurrentTests: 10 }),
     );
     expect(mockTrack).toHaveBeenCalledWith('cli_config_changed', {
       category: 'concurrency',
-      setting: 'maxNamespaces',
+      setting: 'maxConcurrentTests',
       value: 10,
     });
   });
@@ -170,7 +170,7 @@ describe('configCommand', () => {
 
     mockSelectMenu
       .mockResolvedValueOnce({ value: 'concurrency', index: 0 })
-      .mockResolvedValueOnce({ value: 'maxNamespaces', index: 0 })
+      .mockResolvedValueOnce({ value: 'maxConcurrentTests', index: 0 })
       .mockResolvedValueOnce(null)
       // Reboot prompt -> reboot
       .mockResolvedValueOnce({ value: 'reboot', index: 0 });
@@ -221,12 +221,12 @@ describe('configCommand', () => {
     expect(mockTrack).toHaveBeenCalledWith('cli_config_opened', {});
   });
 
-  it('updates concurrency setting (maxBooting)', async () => {
-    mockGetConcurrency.mockReturnValue({ maxBooting: 2 });
+  it('updates concurrency setting (maxBootingTests)', async () => {
+    mockGetConcurrency.mockReturnValue({ maxBootingTests: 2 });
 
     mockSelectMenu
       .mockResolvedValueOnce({ value: 'concurrency', index: 0 })
-      .mockResolvedValueOnce({ value: 'maxBooting', index: 1 })
+      .mockResolvedValueOnce({ value: 'maxBootingTests', index: 1 })
       .mockResolvedValueOnce(null)
       .mockResolvedValueOnce({ value: 'exit', index: 1 });
 
@@ -235,17 +235,20 @@ describe('configCommand', () => {
     await configCommand([]);
 
     expect(mockSetConcurrency).toHaveBeenCalledWith(
-      expect.objectContaining({ maxBooting: 4 }),
+      expect.objectContaining({ maxBootingTests: 4 }),
     );
     expect(mockTrack).toHaveBeenCalledWith('cli_config_changed', {
       category: 'concurrency',
-      setting: 'maxBooting',
+      setting: 'maxBootingTests',
       value: 4,
     });
   });
 
   it('resets concurrency to defaults', async () => {
-    mockGetConcurrency.mockReturnValue({ maxNamespaces: 10, maxBooting: 5 });
+    mockGetConcurrency.mockReturnValue({
+      maxConcurrentTests: 10,
+      maxBootingTests: 5,
+    });
 
     mockSelectMenu
       .mockResolvedValueOnce({ value: 'concurrency', index: 0 })
@@ -267,7 +270,7 @@ describe('configCommand', () => {
 
     mockSelectMenu
       .mockResolvedValueOnce({ value: 'concurrency', index: 0 })
-      .mockResolvedValueOnce({ value: 'maxNamespaces', index: 0 })
+      .mockResolvedValueOnce({ value: 'maxConcurrentTests', index: 0 })
       .mockResolvedValueOnce(null);
 
     mockNumberInput.mockResolvedValueOnce(null);

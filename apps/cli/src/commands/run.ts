@@ -21,7 +21,7 @@ import {
   resolveRegistryCredentials,
   type RegistryCredential,
 } from '../lib/registry-credentials';
-import { trackEvent, detectK8sProvider } from '@dokkimi/telemetry';
+import { trackEvent } from '@dokkimi/telemetry';
 import {
   definitionHasUiSteps,
   detectTargetType,
@@ -275,7 +275,6 @@ export async function run(args: string[]): Promise<void> {
         watch_mode: watchMode,
         target_type: detectTargetType(target),
         trigger,
-        k8s_provider: detectK8sProvider(),
         has_ui_steps: lastResult.hasUiSteps ?? false,
         baselines_uploaded: lastResult.baselinesUploaded ?? 0,
         has_pending_baselines: hasPendingBaselines,

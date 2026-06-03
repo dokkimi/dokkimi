@@ -58,9 +58,9 @@ func LoadConfig(defaultDBUser string) (*Config, error) {
 	return cfg, nil
 }
 
-// LoadDatabaseCredentials loads credentials from ConfigMap or environment variables
+// LoadDatabaseCredentials loads credentials from a credentials file or environment variables
 func (c *Config) LoadDatabaseCredentials(defaultDBUser string) error {
-	// Try ConfigMap first (if DB_CREDENTIALS_PATH is set)
+	// Try credentials file first (if DB_CREDENTIALS_PATH is set)
 	credentialsPath := os.Getenv("DB_CREDENTIALS_PATH")
 	if credentialsPath != "" {
 		data, err := os.ReadFile(credentialsPath)
@@ -75,7 +75,7 @@ func (c *Config) LoadDatabaseCredentials(defaultDBUser string) error {
 				}
 			}
 		}
-		// If ConfigMap read fails, fall through to env vars
+		// If credentials file read fails, fall through to env vars
 	}
 
 	// Fallback to environment variables

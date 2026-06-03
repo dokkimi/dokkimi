@@ -55,7 +55,7 @@ CREATE TABLE public.namespace_instances (
     id text NOT NULL,
     name text NOT NULL,
     status public."InstanceStatus" DEFAULT 'PENDING'::public."InstanceStatus" NOT NULL,
-    "k8sNamespace" text,
+    "dockerNetwork" text,
     "startedAt" timestamp(3) without time zone,
     "stoppedAt" timestamp(3) without time zone,
     "testStatus" public."TestStatus",
@@ -73,7 +73,7 @@ CREATE TABLE public.instance_items (
     status public."ItemStatus" DEFAULT 'PENDING'::public."ItemStatus" NOT NULL,
     "readinessStatus" public."ReadinessStatus" DEFAULT 'UNKNOWN'::public."ReadinessStatus" NOT NULL,
     "readinessLastChecked" timestamp(3) without time zone,
-    "k8sName" text,
+    "containerName" text,
     "createdAt" timestamp(3) without time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
     "updatedAt" timestamp(3) without time zone NOT NULL
 );

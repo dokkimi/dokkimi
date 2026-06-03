@@ -2,7 +2,7 @@ import {
   DeployableDefinition,
   DefinitionItem,
   DefinitionInitFile,
-} from '../namespace-deployer/deployment-context.types';
+} from '../namespace-lifecycle/deployment-context.types';
 import { DefinitionDto } from './dto/submit-instance.dto';
 
 export function stripInitFileContent(

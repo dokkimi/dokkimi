@@ -23,15 +23,15 @@ Options:
   --help, -h        Show this help message
 `.trim();
 
-const DEFAULT_MAX_NAMESPACES = 6;
-const DEFAULT_MAX_BOOTING = 2;
+const DEFAULT_MAX_CONCURRENT_TESTS = 6;
+const DEFAULT_MAX_BOOTING_TESTS = 2;
 
 type SettingsCategory = 'concurrency' | 'telemetry';
 
 function buildTopMenuItems(): MenuItem<SettingsCategory>[] {
   const concurrency = getConcurrencyPrefs();
-  const maxNs = concurrency.maxNamespaces ?? DEFAULT_MAX_NAMESPACES;
-  const maxBoot = concurrency.maxBooting ?? DEFAULT_MAX_BOOTING;
+  const maxNs = concurrency.maxConcurrentTests ?? DEFAULT_MAX_CONCURRENT_TESTS;
+  const maxBoot = concurrency.maxBootingTests ?? DEFAULT_MAX_BOOTING_TESTS;
 
   const telemetryStatus = isTelemetryEnabled() ? 'on' : 'off';
 
@@ -49,19 +49,19 @@ function buildTopMenuItems(): MenuItem<SettingsCategory>[] {
 
 async function editConcurrency(): Promise<boolean> {
   const prefs = getConcurrencyPrefs();
-  const currentMax = prefs.maxNamespaces ?? DEFAULT_MAX_NAMESPACES;
-  const currentBoot = prefs.maxBooting ?? DEFAULT_MAX_BOOTING;
+  const currentMax = prefs.maxConcurrentTests ?? DEFAULT_MAX_CONCURRENT_TESTS;
+  const currentBoot = prefs.maxBootingTests ?? DEFAULT_MAX_BOOTING_TESTS;
 
-  type ConcurrencyAction = 'maxNamespaces' | 'maxBooting' | 'reset';
+  type ConcurrencyAction = 'maxConcurrentTests' | 'maxBootingTests' | 'reset';
 
   const items: MenuItem<ConcurrencyAction>[] = [
     {
-      label: `Max parallel namespaces   \x1b[90m${currentMax}${prefs.maxNamespaces === undefined ? ' (default)' : ''}\x1b[0m`,
-      value: 'maxNamespaces',
+      label: `Max concurrent tests      \x1b[90m${currentMax}${prefs.maxConcurrentTests === undefined ? ' (default)' : ''}\x1b[0m`,
+      value: 'maxConcurrentTests',
     },
     {
-      label: `Max booting namespaces    \x1b[90m${currentBoot}${prefs.maxBooting === undefined ? ' (default)' : ''}\x1b[0m`,
-      value: 'maxBooting',
+      label: `Max booting tests         \x1b[90m${currentBoot}${prefs.maxBootingTests === undefined ? ' (default)' : ''}\x1b[0m`,
+      value: 'maxBootingTests',
     },
     {
       label: '\x1b[90mReset to defaults\x1b[0m',
@@ -85,36 +85,37 @@ async function editConcurrency(): Promise<boolean> {
     return true;
   }
 
-  if (result.value === 'maxNamespaces') {
-    const value = await numberInput('Max parallel namespaces', currentMax, {
+  if (result.value === 'maxConcurrentTests') {
+    const value = await numberInput('Max concurrent tests', currentMax, {
       min: 1,
       max: 50,
     });
     if (value !== null) {
       setConcurrencyPrefs({
         ...prefs,
-        maxNamespaces: value === DEFAULT_MAX_NAMESPACES ? undefined : value,
+        maxConcurrentTests:
+          value === DEFAULT_MAX_CONCURRENT_TESTS ? undefined : value,
       });
       trackEvent('cli_config_changed', {
         category: 'concurrency',
-        setting: 'maxNamespaces',
+        setting: 'maxConcurrentTests',
         value,
       });
       return true;
     }
   }
 
-  if (result.value === 'maxBooting') {
-    const value = await numberInput('Max booting namespaces', currentBoot, {
+  if (result.value === 'maxBootingTests') {
+    const value = await numberInput('Max booting tests', currentBoot, {
       min: 1,
       max: 50,
     });
     if (value !== null) {
-      const updated = { ...prefs, maxBooting: value };
+      const updated = { ...prefs, maxBootingTests: value };
       setConcurrencyPrefs(updated);
       trackEvent('cli_config_changed', {
         category: 'concurrency',
-        setting: 'maxBooting',
+        setting: 'maxBootingTests',
         value,
       });
       return true;

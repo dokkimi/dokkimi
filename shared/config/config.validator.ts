@@ -52,32 +52,26 @@ export function validateConfig(config: DokkimiConfig): string[] {
     }
   }
 
-  // Validate kubernetes
-  if (!config.kubernetes) {
-    errors.push('kubernetes configuration is required');
+  // Validate concurrency
+  if (!config.concurrency) {
+    errors.push('concurrency configuration is required');
   } else {
-    if (!config.kubernetes.dnsIP) {
-      errors.push('kubernetes.dnsIP is required');
-    }
-    if (!config.kubernetes.namespacePrefix) {
-      errors.push('kubernetes.namespacePrefix is required');
-    }
     if (
-      typeof config.kubernetes.maxConcurrentNamespaces !== 'number' ||
-      !Number.isInteger(config.kubernetes.maxConcurrentNamespaces) ||
-      config.kubernetes.maxConcurrentNamespaces < 1
+      typeof config.concurrency.maxConcurrentTests !== 'number' ||
+      !Number.isInteger(config.concurrency.maxConcurrentTests) ||
+      config.concurrency.maxConcurrentTests < 1
     ) {
       errors.push(
-        'kubernetes.maxConcurrentNamespaces must be a positive integer (>= 1)',
+        'concurrency.maxConcurrentTests must be a positive integer (>= 1)',
       );
     }
     if (
-      typeof config.kubernetes.maxBootingNamespaces !== 'number' ||
-      !Number.isInteger(config.kubernetes.maxBootingNamespaces) ||
-      config.kubernetes.maxBootingNamespaces < 1
+      typeof config.concurrency.maxBootingTests !== 'number' ||
+      !Number.isInteger(config.concurrency.maxBootingTests) ||
+      config.concurrency.maxBootingTests < 1
     ) {
       errors.push(
-        'kubernetes.maxBootingNamespaces must be a positive integer (>= 1)',
+        'concurrency.maxBootingTests must be a positive integer (>= 1)',
       );
     }
   }

@@ -3,7 +3,6 @@ import { BadRequestException } from '@nestjs/common';
 import { ReadinessStatus } from '@prisma/client';
 import { HealthService } from './health.service';
 import { PrismaService } from '../prisma/prisma.service';
-import { KubernetesClientService } from '../namespace-lifecycle/kubernetes/kubernetes-client.service';
 
 describe('HealthService', () => {
   let service: HealthService;
@@ -21,12 +20,6 @@ describe('HealthService', () => {
     },
   };
 
-  const mockK8sClient = {
-    core: {
-      listNamespace: jest.fn(),
-    },
-  };
-
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -34,10 +27,6 @@ describe('HealthService', () => {
         {
           provide: PrismaService,
           useValue: mockPrismaService,
-        },
-        {
-          provide: KubernetesClientService,
-          useValue: mockK8sClient,
         },
       ],
     }).compile();
@@ -54,49 +43,23 @@ describe('HealthService', () => {
   describe('getHealthStatus', () => {
     it('should return healthy status when all checks pass', async () => {
       mockPrismaService.client.$queryRaw.mockResolvedValue([{ '1': 1 }]);
-      mockK8sClient.core.listNamespace.mockResolvedValue({
-        body: { items: [] },
-      } as never);
       mockPrismaService.run.findFirst.mockResolvedValue(null);
 
       const result = await service.getHealthStatus();
 
       expect(result.status).toBe('healthy');
       expect(result.checks.database.status).toBe('healthy');
-      expect(result.checks.kubernetes.status).toBe('healthy');
       expect(result.checks.prisma.status).toBe('healthy');
       expect(result.checks.database.latency).toBeGreaterThanOrEqual(0);
-      expect(result.checks.kubernetes.latency).toBeGreaterThanOrEqual(0);
       expect(result.checks.prisma.latency).toBeGreaterThanOrEqual(0);
       expect(result.timestamp).toBeDefined();
       expect(result.uptime).toBeGreaterThanOrEqual(0);
-    });
-
-    it('should return healthy status when Kubernetes is unavailable (Docker mode)', async () => {
-      mockPrismaService.client.$queryRaw.mockResolvedValue([{ '1': 1 }]);
-      mockK8sClient.core.listNamespace.mockRejectedValue(
-        new Error('Kubernetes API error'),
-      );
-      mockPrismaService.run.findFirst.mockResolvedValue(null);
-
-      const result = await service.getHealthStatus();
-
-      expect(result.status).toBe('healthy');
-      expect(result.checks.database.status).toBe('healthy');
-      expect(result.checks.kubernetes.status).toBe('healthy');
-      expect(result.checks.prisma.status).toBe('healthy');
-      expect(result.checks.kubernetes.message).toBe(
-        'Kubernetes not available (Docker mode)',
-      );
     });
 
     it('should return unhealthy status when database check fails', async () => {
       mockPrismaService.client.$queryRaw.mockRejectedValue(
         new Error('Database connection failed'),
       );
-      mockK8sClient.core.listNamespace.mockResolvedValue({
-        body: { items: [] },
-      } as never);
       mockPrismaService.run.findFirst.mockResolvedValue(null);
 
       const result = await service.getHealthStatus();
@@ -108,9 +71,6 @@ describe('HealthService', () => {
 
     it('should return unhealthy status when Prisma check fails', async () => {
       mockPrismaService.client.$queryRaw.mockResolvedValue([{ '1': 1 }]);
-      mockK8sClient.core.listNamespace.mockResolvedValue({
-        body: { items: [] },
-      } as never);
       mockPrismaService.run.findFirst.mockRejectedValue(
         new Error('Prisma connection failed'),
       );
@@ -127,16 +87,12 @@ describe('HealthService', () => {
       process.env.APP_VERSION = '1.0.0';
 
       mockPrismaService.client.$queryRaw.mockResolvedValue([{ '1': 1 }]);
-      mockK8sClient.core.listNamespace.mockResolvedValue({
-        body: { items: [] },
-      } as never);
       mockPrismaService.run.findFirst.mockResolvedValue(null);
 
       const result = await service.getHealthStatus();
 
       expect(result.version).toBe('1.0.0');
 
-      // Restore original value
       if (originalVersion !== undefined) {
         process.env.APP_VERSION = originalVersion;
       } else {
@@ -151,9 +107,6 @@ describe('HealthService', () => {
       process.env.npm_package_version = '2.3.4';
 
       mockPrismaService.client.$queryRaw.mockResolvedValue([{ '1': 1 }]);
-      mockK8sClient.core.listNamespace.mockResolvedValue({
-        body: { items: [] },
-      } as never);
       mockPrismaService.run.findFirst.mockResolvedValue(null);
 
       const result = await service.getHealthStatus();
@@ -174,9 +127,6 @@ describe('HealthService', () => {
       mockPrismaService.client.$queryRaw.mockRejectedValue(
         new Error('DB down'),
       );
-      mockK8sClient.core.listNamespace.mockRejectedValue(
-        new Error('K8s unreachable'),
-      );
       mockPrismaService.run.findFirst.mockRejectedValue(
         new Error('Prisma down'),
       );
@@ -185,15 +135,11 @@ describe('HealthService', () => {
 
       expect(result.status).toBe('unhealthy');
       expect(result.checks.database.status).toBe('unhealthy');
-      expect(result.checks.kubernetes.status).toBe('healthy');
       expect(result.checks.prisma.status).toBe('unhealthy');
     });
 
     it('should include service name as control-tower', async () => {
       mockPrismaService.client.$queryRaw.mockResolvedValue([{ '1': 1 }]);
-      mockK8sClient.core.listNamespace.mockResolvedValue({
-        body: { items: [] },
-      } as never);
       mockPrismaService.run.findFirst.mockResolvedValue(null);
 
       const result = await service.getHealthStatus();
@@ -203,9 +149,6 @@ describe('HealthService', () => {
 
     it('should handle non-Error objects thrown by database check', async () => {
       mockPrismaService.client.$queryRaw.mockRejectedValue('string error');
-      mockK8sClient.core.listNamespace.mockResolvedValue({
-        body: { items: [] },
-      } as never);
       mockPrismaService.run.findFirst.mockResolvedValue(null);
 
       const result = await service.getHealthStatus();
@@ -215,25 +158,8 @@ describe('HealthService', () => {
       expect(result.checks.database.error).toBe('Unknown error');
     });
 
-    it('should return healthy when kubernetes throws non-Error objects (Docker mode)', async () => {
-      mockPrismaService.client.$queryRaw.mockResolvedValue([{ '1': 1 }]);
-      mockK8sClient.core.listNamespace.mockRejectedValue('k8s string error');
-      mockPrismaService.run.findFirst.mockResolvedValue(null);
-
-      const result = await service.getHealthStatus();
-
-      expect(result.status).toBe('healthy');
-      expect(result.checks.kubernetes.status).toBe('healthy');
-      expect(result.checks.kubernetes.message).toBe(
-        'Kubernetes not available (Docker mode)',
-      );
-    });
-
     it('should handle non-Error objects thrown by prisma check', async () => {
       mockPrismaService.client.$queryRaw.mockResolvedValue([{ '1': 1 }]);
-      mockK8sClient.core.listNamespace.mockResolvedValue({
-        body: { items: [] },
-      } as never);
       mockPrismaService.run.findFirst.mockRejectedValue(42);
 
       const result = await service.getHealthStatus();

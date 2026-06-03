@@ -2,11 +2,11 @@
 
 ## What is Dokkimi?
 
-Dokkimi is a platform for testing microservice architectures. It spins up isolated Kubernetes sandboxes where you can deploy your services, databases, and mocks together as a complete environment. An interceptor sidecar is injected into each service to capture all inter-service HTTP traffic, giving you full visibility into how your services communicate. You can then run automated test suites that make requests, query databases, and assert on responses, inter-service calls, and even console logs — all without modifying your application code.
+Dokkimi is a platform for testing microservice architectures. It spins up isolated Docker environments where you can deploy your services, databases, and mocks together as a complete environment. An interceptor sidecar is injected into each service to capture all inter-service HTTP traffic, giving you full visibility into how your services communicate. You can then run automated test suites that make requests, query databases, and assert on responses, inter-service calls, and even console logs — all without modifying your application code.
 
 Key capabilities:
 
-- **Isolated environments** — each test run gets its own Kubernetes namespace with dedicated services and databases
+- **Isolated environments** — each test run gets its own Docker network with dedicated services and databases
 - **Traffic interception** — all HTTP traffic between services is captured and available for assertions
 - **Mock external APIs** — intercept outbound requests to third-party services and return controlled responses
 - **Automated testing** — sequential and parallel test steps with rich assertions on responses, inter-service traffic, and logs
@@ -368,7 +368,7 @@ Redis:
 
 An HTTP mock that intercepts outbound requests from services and returns controlled responses. When a service tries to call an external API (e.g., Stripe, Twilio), the interceptor sidecar matches the request against defined mocks and returns the mock response instead.
 
-**HTTP and HTTPS both work — no code changes needed.** The interceptor listens on port 80 for HTTP and on port 443 for HTTPS, terminating TLS with per-hostname certificates signed by a Dokkimi CA that is generated once per cluster and automatically mounted into every service pod (`NODE_EXTRA_CA_CERTS` for Node.js, `SSL_CERT_FILE` for Python/Go/curl/etc., and a Java truststore for JVM services). You write `mockTarget` exactly the same way for either protocol — `"api.stripe.com"` matches both `http://api.stripe.com` and `https://api.stripe.com`. Leave your service's code calling the real Auth0/Stripe/Twilio URLs as-is; DNS in the namespace routes the hostname to the interceptor, the interceptor presents a trusted cert, terminates TLS, matches the request against your mocks, and serves the response.
+**HTTP and HTTPS both work — no code changes needed.** The interceptor listens on port 80 for HTTP and on port 443 for HTTPS, terminating TLS with per-hostname certificates signed by a Dokkimi CA that is generated once per environment and automatically mounted into every service container (`NODE_EXTRA_CA_CERTS` for Node.js, `SSL_CERT_FILE` for Python/Go/curl/etc., and a Java truststore for JVM services). You write `mockTarget` exactly the same way for either protocol — `"api.stripe.com"` matches both `http://api.stripe.com` and `https://api.stripe.com`. Leave your service's code calling the real Auth0/Stripe/Twilio URLs as-is; DNS in the network routes the hostname to the interceptor, the interceptor presents a trusted cert, terminates TLS, matches the request against your mocks, and serves the response.
 
 **Required fields:**
 
@@ -1374,7 +1374,7 @@ A full definition with two services, a database, a mock, and tests:
 
 ## Naming Rules
 
-Item names must be: lowercase, alphanumeric with hyphens, start/end with alphanumeric, 1-63 characters. They're used as Kubernetes DNS names.
+Item names must be: lowercase, alphanumeric with hyphens, start/end with alphanumeric, 1-63 characters. They're used as Docker DNS names.
 
 Pattern: `^[a-z0-9][a-z0-9-]*[a-z0-9]$` (or single character: `^[a-z0-9]$`)
 
@@ -1401,7 +1401,7 @@ The `dokkimi` CLI manages the full lifecycle: validate definitions, run tests, i
 | `dokkimi status`                | Show service and instance status                                            |
 | `dokkimi doctor`                | Run environment pre-flight checks                                           |
 | `dokkimi clean`                 | Stop all instances and clean up resources                                   |
-| `dokkimi config`                | View and edit Dokkimi settings (concurrency, kubernetes context, telemetry) |
+| `dokkimi config`                | View and edit Dokkimi settings (concurrency, telemetry)                     |
 
 ### `dokkimi run`
 
@@ -1504,9 +1504,9 @@ Approved baselines are written to `.dokkimi/<project>/baselines/`. Also accessib
 
 ### `dokkimi config`
 
-Interactive settings editor for Dokkimi. Opens a full-screen menu where you can view and change concurrency limits, Kubernetes context, and telemetry preferences. All changes are written to `~/.dokkimi/config.json`.
+Interactive settings editor for Dokkimi. Opens a full-screen menu where you can view and change concurrency limits and telemetry preferences. All changes are written to `~/.dokkimi/config.json`.
 
-Settings include a Kubernetes context picker (lists all contexts from `~/.kube/config` or `$KUBECONFIG`, with the active context marked by a green `✔ selected` indicator), concurrency controls, and a telemetry on/off toggle.
+Settings include concurrency controls and a telemetry on/off toggle.
 
 After changing settings that affect running services, a menu offers to reboot Dokkimi services immediately or exit with a reminder to run `dokkimi reboot`.
 

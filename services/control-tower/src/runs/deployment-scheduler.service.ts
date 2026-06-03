@@ -5,14 +5,14 @@ import { TelemetryService } from '../telemetry/telemetry.service';
 import { InstanceStatus, RunStatus } from '@prisma/client';
 import { RunStorageService } from '../storage/run-storage.service';
 import { DockerDeployerService } from '../namespace-lifecycle/docker/docker-deployer.service';
-import { DeploymentContext } from '../namespace-deployer/deployment-context.types';
+import { DeploymentContext } from '../namespace-lifecycle/deployment-context.types';
 import { rawDefinitionToDeployable } from './definition-converter';
 
 @Injectable()
 export class DeploymentSchedulerService {
   private readonly logger = new Logger(DeploymentSchedulerService.name);
-  private readonly maxConcurrentNamespaces: number;
-  private readonly maxBootingNamespaces: number;
+  private readonly maxConcurrentTests: number;
+  private readonly maxBootingTests: number;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -21,10 +21,10 @@ export class DeploymentSchedulerService {
     private readonly configService: ConfigService,
     private readonly telemetry: TelemetryService,
   ) {
-    this.maxConcurrentNamespaces = this.configService.get<number>(
+    this.maxConcurrentTests = this.configService.get<number>(
       'MAX_CONCURRENT_NAMESPACES',
     )!;
-    this.maxBootingNamespaces = this.configService.get<number>(
+    this.maxBootingTests = this.configService.get<number>(
       'MAX_BOOTING_NAMESPACES',
     )!;
   }
@@ -66,10 +66,10 @@ export class DeploymentSchedulerService {
     const startingCount = run.instances.filter(
       (inst) => inst.status === InstanceStatus.STARTING,
     ).length;
-    const maxConcurrentStarting = this.maxBootingNamespaces;
+    const maxConcurrentStarting = this.maxBootingTests;
 
     const slotsAvailable = Math.min(
-      this.maxConcurrentNamespaces - activeCount,
+      this.maxConcurrentTests - activeCount,
       maxConcurrentStarting - startingCount,
     );
     if (slotsAvailable <= 0) {
@@ -108,7 +108,7 @@ export class DeploymentSchedulerService {
 
     if (deployed > 0) {
       this.logger.log(
-        `Deployed ${deployed} pending instance(s) for run ${runId} (${startingCount + deployed}/${maxConcurrentStarting} starting, ${activeCount + deployed}/${this.maxConcurrentNamespaces} active)`,
+        `Deployed ${deployed} pending instance(s) for run ${runId} (${startingCount + deployed}/${maxConcurrentStarting} starting, ${activeCount + deployed}/${this.maxConcurrentTests} active)`,
       );
     }
   }
@@ -256,7 +256,6 @@ export class DeploymentSchedulerService {
     return {
       runId,
       instanceId,
-      k8sNamespaceName: `dokkimi-${instanceId}`,
       instanceItemIds,
       definition: rawDefinitionToDeployable(definition),
     };

@@ -3,19 +3,16 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import {
   getConcurrencyPrefs,
   setConcurrencyPrefs,
-  getKubeconfigPrefs,
-  setKubeconfigPrefs,
   getTelemetryPrefs,
   setTelemetryPrefs,
 } from '@dokkimi/config';
 
-const DEFAULT_MAX_NAMESPACES = 6;
-const DEFAULT_MAX_BOOTING = 2;
+const DEFAULT_MAX_CONCURRENT_TESTS = 6;
+const DEFAULT_MAX_BOOTING_TESTS = 2;
 
 const SETTINGS_REQUIRING_REBOOT = new Set([
-  'maxNamespaces',
-  'maxBooting',
-  'context',
+  'maxConcurrentTests',
+  'maxBootingTests',
 ]);
 
 export function registerGetConfig(server: McpServer): void {
@@ -25,24 +22,18 @@ export function registerGetConfig(server: McpServer): void {
     {},
     async () => {
       const concurrency = getConcurrencyPrefs();
-      const kubeconfig = getKubeconfigPrefs();
       const telemetry = getTelemetryPrefs();
 
       const config = {
-        maxNamespaces: {
-          value: concurrency.maxNamespaces ?? DEFAULT_MAX_NAMESPACES,
-          default: DEFAULT_MAX_NAMESPACES,
-          isDefault: concurrency.maxNamespaces === undefined,
+        maxConcurrentTests: {
+          value: concurrency.maxConcurrentTests ?? DEFAULT_MAX_CONCURRENT_TESTS,
+          default: DEFAULT_MAX_CONCURRENT_TESTS,
+          isDefault: concurrency.maxConcurrentTests === undefined,
         },
-        maxBooting: {
-          value: concurrency.maxBooting ?? DEFAULT_MAX_BOOTING,
-          default: DEFAULT_MAX_BOOTING,
-          isDefault: concurrency.maxBooting === undefined,
-        },
-        context: {
-          value: kubeconfig.context ?? 'default',
-          default: 'default',
-          isDefault: kubeconfig.context === undefined,
+        maxBootingTests: {
+          value: concurrency.maxBootingTests ?? DEFAULT_MAX_BOOTING_TESTS,
+          default: DEFAULT_MAX_BOOTING_TESTS,
+          isDefault: concurrency.maxBootingTests === undefined,
         },
         telemetry: {
           value: telemetry?.enabled ?? true,
@@ -61,28 +52,29 @@ export function registerGetConfig(server: McpServer): void {
 export function registerSetConfig(server: McpServer): void {
   server.tool(
     'set_config',
-    'Updates a Dokkimi setting. Changes to maxNamespaces, maxBooting, and context require a reboot to take effect — call the reboot tool separately after updating.',
+    'Updates a Dokkimi setting. Changes to maxConcurrentTests and maxBootingTests require a reboot to take effect — call the reboot tool separately after updating.',
     {
       key: z
-        .enum(['maxNamespaces', 'maxBooting', 'context', 'telemetry'])
+        .enum(['maxConcurrentTests', 'maxBootingTests', 'telemetry'])
         .describe('The setting to change.'),
       value: z
-        .union([z.number(), z.string(), z.boolean()])
+        .union([z.number(), z.boolean()])
         .describe(
-          'The new value. Numbers for maxNamespaces/maxBooting, string for context, boolean for telemetry.',
+          'The new value. Numbers for maxConcurrentTests/maxBootingTests, boolean for telemetry.',
         ),
     },
     async ({ key, value }) => {
       try {
         switch (key) {
-          case 'maxNamespaces': {
+          case 'maxConcurrentTests': {
             if (typeof value !== 'number' || value < 1 || value > 50) {
               return {
                 content: [
                   {
                     type: 'text',
                     text: JSON.stringify({
-                      error: 'maxNamespaces must be a number between 1 and 50',
+                      error:
+                        'maxConcurrentTests must be a number between 1 and 50',
                     }),
                   },
                 ],
@@ -92,19 +84,20 @@ export function registerSetConfig(server: McpServer): void {
             const prefs = getConcurrencyPrefs();
             setConcurrencyPrefs({
               ...prefs,
-              maxNamespaces:
-                value === DEFAULT_MAX_NAMESPACES ? undefined : value,
+              maxConcurrentTests:
+                value === DEFAULT_MAX_CONCURRENT_TESTS ? undefined : value,
             });
             break;
           }
-          case 'maxBooting': {
+          case 'maxBootingTests': {
             if (typeof value !== 'number' || value < 1 || value > 50) {
               return {
                 content: [
                   {
                     type: 'text',
                     text: JSON.stringify({
-                      error: 'maxBooting must be a number between 1 and 50',
+                      error:
+                        'maxBootingTests must be a number between 1 and 50',
                     }),
                   },
                 ],
@@ -114,29 +107,9 @@ export function registerSetConfig(server: McpServer): void {
             const prefs = getConcurrencyPrefs();
             setConcurrencyPrefs({
               ...prefs,
-              maxBooting: value === DEFAULT_MAX_BOOTING ? undefined : value,
+              maxBootingTests:
+                value === DEFAULT_MAX_BOOTING_TESTS ? undefined : value,
             });
-            break;
-          }
-          case 'context': {
-            if (typeof value !== 'string') {
-              return {
-                content: [
-                  {
-                    type: 'text',
-                    text: JSON.stringify({
-                      error: 'context must be a string',
-                    }),
-                  },
-                ],
-                isError: true,
-              };
-            }
-            if (value === 'default' || value === '') {
-              setKubeconfigPrefs({});
-            } else {
-              setKubeconfigPrefs({ context: value });
-            }
             break;
           }
           case 'telemetry': {

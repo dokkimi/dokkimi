@@ -93,7 +93,7 @@ describe('RunCleanupService', () => {
     });
 
     it('handles lifecycle.stopInstance failure gracefully', async () => {
-      mockLifecycle.stopInstance.mockRejectedValue(new Error('k8s error'));
+      mockLifecycle.stopInstance.mockRejectedValue(new Error('docker error'));
       const instances = [
         { id: 'inst-1', status: InstanceStatus.RUNNING },
       ] as any[];

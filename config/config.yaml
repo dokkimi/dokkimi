@@ -26,12 +26,10 @@ frontend:
     host: localhost
     port: 5173
 
-# Kubernetes configuration
-kubernetes:
-  dnsIP: 10.96.0.10
-  namespacePrefix: dokkimi
-  maxConcurrentNamespaces: 6
-  maxBootingNamespaces: 2
+# Concurrency limits
+concurrency:
+  maxConcurrentTests: 6
+  maxBootingTests: 2
 
 # Network configuration
 network:
@@ -49,7 +47,7 @@ browser:
   defaultViewportWidth: 1280
   defaultViewportHeight: 720
 
-# Circuit breaker for Kubernetes API calls (milliseconds)
+# Circuit breaker (milliseconds)
 circuitBreaker:
   timeout: 10000
   errorThresholdPercentage: 75
@@ -62,7 +60,7 @@ timeouts:
 
 # Database defaults (for namespace agent)
 # These are intentionally weak — they apply only to ephemeral databases
-# inside isolated Kubernetes namespaces that are destroyed after each test run.
+# inside isolated Docker environments that are destroyed after each test run.
 database:
   defaultUser: dokkimi
   defaultPassword: dokkimi

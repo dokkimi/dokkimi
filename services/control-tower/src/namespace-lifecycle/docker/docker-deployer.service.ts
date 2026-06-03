@@ -17,18 +17,18 @@ import {
   DOKKIMI_IMAGES,
   resolveBrowserImage,
 } from '../../constants/image-tags';
-import { sanitizeK8sName } from '../../utils/k8s.utils';
+import { sanitizeContainerName } from '../../utils/name.utils';
 import {
   DeploymentContext,
   DefinitionItem,
   BrowserConfig,
-} from '../../namespace-deployer/deployment-context.types';
+} from '../deployment-context.types';
 import { DatabaseConfigService } from '../builders/database-config.service';
 import { DockerRegistryService } from './docker-registry.service';
 import { InstanceItemService } from '../../namespace/instance-item.service';
 import { NamespaceInstanceService } from '../../namespace/namespace-instance.service';
 import { RunStorageService } from '../../storage/run-storage.service';
-import { hasUiSteps } from '../../namespace-deployer/ui-step-detection';
+import { hasUiSteps } from '../ui-step-detection';
 import { InstanceStatus, ItemStatus } from '@prisma/client';
 
 @Injectable()
@@ -56,7 +56,7 @@ export class DockerDeployerService {
         instanceId,
         InstanceStatus.STARTING,
       );
-      await this.instanceService.updateInstanceK8sNamespace(
+      await this.instanceService.updateInstanceDockerNetwork(
         instanceId,
         `dokkimi-${instanceId}`,
       );
@@ -74,7 +74,7 @@ export class DockerDeployerService {
 
       const databaseNames = ctx.definition.items
         .filter((i) => i.type === 'DATABASE')
-        .map((i) => sanitizeK8sName(i.name));
+        .map((i) => sanitizeContainerName(i.name));
 
       await this.writeConfig(ctx, configPaths);
 
@@ -104,11 +104,11 @@ export class DockerDeployerService {
       const dbItems = ctx.definition.items.filter((i) => i.type === 'DATABASE');
       const phase2Results = await Promise.allSettled(
         dbItems.map(async (item) => {
-          const containerName = sanitizeK8sName(item.name);
+          const containerName = sanitizeContainerName(item.name);
           const instanceItemId = ctx.instanceItemIds.get(item.name);
 
           if (instanceItemId) {
-            await this.instanceItemService.updateInstanceItemK8sName(
+            await this.instanceItemService.updateInstanceItemContainerName(
               instanceItemId,
               containerName,
             );
@@ -140,11 +140,11 @@ export class DockerDeployerService {
       // cascading "network not found" errors).
       const svcItems = ctx.definition.items.filter((i) => i.type === 'SERVICE');
       const servicePromises = svcItems.map(async (item) => {
-        const containerName = sanitizeK8sName(item.name);
+        const containerName = sanitizeContainerName(item.name);
         const instanceItemId = ctx.instanceItemIds.get(item.name);
 
         if (instanceItemId) {
-          await this.instanceItemService.updateInstanceItemK8sName(
+          await this.instanceItemService.updateInstanceItemContainerName(
             instanceItemId,
             containerName,
           );
@@ -280,9 +280,9 @@ export class DockerDeployerService {
     configPaths: InstanceConfigPaths,
   ): Promise<void> {
     const items = ctx.definition.items;
-    const itemsWithK8sName = items.map((item) => ({
+    const itemsWithContainerName = items.map((item) => ({
       ...item,
-      k8sName: sanitizeK8sName(item.name),
+      containerName: sanitizeContainerName(item.name),
       id: ctx.instanceItemIds.get(item.name),
     }));
 
@@ -363,7 +363,7 @@ export class DockerDeployerService {
 
     this.dockerConfig.writeInterceptorConfig(
       configPaths,
-      itemsWithK8sName as any,
+      itemsWithContainerName as any,
       mocks,
       ctx.instanceId,
       testConfig,
@@ -384,9 +384,8 @@ export class DockerDeployerService {
     const config = getConfig();
     const envEntries = buildInterceptorEnvVars(config, {
       namespace: instanceId,
-      k8sNamespace: networkName,
       apiKey: 'dokkimi-interceptor-key',
-      k8sDnsIP: dockerDnsIP,
+      dnsIP: dockerDnsIP,
       origin: '',
     });
 
@@ -425,7 +424,7 @@ export class DockerDeployerService {
   ): Promise<void> {
     const config = getConfig();
     const envEntries = buildTestAgentEnvVars(config, {
-      k8sNamespace: networkName,
+      namespace: networkName,
       browserURL: hasUi
         ? `http://chromium:${config.services.chromium.port}`
         : undefined,
@@ -433,7 +432,6 @@ export class DockerDeployerService {
       defaultViewportHeight: config.browser?.defaultViewportHeight,
     });
 
-    // Override K8s-specific env vars for Docker
     const env = this.envArrayToRecord(envEntries);
     env.INTERCEPTOR_URL = `http://interceptor-service:${config.services.interceptor.port}`;
     env.CONFIG_SOURCE = 'file';
@@ -480,9 +478,8 @@ export class DockerDeployerService {
     const interceptorName = `${containerName}-interceptor-${instanceId}`;
     const interceptorEnv = buildInterceptorEnvVars(config, {
       namespace: instanceId,
-      k8sNamespace: networkName,
       apiKey: 'dokkimi-interceptor-key',
-      k8sDnsIP: dockerDnsIP,
+      dnsIP: dockerDnsIP,
       origin: item.name,
       instanceItemName: item.name,
       healthCheckEndpoint: item.healthCheck || undefined,
@@ -744,9 +741,8 @@ export class DockerDeployerService {
     const interceptorName = `chromium-interceptor-${instanceId}`;
     const interceptorEnv = buildInterceptorEnvVars(config, {
       namespace: instanceId,
-      k8sNamespace: networkName,
       apiKey: 'dokkimi-interceptor-key',
-      k8sDnsIP: dockerDnsIP,
+      dnsIP: dockerDnsIP,
       origin: 'chromium',
       instanceItemName: 'chromium',
       healthCheckEndpoint: '/json/version',
@@ -998,10 +994,10 @@ exec mongod --port ${internalPort} --bind_ip_all`;
         continue;
       }
 
-      const k8sName = sanitizeK8sName(item.name);
-      await this.instanceItemService.updateInstanceItemK8sName(
+      const containerName = sanitizeContainerName(item.name);
+      await this.instanceItemService.updateInstanceItemContainerName(
         instanceItemId,
-        k8sName,
+        containerName,
       );
       await this.instanceItemService.updateInstanceItemStatus(
         instanceItemId,

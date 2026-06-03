@@ -48,7 +48,7 @@ export class DockerClientService implements OnApplicationBootstrap {
   }
 
   // ============================================
-  // NETWORK OPERATIONS (replaces K8s namespaces)
+  // NETWORK OPERATIONS
   // ============================================
 
   async createNetwork(instanceId: string): Promise<string> {
@@ -103,7 +103,7 @@ export class DockerClientService implements OnApplicationBootstrap {
   }
 
   // ============================================
-  // CONTAINER OPERATIONS (replaces K8s deployments)
+  // CONTAINER OPERATIONS
   // ============================================
 
   async runContainer(opts: RunContainerOptions): Promise<string> {

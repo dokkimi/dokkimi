@@ -66,7 +66,7 @@ describe('DockerConfigService', () => {
 
     it('should pass items and mocks to the configmap builder', () => {
       const paths = service.createConfigDir(testInstanceId);
-      const items = [{ name: 'svc', k8sName: 'svc', type: 'SERVICE' }];
+      const items = [{ name: 'svc', containerName: 'svc', type: 'SERVICE' }];
       const mocks = [{ method: 'GET', origin: '', target: '*', path: '*' }];
 
       service.writeInterceptorConfig(

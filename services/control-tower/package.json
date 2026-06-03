@@ -26,7 +26,6 @@
     "@dokkimi/definition-validator": "workspace:*",
     "@dokkimi/platform": "workspace:*",
     "@dokkimi/telemetry": "workspace:*",
-    "@kubernetes/client-node": "^1.4.0",
     "@nestjs/axios": "^4.0.1",
     "@nestjs/common": "^11.1.19",
     "@nestjs/config": "^4.0.4",
@@ -86,9 +85,7 @@
     "transformIgnorePatterns": [
       "node_modules/(?!pixelmatch/)"
     ],
-    "moduleNameMapper": {
-      "^@kubernetes/client-node$": "<rootDir>/__mocks__/@kubernetes/client-node.ts"
-    },
+    "moduleNameMapper": {},
     "collectCoverageFrom": [
       "**/*.(t|j)s"
     ],
