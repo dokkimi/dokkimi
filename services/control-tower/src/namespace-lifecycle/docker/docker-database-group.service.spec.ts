@@ -90,9 +90,7 @@ function mongoConfig() {
   };
 }
 
-function buildDbItem(
-  overrides: Partial<DefinitionItem> = {},
-): DefinitionItem {
+function buildDbItem(overrides: Partial<DefinitionItem> = {}): DefinitionItem {
   return {
     name: 'postgres-db',
     type: 'DATABASE',
@@ -409,7 +407,9 @@ describe('DockerDatabaseGroupService', () => {
 
   describe('getDbProxyImage', () => {
     it('should return correct image for each database type', () => {
-      expect(service.getDbProxyImage('postgres')).toContain('db-proxy-postgres');
+      expect(service.getDbProxyImage('postgres')).toContain(
+        'db-proxy-postgres',
+      );
       expect(service.getDbProxyImage('postgresql')).toContain(
         'db-proxy-postgres',
       );
