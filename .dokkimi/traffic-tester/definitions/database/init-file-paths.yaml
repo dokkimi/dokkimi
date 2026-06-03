@@ -1,0 +1,57 @@
+name: init-file-paths
+description: |
+  Validates initFilePaths (plural) — multiple init scripts executed in
+  order. The schema file creates tables, the seed file populates them.
+  Tests verify both tables exist and contain the seeded data, confirming
+  that both scripts ran and in the correct order.
+config:
+  timeoutSeconds: 90
+items:
+  - type: DATABASE
+    name: products-db
+    database: postgres
+    initFilePaths:
+      - ../../init-files/schema-only.sql
+      - ../../init-files/seed-products.sql
+tests:
+  - name: Both init scripts ran in order
+    steps:
+      - name: Categories table exists and is seeded
+        action:
+          type: dbQuery
+          database: products-db
+          query: 'SELECT label FROM categories ORDER BY id'
+        assertions:
+          - assertions:
+              - path: success
+                operator: eq
+                value: true
+              - path: data
+                operator: length
+                value: 2
+              - path: data[0].label
+                operator: eq
+                value: Electronics
+              - path: data[1].label
+                operator: eq
+                value: Books
+
+      - name: Products table exists and is seeded
+        action:
+          type: dbQuery
+          database: products-db
+          query: 'SELECT name, price FROM products ORDER BY id'
+        assertions:
+          - assertions:
+              - path: success
+                operator: eq
+                value: true
+              - path: data
+                operator: length
+                value: 3
+              - path: data[0].name
+                operator: eq
+                value: Widget
+              - path: data[2].name
+                operator: eq
+                value: Almanac

@@ -284,7 +284,7 @@ describe('TestValidatorService', () => {
       expect(result.passed).toBe(true);
     });
 
-    it('should extract service name from K8s DNS format', async () => {
+    it('should extract service name from Docker DNS format', async () => {
       const testConfig = {
         requests: [[{ method: 'GET', service: 'api-service', path: '/test' }]],
       };
@@ -304,11 +304,11 @@ describe('TestValidatorService', () => {
 
       const result = await service.validateTestResults(instanceId, testConfig);
 
-      // extractServiceName should extract 'api-service' from K8s DNS hostname
+      // extractServiceName should extract 'api-service' from Docker DNS hostname
       // new URL() will parse the hostname as 'api-service.namespace.svc.cluster.local'
       // Then split(':')[0] gives us the full hostname, which won't match 'api-service'
       // So this test might fail - let's check the actual behavior
-      // The service name extraction from K8s DNS might need the origin field instead
+      // The service name extraction from Docker DNS might need the origin field instead
       expect(result.passed).toBeDefined();
     });
 

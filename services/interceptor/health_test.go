@@ -60,7 +60,7 @@ func TestNewHealthChecker(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			checker := NewHealthChecker(tt.config)
+			checker := NewHealthChecker(tt.config, nil)
 			if (checker != nil) != tt.want {
 				t.Errorf("NewHealthChecker() = %v, want non-nil: %v", checker, tt.want)
 			}
@@ -78,7 +78,7 @@ func TestHealthChecker_getCheckInterval(t *testing.T) {
 		CheckTimeout:        5 * time.Second,
 	}
 
-	checker := NewHealthChecker(cfg)
+	checker := NewHealthChecker(cfg, nil)
 	if checker == nil {
 		t.Fatal("NewHealthChecker returned nil")
 	}
@@ -154,8 +154,8 @@ func TestHealthChecker_checkHealth(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Each subtest gets its own httptest server bound to 127.0.0.1.
-			// Leaving K8sNamespace and K8sDNSIP empty makes checkHealth treat
-			// Origin as a direct hostname instead of a cluster-local FQDN.
+			// Leaving DNSIP empty makes checkHealth treat Origin as a direct
+			// hostname instead of resolving via Docker DNS.
 			testServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.WriteHeader(tt.statusCode)
 			}))
@@ -174,7 +174,7 @@ func TestHealthChecker_checkHealth(t *testing.T) {
 				ControlTowerURL:     "http://localhost:3002",
 				CheckTimeout:        5 * time.Second,
 				Origin:              host,
-			})
+			}, nil)
 			if checker == nil {
 				t.Fatal("NewHealthChecker returned nil")
 			}
@@ -214,7 +214,7 @@ func TestHealthChecker_updateState(t *testing.T) {
 		CheckTimeout:        5 * time.Second,
 	}
 
-	checker := NewHealthChecker(cfg)
+	checker := NewHealthChecker(cfg, nil)
 	if checker == nil {
 		t.Fatal("NewHealthChecker returned nil")
 	}

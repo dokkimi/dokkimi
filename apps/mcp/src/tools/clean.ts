@@ -1,11 +1,11 @@
 import { spawn } from 'child_process';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { findDokkimiBin } from '../lib/find-bin.js';
+import { findDokkimiBin } from '../lib/find-bin';
 
 export function registerClean(server: McpServer): void {
   server.tool(
     'clean',
-    'Stops all running instances and cleans up K8s namespaces. Use this to recover from stuck state before re-running tests. This is a destructive operation — it force-stops everything.',
+    'Stops all running instances and cleans up Docker resources. Use this to recover from stuck state before re-running tests. This is a destructive operation — it force-stops everything.',
     {},
     async () => {
       const bin = findDokkimiBin();

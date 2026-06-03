@@ -7,11 +7,11 @@ slug: 'dokkimi-vs-docker-compose-testing'
 
 Docker Compose is probably the most common way to run integration tests for microservices, and for good reason — it's simple, well-documented, and nearly every developer already knows how it works. You write a `docker-compose.test.yml`, run `docker compose up`, your services can reach each other by container name, and you bolt on whatever test runner you want. For a lot of teams, that setup covers the basics and stays out of the way.
 
-The two tools operate at different layers of the same problem and, for many teams, complement each other rather than compete. This post is about understanding where Docker Compose stops being enough, and what a Kubernetes-native testing tool like Dokkimi gives you in those areas.
+The two tools operate at different layers of the same problem and, for many teams, complement each other rather than compete. This post is about understanding where Docker Compose stops being enough, and what a Docker-native testing tool like Dokkimi gives you in those areas.
 
 ## What Docker Compose handles well
 
-Docker Compose is good at one thing and it does that thing cleanly: getting multiple containers running on the same network so they can talk to each other. If your integration tests boil down to "start these services, send some HTTP requests, check the responses," Docker Compose is a perfectly reasonable choice. The learning curve is minimal, the tooling is mature, and you don't need Kubernetes anywhere in the picture.
+Docker Compose is good at one thing and it does that thing cleanly: getting multiple containers running on the same network so they can talk to each other. If your integration tests boil down to "start these services, send some HTTP requests, check the responses," Docker Compose is a perfectly reasonable choice. The learning curve is minimal, the tooling is mature, and it stays out of the way.
 
 Where this setup works especially well is during early development, when the service boundaries are still shifting and you mainly want to validate that things start, connect, and respond. At that stage, the overhead of a more structured testing framework isn't worth it — you just need to run your services and poke at them.
 
@@ -54,26 +54,26 @@ Dokkimi handles orchestration natively. You declare test steps, and the framewor
 
 Docker Compose volumes persist between runs unless you explicitly remove them, which means database state from one test run can leak into the next. Most teams handle this with teardown scripts or by nuking volumes before each run and re-seeding, but either approach is fragile — if a test fails mid-run and the teardown doesn't execute, the next run inherits corrupted state and fails for reasons that have nothing to do with the code being tested. This is the kind of flakiness that erodes trust in a test suite: the test that passed yesterday now fails, nobody changed the code, and someone spends an hour before realizing it was leftover data from a previous run.
 
-Dokkimi creates a fresh Kubernetes namespace for every run. Each database starts empty, gets seeded with whatever init data the test defines, runs the test, and the entire namespace is destroyed afterward. There's no cleanup step because there's nothing to clean up — the isolation boundary is the namespace itself.
+Dokkimi creates a fresh isolated Docker environment for every run. Each database starts empty, gets seeded with whatever init data the test defines, runs the test, and the entire environment is destroyed afterward. There's no cleanup step because there's nothing to clean up — the isolation boundary is the environment itself.
 
 ### Parallel runs fight each other
 
 Running two Docker Compose test suites at the same time is possible but painful — you run into port conflicts, shared Docker network collisions, and container name clashes that require careful configuration to avoid. Most teams end up running tests sequentially, which is fine until your test suite takes 30 minutes and you want it to take 5.
 
-In Dokkimi, every test run gets its own Kubernetes namespace with its own internal DNS. There's no shared state between namespaces, no port mapping to manage, and no coordination required. You can run as many test definitions in parallel as your cluster has resources for.
+In Dokkimi, every test run gets its own isolated Docker network with its own internal DNS. There's no shared state between environments, no port mapping to manage, and no coordination required. You can run as many test definitions in parallel as your machine has resources for.
 
 ## What Dokkimi costs you
 
 Dokkimi is not a drop-in replacement for Docker Compose, and it's worth being honest about what it asks for in return.
 
-**Kubernetes is required.** You need a local cluster — Docker Desktop with Kubernetes enabled, Rancher Desktop, or minikube all work, but it's still an additional piece of infrastructure that Docker Compose doesn't require. If your team doesn't use Kubernetes in production and nobody on the team is comfortable with it, the setup cost is real.
+**Docker is required.** You need Docker running locally — Docker Desktop is the easiest path. This is the same prerequisite as Docker Compose, so there's no additional infrastructure to set up.
 
 **The learning curve is steeper.** Docker Compose is something most developers can pick up in an afternoon. Dokkimi's definition format — services, databases, mocks, test steps, assertions — is more expressive but also more to learn. The tradeoff is that the framework handles more for you once you've learned it, but the initial ramp isn't trivial.
 
-**Resource overhead is higher.** Kubernetes has more baseline overhead than raw Docker containers. A single Dokkimi namespace runs fine on any modern laptop, but if you're running 10 test environments in parallel, you'll need more CPU and memory than the equivalent Docker Compose setup would require.
+**Resource overhead is higher.** Dokkimi's sidecar interceptors add containers beyond what your services alone would need. A single Dokkimi environment runs fine on any modern laptop, but if you're running 10 test environments in parallel, you'll need more CPU and memory than the equivalent Docker Compose setup would require.
 
 ## Using them together
 
 These tools test at different levels of fidelity, and there's nothing wrong with using both. Docker Compose for quick local smoke tests during development — "did I break the startup sequence, does the basic flow still work" — and Dokkimi for deeper integration tests that verify the communication patterns between services, test error handling with mocked third-party APIs, and run in CI with full isolation.
 
-Some teams start with Docker Compose, and as their services stabilize and the integration points become critical, they add Dokkimi tests for the scenarios that Docker Compose can't meaningfully cover. If your team doesn't run Kubernetes in production or your tests are primarily smoke tests, Docker Compose may be all you need. Dokkimi earns its complexity when you need to assert on inter-service communication, when you want your test environment to match your production deployment model, or when you've outgrown sequential test runs and need isolated parallel environments.
+Some teams start with Docker Compose, and as their services stabilize and the integration points become critical, they add Dokkimi tests for the scenarios that Docker Compose can't meaningfully cover. If your tests are primarily smoke tests, Docker Compose may be all you need. Dokkimi earns its complexity when you need to assert on inter-service communication, when you want full visibility into your service interactions, or when you've outgrown sequential test runs and need isolated parallel environments.

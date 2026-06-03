@@ -1,0 +1,6 @@
+name: List users query
+description: SELECT all users from the postgres database
+action:
+  type: dbQuery
+  database: postgres-db
+  query: 'SELECT id, name, email FROM users ORDER BY id'

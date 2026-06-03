@@ -3,7 +3,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { InstanceStatus, RunStatus, NamespaceInstance } from '@prisma/client';
 import { RunStorageService } from '../storage/run-storage.service';
 import { NamespaceLifecycleService } from '../namespace-lifecycle/namespace-lifecycle.service';
-import { RegistryCredentialsService } from '../namespace-lifecycle/registry-credentials.service';
+import { DockerRegistryService } from '../namespace-lifecycle/docker/docker-registry.service';
 
 @Injectable()
 export class RunCleanupService {
@@ -13,7 +13,7 @@ export class RunCleanupService {
     private readonly prisma: PrismaService,
     private readonly lifecycle: NamespaceLifecycleService,
     private readonly runStorage: RunStorageService,
-    private readonly registryCredentials: RegistryCredentialsService,
+    private readonly registryService: DockerRegistryService,
   ) {}
 
   async stopInstances(instances: NamespaceInstance[]) {
@@ -62,11 +62,7 @@ export class RunCleanupService {
         await this.runStorage.deleteInstance(instance.id);
       }
 
-      await this.registryCredentials.deleteRunSecret(run.id).catch((err) => {
-        this.logger.warn(
-          `Failed to delete registry secret for run ${run.id}: ${err}`,
-        );
-      });
+      this.registryService.clearCredentials(run.id);
     }
 
     await this.runStorage.deleteGeneratedFiles();

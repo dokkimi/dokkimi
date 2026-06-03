@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	_ "github.com/go-sql-driver/mysql"
@@ -27,6 +28,7 @@ type DatabaseQueryExecutor struct {
 	logEndpointURL string
 	databaseMap    map[string]DatabaseInfo
 	instanceId     string
+	mu             sync.Mutex
 	pgPools        map[string]*sql.DB       // cached postgres connection pools, keyed by database name
 	mysqlPools     map[string]*sql.DB       // cached mysql connection pools, keyed by database name
 	redisClients   map[string]*redis.Client // cached redis clients, keyed by database name
@@ -39,6 +41,7 @@ type DatabaseInfo struct {
 	User           string `json:"user"`
 	Password       string `json:"password"`
 	Database       string `json:"database"`
+	Port           int    `json:"port,omitempty"`
 	InstanceItemID string `json:"instanceItemId"`
 }
 
@@ -115,13 +118,20 @@ func (e *DatabaseQueryExecutor) ExecuteQuery(
 
 // getPostgresPool returns a cached *sql.DB pool for the given database, creating one on first use.
 func (e *DatabaseQueryExecutor) getPostgresPool(databaseName string) (*sql.DB, error) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
 	if db, ok := e.pgPools[databaseName]; ok {
 		return db, nil
 	}
 
 	dbInfo := e.databaseMap[databaseName]
-	connStr := fmt.Sprintf("postgres://%s:%s@%s:5432/%s?sslmode=disable",
-		dbInfo.User, dbInfo.Password, databaseName, dbInfo.Database)
+	port := dbInfo.Port
+	if port == 0 {
+		port = 5432
+	}
+	connStr := fmt.Sprintf("postgres://%s:%s@%s:%d/%s?sslmode=disable",
+		dbInfo.User, dbInfo.Password, databaseName, port, dbInfo.Database)
 
 	db, err := sql.Open("postgres", connStr)
 	if err != nil {
@@ -163,13 +173,20 @@ func (e *DatabaseQueryExecutor) Close() {
 
 // getMysqlPool returns a cached *sql.DB pool for the given MySQL database, creating one on first use.
 func (e *DatabaseQueryExecutor) getMysqlPool(databaseName string) (*sql.DB, error) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
 	if db, ok := e.mysqlPools[databaseName]; ok {
 		return db, nil
 	}
 
 	dbInfo := e.databaseMap[databaseName]
-	connStr := fmt.Sprintf("%s:%s@tcp(%s:3306)/%s",
-		dbInfo.User, dbInfo.Password, databaseName, dbInfo.Database)
+	port := dbInfo.Port
+	if port == 0 {
+		port = 3306
+	}
+	connStr := fmt.Sprintf("%s:%s@tcp(%s:%d)/%s",
+		dbInfo.User, dbInfo.Password, databaseName, port, dbInfo.Database)
 
 	db, err := sql.Open("mysql", connStr)
 	if err != nil {
@@ -440,6 +457,9 @@ func convertPostgresParams(query string, params map[string]interface{}) (string,
 
 // getRedisClient returns a cached redis.Client for the given database, creating one on first use.
 func (e *DatabaseQueryExecutor) getRedisClient(databaseName string) (*redis.Client, error) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
 	if client, ok := e.redisClients[databaseName]; ok {
 		return client, nil
 	}
@@ -450,8 +470,12 @@ func (e *DatabaseQueryExecutor) getRedisClient(databaseName string) (*redis.Clie
 		fmt.Sscanf(dbInfo.Database, "%d", &db)
 	}
 
+	port := dbInfo.Port
+	if port == 0 {
+		port = 6379
+	}
 	client := redis.NewClient(&redis.Options{
-		Addr:     fmt.Sprintf("%s:6379", databaseName),
+		Addr:     fmt.Sprintf("%s:%d", databaseName, port),
 		Password: dbInfo.Password,
 		DB:       db,
 	})
@@ -560,17 +584,24 @@ func normalizeRedisResult(command string, result interface{}) []map[string]inter
 
 // getMongoClient returns a cached mongo.Client for the given database, creating one on first use.
 func (e *DatabaseQueryExecutor) getMongoClient(databaseName string) (*mongo.Client, error) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
 	if client, ok := e.mongoClients[databaseName]; ok {
 		return client, nil
 	}
 
 	dbInfo := e.databaseMap[databaseName]
+	port := dbInfo.Port
+	if port == 0 {
+		port = 27017
+	}
 	var connStr string
 	if dbInfo.User != "" && dbInfo.Password != "" {
-		connStr = fmt.Sprintf("mongodb://%s:%s@%s:27017/%s?authSource=admin",
-			dbInfo.User, dbInfo.Password, databaseName, dbInfo.Database)
+		connStr = fmt.Sprintf("mongodb://%s:%s@%s:%d/%s?authSource=admin",
+			dbInfo.User, dbInfo.Password, databaseName, port, dbInfo.Database)
 	} else {
-		connStr = fmt.Sprintf("mongodb://%s:27017/%s", databaseName, dbInfo.Database)
+		connStr = fmt.Sprintf("mongodb://%s:%d/%s", databaseName, port, dbInfo.Database)
 	}
 
 	client, err := mongo.Connect(mongoOptions.Client().ApplyURI(connStr))

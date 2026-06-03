@@ -4,7 +4,7 @@
 # Build context is the repo root (required for yarn workspace dependencies).
 #
 # Note: the image uses the dokkimi/ prefix (not ghcr.io/dokkimi/) because it is
-# only used locally in K8s test definitions, not pushed to a container registry.
+# only used locally in test definitions, not pushed to a container registry.
 
 set -e  # Exit on any error
 

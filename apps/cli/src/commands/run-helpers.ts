@@ -67,14 +67,8 @@ export function trackRunError(err: unknown): void {
 
   if (msg.includes('Docker is not installed')) {
     errorType = 'docker_not_installed';
-  } else if (msg.includes('kubectl is not installed')) {
-    errorType = 'kubectl_not_installed';
   } else if (msg.includes('Timed out waiting for Docker')) {
     errorType = 'docker_start_timeout';
-  } else if (msg.includes('Kubernetes is not running')) {
-    errorType = 'k8s_not_enabled';
-  } else if (msg.includes('Timed out waiting for Kubernetes')) {
-    errorType = 'k8s_timeout';
   } else if (msg.includes('Timed out waiting for Dokkimi')) {
     errorType = 'service_start_timeout';
     failedServices = ['dokkimi'];

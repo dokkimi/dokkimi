@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { loadSpec } from '../lib/load-spec.js';
+import { loadSpec } from '../lib/load-spec';
 
 const TOPIC_SECTIONS: Record<string, string[]> = {
   service: ['## Item Types', '### SERVICE'],

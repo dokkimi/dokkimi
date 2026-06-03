@@ -1,4 +1,12 @@
-import { Controller, Post, Get, Delete, Param, Body } from '@nestjs/common';
+import {
+  Controller,
+  Post,
+  Get,
+  Delete,
+  Param,
+  Body,
+  Query,
+} from '@nestjs/common';
 import { RunsService } from './runs.service';
 import { CreateRunDto } from './dto/create-run.dto';
 import { SubmitInstanceDto } from './dto/submit-instance.dto';
@@ -18,7 +26,11 @@ export class RunsController {
    */
   @Post()
   createRun(@Body() dto: CreateRunDto) {
-    return this.runsService.createRun(dto.definitions, dto.registryCredentials);
+    return this.runsService.createRun(
+      dto.definitions,
+      dto.registryCredentials,
+      dto.projectPath,
+    );
   }
 
   /**
@@ -39,8 +51,8 @@ export class RunsController {
    * Returns the most recent run and all its instances.
    */
   @Get('latest')
-  getLatestRun() {
-    return this.runsService.getLatestRun();
+  getLatestRun(@Query('projectPath') projectPath?: string) {
+    return this.runsService.getLatestRun(projectPath);
   }
 
   /**

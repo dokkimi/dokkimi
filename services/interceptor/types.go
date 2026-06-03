@@ -24,6 +24,7 @@ type ServiceInfo struct {
 	Scheme         string `json:"scheme"`
 	URL            string `json:"url"`
 	Name           string `json:"name"`
+	Port           int    `json:"port,omitempty"`
 	InstanceItemID string `json:"instanceItemId,omitempty"`
 }
 

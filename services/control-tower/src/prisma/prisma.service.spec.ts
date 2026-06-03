@@ -74,9 +74,13 @@ describe('PrismaService', () => {
         makeConfigService('postgres://localhost:5432/dokkimi'),
       );
       expect(service).toBeDefined();
-      expect(PrismaPg).toHaveBeenCalledWith({
-        connectionString: 'postgres://localhost:5432/dokkimi',
-      });
+      expect(PrismaPg).toHaveBeenCalledWith(
+        expect.objectContaining({
+          options: expect.objectContaining({
+            connectionString: 'postgres://localhost:5432/dokkimi',
+          }),
+        }),
+      );
     });
   });
 
@@ -146,9 +150,9 @@ describe('PrismaService', () => {
 
   describe('verifySchema', () => {
     it('throws descriptive error when migrations table missing (SQLite)', async () => {
-      __mockClient.$queryRawUnsafe.mockRejectedValue(
-        new Error('no such table: _prisma_migrations'),
-      );
+      __mockClient.$queryRawUnsafe
+        .mockResolvedValueOnce([{ '1': 1 }])
+        .mockRejectedValue(new Error('no such table: _prisma_migrations'));
 
       const service = new PrismaService(makeConfigService('file:test.db'));
 
@@ -158,9 +162,11 @@ describe('PrismaService', () => {
     });
 
     it('throws descriptive error when migrations table missing (PostgreSQL)', async () => {
-      __mockClient.$queryRawUnsafe.mockRejectedValue(
-        new Error('relation "_prisma_migrations" does not exist'),
-      );
+      __mockClient.$queryRawUnsafe
+        .mockResolvedValueOnce([{ '1': 1 }])
+        .mockRejectedValue(
+          new Error('relation "_prisma_migrations" does not exist'),
+        );
 
       const service = new PrismaService(
         makeConfigService('postgres://localhost/db'),
@@ -172,9 +178,9 @@ describe('PrismaService', () => {
     });
 
     it('re-throws non-schema errors', async () => {
-      __mockClient.$queryRawUnsafe.mockRejectedValue(
-        new Error('permission denied'),
-      );
+      __mockClient.$queryRawUnsafe
+        .mockResolvedValueOnce([{ '1': 1 }])
+        .mockRejectedValue(new Error('permission denied'));
 
       const service = new PrismaService(makeConfigService('file:test.db'));
 

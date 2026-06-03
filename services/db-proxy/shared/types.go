@@ -23,7 +23,7 @@ type Config struct {
 	CheckTimeout     time.Duration
 	QueryPort        string // Port for query endpoint (default: 8080)
 
-	// Database credentials (loaded from ConfigMap or env vars)
+	// Database credentials (loaded from env vars or credentials file)
 	DatabaseCredentials DatabaseCredentials
 }
 

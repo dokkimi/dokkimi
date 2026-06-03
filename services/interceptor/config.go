@@ -17,13 +17,13 @@ type Config struct {
 	// health/readiness updates go here.
 	ControlTowerURL string
 
-	// Kubernetes
-	K8sNamespace string // Kubernetes namespace name (e.g., "dokkimi-abc123")
-	K8sDNSIP     string // Kubernetes DNS IP (e.g., "10.96.0.10") - used to bypass dnsmasq
+	// DNS
+	DNSIP string // DNS IP for resolving service names (bypasses dnsmasq)
 
 	// Environment
-	Namespace string // Namespace ID (e.g., "abc123")
-	Origin    string
+	ConfigFilePath string // Path to config JSON file
+	Namespace      string // Namespace ID (e.g., "abc123")
+	Origin         string
 
 	// Logging
 	LogActions bool
@@ -59,13 +59,13 @@ func LoadConfig() (*Config, error) {
 		Port:            os.Getenv("PORT"),
 		APIKey:          os.Getenv("API_KEY"),
 		ControlTowerURL: os.Getenv("CONTROL_TOWER_URL"),
-		K8sNamespace:    os.Getenv("K8S_NAMESPACE"),
 		Namespace:       os.Getenv("NAMESPACE"),
-		K8sDNSIP:        os.Getenv("K8S_DNS_IP"), // Used to bypass dnsmasq for outbound connections
+		DNSIP:           os.Getenv("DNS_IP"),
 
 		// Optional fields
-		Origin:     os.Getenv("ORIGIN"),
-		LogActions: os.Getenv("LOG_ACTIONS") != "false", // Default to true if not set
+		ConfigFilePath: os.Getenv("CONFIG_FILE_PATH"),
+		Origin:         os.Getenv("ORIGIN"),
+		LogActions:     os.Getenv("LOG_ACTIONS") != "false", // Default to true if not set
 
 		// HTTP client settings (hardcoded constants - not configurable)
 		RequestTimeout:    30 * time.Second,
@@ -97,9 +97,6 @@ func LoadConfig() (*Config, error) {
 	}
 	if cfg.ControlTowerURL == "" {
 		return nil, fmt.Errorf("CONTROL_TOWER_URL is required (must be provided by Control Tower)")
-	}
-	if cfg.K8sNamespace == "" {
-		return nil, fmt.Errorf("K8S_NAMESPACE is required (must be provided by Control Tower)")
 	}
 	if cfg.Namespace == "" {
 		return nil, fmt.Errorf("NAMESPACE is required (must be provided by Control Tower)")

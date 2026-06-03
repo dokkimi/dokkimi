@@ -1,15 +1,15 @@
 # Test Agent
 
-The test-agent is a service that orchestrates test execution inside a Kubernetes namespace. It waits for all namespace items (services and databases) to become healthy, then executes test requests according to the test configuration.
+The test-agent orchestrates test execution inside a Docker environment. It waits for all containers (services and databases) to become healthy, then executes test steps according to the configuration.
 
 ## Architecture
 
 The test-agent:
 
-1. Reads `expectedNamespaceItemIds` and `testConfig` from the ConfigMap
+1. Reads `expectedNamespaceItemIds` and `testConfig` from the bind-mounted config file
 2. Receives health status updates from interceptors and readiness sidecars
 3. Waits for all expected items to be ready
-4. Executes test requests (sequential groups of parallel requests)
+4. Executes test steps (sequential and parallel)
 5. Notifies Control Tower's `/test-complete` endpoint when complete
 
 ## Configuration
@@ -17,13 +17,12 @@ The test-agent:
 The test-agent is configured via environment variables:
 
 - `PORT`: HTTP server port (default: 8080)
-- `K8S_NAMESPACE`: Kubernetes namespace name (required)
-- `CONFIG_MAP_NAME`: Name of ConfigMap to read from (default: `dokkimi-interceptor-config`)
-- `CONTROL_TOWER_URL`: HTTP URL for Control Tower (required) — `/test-complete` is appended for completion notifications
+- `CONFIG_FILE_PATH`: Path to the config JSON file (required)
+- `CONTROL_TOWER_URL`: HTTP URL for Control Tower (required)
 
-## ConfigMap Data
+## Config File Data
 
-The test-agent reads the following from the ConfigMap:
+The test-agent reads a JSON config file with the following keys:
 
 ### `expectedNamespaceItemIds`
 
@@ -40,22 +39,8 @@ Test configuration:
 ```json
 {
   "testRunId": "uuid-test-run",
-  "callbackUrl": "https://validation.dokkimi.com/test-complete",
   "timeoutSeconds": 300,
-  "requests": [
-    [
-      {
-        "method": "POST",
-        "service": "service-a",
-        "path": "/api/users",
-        "body": { "name": "test" }
-      }
-    ],
-    [
-      { "method": "GET", "service": "service-a", "path": "/api/users" },
-      { "method": "GET", "service": "service-b", "path": "/api/data" }
-    ]
-  ]
+  "tests": [...]
 }
 ```
 
@@ -67,8 +52,9 @@ Service name to URL mapping (used to resolve service names in test requests):
 {
   "service-a": {
     "scheme": "http",
-    "url": "http://service-a:3000",
+    "url": "http://service-a",
     "name": "Service A",
+    "port": 3000,
     "instanceItemId": "uuid-service-a"
   }
 }
@@ -90,14 +76,6 @@ The test-agent exposes `/health/status` endpoint that receives POST requests fro
   }
 }
 ```
-
-## Test Execution
-
-Tests are executed in sequential groups, with requests within each group executed in parallel:
-
-1. Group 1: Execute all requests in parallel, wait for all to complete
-2. Group 2: Execute all requests in parallel, wait for all to complete
-3. ... and so on
 
 ## Completion Notification
 
@@ -125,17 +103,15 @@ docker build -t dokkimi/test-agent:latest .
 
 ## Development
 
-Run locally (requires kubeconfig):
-
 ```bash
-export K8S_NAMESPACE=dokkimi-test
+export CONFIG_FILE_PATH=/path/to/config.json
 export CONTROL_TOWER_URL=http://localhost:19001
 go run .
 ```
 
 ## UI Step Execution
 
-When a test definition contains `action.type == "ui"` steps, the test-agent drives a co-located chromium sidecar via CDP. In production, Control Tower attaches the sidecar to the test-agent pod when UI steps are detected (see `docs/proposed/UI_E2E_TESTING.md`). Locally, set `BROWSER_URL` to any reachable chromium CDP endpoint.
+When a test definition contains `action.type == "ui"` steps, the test-agent drives a co-located chromium sidecar via CDP. Control Tower attaches the sidecar when UI steps are detected. Set `BROWSER_URL` to any reachable chromium CDP endpoint.
 
 ```bash
 export BROWSER_URL=http://localhost:9222   # optional; empty = no UI support

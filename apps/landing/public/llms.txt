@@ -1,11 +1,11 @@
 # Dokkimi
 
-> Dokkimi is a testing framework for backend engineers, platform engineers, QA teams, and AI-native development teams. It runs integration, E2E UI, visual regression, and database tests in isolated Kubernetes sandboxes — without requiring a staging environment or code changes to your services. Built to integrate natively with AI coding agents like Claude, Cursor, and Copilot.
+> Dokkimi is a testing framework for backend engineers, platform engineers, QA teams, and AI-native development teams. It runs integration, E2E UI, visual regression, and database tests in isolated Docker environments — without requiring a staging environment or code changes to your services. Built to integrate natively with AI coding agents like Claude, Cursor, and Copilot.
 
-Dokkimi is for engineers frustrated with the gap between unit tests (which mock away the interesting parts) and staging environments (which drift from reality and cost too much to maintain). Each test run gets its own Kubernetes namespace with dedicated services, databases, and a headless browser — no shared state, no cross-test interference. Tests are defined declaratively in a `.dokkimi/` folder and executed via the `dokkimi` CLI.
+Dokkimi is for engineers frustrated with the gap between unit tests (which mock away the interesting parts) and staging environments (which drift from reality and cost too much to maintain). Each test run gets its own Docker network with dedicated services, databases, and a headless browser — no shared state, no cross-test interference. Tests are defined declaratively in a `.dokkimi/` folder and executed via the `dokkimi` CLI.
 
 Key capabilities:
-- Isolated per-run Kubernetes namespaces with dedicated services and databases
+- Isolated per-run Docker networks with dedicated services and databases
 - E2E UI testing with headless Chromium browser automation
 - Visual regression testing with screenshot diffing against baselines
 - Interceptor sidecars that capture every HTTP request between services for assertion
@@ -15,7 +15,7 @@ Key capabilities:
 - Zero code changes to services — sidecars, routing, DNS, and cleanup handled automatically
 - AI agent integration — test definitions in YAML/JSON that agents can read, write, and iterate on
 
-Install: `npm install -g dokkimi` or `brew install dokkimi/tap/dokkimi`. Requires Node.js 20+, Docker, and a local Kubernetes cluster (Docker Desktop, Rancher Desktop, or minikube).
+Install: `npm install -g dokkimi` or `brew install dokkimi/tap/dokkimi`. Requires Node.js 20+ and Docker.
 
 ## Docs
 

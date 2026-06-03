@@ -130,38 +130,45 @@ describe('clean', () => {
     );
   });
 
-  it('falls back to direct kubectl cleanup when CT is down', async () => {
+  it('falls back to direct Docker cleanup when CT is down', async () => {
     mockCheckService.mockResolvedValue({
       healthy: false,
       name: 'ct',
       url: 'http://localhost',
     });
-    // First call: findDokkimiNamespaces in clean(), returns namespaces
-    // Subsequent calls: kubectl delete, deleteOrphanedRegistrySecrets
+    // 1. findDokkimiContainers in clean() -> container names
+    // 2. findDokkimiContainers in cleanupDokkimiDockerResources -> container names
+    // 3. docker rm -f dokkimi-abc123
+    // 4. docker rm -f dokkimi-def456
+    // 5. findDokkimiNetworks in cleanupDokkimiDockerResources -> empty
     mockExecSilent
-      .mockReturnValueOnce('dokkimi-abc123 dokkimi-def456')
+      .mockReturnValueOnce('dokkimi-abc123\ndokkimi-def456')
+      .mockReturnValueOnce('dokkimi-abc123\ndokkimi-def456')
+      .mockReturnValueOnce('')
+      .mockReturnValueOnce('')
       .mockReturnValue('');
     mockPrompt.mockResolvedValue('Y');
 
     await clean([]);
 
-    // Should attempt kubectl delete for the namespaces
+    // Should attempt docker rm -f for the containers
     expect(mockExecSilent).toHaveBeenCalledWith(
-      expect.stringContaining('kubectl delete namespace dokkimi-abc123'),
+      expect.stringContaining('docker rm -f dokkimi-abc123'),
       expect.anything(),
     );
     expect(mockExecSilent).toHaveBeenCalledWith(
-      expect.stringContaining('kubectl delete namespace dokkimi-def456'),
+      expect.stringContaining('docker rm -f dokkimi-def456'),
       expect.anything(),
     );
   });
 
-  it('direct kubectl path handles no namespaces', async () => {
+  it('direct Docker path handles no containers or networks', async () => {
     mockCheckService.mockResolvedValue({
       healthy: false,
       name: 'ct',
       url: 'http://localhost',
     });
+    // findDokkimiContainers returns empty, findDokkimiNetworks returns empty
     mockExecSilent.mockReturnValue('');
 
     await expect(clean([])).rejects.toThrow('process.exit');

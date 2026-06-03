@@ -3,7 +3,6 @@ description: Control Tower in isolation — runs lifecycle, namespace instances,
 items:
   - $ref: ../shared/control-tower.yaml
   - $ref: ../shared/postgres-db.json
-  - $ref: ../shared/mock-k8s-api.yaml
   - $ref: ../shared/mock-posthog.yaml
 tests:
   - name: Health check

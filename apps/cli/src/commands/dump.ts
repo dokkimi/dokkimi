@@ -20,6 +20,7 @@ import type {
 } from '../lib/inspect-types';
 
 import { DUMP_PATH } from '@dokkimi/config';
+import { getProjectPath, latestRunUrl } from '../lib/project-path';
 
 // ---------------------------------------------------------------------------
 // Core dump logic — callable from both the `dump` command and auto-dump
@@ -128,7 +129,10 @@ export async function dump(args: string[]): Promise<void> {
   const ctUrl = buildServiceUrl(config.services.controlTower);
   const storageDir = config.storage.dir;
 
-  const latestRun = await fetchJson<LatestRunResponse>(`${ctUrl}/runs/latest`);
+  const projectPath = getProjectPath();
+  const latestRun = await fetchJson<LatestRunResponse>(
+    latestRunUrl(ctUrl, projectPath),
+  );
   if (!latestRun) {
     console.error('No run history found. Run `dokkimi run` first.');
     process.exit(1);

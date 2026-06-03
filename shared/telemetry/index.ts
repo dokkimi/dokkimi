@@ -8,7 +8,6 @@ import {
   setTelemetryPrefs,
   TelemetryPrefs,
 } from '@dokkimi/config';
-import { execSilent } from '@dokkimi/platform';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -68,40 +67,6 @@ function readState(): TelemetryPrefs | null {
 
 function writeState(state: TelemetryPrefs): void {
   setTelemetryPrefs(state);
-}
-
-// ---------------------------------------------------------------------------
-// K8s provider detection (lazy, cached)
-// ---------------------------------------------------------------------------
-
-let cachedK8sProvider: string | null = null;
-
-export function detectK8sProvider(): string {
-  if (cachedK8sProvider !== null) {
-    return cachedK8sProvider;
-  }
-  try {
-    const context = execSilent('kubectl config current-context', {
-      timeout: 3000,
-    });
-
-    if (context.includes('docker-desktop')) {
-      cachedK8sProvider = 'docker-desktop';
-    } else if (context.includes('minikube')) {
-      cachedK8sProvider = 'minikube';
-    } else if (context.startsWith('kind-')) {
-      cachedK8sProvider = 'kind';
-    } else if (context.includes('colima')) {
-      cachedK8sProvider = 'colima';
-    } else if (context.includes('rancher-desktop')) {
-      cachedK8sProvider = 'rancher-desktop';
-    } else {
-      cachedK8sProvider = 'other';
-    }
-  } catch {
-    cachedK8sProvider = 'unknown';
-  }
-  return cachedK8sProvider;
 }
 
 // ---------------------------------------------------------------------------

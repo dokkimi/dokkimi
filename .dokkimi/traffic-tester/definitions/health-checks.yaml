@@ -7,7 +7,7 @@ items:
   - $ref: ../shared/service-b.json
   - $ref: ../shared/service-c.yaml
 tests:
-  - name: Service A returns 200
+  - name: Service A returns 200 OK
     steps:
       - action:
           type: httpRequest
@@ -18,7 +18,10 @@ tests:
               - path: response.status
                 operator: eq
                 value: 200
-  - name: Service C returns 200
+              - path: response.body
+                operator: eq
+                value: OK
+  - name: Service C returns 200 OK
     steps:
       - action:
           type: httpRequest
@@ -29,3 +32,6 @@ tests:
               - path: response.status
                 operator: eq
                 value: 200
+              - path: response.body
+                operator: eq
+                value: OK

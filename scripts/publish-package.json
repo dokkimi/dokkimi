@@ -1,7 +1,7 @@
 {
   "name": "dokkimi",
   "version": "0.1.0",
-  "description": "CLI for managing isolated Kubernetes sandboxes for microservice testing",
+  "description": "CLI for isolated Docker environments for microservice testing",
   "bin": {
     "dokkimi": "apps/cli/dist/bin/dokkimi.js"
   },
@@ -13,8 +13,6 @@
   "keywords": [
     "testing",
     "microservices",
-    "kubernetes",
-    "k8s",
     "integration-testing",
     "e2e",
     "end-to-end",

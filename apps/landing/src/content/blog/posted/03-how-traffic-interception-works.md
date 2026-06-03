@@ -13,11 +13,11 @@ This is what makes assertions like "verify the order service sent the correct am
 
 ## Sidecar proxies
 
-When Dokkimi deploys your services into a Kubernetes namespace, it injects an interceptor sidecar container into each pod. This sidecar acts as a transparent proxy — all inbound and outbound HTTP traffic flows through it.
+When Dokkimi deploys your services into a Docker environment, it pairs each service container with an interceptor sidecar container. This sidecar acts as a transparent proxy — all inbound and outbound HTTP traffic flows through it.
 
 ```
 ┌─────────────────────────────┐
-│  Pod                        │
+│  Container group             │
 │  ┌───────────┐ ┌──────────┐ │
 │  │  Your     │ │Interceptor│ │
 │  │  Service  │◄┤  Sidecar  │◄── inbound traffic
@@ -26,7 +26,7 @@ When Dokkimi deploys your services into a Kubernetes namespace, it injects an in
 └─────────────────────────────┘
 ```
 
-The sidecar achieves this by manipulating the pod's networking — it configures iptables rules so that traffic destined for your service (or originating from it) passes through the interceptor first. This is the same pattern service meshes like Istio use, but stripped down to just the capture functionality.
+The sidecar achieves this by manipulating the container's networking — it configures iptables rules so that traffic destined for your service (or originating from it) passes through the interceptor first. This is the same pattern service meshes like Istio use, but stripped down to just the capture functionality.
 
 ## What gets captured
 
@@ -42,7 +42,7 @@ This data is stored temporarily and made available to the assertion engine durin
 
 ## DNS-based routing
 
-Dokkimi configures DNS within the namespace so that service names resolve to the interceptor sidecar rather than directly to the service. When your API gateway makes a request to `http://order-service/api/orders`, it resolves to the order service's interceptor, which logs the request, forwards it to the actual service, logs the response, and returns it.
+Dokkimi configures DNS within the Docker network so that service names resolve to the interceptor sidecar rather than directly to the service. When your API gateway makes a request to `http://order-service/api/orders`, it resolves to the order service's interceptor, which logs the request, forwards it to the actual service, logs the response, and returns it.
 
 This means your services don't need to know about Dokkimi at all. They use the same service names they'd use in production.
 
@@ -60,7 +60,7 @@ The same interception mechanism powers Dokkimi's mock system. When you define a 
     id: ch_test_123
 ```
 
-Dokkimi configures DNS so that `api.stripe.com` resolves to a mock handler within the namespace. Your service makes a normal HTTPS call to Stripe, but instead of hitting the real API, it hits Dokkimi's mock — which returns your configured response and logs the interaction for assertions.
+Dokkimi configures DNS so that `api.stripe.com` resolves to a mock handler within the Docker network. Your service makes a normal HTTPS call to Stripe, but instead of hitting the real API, it hits Dokkimi's mock — which returns your configured response and logs the interaction for assertions.
 
 No environment variables to change. No conditional logic in your code. The mock is transparent at the network level.
 
@@ -102,6 +102,6 @@ This approach has real benefits — zero code changes, production-like networkin
 
 - **HTTP/HTTPS only.** gRPC and other non-HTTP protocols aren't supported yet.
 - **Small latency overhead.** The sidecar proxy adds a few milliseconds per request. Negligible for functional testing, but not suitable for benchmarking.
-- **Requires Kubernetes.** You need a local or remote cluster. Docker Compose topologies aren't supported.
+- **Requires Docker.** You need Docker running locally.
 
 For most teams testing microservice integrations, these tradeoffs are well worth the visibility you get in return.

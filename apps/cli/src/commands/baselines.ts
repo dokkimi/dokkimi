@@ -13,6 +13,7 @@ import type {
   ArtifactRow,
   InstanceSummary,
 } from '../lib/inspect-types';
+import { getProjectPath, latestRunUrl } from '../lib/project-path';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -476,7 +477,10 @@ function groupByTest(
 // ---------------------------------------------------------------------------
 
 async function loadPendingFromLatestRun(ctUrl: string): Promise<PendingItem[]> {
-  const latest = await fetchJson<LatestRunResponse>(`${ctUrl}/runs/latest`);
+  const projectPath = getProjectPath();
+  const latest = await fetchJson<LatestRunResponse>(
+    latestRunUrl(ctUrl, projectPath),
+  );
   if (!latest) {
     console.error('No run history found. Run `dokkimi run` first.');
     process.exit(1);

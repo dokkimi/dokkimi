@@ -1,11 +1,11 @@
 import { spawn } from 'child_process';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { findDokkimiBin } from '../lib/find-bin.js';
+import { findDokkimiBin } from '../lib/find-bin';
 
 export function registerStatus(server: McpServer): void {
   server.tool(
     'status',
-    'Returns whether Dokkimi is running, Kubernetes connectivity, and any active/stopped instances.',
+    'Returns whether Dokkimi is running and any active/stopped instances.',
     {},
     async () => {
       const bin = findDokkimiBin();

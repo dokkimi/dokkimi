@@ -7,11 +7,10 @@ slug: 'getting-started-with-dokkimi'
 
 ## Prerequisites
 
-You need three things:
+You need two things:
 
 - **Node.js 20+**
-- **Docker + Kubernetes** — Docker Desktop with Kubernetes enabled is the easiest path. Rancher Desktop and minikube also work.
-- **kubectl** — configured to talk to your local cluster.
+- **Docker** — Docker Desktop is the easiest path.
 
 ## Install and verify
 
@@ -20,7 +19,7 @@ brew install dokkimi/tap/dokkimi
 dokkimi doctor
 ```
 
-`dokkimi doctor` checks that Docker is running, Kubernetes is reachable, and your cluster has enough resources. Fix anything it flags before continuing.
+`dokkimi doctor` checks that Docker is running and your system has enough resources. Fix anything it flags before continuing.
 
 ## Scaffold example definitions
 
@@ -95,7 +94,7 @@ dokkimi run
 
 Dokkimi will:
 
-1. Create an isolated Kubernetes namespace.
+1. Create an isolated Docker environment.
 2. Deploy your services with interceptor sidecars.
 3. Seed any databases.
 4. Attach a Chromium browser (if your test includes UI actions).

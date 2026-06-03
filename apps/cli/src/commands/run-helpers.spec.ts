@@ -4,7 +4,6 @@ import { fetchPostWithError } from '../lib/cli-utils';
 
 jest.mock('@dokkimi/telemetry', () => ({
   trackEvent: jest.fn(),
-  detectK8sProvider: jest.fn(),
 }));
 
 jest.mock('../lib/cli-utils', () => ({
@@ -151,10 +150,7 @@ describe('trackRunError', () => {
 
   const cases: Array<[string, string, Record<string, unknown> | undefined]> = [
     ['Docker is not installed', 'docker_not_installed', undefined],
-    ['kubectl is not installed', 'kubectl_not_installed', undefined],
     ['Timed out waiting for Docker', 'docker_start_timeout', undefined],
-    ['Kubernetes is not running', 'k8s_not_enabled', undefined],
-    ['Timed out waiting for Kubernetes', 'k8s_timeout', undefined],
     [
       'Timed out waiting for Dokkimi',
       'service_start_timeout',

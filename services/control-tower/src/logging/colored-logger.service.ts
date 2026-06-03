@@ -1,3 +1,6 @@
+import * as path from 'path';
+import * as fs from 'fs';
+import * as os from 'os';
 import { Injectable, Inject, Optional, LoggerService } from '@nestjs/common';
 import { RotatingFileWriter } from './rotating-file-writer';
 
@@ -15,16 +18,21 @@ const ANSI_RE = /\x1b\[[0-9;]*m/g;
  * Shared file writer — one per process, created lazily from the LOG_FILE env var.
  * Static so every ColoredLoggerService instance in the same process shares it.
  */
+const DEFAULT_LOG_FILE = path.join(
+  os.homedir(),
+  '.dokkimi',
+  'logs',
+  'control-tower.log',
+);
+
 let fileWriter: RotatingFileWriter | null = null;
 
-function getFileWriter(): RotatingFileWriter | null {
+function getFileWriter(): RotatingFileWriter {
   if (fileWriter) {
     return fileWriter;
   }
-  const logFile = process.env.LOG_FILE;
-  if (!logFile) {
-    return null;
-  }
+  const logFile = process.env.LOG_FILE || DEFAULT_LOG_FILE;
+  fs.mkdirSync(path.dirname(logFile), { recursive: true });
   fileWriter = new RotatingFileWriter(logFile);
   return fileWriter;
 }
@@ -103,12 +111,12 @@ export class ColoredLoggerService implements LoggerService {
     ...args: unknown[]
   ): void {
     const writer = getFileWriter();
-    if (writer) {
-      const clean = message.replace(ANSI_RE, '');
-      const ts = new Date().toISOString();
-      const extra = args.length ? ' ' + args.map(String).join(' ') : '';
-      writer.write(`${ts} [${level.toUpperCase()}] ${clean}${extra}`);
-    } else {
+    const clean = message.replace(ANSI_RE, '');
+    const ts = new Date().toISOString();
+    const extra = args.length ? ' ' + args.map(String).join(' ') : '';
+    writer.write(`${ts} [${level.toUpperCase()}] ${clean}${extra}`);
+
+    if (!process.env.LOG_FILE) {
       console[level](message, ...(args as []));
     }
   }

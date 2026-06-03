@@ -11,7 +11,7 @@ import (
 )
 
 func TestNewLogger(t *testing.T) {
-	logger := NewLogger("http://localhost:5000", 5*time.Second)
+	logger := NewLogger("http://localhost:5000", 5*time.Second, nil)
 
 	if logger == nil {
 		t.Fatal("NewLogger() returned nil")
@@ -37,7 +37,7 @@ func TestLogger_LogResponse(t *testing.T) {
 	}))
 	defer server.Close()
 
-	logger := NewLogger(server.URL, 5*time.Second)
+	logger := NewLogger(server.URL, 5*time.Second, nil)
 	defer logger.Stop()
 
 	urlMap := UrlMap{
@@ -75,7 +75,7 @@ func TestLogger_LogResponse(t *testing.T) {
 }
 
 func TestLogger_LogResponse_ChannelFull(t *testing.T) {
-	logger := NewLogger("http://localhost:5000", 5*time.Second)
+	logger := NewLogger("http://localhost:5000", 5*time.Second, nil)
 	defer logger.Stop()
 
 	// Fill up the channel with LogResponse calls
@@ -93,7 +93,7 @@ func TestLogger_LogResponse_ChannelFull(t *testing.T) {
 }
 
 func TestLogger_Stop(t *testing.T) {
-	logger := NewLogger("http://localhost:5000", 5*time.Second)
+	logger := NewLogger("http://localhost:5000", 5*time.Second, nil)
 
 	// Stop should not panic
 	logger.Stop()
@@ -116,7 +116,7 @@ func TestLogger_Stop_DrainsChannel(t *testing.T) {
 	}))
 	defer server.Close()
 
-	logger := NewLogger(server.URL, 5*time.Second)
+	logger := NewLogger(server.URL, 5*time.Second, nil)
 
 	// Fill the channel with logs
 	for i := 0; i < 10; i++ {
@@ -143,7 +143,7 @@ func TestLogger_Stop_DrainsChannel(t *testing.T) {
 
 func TestLogger_sendLog_ErrorHandling(t *testing.T) {
 	// Test with invalid server (will fail)
-	logger := NewLogger("http://invalid-server:9999", 100*time.Millisecond)
+	logger := NewLogger("http://invalid-server:9999", 100*time.Millisecond, nil)
 	defer logger.Stop()
 
 	// Send a log (should not panic even if it fails)

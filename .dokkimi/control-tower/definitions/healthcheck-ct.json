@@ -1,15 +1,12 @@
 {
   "name": "healthcheck-ct",
-  "description": "Boot Control Tower and verify health endpoint responds, plus confirm absorbed modules (log-processing, test-validation, cluster-watcher) are wired.",
+  "description": "Boot Control Tower and verify health endpoint responds, plus confirm absorbed modules (log-processing, test-validation) are wired.",
   "items": [
     {
       "$ref": "../shared/control-tower.yaml"
     },
     {
       "$ref": "../shared/postgres-db.json"
-    },
-    {
-      "$ref": "../shared/mock-k8s-api.yaml"
     },
     {
       "$ref": "../shared/mock-posthog.yaml"
@@ -38,11 +35,6 @@
                   "path": "response.body.service",
                   "operator": "eq",
                   "value": "control-tower"
-                },
-                {
-                  "path": "response.body.checks.kubernetes.status",
-                  "operator": "eq",
-                  "value": "healthy"
                 },
                 {
                   "path": "response.body.checks.database.status",

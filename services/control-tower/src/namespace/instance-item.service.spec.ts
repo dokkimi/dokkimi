@@ -106,25 +106,25 @@ describe('InstanceItemService', () => {
     });
   });
 
-  describe('updateInstanceItemK8sName', () => {
-    it('should update instance item K8s name', async () => {
+  describe('updateInstanceItemContainerName', () => {
+    it('should update instance item container name', async () => {
       const mockUpdated = {
         id: 'item-1',
-        k8sName: 'test-service',
+        containerName: 'test-service',
       };
 
       mockPrismaService.instanceItem.update.mockResolvedValue(mockUpdated);
 
-      const result = await service.updateInstanceItemK8sName(
+      const result = await service.updateInstanceItemContainerName(
         'item-1',
         'test-service',
       );
 
       expect(mockPrismaService.instanceItem.update).toHaveBeenCalledWith({
         where: { id: 'item-1' },
-        data: { k8sName: 'test-service' },
+        data: { containerName: 'test-service' },
       });
-      expect(result.k8sName).toBe('test-service');
+      expect(result.containerName).toBe('test-service');
     });
   });
 });

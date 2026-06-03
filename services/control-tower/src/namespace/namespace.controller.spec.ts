@@ -1,4 +1,4 @@
-// Mock NamespaceLifecycleService before imports to avoid Kubernetes client import issues
+// Mock NamespaceLifecycleService before imports
 jest.mock('../namespace-lifecycle/namespace-lifecycle.service', () => ({
   NamespaceLifecycleService: jest.fn().mockImplementation(() => ({
     stopInstance: jest.fn(),

@@ -80,7 +80,6 @@ export class ConfigLoader {
   public getRuntimeConfig(): RuntimeConfig {
     return {
       namespace: this.getRequiredEnv('NAMESPACE', false),
-      k8sNamespace: this.getRequiredEnv('K8S_NAMESPACE', false),
       apiKey: this.getRequiredEnv('API_KEY', false),
       namespaceItemId: process.env.NAMESPACE_ITEM_ID,
       instanceItemName: process.env.INSTANCE_ITEM_NAME,
@@ -120,8 +119,7 @@ export class ConfigLoader {
 
   /**
    * Apply environment variable overrides to the loaded config.
-   * Only HOST overrides are supported — Kubernetes auto-injects <SERVICE>_PORT env vars
-   * in tcp:// URL format which would corrupt numeric port values.
+   * Only HOST overrides are supported — port values come from the config file.
    */
   private applyEnvOverrides(config: DokkimiConfig): DokkimiConfig {
     if (process.env.DATABASE_URL) {
@@ -141,12 +139,12 @@ export class ConfigLoader {
       );
     }
     if (process.env.DOKKIMI_MAX_CONCURRENT_NAMESPACES) {
-      config.kubernetes.maxConcurrentNamespaces = Number(
+      config.concurrency.maxConcurrentTests = Number(
         process.env.DOKKIMI_MAX_CONCURRENT_NAMESPACES,
       );
     }
     if (process.env.DOKKIMI_MAX_BOOTING_NAMESPACES) {
-      config.kubernetes.maxBootingNamespaces = Number(
+      config.concurrency.maxBootingTests = Number(
         process.env.DOKKIMI_MAX_BOOTING_NAMESPACES,
       );
     }

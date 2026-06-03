@@ -21,7 +21,7 @@ import {
   resolveRegistryCredentials,
   type RegistryCredential,
 } from '../lib/registry-credentials';
-import { trackEvent, detectK8sProvider } from '@dokkimi/telemetry';
+import { trackEvent } from '@dokkimi/telemetry';
 import {
   definitionHasUiSteps,
   detectTargetType,
@@ -29,10 +29,8 @@ import {
   submitDefinition,
   type CreateRunResponse,
 } from './run-helpers';
-import { writeDump } from './dump';
-import { DUMP_PATH, DUMP_FAILED_PATH } from '@dokkimi/config';
 import type { LatestRunResponse } from '../lib/inspect-types';
-import { existsSync, readFileSync } from 'fs';
+import { getProjectPath, latestRunUrl } from '../lib/project-path';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -117,18 +115,18 @@ export async function run(args: string[]): Promise<void> {
     (a) => !a.startsWith('-') && !a.startsWith('--timeout'),
   );
 
+  const config = loadConfig();
+  const ctUrl = buildServiceUrl(config.services.controlTower);
+
   let initialFilterNames: string[] | undefined;
   if (failedOnly) {
-    const failedNames = readFailedNames();
+    const failedNames = await readFailedNames(ctUrl);
     if (failedNames.length === 0) {
       console.error('No failed definitions found in the last run.');
       process.exit(1);
     }
     initialFilterNames = failedNames;
   }
-
-  const config = loadConfig();
-  const ctUrl = buildServiceUrl(config.services.controlTower);
 
   let abort: AbortController | null = null;
   let lastResult: RunOnceResult | null = null;
@@ -277,7 +275,6 @@ export async function run(args: string[]): Promise<void> {
         watch_mode: watchMode,
         target_type: detectTargetType(target),
         trigger,
-        k8s_provider: detectK8sProvider(),
         has_ui_steps: lastResult.hasUiSteps ?? false,
         baselines_uploaded: lastResult.baselinesUploaded ?? 0,
         has_pending_baselines: hasPendingBaselines,
@@ -292,38 +289,6 @@ export async function run(args: string[]): Promise<void> {
           `${ctUrl}/artifacts/run/${lastResult.runId}/has-pending`,
         );
         hasPendingBaselines = res?.hasPending ?? false;
-      } catch {}
-    }
-
-    // Auto-dump results for extension and MCP consumption (best-effort)
-    if (lastResult.runId) {
-      try {
-        const latestRun = await fetchJson<LatestRunResponse>(
-          `${ctUrl}/runs/latest`,
-        );
-        if (latestRun) {
-          const dumpOpts = {
-            ctUrl,
-            storageDir: config.storage.dir,
-            instances: latestRun.instances,
-            runId: latestRun.runId,
-            runStatus: latestRun.status,
-            createdAt: latestRun.createdAt,
-            completedAt: latestRun.completedAt,
-          };
-          await writeDump(dumpOpts);
-
-          const failedInstances = latestRun.instances.filter(
-            (i) => i.testStatus === 'FAILED' || i.status === 'FAILED',
-          );
-          if (failedInstances.length > 0) {
-            await writeDump({
-              ...dumpOpts,
-              instances: failedInstances,
-              outputPath: DUMP_FAILED_PATH,
-            });
-          }
-        }
       } catch {}
     }
 
@@ -503,7 +468,6 @@ export async function run(args: string[]): Promise<void> {
   await inFlight;
 
   // CI mode: exit immediately with appropriate code
-  // Auto-dump already ran inside triggerRun(), no need to dump again.
   if (ciMode) {
     await fetchAction(`${ctUrl}/runs/stop`, 'POST');
     process.exit((lastResult as RunOnceResult | null)?.passed ? 0 : 1);
@@ -616,9 +580,16 @@ async function executeRun(
     return { passed: false, runId: null, instances: [] };
   }
 
+  const projectPath = result.dokkimiDir
+    ? path.dirname(result.dokkimiDir)
+    : undefined;
+
   const createBody: Record<string, unknown> = {
     definitions: definitions.map((d) => d.name),
   };
+  if (projectPath) {
+    createBody.projectPath = projectPath;
+  }
   if (registryCredentials.length > 0) {
     createBody.registryCredentials = registryCredentials;
   }
@@ -701,28 +672,22 @@ async function executeRun(
 }
 
 // ---------------------------------------------------------------------------
-// Read failed definition names from the last run's dump file
+// Read failed definition names from the last run via CT
 // ---------------------------------------------------------------------------
 
-function readFailedNames(): string[] {
-  if (existsSync(DUMP_FAILED_PATH)) {
-    try {
-      const raw = JSON.parse(readFileSync(DUMP_FAILED_PATH, 'utf-8'));
-      const instances: { name: string }[] = raw.instances ?? [];
-      return instances.map((i) => i.name);
-    } catch {}
+async function readFailedNames(ctUrl: string): Promise<string[]> {
+  try {
+    const projectPath = getProjectPath();
+    const run = await fetchJson<LatestRunResponse>(
+      latestRunUrl(ctUrl, projectPath),
+    );
+    if (!run) {
+      return [];
+    }
+    return run.instances
+      .filter((i) => (i.testStatus ?? i.status) === 'FAILED')
+      .map((i) => i.name);
+  } catch {
+    return [];
   }
-
-  if (existsSync(DUMP_PATH)) {
-    try {
-      const raw = JSON.parse(readFileSync(DUMP_PATH, 'utf-8'));
-      const instances: { name: string; status: string; testStatus?: string }[] =
-        raw.instances ?? [];
-      return instances
-        .filter((i) => (i.testStatus ?? i.status) === 'FAILED')
-        .map((i) => i.name);
-    } catch {}
-  }
-
-  return [];
 }

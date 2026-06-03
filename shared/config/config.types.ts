@@ -15,12 +15,9 @@ export interface DokkimiConfig {
     vite: ServiceConfig;
   };
 
-  kubernetes: {
-    dnsIP: string;
-    namespacePrefix: string;
-    serviceDomain?: string;
-    maxConcurrentNamespaces: number;
-    maxBootingNamespaces: number;
+  concurrency: {
+    maxConcurrentTests: number;
+    maxBootingTests: number;
   };
 
   network: {
@@ -29,12 +26,6 @@ export interface DokkimiConfig {
     };
     proxy: {
       noProxy: string;
-    };
-  };
-
-  external: {
-    helm: {
-      installDocs: string;
     };
   };
 
@@ -95,7 +86,7 @@ interface ServiceConfig {
 /**
  * Build URL from service configuration
  * @param service - Service configuration
- * @param forCluster - If true, use host.docker.internal instead of the config host (for pods running in Kubernetes)
+ * @param forCluster - If true, use host.docker.internal instead of the config host (for containers)
  */
 export function buildServiceUrl(
   service: ServiceConfig,
@@ -121,7 +112,6 @@ export interface RegistryCredential {
 // Runtime configuration (environment-specific values)
 export interface RuntimeConfig {
   namespace?: string;
-  k8sNamespace?: string;
   apiKey?: string;
   namespaceItemId?: string;
   instanceItemName?: string;

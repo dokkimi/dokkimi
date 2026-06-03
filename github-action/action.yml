@@ -1,5 +1,5 @@
 name: Dokkimi Run Tests
-description: Install k3s, set up a single-node Kubernetes cluster, and run Dokkimi integration tests.
+description: Run Dokkimi integration tests using Docker.
 branding:
   icon: check-circle
   color: blue
@@ -8,10 +8,10 @@ inputs:
     description: Path to .dokkimi/ directory or a specific definition file
     required: true
   max-parallel:
-    description: Maximum concurrent test namespaces
+    description: Maximum concurrent test environments
     default: '6'
   max-booting:
-    description: Maximum namespaces booting simultaneously
+    description: Maximum environments booting simultaneously
     default: '2'
   timeout:
     description: HTTP request timeout in milliseconds
@@ -35,22 +35,9 @@ runs:
         sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/share/powershell
         docker builder prune -af
 
-    - name: Install k3s
+    - name: Pull sidecar images
       shell: bash
       run: |
-        curl -sfL https://get.k3s.io | \
-          INSTALL_K3S_EXEC="--docker --disable=traefik --write-kubeconfig-mode=644" sh -
-        export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
-        until kubectl get nodes | grep -q ' Ready'; do sleep 2; done
-        echo "KUBECONFIG=/etc/rancher/k3s/k3s.yaml" >> $GITHUB_ENV
-        NODE_IP=$(kubectl get node -o jsonpath='{.items[0].status.addresses[?(@.type=="InternalIP")].address}')
-        echo "CONTROL_TOWER_HOST=$NODE_IP" >> $GITHUB_ENV
-
-    - name: Pull external images
-      shell: bash
-      run: |
-        docker pull busybox:1.37
-        docker pull fluent/fluent-bit:3.2
         docker pull andyshinn/dnsmasq:2.83
 
     - name: Install Dokkimi CLI
@@ -75,6 +62,4 @@ runs:
     - name: Cleanup
       if: always()
       shell: bash
-      run: |
-        dokkimi clean 2>/dev/null || true
-        /usr/local/bin/k3s-uninstall.sh || true
+      run: dokkimi clean 2>/dev/null || true

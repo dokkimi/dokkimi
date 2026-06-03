@@ -26,7 +26,6 @@
     "@dokkimi/definition-validator": "workspace:*",
     "@dokkimi/platform": "workspace:*",
     "@dokkimi/telemetry": "workspace:*",
-    "@kubernetes/client-node": "^1.4.0",
     "@nestjs/axios": "^4.0.1",
     "@nestjs/common": "^11.1.19",
     "@nestjs/config": "^4.0.4",
@@ -39,6 +38,7 @@
     "axios": "^1.16.0",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.15.1",
+    "dockerode": "^5.0.0",
     "dotenv": "^17.4.2",
     "multer": "^2.1.1",
     "node-forge": "^1.4.0",
@@ -54,6 +54,7 @@
     "@nestjs/cli": "^11.0.21",
     "@nestjs/schematics": "^11.1.0",
     "@nestjs/testing": "^11.1.19",
+    "@types/dockerode": "^4.0.1",
     "@types/express": "^5.0.6",
     "@types/jest": "^30.0.0",
     "@types/multer": "^2.1.0",
@@ -84,9 +85,7 @@
     "transformIgnorePatterns": [
       "node_modules/(?!pixelmatch/)"
     ],
-    "moduleNameMapper": {
-      "^@kubernetes/client-node$": "<rootDir>/__mocks__/@kubernetes/client-node.ts"
-    },
+    "moduleNameMapper": {},
     "collectCoverageFrom": [
       "**/*.(t|j)s"
     ],

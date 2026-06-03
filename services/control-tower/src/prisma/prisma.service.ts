@@ -5,6 +5,7 @@ import {
   OnModuleDestroy,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { Pool } from 'pg';
 import { PrismaClient, Prisma } from '@prisma/client';
 import { PrismaLibSql } from '@prisma/adapter-libsql';
 import { PrismaPg } from '@prisma/adapter-pg';
@@ -22,11 +23,17 @@ export class PrismaService implements OnModuleInit, OnModuleDestroy {
       );
     }
 
-    const adapter = databaseUrl.startsWith('file:')
-      ? new PrismaLibSql({ url: databaseUrl })
-      : new PrismaPg({ connectionString: databaseUrl });
-
-    this.prisma = new PrismaClient({ adapter });
+    if (databaseUrl.startsWith('file:')) {
+      const adapter = new PrismaLibSql({ url: databaseUrl });
+      this.prisma = new PrismaClient({ adapter });
+    } else {
+      const pool = new Pool({ connectionString: databaseUrl });
+      pool.on('error', (err: Error) => {
+        this.logger.warn(`pg pool background error: ${err.message}`);
+      });
+      const adapter = new PrismaPg(pool);
+      this.prisma = new PrismaClient({ adapter });
+    }
   }
 
   get client(): PrismaClient {
@@ -94,6 +101,7 @@ export class PrismaService implements OnModuleInit, OnModuleDestroy {
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       try {
         await this.prisma.$connect();
+        await this.prisma.$queryRawUnsafe('SELECT 1');
         return;
       } catch (err) {
         if (attempt === maxAttempts) {

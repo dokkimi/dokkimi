@@ -1,11 +1,11 @@
 import { spawn } from 'child_process';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { findDokkimiBin } from '../lib/find-bin.js';
+import { findDokkimiBin } from '../lib/find-bin';
 
 export function registerReboot(server: McpServer): void {
   server.tool(
     'reboot',
-    'Restarts Dokkimi services. Use after config changes that require a reboot (concurrency, K8s context). WARNING: this will interrupt any running instances — call status first to check.',
+    'Restarts Dokkimi services. Use after config changes that require a reboot (concurrency). WARNING: this will interrupt any running instances — call status first to check.',
     {},
     async () => {
       const bin = findDokkimiBin();

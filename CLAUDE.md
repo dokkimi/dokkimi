@@ -12,9 +12,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**Dokkimi** manages isolated Kubernetes sandboxes for microservice testing: create namespaces, manage DBs, intercept/log traffic, mock endpoints, run test suites.
+**Dokkimi** manages isolated Docker environments for microservice testing: create networks, manage DBs, intercept/log traffic, mock endpoints, run test suites.
 
-Users define their test environment in `.dokkimi/` YAML/JSON files (services, databases, mocks, tests). The CLI resolves those definitions, spins up a K8s namespace, deploys everything with interceptor sidecars, runs the test suite, and reports results.
+Users define their test environment in `.dokkimi/` YAML/JSON files (services, databases, mocks, tests). The CLI resolves those definitions, spins up a Docker network, deploys everything with interceptor sidecars, runs the test suite, and reports results.
 
 ## Build Commands
 
@@ -76,18 +76,17 @@ Go sidecars use `ghcr.io/dokkimi/<name>` prefix. Control Tower uses `dokkimi/con
 | Service                   | Language          | Deployment                               | Port  |
 | ------------------------- | ----------------- | ---------------------------------------- | ----- |
 | **Control Tower**         | NestJS/TypeScript | Single process (CLI daemon) or container | 19001 |
-| **Interceptor**           | Go                | 1:1 sidecar per service pod              | —     |
-| **Test Agent**            | Go                | One pod per test run                     | 8080  |
-| **DB Proxy** (4 variants) | Go                | 1 sidecar per database pod               | —     |
+| **Interceptor**           | Go                | 1:1 sidecar per service container        | —     |
+| **Test Agent**            | Go                | One container per test run               | 8080  |
+| **DB Proxy** (4 variants) | Go                | 1 sidecar per database container         | —     |
 
 ### Control Tower Module Boundaries
 
 All backend logic lives in Control Tower as separate NestJS modules. Keep module public surface narrow — cross-module communication goes through explicitly re-exported services.
 
-- **`runs/` + `namespace/` + `namespace-lifecycle/`** — REST API and K8s orchestration
+- **`runs/` + `namespace/` + `namespace-lifecycle/`** — REST API and Docker orchestration
 - **`log-processing/`** — log ingestion (`POST /logs/{http,console,database,test-execution}`), marked `@SkipThrottle()` for high-volume sidecar traffic
 - **`test-validation/`** — assertion validation via `POST /test-complete`, then calls `RunsService.handleValidationComplete` in-process
-- **`cluster-watcher/`** — polls K8s for TERMINATING namespaces, calls `RunsService.handleInstancesStopped`
 - **`health/`** — aggregated liveness + `POST /health/status` readiness endpoint for sidecars
 
 ### Apps

@@ -1,13 +1,4 @@
-import * as fs from 'fs';
-import * as path from 'path';
-import * as os from 'os';
-import * as yaml from 'js-yaml';
-import {
-  getConcurrencyPrefs,
-  setConcurrencyPrefs,
-  getKubeconfigPrefs,
-  setKubeconfigPrefs,
-} from '@dokkimi/config';
+import { getConcurrencyPrefs, setConcurrencyPrefs } from '@dokkimi/config';
 import {
   isTelemetryEnabled,
   setTelemetryEnabled,
@@ -32,39 +23,15 @@ Options:
   --help, -h        Show this help message
 `.trim();
 
-const DEFAULT_MAX_NAMESPACES = 6;
-const DEFAULT_MAX_BOOTING = 2;
+const DEFAULT_MAX_CONCURRENT_TESTS = 6;
+const DEFAULT_MAX_BOOTING_TESTS = 2;
 
-interface KubeConfigFile {
-  contexts?: Array<{ name: string }>;
-  'current-context'?: string;
-}
-
-function resolveKubeconfigPath(): string {
-  if (process.env.KUBECONFIG) {
-    return process.env.KUBECONFIG.split(path.delimiter)[0];
-  }
-  return path.join(os.homedir(), '.kube', 'config');
-}
-
-function parseKubeConfigFile(filePath: string): KubeConfigFile | null {
-  try {
-    const raw = fs.readFileSync(filePath, 'utf-8');
-    return yaml.load(raw) as KubeConfigFile;
-  } catch {
-    return null;
-  }
-}
-
-type SettingsCategory = 'concurrency' | 'kubernetes' | 'telemetry';
+type SettingsCategory = 'concurrency' | 'telemetry';
 
 function buildTopMenuItems(): MenuItem<SettingsCategory>[] {
   const concurrency = getConcurrencyPrefs();
-  const maxNs = concurrency.maxNamespaces ?? DEFAULT_MAX_NAMESPACES;
-  const maxBoot = concurrency.maxBooting ?? DEFAULT_MAX_BOOTING;
-
-  const kubeconfigPrefs = getKubeconfigPrefs();
-  const kubeContext = kubeconfigPrefs.context ?? 'default';
+  const maxNs = concurrency.maxConcurrentTests ?? DEFAULT_MAX_CONCURRENT_TESTS;
+  const maxBoot = concurrency.maxBootingTests ?? DEFAULT_MAX_BOOTING_TESTS;
 
   const telemetryStatus = isTelemetryEnabled() ? 'on' : 'off';
 
@@ -72,10 +39,6 @@ function buildTopMenuItems(): MenuItem<SettingsCategory>[] {
     {
       label: `Concurrency          \x1b[90mmax namespaces: ${maxNs}, max booting: ${maxBoot}\x1b[0m`,
       value: 'concurrency',
-    },
-    {
-      label: `Kubernetes context   \x1b[90m${kubeContext}\x1b[0m`,
-      value: 'kubernetes',
     },
     {
       label: `Telemetry            \x1b[90m${telemetryStatus}\x1b[0m`,
@@ -86,19 +49,19 @@ function buildTopMenuItems(): MenuItem<SettingsCategory>[] {
 
 async function editConcurrency(): Promise<boolean> {
   const prefs = getConcurrencyPrefs();
-  const currentMax = prefs.maxNamespaces ?? DEFAULT_MAX_NAMESPACES;
-  const currentBoot = prefs.maxBooting ?? DEFAULT_MAX_BOOTING;
+  const currentMax = prefs.maxConcurrentTests ?? DEFAULT_MAX_CONCURRENT_TESTS;
+  const currentBoot = prefs.maxBootingTests ?? DEFAULT_MAX_BOOTING_TESTS;
 
-  type ConcurrencyAction = 'maxNamespaces' | 'maxBooting' | 'reset';
+  type ConcurrencyAction = 'maxConcurrentTests' | 'maxBootingTests' | 'reset';
 
   const items: MenuItem<ConcurrencyAction>[] = [
     {
-      label: `Max parallel namespaces   \x1b[90m${currentMax}${prefs.maxNamespaces === undefined ? ' (default)' : ''}\x1b[0m`,
-      value: 'maxNamespaces',
+      label: `Max concurrent tests      \x1b[90m${currentMax}${prefs.maxConcurrentTests === undefined ? ' (default)' : ''}\x1b[0m`,
+      value: 'maxConcurrentTests',
     },
     {
-      label: `Max booting namespaces    \x1b[90m${currentBoot}${prefs.maxBooting === undefined ? ' (default)' : ''}\x1b[0m`,
-      value: 'maxBooting',
+      label: `Max booting tests         \x1b[90m${currentBoot}${prefs.maxBootingTests === undefined ? ' (default)' : ''}\x1b[0m`,
+      value: 'maxBootingTests',
     },
     {
       label: '\x1b[90mReset to defaults\x1b[0m',
@@ -122,36 +85,37 @@ async function editConcurrency(): Promise<boolean> {
     return true;
   }
 
-  if (result.value === 'maxNamespaces') {
-    const value = await numberInput('Max parallel namespaces', currentMax, {
+  if (result.value === 'maxConcurrentTests') {
+    const value = await numberInput('Max concurrent tests', currentMax, {
       min: 1,
       max: 50,
     });
     if (value !== null) {
       setConcurrencyPrefs({
         ...prefs,
-        maxNamespaces: value === DEFAULT_MAX_NAMESPACES ? undefined : value,
+        maxConcurrentTests:
+          value === DEFAULT_MAX_CONCURRENT_TESTS ? undefined : value,
       });
       trackEvent('cli_config_changed', {
         category: 'concurrency',
-        setting: 'maxNamespaces',
+        setting: 'maxConcurrentTests',
         value,
       });
       return true;
     }
   }
 
-  if (result.value === 'maxBooting') {
-    const value = await numberInput('Max booting namespaces', currentBoot, {
+  if (result.value === 'maxBootingTests') {
+    const value = await numberInput('Max booting tests', currentBoot, {
       min: 1,
       max: 50,
     });
     if (value !== null) {
-      const updated = { ...prefs, maxBooting: value };
+      const updated = { ...prefs, maxBootingTests: value };
       setConcurrencyPrefs(updated);
       trackEvent('cli_config_changed', {
         category: 'concurrency',
-        setting: 'maxBooting',
+        setting: 'maxBootingTests',
         value,
       });
       return true;
@@ -159,96 +123,6 @@ async function editConcurrency(): Promise<boolean> {
   }
 
   return false;
-}
-
-const USE_DEFAULT = '__default__';
-
-async function editKubernetes(): Promise<boolean> {
-  const kubeconfigPath = resolveKubeconfigPath();
-  const parsed = parseKubeConfigFile(kubeconfigPath);
-
-  if (!parsed) {
-    // Can't read kubeconfig — show error inline and return
-    const items: MenuItem<string>[] = [
-      {
-        label: `Could not read kubeconfig at ${kubeconfigPath}`,
-        value: 'noop',
-        disabled: true,
-      },
-    ];
-    await selectMenu(items, 'Kubernetes Context', { leftArrowBack: true });
-    return false;
-  }
-
-  const contexts = (parsed.contexts ?? []).map((c) => c.name).filter(Boolean);
-  if (contexts.length === 0) {
-    const items: MenuItem<string>[] = [
-      {
-        label: `No contexts found in ${kubeconfigPath}`,
-        value: 'noop',
-        disabled: true,
-      },
-    ];
-    await selectMenu(items, 'Kubernetes Context', { leftArrowBack: true });
-    return false;
-  }
-
-  const prefs = getKubeconfigPrefs();
-  const hasOverride = Boolean(prefs.context);
-  const defaultContext = parsed['current-context'];
-
-  const items: MenuItem<string>[] = [];
-
-  const defaultLabel = defaultContext
-    ? `Use default context  \x1b[90m(currently ${defaultContext})\x1b[0m`
-    : 'Use default context';
-  items.push({
-    label: !hasOverride ? `${defaultLabel}  \x1b[32m✔\x1b[0m` : defaultLabel,
-    value: USE_DEFAULT,
-  });
-
-  for (const name of contexts) {
-    const isActive = hasOverride && name === prefs.context;
-    items.push({
-      label: isActive ? `${name}  \x1b[32m✔\x1b[0m` : name,
-      value: name,
-    });
-  }
-
-  const initialIndex = hasOverride
-    ? Math.max(0, contexts.indexOf(prefs.context!) + 1)
-    : 0;
-
-  const title = `Kubernetes Context  \x1b[90m(${kubeconfigPath})\x1b[0m`;
-  const result = await selectMenu(items, title, {
-    leftArrowBack: true,
-    initialIndex,
-  });
-  if (!result) {
-    return false;
-  }
-
-  const chosen = result.value;
-  const isAlreadyActive =
-    chosen === USE_DEFAULT
-      ? !hasOverride
-      : hasOverride && chosen === prefs.context;
-
-  if (isAlreadyActive) {
-    return false;
-  }
-
-  if (chosen === USE_DEFAULT) {
-    setKubeconfigPrefs({});
-  } else {
-    setKubeconfigPrefs({ context: chosen });
-  }
-  trackEvent('cli_config_changed', {
-    category: 'kubernetes',
-    setting: 'context',
-    value: chosen === USE_DEFAULT ? 'default' : chosen,
-  });
-  return true;
 }
 
 async function editTelemetry(): Promise<boolean> {
@@ -307,9 +181,6 @@ export async function configCommand(args: string[]): Promise<void> {
     switch (result.value) {
       case 'concurrency':
         changed = await editConcurrency();
-        break;
-      case 'kubernetes':
-        changed = await editKubernetes();
         break;
       case 'telemetry':
         changed = await editTelemetry();

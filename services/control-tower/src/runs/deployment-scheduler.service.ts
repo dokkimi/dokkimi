@@ -4,27 +4,27 @@ import { PrismaService } from '../prisma/prisma.service';
 import { TelemetryService } from '../telemetry/telemetry.service';
 import { InstanceStatus, RunStatus } from '@prisma/client';
 import { RunStorageService } from '../storage/run-storage.service';
-import { NamespaceDeployerService } from '../namespace-deployer/namespace-deployer.service';
-import { DeploymentContext } from '../namespace-deployer/deployment-context.types';
+import { DockerDeployerService } from '../namespace-lifecycle/docker/docker-deployer.service';
+import { DeploymentContext } from '../namespace-lifecycle/deployment-context.types';
 import { rawDefinitionToDeployable } from './definition-converter';
 
 @Injectable()
 export class DeploymentSchedulerService {
   private readonly logger = new Logger(DeploymentSchedulerService.name);
-  private readonly maxConcurrentNamespaces: number;
-  private readonly maxBootingNamespaces: number;
+  private readonly maxConcurrentTests: number;
+  private readonly maxBootingTests: number;
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly deployer: NamespaceDeployerService,
+    private readonly deployer: DockerDeployerService,
     private readonly runStorage: RunStorageService,
     private readonly configService: ConfigService,
     private readonly telemetry: TelemetryService,
   ) {
-    this.maxConcurrentNamespaces = this.configService.get<number>(
+    this.maxConcurrentTests = this.configService.get<number>(
       'MAX_CONCURRENT_NAMESPACES',
     )!;
-    this.maxBootingNamespaces = this.configService.get<number>(
+    this.maxBootingTests = this.configService.get<number>(
       'MAX_BOOTING_NAMESPACES',
     )!;
   }
@@ -66,10 +66,10 @@ export class DeploymentSchedulerService {
     const startingCount = run.instances.filter(
       (inst) => inst.status === InstanceStatus.STARTING,
     ).length;
-    const maxConcurrentStarting = this.maxBootingNamespaces;
+    const maxConcurrentStarting = this.maxBootingTests;
 
     const slotsAvailable = Math.min(
-      this.maxConcurrentNamespaces - activeCount,
+      this.maxConcurrentTests - activeCount,
       maxConcurrentStarting - startingCount,
     );
     if (slotsAvailable <= 0) {
@@ -91,10 +91,16 @@ export class DeploymentSchedulerService {
         continue;
       }
 
-      await this.prisma.namespaceInstance.update({
-        where: { id: instance.id },
+      // Atomic claim: only set STARTING if still PENDING.
+      // Prevents duplicate deploys when concurrent callers race.
+      const claimed = await this.prisma.namespaceInstance.updateMany({
+        where: { id: instance.id, status: InstanceStatus.PENDING },
         data: { status: InstanceStatus.STARTING },
       });
+      if (claimed.count === 0) {
+        continue;
+      }
+
       const ctx = await this.rebuildDeploymentContext(runId, instance.id);
       this.deployInBackground(ctx, runId);
       deployed++;
@@ -102,7 +108,7 @@ export class DeploymentSchedulerService {
 
     if (deployed > 0) {
       this.logger.log(
-        `Deployed ${deployed} pending instance(s) for run ${runId} (${startingCount + deployed}/${maxConcurrentStarting} starting, ${activeCount + deployed}/${this.maxConcurrentNamespaces} active)`,
+        `Deployed ${deployed} pending instance(s) for run ${runId} (${startingCount + deployed}/${maxConcurrentStarting} starting, ${activeCount + deployed}/${this.maxConcurrentTests} active)`,
       );
     }
   }
@@ -127,8 +133,6 @@ export class DeploymentSchedulerService {
     const terminalStatuses = new Set<InstanceStatus>([
       InstanceStatus.STOPPED,
       InstanceStatus.FAILED,
-      InstanceStatus.STOPPING,
-      InstanceStatus.TERMINATING,
     ]);
 
     let allDone = true;
@@ -143,7 +147,8 @@ export class DeploymentSchedulerService {
       if (isTerminal) {
         if (
           inst.status === InstanceStatus.FAILED ||
-          inst.testStatus === 'FAILED'
+          inst.testStatus === 'FAILED' ||
+          (inst.status === InstanceStatus.STOPPED && !inst.testStatus)
         ) {
           anyFailed = true;
         }
@@ -249,7 +254,6 @@ export class DeploymentSchedulerService {
     return {
       runId,
       instanceId,
-      k8sNamespaceName: `dokkimi-${instanceId}`,
       instanceItemIds,
       definition: rawDefinitionToDeployable(definition),
     };

@@ -1,5 +1,5 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { loadSpec } from '../lib/load-spec.js';
+import { loadSpec } from '../lib/load-spec';
 
 export function registerSpecResource(server: McpServer): void {
   server.resource(

@@ -11,6 +11,13 @@ jest.mock('../lib/cli-utils', () => ({
 jest.mock('../lib/inspect-run', () => ({
   inspectRun: jest.fn(),
 }));
+jest.mock('../lib/project-path', () => ({
+  getProjectPath: () => '/mock/project',
+  latestRunUrl: (ctUrl: string, projectPath?: string) =>
+    projectPath
+      ? `${ctUrl}/runs/latest?projectPath=${encodeURIComponent(projectPath)}`
+      : `${ctUrl}/runs/latest`,
+}));
 
 import { inspect } from './inspect';
 import { resolveDefinitions } from '@dokkimi/definition-resolver';
@@ -64,7 +71,7 @@ describe('inspect', () => {
     await inspect([]);
 
     expect(mockFetchJson).toHaveBeenCalledWith(
-      'http://localhost:19001/runs/latest',
+      'http://localhost:19001/runs/latest?projectPath=%2Fmock%2Fproject',
     );
     expect(mockInspectRun).toHaveBeenCalledWith(
       'http://localhost:19001',

@@ -1,5 +1,5 @@
 class Dokkimi < Formula
-  desc "CLI for managing isolated Kubernetes sandboxes for microservice testing"
+  desc "CLI for isolated Docker environments for microservice testing"
   homepage "https://dokkimi.com"
   url "https://registry.npmjs.org/dokkimi/-/dokkimi-0.3.7.tgz"
   sha256 "4ba68e0dd80ecc66e12ed340358914fd2bc5ecaaaca99b784cb18a25619ba6c9"

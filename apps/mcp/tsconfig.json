@@ -1,13 +1,10 @@
 {
   "extends": "../../tsconfig.json",
   "compilerOptions": {
-    "outDir": "./dist",
-    "rootDir": "./src",
-    "module": "nodenext",
-    "moduleResolution": "nodenext",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
     "target": "ES2022",
-    "noEmit": false,
-    "declaration": true,
+    "noEmit": true,
     "types": ["node"]
   },
   "include": ["src/**/*.ts"],

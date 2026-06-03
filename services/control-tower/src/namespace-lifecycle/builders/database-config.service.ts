@@ -1,5 +1,4 @@
 import { Injectable } from '@nestjs/common';
-import * as k8s from '@kubernetes/client-node';
 import { getConfig } from '@dokkimi/config';
 
 export interface DatabaseConfig {
@@ -7,8 +6,6 @@ export interface DatabaseConfig {
   environment: Record<string, string>;
   ports: number[];
   command?: string[];
-  volumeMounts?: k8s.V1VolumeMount[];
-  volumes?: k8s.V1Volume[];
 }
 
 export interface DatabaseCredentials {
@@ -40,18 +37,6 @@ export class DatabaseConfigService {
           POSTGRES_PASSWORD: dbPassword,
         },
         ports: [5432],
-        volumeMounts: [
-          {
-            name: 'postgres-data',
-            mountPath: '/var/lib/postgresql/data',
-          },
-        ],
-        volumes: [
-          {
-            name: 'postgres-data',
-            emptyDir: {},
-          },
-        ],
       },
       mysql: {
         image: `mysql:${version || '8'}`,
@@ -62,18 +47,6 @@ export class DatabaseConfigService {
           MYSQL_ROOT_PASSWORD: dbPassword, // Same as password for simplicity
         },
         ports: [3306],
-        volumeMounts: [
-          {
-            name: 'mysql-data',
-            mountPath: '/var/lib/mysql',
-          },
-        ],
-        volumes: [
-          {
-            name: 'mysql-data',
-            emptyDir: {},
-          },
-        ],
       },
       mongodb: {
         image: `mongo:${version || '7'}`,
@@ -87,18 +60,6 @@ export class DatabaseConfigService {
             : {}),
         },
         ports: [27017],
-        volumeMounts: [
-          {
-            name: 'mongo-data',
-            mountPath: '/data/db',
-          },
-        ],
-        volumes: [
-          {
-            name: 'mongo-data',
-            emptyDir: {},
-          },
-        ],
       },
       redis: {
         image: `redis:${version || '7-alpine'}`,
@@ -109,18 +70,6 @@ export class DatabaseConfigService {
         ...(dbPassword
           ? { command: ['redis-server', '--requirepass', dbPassword] }
           : {}),
-        volumeMounts: [
-          {
-            name: 'redis-data',
-            mountPath: '/data',
-          },
-        ],
-        volumes: [
-          {
-            name: 'redis-data',
-            emptyDir: {},
-          },
-        ],
       },
     };
 

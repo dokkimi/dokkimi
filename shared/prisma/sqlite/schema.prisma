@@ -69,6 +69,7 @@ enum RunStatus {
 model Run {
   id          String    @id @default(uuid())
   status      RunStatus @default(PENDING)
+  projectPath String?
   createdAt   DateTime  @default(now())
   completedAt DateTime?
   cancelledAt DateTime?
@@ -76,6 +77,7 @@ model Run {
   instances NamespaceInstance[]
 
   @@index([status])
+  @@index([projectPath])
   @@map("runs")
 }
 
@@ -88,7 +90,7 @@ model NamespaceInstance {
   id     String         @id @default(uuid())
   name   String // Definition name (e.g. "api-tests")
   status InstanceStatus @default(PENDING)
-  k8sNamespace       String? // Actual K8s namespace name
+  dockerNetwork      String? // Docker network name for this instance
   startedAt          DateTime?
   stoppedAt          DateTime?
 
@@ -129,7 +131,7 @@ model InstanceItem {
   status               ItemStatus      @default(PENDING)
   readinessStatus      ReadinessStatus @default(UNKNOWN)
   readinessLastChecked DateTime?
-  k8sName              String? // Actual K8s resource name
+  containerName        String? // Docker container name
   createdAt            DateTime        @default(now())
   updatedAt            DateTime        @updatedAt
 

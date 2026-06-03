@@ -69,12 +69,12 @@ export class NamespaceInstanceService {
   }
 
   /**
-   * Updates instance K8s namespace name
+   * Updates instance Docker network name
    */
-  async updateInstanceK8sNamespace(instanceId: string, k8sNamespace: string) {
+  async updateInstanceDockerNetwork(instanceId: string, dockerNetwork: string) {
     return this.prisma.namespaceInstance.update({
       where: { id: instanceId },
-      data: { k8sNamespace },
+      data: { dockerNetwork },
     });
   }
 }

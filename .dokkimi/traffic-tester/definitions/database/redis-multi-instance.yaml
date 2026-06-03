@@ -1,7 +1,7 @@
 name: redis-multi-instance
 description: |
   Two independent Redis instances in the same namespace. Validates that
-  the wire protocol proxy, K8s Service routing, health checks, and
+  the wire protocol proxy, Docker DNS routing, health checks, and
   test-agent connection management all work correctly when multiple
   Redis databases coexist. Each instance has its own keyspace.
 config:
@@ -16,7 +16,7 @@ items:
 tests:
   - name: Each instance has an independent keyspace
     steps:
-      - name: Parallel requests
+      - name: SET same key in both instances with different values
         action:
           type: parallel
           actions:
@@ -26,16 +26,32 @@ tests:
             - type: dbQuery
               database: session-db
               query: SET shared-key session-value
-      - name: Parallel requests
+      - name: GET from cache-db returns cache-value
         action:
-          type: parallel
-          actions:
-            - type: dbQuery
-              database: cache-db
-              query: GET shared-key
-            - type: dbQuery
-              database: session-db
-              query: GET shared-key
+          type: dbQuery
+          database: cache-db
+          query: GET shared-key
+        assertions:
+          - assertions:
+              - path: success
+                operator: eq
+                value: true
+              - path: data[0].value
+                operator: eq
+                value: cache-value
+      - name: GET from session-db returns session-value
+        action:
+          type: dbQuery
+          database: session-db
+          query: GET shared-key
+        assertions:
+          - assertions:
+              - path: success
+                operator: eq
+                value: true
+              - path: data[0].value
+                operator: eq
+                value: session-value
   - name: Key in one instance does not exist in the other
     steps:
       - name: SET a key only in cache-db
@@ -62,9 +78,9 @@ tests:
                 operator: length
                 value: 0
 
-  - name: Parallel writes to both instances
+  - name: Parallel writes and reads back correct values
     steps:
-      - name: Parallel requests
+      - name: SET par-key in both instances
         action:
           type: parallel
           actions:
@@ -74,21 +90,29 @@ tests:
             - type: dbQuery
               database: session-db
               query: SET par-key beta
-  - name: Read back from both instances after writes
-    steps:
-      - name: Parallel requests
+      - name: GET par-key from cache-db returns alpha
         action:
-          type: parallel
-          actions:
-            - type: dbQuery
-              database: cache-db
-              query: GET par-key
-            - type: dbQuery
-              database: session-db
-              query: GET par-key
+          type: dbQuery
+          database: cache-db
+          query: GET par-key
+        assertions:
+          - assertions:
+              - path: data[0].value
+                operator: eq
+                value: alpha
+      - name: GET par-key from session-db returns beta
+        action:
+          type: dbQuery
+          database: session-db
+          query: GET par-key
+        assertions:
+          - assertions:
+              - path: data[0].value
+                operator: eq
+                value: beta
   - name: Different data structures per instance
     steps:
-      - name: Parallel requests
+      - name: Write hash to cache-db and list to session-db
         action:
           type: parallel
           actions:
@@ -98,16 +122,32 @@ tests:
             - type: dbQuery
               database: session-db
               query: LPUSH recent-sessions sess-c sess-b sess-a
-      - name: Parallel requests
+      - name: HGETALL returns hash fields from cache-db
         action:
-          type: parallel
-          actions:
-            - type: dbQuery
-              database: cache-db
-              query: HGETALL user:1
-            - type: dbQuery
-              database: session-db
-              query: LRANGE recent-sessions 0 -1
+          type: dbQuery
+          database: cache-db
+          query: HGETALL user:1
+        assertions:
+          - assertions:
+              - path: success
+                operator: eq
+                value: true
+              - path: data
+                operator: length
+                value: 1
+      - name: LRANGE returns list items from session-db
+        action:
+          type: dbQuery
+          database: session-db
+          query: LRANGE recent-sessions 0 -1
+        assertions:
+          - assertions:
+              - path: success
+                operator: eq
+                value: true
+              - path: data
+                operator: length
+                value: 3
   - name: DEL in one instance does not affect the other
     steps:
       - name: Parallel requests
@@ -133,13 +173,23 @@ tests:
               - path: data[0].value
                 operator: eq
                 value: 1
-      - name: Parallel requests
+      - name: GET del-test from cache-db returns empty (deleted)
         action:
-          type: parallel
-          actions:
-            - type: dbQuery
-              database: cache-db
-              query: GET del-test
-            - type: dbQuery
-              database: session-db
-              query: GET del-test
+          type: dbQuery
+          database: cache-db
+          query: GET del-test
+        assertions:
+          - assertions:
+              - path: data
+                operator: length
+                value: 0
+      - name: GET del-test from session-db still returns present
+        action:
+          type: dbQuery
+          database: session-db
+          query: GET del-test
+        assertions:
+          - assertions:
+              - path: data[0].value
+                operator: eq
+                value: present

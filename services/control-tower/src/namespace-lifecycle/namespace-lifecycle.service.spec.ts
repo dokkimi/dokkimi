@@ -1,9 +1,10 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { NamespaceLifecycleService } from './namespace-lifecycle.service';
-import { KubernetesClientService } from './kubernetes/kubernetes-client.service';
+import { DockerDeployerService } from './docker/docker-deployer.service';
+import { PrismaService } from '../prisma/prisma.service';
 import { NamespaceInstanceService } from '../namespace/namespace-instance.service';
 import { InstanceItemService } from '../namespace/instance-item.service';
-import { InstanceStatus } from '@prisma/client';
+import { InstanceStatus, ItemStatus } from '@prisma/client';
 
 describe('NamespaceLifecycleService', () => {
   let service: NamespaceLifecycleService;
@@ -20,8 +21,17 @@ describe('NamespaceLifecycleService', () => {
     markAllStopping: jest.fn(),
   };
 
-  const mockK8sClient = {
-    deleteNamespace: jest.fn(),
+  const mockDockerDeployer = {
+    teardown: jest.fn(),
+  };
+
+  const mockPrisma = {
+    namespaceInstance: {
+      update: jest.fn(),
+    },
+    instanceItem: {
+      updateMany: jest.fn(),
+    },
   };
 
   beforeEach(async () => {
@@ -31,8 +41,12 @@ describe('NamespaceLifecycleService', () => {
       providers: [
         NamespaceLifecycleService,
         {
-          provide: KubernetesClientService,
-          useValue: mockK8sClient,
+          provide: DockerDeployerService,
+          useValue: mockDockerDeployer,
+        },
+        {
+          provide: PrismaService,
+          useValue: mockPrisma,
         },
         {
           provide: NamespaceInstanceService,
@@ -50,48 +64,26 @@ describe('NamespaceLifecycleService', () => {
 
   describe('stopInstance', () => {
     const instanceId = 'instance-1';
-    const k8sNamespace = 'dokkimi-ns-1';
-
-    const mockInstance = {
-      id: instanceId,
-      k8sNamespace,
-    };
-
-    const mockItems = [
-      { id: 'item-1', name: 'service-a' },
-      { id: 'item-2', name: 'service-b' },
-    ];
 
     beforeEach(() => {
-      mockNamespaceInstanceService.findInstance.mockResolvedValue(mockInstance);
       mockNamespaceInstanceService.updateInstanceStatus.mockResolvedValue(
         undefined,
       );
-      mockInstanceItemService.findInstanceItems.mockResolvedValue(mockItems);
-      mockInstanceItemService.updateInstanceItemStatus.mockResolvedValue(
-        undefined,
-      );
-      mockInstanceItemService.updateInstanceItemReadiness.mockResolvedValue(
-        undefined,
-      );
-      mockK8sClient.deleteNamespace.mockResolvedValue(undefined);
+      mockInstanceItemService.markAllStopping.mockResolvedValue(undefined);
+      mockDockerDeployer.teardown.mockResolvedValue(undefined);
+      mockPrisma.namespaceInstance.update.mockResolvedValue(undefined);
+      mockPrisma.instanceItem.updateMany.mockResolvedValue(undefined);
     });
 
-    it('should set instance status to STOPPING, then TERMINATING', async () => {
+    it('should set instance status to STOPPING', async () => {
       await service.stopInstance(instanceId);
 
       expect(
         mockNamespaceInstanceService.updateInstanceStatus,
-      ).toHaveBeenCalledTimes(2);
-      expect(
-        mockNamespaceInstanceService.updateInstanceStatus,
-      ).toHaveBeenNthCalledWith(1, instanceId, InstanceStatus.STOPPING);
-      expect(
-        mockNamespaceInstanceService.updateInstanceStatus,
-      ).toHaveBeenNthCalledWith(2, instanceId, InstanceStatus.TERMINATING);
+      ).toHaveBeenCalledWith(instanceId, InstanceStatus.STOPPING);
     });
 
-    it('should mark all instance items as STOPPING with UNKNOWN readiness', async () => {
+    it('should mark all instance items as STOPPING', async () => {
       await service.stopInstance(instanceId);
 
       expect(mockInstanceItemService.markAllStopping).toHaveBeenCalledWith(
@@ -99,31 +91,39 @@ describe('NamespaceLifecycleService', () => {
       );
     });
 
-    it('should delete the k8s namespace', async () => {
+    it('should call docker teardown', async () => {
       await service.stopInstance(instanceId);
 
-      expect(mockK8sClient.deleteNamespace).toHaveBeenCalledWith(k8sNamespace);
+      expect(mockDockerDeployer.teardown).toHaveBeenCalledWith(instanceId);
     });
 
-    it('should fall back to dokkimi-{instanceId} when k8sNamespace is null', async () => {
-      mockNamespaceInstanceService.findInstance.mockResolvedValue({
-        id: instanceId,
-        k8sNamespace: null,
-      });
-
+    it('should mark instance as STOPPED after teardown', async () => {
       await service.stopInstance(instanceId);
 
-      expect(mockK8sClient.deleteNamespace).toHaveBeenCalledWith(
-        `dokkimi-${instanceId}`,
-      );
+      expect(mockPrisma.namespaceInstance.update).toHaveBeenCalledWith({
+        where: { id: instanceId },
+        data: {
+          status: InstanceStatus.STOPPED,
+          stoppedAt: expect.any(Date),
+        },
+      });
+    });
+
+    it('should mark all items as STOPPED after teardown', async () => {
+      await service.stopInstance(instanceId);
+
+      expect(mockPrisma.instanceItem.updateMany).toHaveBeenCalledWith({
+        where: { instanceId },
+        data: { status: ItemStatus.STOPPED },
+      });
     });
 
     it('should set status to FAILED and rethrow on error', async () => {
-      const error = new Error('k8s failure');
-      mockK8sClient.deleteNamespace.mockRejectedValue(error);
+      const error = new Error('docker failure');
+      mockDockerDeployer.teardown.mockRejectedValue(error);
 
       await expect(service.stopInstance(instanceId)).rejects.toThrow(
-        'k8s failure',
+        'docker failure',
       );
 
       expect(
@@ -132,14 +132,14 @@ describe('NamespaceLifecycleService', () => {
     });
 
     it('should still throw original error if setting FAILED status also fails', async () => {
-      const originalError = new Error('k8s failure');
-      mockK8sClient.deleteNamespace.mockRejectedValue(originalError);
+      const originalError = new Error('docker failure');
+      mockDockerDeployer.teardown.mockRejectedValue(originalError);
       mockNamespaceInstanceService.updateInstanceStatus
         .mockResolvedValueOnce(undefined) // STOPPING succeeds
         .mockRejectedValueOnce(new Error('db error')); // FAILED fails
 
       await expect(service.stopInstance(instanceId)).rejects.toThrow(
-        'k8s failure',
+        'docker failure',
       );
     });
   });

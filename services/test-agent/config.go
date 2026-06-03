@@ -12,9 +12,8 @@ type Config struct {
 	// Server
 	Port string
 
-	// Kubernetes
-	K8sNamespace  string // Kubernetes namespace name (e.g., "dokkimi-abc123")
-	ConfigMapName string // Name of the ConfigMap to read from
+	// Config file
+	ConfigFilePath string
 
 	// HTTP Client
 	RequestTimeout  time.Duration
@@ -22,60 +21,41 @@ type Config struct {
 	IdleConnTimeout time.Duration
 
 	// Interceptor
-	InterceptorURL string // URL to global interceptor service (e.g., "http://interceptor-service.{namespace}.svc.cluster.local")
+	InterceptorURL string
 
-	// Control Tower — the monolith NestJS service. All log ingestion and
-	// test-completion notifications go to this single URL.
+	// Control Tower
 	ControlTowerURL string
 
-	// BrowserURL points at the co-located chromium sidecar's CDP endpoint
-	// (e.g., "ws://localhost:9222" or "http://localhost:9222" for auto-discovery).
-	// Only required when the test definition contains UI steps; empty is fine
-	// otherwise. A UI step executed with an unset BrowserURL fails fast.
+	// BrowserURL points at the co-located chromium sidecar's CDP endpoint.
+	// Only required when the test definition contains UI steps.
 	BrowserURL string
 
 	// Test execution
 	DefaultTimeoutSeconds int
 
-	// Default browser viewport dimensions (used when no viewport step is set)
+	// Default browser viewport dimensions
 	DefaultViewportWidth  int
 	DefaultViewportHeight int
 }
 
 // LoadConfig loads configuration from environment variables
-// All required env vars must be provided by Control Tower - no defaults!
 func LoadConfig() (*Config, error) {
-	k8sNamespace := os.Getenv("K8S_NAMESPACE")
-
-	// Get URLs - Control Tower should always provide these
-	interceptorURL := os.Getenv("INTERCEPTOR_URL")
-	controlTowerURL := os.Getenv("CONTROL_TOWER_URL")
-
 	cfg := &Config{
-		// Required fields - Control Tower MUST provide these
-		Port:         os.Getenv("PORT"),
-		K8sNamespace: k8sNamespace,
+		Port:           os.Getenv("PORT"),
+		ConfigFilePath: os.Getenv("CONFIG_FILE_PATH"),
 
-		// Optional fields with reasonable defaults
-		ConfigMapName: os.Getenv("CONFIG_MAP_NAME"),
-
-		// HTTP client settings (hardcoded constants - not configurable)
+		// HTTP client settings
 		RequestTimeout:        30 * time.Second,
 		MaxIdleConns:          100,
 		IdleConnTimeout:       90 * time.Second,
 		DefaultTimeoutSeconds: 300,
 
 		// URLs provided by Control Tower
-		InterceptorURL:  interceptorURL,
-		ControlTowerURL: controlTowerURL,
+		InterceptorURL:  os.Getenv("INTERCEPTOR_URL"),
+		ControlTowerURL: os.Getenv("CONTROL_TOWER_URL"),
 
-		// Optional: browser sidecar CDP endpoint (required only when UI steps run)
+		// Optional: browser sidecar CDP endpoint
 		BrowserURL: os.Getenv("BROWSER_URL"),
-	}
-
-	// Apply defaults for optional fields if not set
-	if cfg.ConfigMapName == "" {
-		cfg.ConfigMapName = "dokkimi-interceptor-config"
 	}
 
 	cfg.DefaultViewportWidth = 1280
@@ -91,15 +71,11 @@ func LoadConfig() (*Config, error) {
 		}
 	}
 
-	// Validate required fields - fail fast if Control Tower didn't provide them
 	if cfg.Port == "" {
-		return nil, fmt.Errorf("PORT is required (must be provided by Control Tower)")
-	}
-	if cfg.K8sNamespace == "" {
-		return nil, fmt.Errorf("K8S_NAMESPACE is required (must be provided by Control Tower)")
+		return nil, fmt.Errorf("PORT is required")
 	}
 	if cfg.ControlTowerURL == "" {
-		return nil, fmt.Errorf("CONTROL_TOWER_URL is required (must be provided by Control Tower)")
+		return nil, fmt.Errorf("CONTROL_TOWER_URL is required")
 	}
 
 	return cfg, nil

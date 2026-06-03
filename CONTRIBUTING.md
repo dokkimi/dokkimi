@@ -7,8 +7,7 @@ Thanks for your interest in contributing to Dokkimi! This guide covers how to se
 - Node.js 22+
 - Yarn (the repo uses Yarn workspaces)
 - Go 1.21+
-- Docker Desktop with Kubernetes enabled
-- kubectl
+- Docker
 
 ## Setup
 

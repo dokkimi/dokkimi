@@ -2,11 +2,10 @@ export interface InterceptorEnvVars extends Record<string, string | undefined> {
   // Required
   PORT: string;
   CONTROL_TOWER_URL: string;
-  K8S_NAMESPACE: string;
   NAMESPACE: string;
   API_KEY: string;
-  K8S_DNS_IP: string; // Used to bypass dnsmasq for outbound connections
   // Optional
+  DNS_IP?: string;
   ORIGIN?: string;
   ORIGIN_DOMAIN?: string;
   LOG_ACTIONS?: string;
@@ -19,7 +18,6 @@ export interface InterceptorEnvVars extends Record<string, string | undefined> {
 
 export interface TestAgentEnvVars extends Record<string, string | undefined> {
   PORT: string;
-  K8S_NAMESPACE: string;
   CONTROL_TOWER_URL: string;
   CONFIG_MAP_NAME?: string;
   INTERCEPTOR_URL?: string;

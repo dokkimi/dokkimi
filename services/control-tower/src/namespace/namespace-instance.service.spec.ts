@@ -154,25 +154,25 @@ describe('NamespaceInstanceService', () => {
     });
   });
 
-  describe('updateInstanceK8sNamespace', () => {
-    it('should update instance K8s namespace', async () => {
+  describe('updateInstanceDockerNetwork', () => {
+    it('should update instance Docker network', async () => {
       const mockUpdated = {
         id: 'instance-1',
-        k8sNamespace: 'test-namespace',
+        dockerNetwork: 'test-namespace',
       };
 
       mockPrismaService.namespaceInstance.update.mockResolvedValue(mockUpdated);
 
-      const result = await service.updateInstanceK8sNamespace(
+      const result = await service.updateInstanceDockerNetwork(
         'instance-1',
         'test-namespace',
       );
 
       expect(mockPrismaService.namespaceInstance.update).toHaveBeenCalledWith({
         where: { id: 'instance-1' },
-        data: { k8sNamespace: 'test-namespace' },
+        data: { dockerNetwork: 'test-namespace' },
       });
-      expect(result.k8sNamespace).toBe('test-namespace');
+      expect(result.dockerNetwork).toBe('test-namespace');
     });
   });
 });

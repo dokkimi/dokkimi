@@ -6,5 +6,3 @@ healthCheck: /health
 env:
   - name: DATABASE_URL
     value: postgresql://dokkimi:dokkimi@postgres-db:5432/dokkimi
-  - name: KUBERNETES_SERVICE_HOST
-    value: kubernetes.default.svc

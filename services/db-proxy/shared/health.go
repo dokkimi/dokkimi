@@ -182,33 +182,30 @@ func (h *HealthChecker) sendStatusUpdate(update HealthStatusUpdate) {
 	}
 
 	url := h.config.ControlTowerURL + "/health/status"
-	req, err := http.NewRequest(http.MethodPost, url, bytes.NewBuffer(body))
-	if err != nil {
-		log.Printf("Health check: Failed to create request: %v", err)
-		return
-	}
 
-	req.Header.Set("Content-Type", "application/json")
-
-	// Send with retry logic (exponential backoff)
 	maxRetries := 3
 	for i := 0; i < maxRetries; i++ {
+		req, err := http.NewRequest(http.MethodPost, url, bytes.NewBuffer(body))
+		if err != nil {
+			log.Printf("Health check: Failed to create request: %v", err)
+			return
+		}
+		req.Header.Set("Content-Type", "application/json")
+
 		resp, err := h.httpClient.Do(req)
 		if err == nil {
 			resp.Body.Close()
 			if resp.StatusCode == http.StatusOK || resp.StatusCode == http.StatusCreated {
-				return // Success
+				return
 			}
 		}
 
-		// Retry with exponential backoff
 		if i < maxRetries-1 {
 			backoff := time.Duration(1<<uint(i)) * time.Second
 			time.Sleep(backoff)
 		}
 	}
 
-	// Log error but don't block health checking
 	log.Printf("Health check: Failed to publish status update after %d retries", maxRetries)
 }
 
@@ -221,32 +218,29 @@ func (h *HealthChecker) sendStatusUpdateToTestAgent(update HealthStatusUpdate) {
 	}
 
 	url := h.config.TestAgentURL + "/health/status"
-	req, err := http.NewRequest(http.MethodPost, url, bytes.NewBuffer(body))
-	if err != nil {
-		log.Printf("Health check: Failed to create request to test-agent: %v", err)
-		return
-	}
 
-	req.Header.Set("Content-Type", "application/json")
-
-	// Send with retry logic (exponential backoff)
 	maxRetries := 3
 	for i := 0; i < maxRetries; i++ {
+		req, err := http.NewRequest(http.MethodPost, url, bytes.NewBuffer(body))
+		if err != nil {
+			log.Printf("Health check: Failed to create request to test-agent: %v", err)
+			return
+		}
+		req.Header.Set("Content-Type", "application/json")
+
 		resp, err := h.httpClient.Do(req)
 		if err == nil {
 			resp.Body.Close()
 			if resp.StatusCode == http.StatusOK || resp.StatusCode == http.StatusCreated {
-				return // Success
+				return
 			}
 		}
 
-		// Retry with exponential backoff
 		if i < maxRetries-1 {
 			backoff := time.Duration(1<<uint(i)) * time.Second
 			time.Sleep(backoff)
 		}
 	}
 
-	// Log error but don't block health checking
 	log.Printf("Health check: Failed to send status update to test-agent after %d retries", maxRetries)
 }

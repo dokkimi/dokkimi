@@ -7,6 +7,7 @@ import (
 	"net"
 	"strings"
 	"sync"
+	"time"
 )
 
 type ConnectionHandler func(clientConn net.Conn)
@@ -38,12 +39,18 @@ func NewBaseProxy(cfg *Config, logger *QueryLogger, handler ConnectionHandler) *
 }
 
 func (p *BaseProxy) Listen() error {
-	ln, err := net.Listen("tcp", p.ListenAddr)
-	if err != nil {
-		return fmt.Errorf("listen on %s: %w", p.ListenAddr, err)
+	var ln net.Listener
+	var err error
+	for attempt := 0; attempt < 30; attempt++ {
+		ln, err = net.Listen("tcp", p.ListenAddr)
+		if err == nil {
+			p.Listener = ln
+			return nil
+		}
+		log.Printf("listen on %s failed (attempt %d/30): %v — retrying in 1s", p.ListenAddr, attempt+1, err)
+		time.Sleep(1 * time.Second)
 	}
-	p.Listener = ln
-	return nil
+	return fmt.Errorf("listen on %s: %w (after 30 retries)", p.ListenAddr, err)
 }
 
 func (p *BaseProxy) Serve() error {

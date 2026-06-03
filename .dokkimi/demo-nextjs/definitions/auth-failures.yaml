@@ -12,21 +12,39 @@ items:
   - $ref: ../shared/nextjs-demo.yaml
   - $ref: ../shared/postgres.yaml
 tests:
-  - name: Auth boundaries — bare callback rejects, unauthenticated write rejects
+  - name: Bare callback without code/state returns 400
     steps:
-      - name: Parallel requests
+      - name: GET /api/auth/callback with no params
         action:
-          type: parallel
-          actions:
-            - type: httpRequest
-              method: GET
-              url: nextjs-demo/api/auth/callback
-            - type: httpRequest
-              method: POST
-              url: nextjs-demo/api/bookmarks
-              headers:
-                Content-Type: application/json
-              body:
-                title: Should never persist
-                url: https://example.com/nope
-                country: US
+          type: httpRequest
+          method: GET
+          url: nextjs-demo/api/auth/callback
+        assertions:
+          - assertions:
+              - path: response.status
+                operator: eq
+                value: 400
+              - path: response.body.error
+                operator: eq
+                value: missing code or state
+  - name: Unauthenticated write returns 401
+    steps:
+      - name: POST /api/bookmarks without session
+        action:
+          type: httpRequest
+          method: POST
+          url: nextjs-demo/api/bookmarks
+          headers:
+            Content-Type: application/json
+          body:
+            title: Should never persist
+            url: https://example.com/nope
+            country: US
+        assertions:
+          - assertions:
+              - path: response.status
+                operator: eq
+                value: 401
+              - path: response.body.error
+                operator: eq
+                value: unauthorized

@@ -25,6 +25,10 @@ export class CreateRunDto {
   definitions!: string[];
 
   @IsOptional()
+  @IsString()
+  projectPath?: string;
+
+  @IsOptional()
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => RegistryCredentialDto)

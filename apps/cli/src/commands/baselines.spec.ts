@@ -11,6 +11,13 @@ jest.mock('../lib/baseline-upload');
 jest.mock('../lib/editor');
 jest.mock('@dokkimi/telemetry');
 jest.mock('@dokkimi/definition-resolver');
+jest.mock('../lib/project-path', () => ({
+  getProjectPath: () => '/mock/project',
+  latestRunUrl: (ctUrl: string, projectPath?: string) =>
+    projectPath
+      ? `${ctUrl}/runs/latest?projectPath=${encodeURIComponent(projectPath)}`
+      : `${ctUrl}/runs/latest`,
+}));
 
 import * as fs from 'fs';
 import { fetchJson } from '../lib/cli-utils';

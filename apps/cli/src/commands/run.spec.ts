@@ -7,7 +7,6 @@ jest.mock('@dokkimi/service-manager', () => ({
 }));
 jest.mock('@dokkimi/telemetry', () => ({
   trackEvent: jest.fn(),
-  detectK8sProvider: jest.fn(() => 'docker-desktop'),
 }));
 jest.mock('@dokkimi/config', () => ({
   loadConfig: jest.fn(),
@@ -296,7 +295,6 @@ describe('run', () => {
         failed_count: 1,
         trigger: 'initial',
         watch_mode: false,
-        k8s_provider: 'docker-desktop',
       }),
     );
   });

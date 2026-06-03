@@ -9,17 +9,11 @@ jest.mock('@dokkimi/config');
 jest.mock('@dokkimi/telemetry');
 jest.mock('@dokkimi/service-manager');
 
-import * as fs from 'fs';
 import { loadConfig } from '@dokkimi/config';
 import { selectMenu } from '../lib/menu';
 import { numberInput } from '../lib/number-input';
 import { enterAltScreen, exitAltScreen } from '../lib/terminal';
-import {
-  getConcurrencyPrefs,
-  setConcurrencyPrefs,
-  getKubeconfigPrefs,
-  setKubeconfigPrefs,
-} from '@dokkimi/config';
+import { getConcurrencyPrefs, setConcurrencyPrefs } from '@dokkimi/config';
 import {
   isTelemetryEnabled,
   setTelemetryEnabled,
@@ -38,8 +32,6 @@ const mockEnterAlt = enterAltScreen as jest.Mock;
 const mockExitAlt = exitAltScreen as jest.Mock;
 const mockGetConcurrency = getConcurrencyPrefs as jest.Mock;
 const mockSetConcurrency = setConcurrencyPrefs as jest.Mock;
-const mockGetKubeconfig = getKubeconfigPrefs as jest.Mock;
-const mockSetKubeconfig = setKubeconfigPrefs as jest.Mock;
 const mockIsTelemetry = isTelemetryEnabled as jest.Mock;
 const mockSetTelemetry = setTelemetryEnabled as jest.Mock;
 const mockTrack = trackEvent as jest.Mock;
@@ -62,7 +54,6 @@ beforeEach(() => {
     .mockImplementation(() => true);
 
   mockGetConcurrency.mockReturnValue({});
-  mockGetKubeconfig.mockReturnValue({});
   mockIsTelemetry.mockReturnValue(true);
   mockLoadConfig.mockReturnValue({
     services: { controlTower: { host: 'localhost', port: 19001 } },
@@ -104,22 +95,20 @@ describe('configCommand', () => {
     expect(mockExitAlt).toHaveBeenCalled();
     expect(mockSelectMenu).toHaveBeenCalledTimes(1);
 
-    // Menu should have 3 items: concurrency, kubernetes, telemetry
     const items = mockSelectMenu.mock.calls[0][0];
-    expect(items).toHaveLength(3);
+    expect(items).toHaveLength(2);
     expect(items[0].label).toContain('Concurrency');
-    expect(items[1].label).toContain('Kubernetes');
-    expect(items[2].label).toContain('Telemetry');
+    expect(items[1].label).toContain('Telemetry');
   });
 
-  it('updates concurrency setting (maxNamespaces)', async () => {
-    mockGetConcurrency.mockReturnValue({ maxNamespaces: 6 });
+  it('updates concurrency setting (maxConcurrentTests)', async () => {
+    mockGetConcurrency.mockReturnValue({ maxConcurrentTests: 6 });
 
     // Top menu -> select concurrency
     mockSelectMenu
       .mockResolvedValueOnce({ value: 'concurrency', index: 0 })
-      // Concurrency sub-menu -> select maxNamespaces
-      .mockResolvedValueOnce({ value: 'maxNamespaces', index: 0 })
+      // Concurrency sub-menu -> select maxConcurrentTests
+      .mockResolvedValueOnce({ value: 'maxConcurrentTests', index: 0 })
       // Back to top menu -> escape
       .mockResolvedValueOnce(null)
       // Reboot prompt -> exit without rebooting
@@ -130,11 +119,11 @@ describe('configCommand', () => {
     await configCommand([]);
 
     expect(mockSetConcurrency).toHaveBeenCalledWith(
-      expect.objectContaining({ maxNamespaces: 10 }),
+      expect.objectContaining({ maxConcurrentTests: 10 }),
     );
     expect(mockTrack).toHaveBeenCalledWith('cli_config_changed', {
       category: 'concurrency',
-      setting: 'maxNamespaces',
+      setting: 'maxConcurrentTests',
       value: 10,
     });
   });
@@ -181,7 +170,7 @@ describe('configCommand', () => {
 
     mockSelectMenu
       .mockResolvedValueOnce({ value: 'concurrency', index: 0 })
-      .mockResolvedValueOnce({ value: 'maxNamespaces', index: 0 })
+      .mockResolvedValueOnce({ value: 'maxConcurrentTests', index: 0 })
       .mockResolvedValueOnce(null)
       // Reboot prompt -> reboot
       .mockResolvedValueOnce({ value: 'reboot', index: 0 });
@@ -232,12 +221,12 @@ describe('configCommand', () => {
     expect(mockTrack).toHaveBeenCalledWith('cli_config_opened', {});
   });
 
-  it('updates concurrency setting (maxBooting)', async () => {
-    mockGetConcurrency.mockReturnValue({ maxBooting: 2 });
+  it('updates concurrency setting (maxBootingTests)', async () => {
+    mockGetConcurrency.mockReturnValue({ maxBootingTests: 2 });
 
     mockSelectMenu
       .mockResolvedValueOnce({ value: 'concurrency', index: 0 })
-      .mockResolvedValueOnce({ value: 'maxBooting', index: 1 })
+      .mockResolvedValueOnce({ value: 'maxBootingTests', index: 1 })
       .mockResolvedValueOnce(null)
       .mockResolvedValueOnce({ value: 'exit', index: 1 });
 
@@ -246,17 +235,20 @@ describe('configCommand', () => {
     await configCommand([]);
 
     expect(mockSetConcurrency).toHaveBeenCalledWith(
-      expect.objectContaining({ maxBooting: 4 }),
+      expect.objectContaining({ maxBootingTests: 4 }),
     );
     expect(mockTrack).toHaveBeenCalledWith('cli_config_changed', {
       category: 'concurrency',
-      setting: 'maxBooting',
+      setting: 'maxBootingTests',
       value: 4,
     });
   });
 
   it('resets concurrency to defaults', async () => {
-    mockGetConcurrency.mockReturnValue({ maxNamespaces: 10, maxBooting: 5 });
+    mockGetConcurrency.mockReturnValue({
+      maxConcurrentTests: 10,
+      maxBootingTests: 5,
+    });
 
     mockSelectMenu
       .mockResolvedValueOnce({ value: 'concurrency', index: 0 })
@@ -278,7 +270,7 @@ describe('configCommand', () => {
 
     mockSelectMenu
       .mockResolvedValueOnce({ value: 'concurrency', index: 0 })
-      .mockResolvedValueOnce({ value: 'maxNamespaces', index: 0 })
+      .mockResolvedValueOnce({ value: 'maxConcurrentTests', index: 0 })
       .mockResolvedValueOnce(null);
 
     mockNumberInput.mockResolvedValueOnce(null);
@@ -286,83 +278,6 @@ describe('configCommand', () => {
     await configCommand([]);
 
     expect(mockSetConcurrency).not.toHaveBeenCalled();
-    expect(mockShutdown).not.toHaveBeenCalled();
-  });
-
-  it('kubernetes menu shows error when kubeconfig cannot be read', async () => {
-    (fs.readFileSync as jest.Mock).mockImplementation(() => {
-      throw new Error('ENOENT');
-    });
-
-    mockSelectMenu
-      .mockResolvedValueOnce({ value: 'kubernetes', index: 1 })
-      .mockResolvedValueOnce(null) // error menu dismiss
-      .mockResolvedValueOnce(null); // top-level exit
-
-    await configCommand([]);
-
-    expect(mockSetKubeconfig).not.toHaveBeenCalled();
-    expect(mockShutdown).not.toHaveBeenCalled();
-  });
-
-  it('kubernetes menu selects a context', async () => {
-    (fs.readFileSync as jest.Mock).mockReturnValue(
-      'contexts:\n  - name: docker-desktop\n  - name: minikube\ncurrent-context: docker-desktop',
-    );
-    mockGetKubeconfig.mockReturnValue({});
-
-    mockSelectMenu
-      .mockResolvedValueOnce({ value: 'kubernetes', index: 1 })
-      .mockResolvedValueOnce({ value: 'minikube', index: 1 }) // select minikube
-      .mockResolvedValueOnce(null)
-      .mockResolvedValueOnce({ value: 'exit', index: 1 });
-
-    await configCommand([]);
-
-    expect(mockSetKubeconfig).toHaveBeenCalledWith({ context: 'minikube' });
-    expect(mockTrack).toHaveBeenCalledWith('cli_config_changed', {
-      category: 'kubernetes',
-      setting: 'context',
-      value: 'minikube',
-    });
-  });
-
-  it('kubernetes menu selects default context', async () => {
-    (fs.readFileSync as jest.Mock).mockReturnValue(
-      'contexts:\n  - name: docker-desktop\ncurrent-context: docker-desktop',
-    );
-    mockGetKubeconfig.mockReturnValue({ context: 'docker-desktop' });
-
-    mockSelectMenu
-      .mockResolvedValueOnce({ value: 'kubernetes', index: 1 })
-      .mockResolvedValueOnce({ value: '__default__', index: 0 })
-      .mockResolvedValueOnce(null)
-      .mockResolvedValueOnce({ value: 'exit', index: 1 });
-
-    await configCommand([]);
-
-    expect(mockSetKubeconfig).toHaveBeenCalledWith({});
-    expect(mockTrack).toHaveBeenCalledWith('cli_config_changed', {
-      category: 'kubernetes',
-      setting: 'context',
-      value: 'default',
-    });
-  });
-
-  it('kubernetes no-op when selecting already-active context', async () => {
-    (fs.readFileSync as jest.Mock).mockReturnValue(
-      'contexts:\n  - name: minikube\ncurrent-context: minikube',
-    );
-    mockGetKubeconfig.mockReturnValue({ context: 'minikube' });
-
-    mockSelectMenu
-      .mockResolvedValueOnce({ value: 'kubernetes', index: 1 })
-      .mockResolvedValueOnce({ value: 'minikube', index: 1 })
-      .mockResolvedValueOnce(null);
-
-    await configCommand([]);
-
-    expect(mockSetKubeconfig).not.toHaveBeenCalled();
     expect(mockShutdown).not.toHaveBeenCalled();
   });
 });

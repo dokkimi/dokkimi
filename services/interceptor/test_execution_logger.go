@@ -31,11 +31,14 @@ type TestExecutionLogger struct {
 	stopChan       chan struct{}
 }
 
-func NewTestExecutionLogger(logEndpointURL, instanceID string) *TestExecutionLogger {
+func NewTestExecutionLogger(logEndpointURL, instanceID string, client *http.Client) *TestExecutionLogger {
+	if client == nil {
+		client = &http.Client{Timeout: 10 * time.Second}
+	}
 	l := &TestExecutionLogger{
 		logEndpointURL: logEndpointURL,
 		instanceID:     instanceID,
-		httpClient:     &http.Client{Timeout: 10 * time.Second},
+		httpClient:     client,
 		logChan:        make(chan TestExecutionLogMessage, 1000),
 		stopChan:       make(chan struct{}),
 	}

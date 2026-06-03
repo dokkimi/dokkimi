@@ -44,22 +44,24 @@ type HealthConfig struct {
 	TestAgentURL        string // Optional: URL for test-agent
 	CheckTimeout        time.Duration
 	Origin              string // Service name to health check (e.g., "service-a")
-	K8sDNSIP            string // K8s DNS IP for resolving service ClusterIP
-	K8sNamespace        string // K8s namespace for service resolution
+	DNSIP               string // DNS IP for resolving service names (Docker: 127.0.0.11)
 }
 
 // NewHealthChecker creates a new health checker
-func NewHealthChecker(cfg *HealthConfig) *HealthChecker {
+func NewHealthChecker(cfg *HealthConfig, ctClient *http.Client) *HealthChecker {
 	if cfg == nil || cfg.HealthCheckEndpoint == "" || cfg.ServicePort == "" || cfg.InstanceItemName == "" {
-		// Health checking is optional - return nil if not configured
 		return nil
 	}
 
+	if ctClient == nil {
+		ctClient = &http.Client{Timeout: cfg.CheckTimeout}
+	} else {
+		ctClient.Timeout = cfg.CheckTimeout
+	}
+
 	checker := &HealthChecker{
-		config: cfg,
-		httpClient: &http.Client{
-			Timeout: cfg.CheckTimeout,
-		},
+		config:           cfg,
+		httpClient:       ctClient,
 		state:            StateBooting,
 		lastStatus:       false,
 		consecutiveReady: 0,
@@ -139,6 +141,12 @@ func (h *HealthChecker) performCheck() {
 	ready, statusCode, err := h.checkHealth()
 	checkDuration := int(time.Since(startTime).Milliseconds())
 
+	if err != nil {
+		log.Printf("Health check [%s]: ready=%v status=%d duration=%dms err=%v", h.config.InstanceItemName, ready, statusCode, checkDuration, err)
+	} else if !ready {
+		log.Printf("Health check [%s]: ready=%v status=%d duration=%dms", h.config.InstanceItemName, ready, statusCode, checkDuration)
+	}
+
 	// Update state based on result
 	h.updateState(ready)
 
@@ -155,36 +163,26 @@ func (h *HealthChecker) performCheck() {
 }
 
 // checkHealth performs the actual HTTP health check
-// For per-service interceptors, resolves the service name using K8s DNS and calls it remotely
+// For per-service interceptors, resolves the service name using Docker DNS and calls it remotely
 func (h *HealthChecker) checkHealth() (ready bool, statusCode int, err error) {
-	// Resolve service name to ClusterIP using K8s DNS
+	// Resolve service name to container IP using Docker DNS
 	serviceName := h.config.Origin
 	if serviceName == "" {
 		// If ORIGIN is not set, this is the shared interceptor - skip health check
 		return false, 0, fmt.Errorf("ORIGIN not set, cannot perform health check")
 	}
 
-	// Build service FQDN for DNS resolution. In-cluster, Control Tower sets
-	// K8sNamespace and we construct the full DNS name. Outside a cluster (e.g.
-	// unit tests pointing at a local server), K8sNamespace is empty and we use
-	// the provided Origin as-is.
-	var serviceFQDN string
-	if h.config.K8sNamespace != "" {
-		serviceFQDN = fmt.Sprintf("%s.%s.svc.cluster.local", serviceName, h.config.K8sNamespace)
-	} else {
-		serviceFQDN = serviceName
-	}
+	// Resolve service name to IP via Docker DNS
+	serviceFQDN := serviceName
 
-	// Resolve service ClusterIP using K8s DNS
 	var dialer *net.Dialer
-	if h.config.K8sDNSIP != "" {
+	if h.config.DNSIP != "" {
 		dialer = &net.Dialer{
 			Resolver: &net.Resolver{
 				PreferGo: true,
 				Dial: func(ctx context.Context, network, address string) (net.Conn, error) {
-					// Use K8s DNS instead of system resolver
 					d := net.Dialer{}
-					return d.DialContext(ctx, "udp", h.config.K8sDNSIP+":53")
+					return d.DialContext(ctx, "udp", h.config.DNSIP+":53")
 				},
 			},
 		}
@@ -192,23 +190,21 @@ func (h *HealthChecker) checkHealth() (ready bool, statusCode int, err error) {
 		dialer = &net.Dialer{}
 	}
 
-	// Resolve service name to IP
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	ips, err := dialer.Resolver.LookupIPAddr(ctx, serviceFQDN)
-	if err != nil {
-		return false, 0, fmt.Errorf("failed to resolve service %s: %w", serviceFQDN, err)
+	ips, lookupErr := dialer.Resolver.LookupIPAddr(ctx, serviceFQDN)
+	if lookupErr != nil {
+		return false, 0, fmt.Errorf("failed to resolve service %s: %w", serviceFQDN, lookupErr)
 	}
 
 	if len(ips) == 0 {
 		return false, 0, fmt.Errorf("no IP addresses found for service %s", serviceFQDN)
 	}
 
-	// Use first IP address (ClusterIP)
-	serviceIP := ips[0].IP.String()
+	var serviceIP string
+	serviceIP = ips[0].IP.String()
 
-	// Build health check URL using resolved ClusterIP and standardized port 80
 	url := fmt.Sprintf("http://%s:%s%s", serviceIP, h.config.ServicePort, h.config.HealthCheckEndpoint)
 
 	req, err := http.NewRequest(http.MethodGet, url, nil)
@@ -320,17 +316,17 @@ func (h *HealthChecker) sendStatusUpdate(update HealthStatusUpdate) {
 	}
 
 	url := h.config.ControlTowerURL + "/health/status"
-	req, err := http.NewRequest(http.MethodPost, url, bytes.NewBuffer(body))
-	if err != nil {
-		log.Printf("Health check: Failed to create request: %v", err)
-		return
-	}
-
-	req.Header.Set("Content-Type", "application/json")
 
 	// Send with retry logic (exponential backoff)
 	maxRetries := 3
 	for i := 0; i < maxRetries; i++ {
+		req, err := http.NewRequest(http.MethodPost, url, bytes.NewBuffer(body))
+		if err != nil {
+			log.Printf("Health check: Failed to create request: %v", err)
+			return
+		}
+		req.Header.Set("Content-Type", "application/json")
+
 		resp, err := h.httpClient.Do(req)
 		if err == nil {
 			resp.Body.Close()
@@ -359,17 +355,17 @@ func (h *HealthChecker) sendStatusUpdateToTestAgent(update HealthStatusUpdate) {
 	}
 
 	url := h.config.TestAgentURL + "/health/status"
-	req, err := http.NewRequest(http.MethodPost, url, bytes.NewBuffer(body))
-	if err != nil {
-		log.Printf("Health check: Failed to create request to test-agent: %v", err)
-		return
-	}
-
-	req.Header.Set("Content-Type", "application/json")
 
 	// Send with retry logic (exponential backoff)
 	maxRetries := 3
 	for i := 0; i < maxRetries; i++ {
+		req, err := http.NewRequest(http.MethodPost, url, bytes.NewBuffer(body))
+		if err != nil {
+			log.Printf("Health check: Failed to create request to test-agent: %v", err)
+			return
+		}
+		req.Header.Set("Content-Type", "application/json")
+
 		resp, err := h.httpClient.Do(req)
 		if err == nil {
 			resp.Body.Close()

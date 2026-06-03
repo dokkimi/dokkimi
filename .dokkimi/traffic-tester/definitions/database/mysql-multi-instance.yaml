@@ -2,7 +2,7 @@ name: mysql-multi-instance
 description: |
   Two independent MySQL instances in the same namespace, each with
   its own schema and seed data. Validates that the wire protocol proxy,
-  K8s Service routing, health checks, and test-agent connection pooling
+  Docker DNS routing, health checks, and test-agent connection pooling
   all work correctly when multiple MySQL databases coexist.
 config:
   timeoutSeconds: 120
@@ -18,16 +18,32 @@ items:
 tests:
   - name: Each instance has its own schema
     steps:
-      - name: Parallel requests
+      - name: Count products in products-db
         action:
-          type: parallel
-          actions:
-            - type: dbQuery
-              database: products-db
-              query: 'SELECT COUNT(*) AS cnt FROM products'
-            - type: dbQuery
-              database: orders-db
-              query: 'SELECT COUNT(*) AS cnt FROM orders'
+          type: dbQuery
+          database: products-db
+          query: 'SELECT COUNT(*) AS cnt FROM products'
+        assertions:
+          - assertions:
+              - path: success
+                operator: eq
+                value: true
+              - path: data[0].cnt
+                operator: gte
+                value: 1
+      - name: Count orders in orders-db
+        action:
+          type: dbQuery
+          database: orders-db
+          query: 'SELECT COUNT(*) AS cnt FROM orders'
+        assertions:
+          - assertions:
+              - path: success
+                operator: eq
+                value: true
+              - path: data[0].cnt
+                operator: gte
+                value: 1
   - name: products table does not exist in orders-db
     steps:
       - name: Query products table on orders-db should fail
@@ -62,37 +78,85 @@ tests:
 
   - name: Parallel writes to both instances
     steps:
-      - name: Parallel requests
+      - name: Insert into products-db
         action:
-          type: parallel
-          actions:
-            - type: dbQuery
-              database: products-db
-              query: "INSERT INTO products (name, price, stock) VALUES ('Contraption', 29.99, 10)"
-            - type: dbQuery
-              database: orders-db
-              query: "INSERT INTO orders (customer_name, total_cents, status) VALUES ('Dave', 3500, 'pending')"
+          type: dbQuery
+          database: products-db
+          query: "INSERT INTO products (name, price, stock) VALUES ('Contraption', 29.99, 10)"
+        assertions:
+          - assertions:
+              - path: success
+                operator: eq
+                value: true
+      - name: Insert into orders-db
+        action:
+          type: dbQuery
+          database: orders-db
+          query: "INSERT INTO orders (customer_name, total_cents, status) VALUES ('Dave', 3500, 'pending')"
+        assertions:
+          - assertions:
+              - path: success
+                operator: eq
+                value: true
   - name: Read back from both instances after writes
     steps:
-      - name: Parallel requests
+      - name: Read Contraption from products-db
         action:
-          type: parallel
-          actions:
-            - type: dbQuery
-              database: products-db
-              query: "SELECT name, price, stock FROM products WHERE name = 'Contraption'"
-            - type: dbQuery
-              database: orders-db
-              query: "SELECT customer_name, total_cents, status FROM orders WHERE customer_name = 'Dave'"
+          type: dbQuery
+          database: products-db
+          query: "SELECT name, price, stock FROM products WHERE name = 'Contraption'"
+        assertions:
+          - assertions:
+              - path: data
+                operator: length
+                value: 1
+              - path: data[0].name
+                operator: eq
+                value: Contraption
+              - path: data[0].stock
+                operator: eq
+                value: 10
+      - name: Read Dave's order from orders-db
+        action:
+          type: dbQuery
+          database: orders-db
+          query: "SELECT customer_name, total_cents, status FROM orders WHERE customer_name = 'Dave'"
+        assertions:
+          - assertions:
+              - path: data
+                operator: length
+                value: 1
+              - path: data[0].total_cents
+                operator: eq
+                value: 3500
+              - path: data[0].status
+                operator: eq
+                value: pending
   - name: Typed results from both instances
     steps:
-      - name: Parallel requests
+      - name: Read seeded product by id
         action:
-          type: parallel
-          actions:
-            - type: dbQuery
-              database: products-db
-              query: 'SELECT id, name FROM products WHERE id = 1'
-            - type: dbQuery
-              database: orders-db
-              query: 'SELECT id, total_cents FROM orders WHERE id = 1'
+          type: dbQuery
+          database: products-db
+          query: 'SELECT id, name FROM products WHERE id = 1'
+        assertions:
+          - assertions:
+              - path: data
+                operator: length
+                value: 1
+              - path: data[0].id
+                operator: eq
+                value: 1
+      - name: Read seeded order by id
+        action:
+          type: dbQuery
+          database: orders-db
+          query: 'SELECT id, total_cents FROM orders WHERE id = 1'
+        assertions:
+          - assertions:
+              - path: data
+                operator: length
+                value: 1
+              - path: data[0].id
+                operator: eq
+                value: 1

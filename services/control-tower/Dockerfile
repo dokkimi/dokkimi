@@ -64,18 +64,18 @@ COPY .yarn/ .yarn/
 COPY --from=builder /app/shared/config/ shared/config/
 COPY --from=builder /app/shared/platform/ shared/platform/
 COPY --from=builder /app/shared/telemetry/ shared/telemetry/
-COPY --from=builder /app/shared/definition-validator/ shared/definition-validator/
-COPY --from=builder /app/shared/definition-resolver/package.json shared/definition-resolver/
 
 # Copy Prisma schema
 COPY --from=builder /app/shared/prisma/ shared/prisma/
 
-# Stub out other workspaces for yarn focus
+# Stub out other workspaces (yarn needs all package.jsons to resolve the lockfile)
+COPY shared/definition-validator/package.json shared/definition-validator/
+COPY shared/definition-resolver/package.json shared/definition-resolver/
+COPY shared/service-manager/package.json shared/service-manager/
 COPY apps/vscode/package.json apps/vscode/
 COPY apps/cli/package.json apps/cli/
 COPY apps/mcp/package.json apps/mcp/
 COPY apps/landing/package.json apps/landing/
-COPY shared/service-manager/package.json shared/service-manager/
 
 # Copy config files for runtime
 COPY config/config.yaml config/config.yaml
@@ -83,7 +83,6 @@ COPY config/config.yaml config/config.yaml
 # Copy service (built)
 COPY --from=builder /app/services/control-tower/package.json services/control-tower/
 COPY --from=builder /app/services/control-tower/dist/ services/control-tower/dist/
-COPY --from=builder /app/services/control-tower/nest-cli.json services/control-tower/
 
 # Install production dependencies only
 RUN yarn workspaces focus control-tower --production

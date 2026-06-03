@@ -235,7 +235,7 @@ This document contains a comprehensive review of each module in the Control Towe
 
 ### Current State
 
-- Health checks for database, Kubernetes, and Prisma
+- Health checks for database and Prisma
 - Separate readiness and liveness endpoints
 
 ### Findings
@@ -253,7 +253,7 @@ This document contains a comprehensive review of each module in the Control Towe
    - **Recommendation**: Combine or clarify the difference
 
 2. **Error Handling**
-   - Kubernetes check marks as degraded but doesn't provide actionable info
+   - Health check marks as degraded but doesn't provide actionable info
    - **Recommendation**: Add more context to error messages
 
 3. **Status Determination Logic**
@@ -411,7 +411,7 @@ This document contains a comprehensive review of each module in the Control Towe
 ### Current State
 
 - Complex module managing namespace lifecycle
-- Multiple sub-modules: builders, resource-creators, kubernetes
+- Multiple sub-modules: builders, resource-creators
 
 ### Findings
 
@@ -438,14 +438,7 @@ This document contains a comprehensive review of each module in the Control Towe
    - Error handling in start/stop methods is good but could be more specific
    - **Recommendation**: Add more granular error types
 
-4. **KubernetesClientService - Very Large File**
-   - File is 819 lines with many circuit breakers
-   - **Recommendation**:
-     - Split into multiple files by API group (Core, Apps, Networking, etc.)
-     - Extract circuit breaker initialization to separate method
-     - Consider using a factory pattern for circuit breakers
-
-5. **ConfigMapManagerService**
+4. **ConfigMapManagerService**
    - Good structure but could validate namespace status earlier
    - **Recommendation**: Add early return validation
 
@@ -541,10 +534,9 @@ This document contains a comprehensive review of each module in the Control Towe
 ### High Priority
 
 1. **Extract common update logic** in NamespaceItemService and HttpMockService
-2. **Split KubernetesClientService** into multiple files
-3. **Break down ClusterSetupService.setupCluster** method
-4. **Create centralized configuration service**
-5. **Remove redundant code** in controllers (null checks, try-catch blocks)
+2. **Break down ClusterSetupService.setupCluster** method
+3. **Create centralized configuration service**
+4. **Remove redundant code** in controllers (null checks, try-catch blocks)
 
 ### Medium Priority
 

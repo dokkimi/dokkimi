@@ -61,41 +61,24 @@ func main() {
 	// Initialize logger (only if logging is enabled)
 	var logger *Logger
 	if cfg.LogActions {
-		logger = NewLogger(cfg.ControlTowerURL, cfg.LoggingTimeout)
+		logger = NewLogger(cfg.ControlTowerURL, cfg.LoggingTimeout, nil)
 		defer logger.Stop()
 	}
 
-	// Initialize ConfigMap watcher
-	configMapWatcher, err := NewConfigMapWatcher(cfg.K8sNamespace, cache)
-	if err != nil {
-		log.Fatalf("Failed to create ConfigMap watcher: %v", err)
+	// Load config from file
+	if cfg.ConfigFilePath == "" {
+		log.Fatalf("CONFIG_FILE_PATH is required")
 	}
-	defer configMapWatcher.Stop()
-
-	// Start watching ConfigMap
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	if err := configMapWatcher.Start(ctx); err != nil {
-		log.Fatalf("Failed to start ConfigMap watcher: %v", err)
+	loader := NewFileConfigLoader(cfg.ConfigFilePath, cache)
+	if err := loader.Load(); err != nil {
+		log.Fatalf("Failed to load config from file: %v", err)
 	}
-
-	// Wait for initial config to load
-	log.Println("Waiting for ConfigMap to load...")
-	for i := 0; i < 30; i++ {
-		if configMapWatcher.IsInitialized() {
-			log.Println("ConfigMap loaded successfully")
-			break
-		}
-		time.Sleep(1 * time.Second)
-	}
-	if !configMapWatcher.IsInitialized() {
-		log.Printf("Warning: ConfigMap not loaded after 30 seconds, continuing anyway")
-	}
+	log.Printf("Config loaded from file: %s", cfg.ConfigFilePath)
 
 	// Initialize test execution logger (only in test mode)
 	var testExecutionLogger *TestExecutionLogger
 	if cfg.TestAgentURL != "" && cfg.ControlTowerURL != "" {
-		testExecutionLogger = NewTestExecutionLogger(cfg.ControlTowerURL, cfg.Namespace)
+		testExecutionLogger = NewTestExecutionLogger(cfg.ControlTowerURL, cfg.Namespace, nil)
 		defer testExecutionLogger.Stop()
 		log.Printf("Test execution logger started for instance %s", cfg.Namespace)
 	}
@@ -118,11 +101,10 @@ func main() {
 				ControlTowerURL:     cfg.ControlTowerURL,
 				TestAgentURL:        cfg.TestAgentURL,
 				CheckTimeout:        5 * time.Second,
-				Origin:              cfg.Origin,       // Service name to health check
-				K8sDNSIP:            cfg.K8sDNSIP,     // K8s DNS for resolving service ClusterIP
-				K8sNamespace:        cfg.K8sNamespace, // K8s namespace for service resolution
+				Origin:              cfg.Origin,
+				DNSIP:               cfg.DNSIP,
 			}
-			healthChecker = NewHealthChecker(healthConfig)
+			healthChecker = NewHealthChecker(healthConfig, nil)
 			if healthChecker != nil {
 				healthChecker.Start()
 				defer healthChecker.Stop()
@@ -217,9 +199,6 @@ func main() {
 	<-quit
 
 	log.Println("Shutting down server...")
-
-	// Stop ConfigMap watcher
-	configMapWatcher.Stop()
 
 	// Graceful shutdown
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
