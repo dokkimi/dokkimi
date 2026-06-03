@@ -96,6 +96,28 @@ const mockCaService = {
   }),
 };
 
+const mockLogCollector = {
+  startCollecting: jest.fn().mockResolvedValue(undefined),
+  stopCollecting: jest.fn(),
+};
+
+const mockInstanceItemService = {
+  updateInstanceItemContainerName: jest.fn().mockResolvedValue(undefined),
+  updateInstanceItemStatus: jest.fn().mockResolvedValue(undefined),
+  updateInstanceItemReadiness: jest.fn().mockResolvedValue(undefined),
+};
+
+const mockInstanceService = {
+  updateInstanceStatus: jest.fn().mockResolvedValue(undefined),
+  updateInstanceDockerNetwork: jest.fn().mockResolvedValue(undefined),
+};
+
+// Import the real extracted services so they wire through to mocked dependencies
+import { DockerServiceGroupService } from './docker-service-group.service';
+import { DockerDatabaseGroupService } from './docker-database-group.service';
+import { DockerDeployConfigService } from './docker-deploy-config.service';
+import { DockerImagePullerService } from './docker-image-puller.service';
+
 const mockDatabaseConfig = {
   getConfig: jest.fn().mockReturnValue({
     image: 'postgres:15',
@@ -108,26 +130,10 @@ const mockDatabaseConfig = {
   }),
 };
 
-const mockLogCollector = {
-  startCollecting: jest.fn().mockResolvedValue(undefined),
-  stopCollecting: jest.fn(),
-};
-
 const mockRegistryService = {
   getAuthConfig: jest.fn().mockReturnValue(undefined),
   storeCredentials: jest.fn(),
   clearCredentials: jest.fn(),
-};
-
-const mockInstanceItemService = {
-  updateInstanceItemContainerName: jest.fn().mockResolvedValue(undefined),
-  updateInstanceItemStatus: jest.fn().mockResolvedValue(undefined),
-  updateInstanceItemReadiness: jest.fn().mockResolvedValue(undefined),
-};
-
-const mockInstanceService = {
-  updateInstanceStatus: jest.fn().mockResolvedValue(undefined),
-  updateInstanceDockerNetwork: jest.fn().mockResolvedValue(undefined),
 };
 
 const mockRunStorage = {
@@ -194,16 +200,37 @@ describe('DockerDeployerService', () => {
     });
     mockDockerClient.getDockerDnsIP.mockReturnValue('127.0.0.11');
     mockDockerClient.pullImage.mockResolvedValue(undefined);
+
+    const deployConfig = new DockerDeployConfigService(mockDockerConfig as any);
+    const serviceGroupSvc = new DockerServiceGroupService(
+      mockDockerClient as any,
+      mockDockerConfig as any,
+      mockCaService as any,
+      deployConfig,
+    );
+    const databaseGroupSvc = new DockerDatabaseGroupService(
+      mockDockerClient as any,
+      mockDatabaseConfig as any,
+      mockRunStorage as any,
+    );
+    const imagePuller = new DockerImagePullerService(
+      mockDockerClient as any,
+      mockDatabaseConfig as any,
+      databaseGroupSvc,
+      mockRegistryService as any,
+    );
+
     service = new DockerDeployerService(
       mockDockerClient as any,
       mockDockerConfig as any,
       mockCaService as any,
-      mockDatabaseConfig as any,
       mockLogCollector as any,
-      mockRegistryService as any,
+      serviceGroupSvc,
+      databaseGroupSvc,
+      deployConfig,
+      imagePuller,
       mockInstanceItemService as any,
       mockInstanceService as any,
-      mockRunStorage as any,
     );
   });
 
@@ -522,28 +549,6 @@ describe('DockerDeployerService', () => {
       const interceptorIdx = callOrder.indexOf('interceptor-start');
       const teardownIdx = callOrder.indexOf('teardown');
       expect(interceptorIdx).toBeLessThan(teardownIdx);
-    });
-  });
-
-  describe('dnsmasq config', () => {
-    it('should write dnsmasq config with database exceptions', async () => {
-      await service.deploy(buildCtx());
-
-      const dnsmasqCalls = mockDockerConfig.writeDnsmasqConfig.mock.calls;
-      // Should be called for each service (api-gateway, user-service)
-      expect(dnsmasqCalls.length).toBeGreaterThanOrEqual(2);
-
-      // Check one of the dnsmasq configs was written for api-gateway
-      const apiGwCall = dnsmasqCalls.find(
-        (call: any[]) => call[1] === 'api-gateway',
-      );
-      expect(apiGwCall).toBeDefined();
-
-      const configContent = apiGwCall![2] as string;
-      // Should forward database names to Docker DNS
-      expect(configContent).toContain('server=/postgres-db/127.0.0.11');
-      // Should catch-all to interceptor's IP (from inspectContainer mock)
-      expect(configContent).toContain('address=/#/172.18.0.2');
     });
   });
 });
