@@ -1389,19 +1389,19 @@ The `dokkimi` CLI manages the full lifecycle: validate definitions, run tests, i
 
 ### Commands
 
-| Command                         | Description                                                                 |
-| ------------------------------- | --------------------------------------------------------------------------- |
-| `dokkimi init`                  | Scaffold a `.dokkimi/` folder with example files                            |
-| `dokkimi validate [path]`       | Validate definition files without running                                   |
-| `dokkimi run [target]`          | Run definition(s) and stream live results                                   |
-| `dokkimi inspect [path]`        | Interactively inspect results from the last run                             |
-| `dokkimi dump [path] [-o file]` | Output raw JSON data dump for LLM-assisted debugging                        |
-| `dokkimi baselines`             | Review and approve pending visual baselines                                 |
-| `dokkimi version`               | Show version (e.g., `v0.1.0`)                                               |
-| `dokkimi status`                | Show service and instance status                                            |
-| `dokkimi doctor`                | Run environment pre-flight checks                                           |
-| `dokkimi clean`                 | Stop all instances and clean up resources                                   |
-| `dokkimi config`                | View and edit Dokkimi settings (concurrency, telemetry)                     |
+| Command                         | Description                                             |
+| ------------------------------- | ------------------------------------------------------- |
+| `dokkimi init`                  | Scaffold a `.dokkimi/` folder with example files        |
+| `dokkimi validate [path]`       | Validate definition files without running               |
+| `dokkimi run [target]`          | Run definition(s) and stream live results               |
+| `dokkimi inspect [path]`        | Interactively inspect results from the last run         |
+| `dokkimi dump [path] [-o file]` | Output raw JSON data dump for LLM-assisted debugging    |
+| `dokkimi baselines`             | Review and approve pending visual baselines             |
+| `dokkimi version`               | Show version (e.g., `v0.1.0`)                           |
+| `dokkimi status`                | Show service and instance status                        |
+| `dokkimi doctor`                | Run environment pre-flight checks                       |
+| `dokkimi clean`                 | Stop all instances and clean up resources               |
+| `dokkimi config`                | View and edit Dokkimi settings (concurrency, telemetry) |
 
 ### `dokkimi run`
 

@@ -536,7 +536,7 @@ This document contains a comprehensive review of each module in the Control Towe
 1. **Extract common update logic** in NamespaceItemService and HttpMockService
 2. **Break down ClusterSetupService.setupCluster** method
 3. **Create centralized configuration service**
-5. **Remove redundant code** in controllers (null checks, try-catch blocks)
+4. **Remove redundant code** in controllers (null checks, try-catch blocks)
 
 ### Medium Priority
 
