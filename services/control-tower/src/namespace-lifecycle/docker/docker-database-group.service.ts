@@ -194,9 +194,9 @@ export class DockerDatabaseGroupService {
     env: Record<string, string>,
     initFileMountPath: string | null,
   ): string {
-    const user = env.MONGO_INITDB_ROOT_USERNAME || '';
-    const pass = env.MONGO_INITDB_ROOT_PASSWORD || '';
-    const hasAuth = !!(user && pass);
+    const hasAuth = !!(
+      env.MONGO_INITDB_ROOT_USERNAME && env.MONGO_INITDB_ROOT_PASSWORD
+    );
 
     const initBlock = initFileMountPath
       ? `
@@ -214,7 +214,7 @@ fi`
       return `
 mongod --port ${internalPort} --bind_ip_all --fork --logpath /proc/1/fd/1
 until mongosh --port ${internalPort} --eval "db.adminCommand('ping')" &>/dev/null; do sleep 0.5; done
-mongosh --port ${internalPort} admin --eval "db.createUser({user:'${user}',pwd:'${pass}',roles:[{role:'root',db:'admin'}]});"
+mongosh --port ${internalPort} admin --eval "db.createUser({user:process.env.MONGO_INITDB_ROOT_USERNAME,pwd:process.env.MONGO_INITDB_ROOT_PASSWORD,roles:[{role:'root',db:'admin'}]});"
 ${initBlock}
 mongod --port ${internalPort} --shutdown
 exec mongod --port ${internalPort} --bind_ip_all --auth`;

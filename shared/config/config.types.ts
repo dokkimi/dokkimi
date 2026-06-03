@@ -29,12 +29,6 @@ export interface DokkimiConfig {
     };
   };
 
-  external: {
-    helm: {
-      installDocs: string;
-    };
-  };
-
   timeouts: {
     httpRequest: number;
     metricsInterval: number;

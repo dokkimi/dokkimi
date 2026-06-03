@@ -38,11 +38,6 @@ network:
   proxy:
     noProxy: localhost,127.0.0.1
 
-# External services
-external:
-  helm:
-    installDocs: https://helm.sh/docs/intro/install/
-
 browser:
   defaultViewportWidth: 1280
   defaultViewportHeight: 720

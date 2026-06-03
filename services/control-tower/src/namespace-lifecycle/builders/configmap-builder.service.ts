@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { getConfig, buildServiceUrl } from '@dokkimi/config';
+import { getConfig } from '@dokkimi/config';
 
 export interface ItemDefinitionLike {
   name: string;
@@ -70,7 +70,7 @@ export class ConfigMapBuilderService {
     namespace: string,
     items: ItemDefinitionLike[],
     mocks: MockEndpoint[] = [],
-    instanceId?: string,
+    _instanceId?: string,
     testConfig?: {
       testRunId: string;
       callbackUrl?: string;
@@ -138,13 +138,9 @@ export class ConfigMapBuilderService {
       }
     }
 
-    // Build Fluent Bit configuration for console log collection
-    const fluentBitConfig = this.buildFluentBitConfig(instanceId);
-
     const data: Record<string, string> = {
       urlMap: JSON.stringify(urlMap, null, 2),
       httpMocks: JSON.stringify(mocks, null, 2),
-      'fluent-bit.conf': fluentBitConfig,
       podNameToNamespaceItemId: JSON.stringify(
         podNameToNamespaceItemId,
         null,
@@ -182,60 +178,6 @@ export class ConfigMapBuilderService {
       },
       data,
     };
-  }
-
-  /**
-   * Builds Fluent Bit configuration for console log collection
-   * Reads container stdout/stderr, parses log levels, and sends to LPS
-   * Only reads logs from the pod where Fluent Bit is running (using POD_NAME env var)
-   * Excludes logs from sidecar containers (fluent-bit, dnsmasq)
-   */
-  private buildFluentBitConfig(instanceId?: string): string {
-    // Minimal Fluent Bit configuration - just forward raw log lines to CT.
-    // CT's log-processing module handles parsing log levels from messages
-    // like [INFO], [WARN], etc.
-    // If instanceId is provided, inject it directly; otherwise use env var (for runtime expansion)
-    const instanceIdValue = instanceId || '${INSTANCE_ID}';
-    const config = getConfig();
-    // Build CT URL for cluster access (uses host.docker.internal since CT runs outside cluster)
-    const ctUrl = new URL(buildServiceUrl(config.services.controlTower, true));
-
-    return `[SERVICE]
-    Flush         1
-    Grace         1
-    Daemon        off
-    Log_Level     info
-
-[INPUT]
-    Name              tail
-    Path              /var/log/containers/\${POD_NAME}_*.log
-    Exclude_Path      /var/log/containers/*_fluent-bit-*.log,/var/log/containers/*_dnsmasq-*.log,/var/log/containers/*_interceptor-*.log,/var/log/containers/*_db-proxy-*.log
-    Tag               kube.*
-    Read_from_Head    On
-    Refresh_Interval  1
-    Mem_Buf_Limit     50MB
-    Skip_Long_Lines   On
-    DB                /tmp/flb_kube.db
-    DB.locking        true
-
-[FILTER]
-    Name                record_modifier
-    Match               kube.*
-    record              instanceId ${instanceIdValue}
-    record              instanceItemId \${INSTANCE_ITEM_ID}
-
-[OUTPUT]
-    Name                http
-    Match               *
-    Host                ${ctUrl.hostname}
-    URI                 /logs/console
-    Port                ${ctUrl.port}
-    Format              json
-    header              Content-Type application/json
-    tls                 Off
-    tls.verify          Off
-    Retry_Limit         3
-`;
   }
 
   /**

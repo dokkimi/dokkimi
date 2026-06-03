@@ -17,6 +17,7 @@ import { InstanceStatus, ItemStatus } from '@prisma/client';
 @Injectable()
 export class DockerDeployerService {
   private readonly logger = new Logger(DockerDeployerService.name);
+  private readonly crashMonitors = new Map<string, NodeJS.Timeout>();
 
   constructor(
     private readonly dockerClient: DockerClientService,
@@ -77,12 +78,7 @@ export class DockerDeployerService {
           configPaths,
         ),
       ]);
-      const phase1Error = phase1Results.find((r) => r.status === 'rejected') as
-        | PromiseRejectedResult
-        | undefined;
-      if (phase1Error) {
-        throw phase1Error.reason;
-      }
+      this.throwOnSettledErrors(phase1Results);
 
       // Phase 2: All databases in parallel
       const dbItems = ctx.definition.items.filter((i) => i.type === 'DATABASE');
@@ -109,14 +105,17 @@ export class DockerDeployerService {
             containerName,
             instanceItemId || '',
           );
+
+          const dbProxyName = `${containerName}-dbproxy-${instanceId}`;
+          await this.logCollector.startCollecting(
+            instanceId,
+            dbProxyName,
+            `${item.name}-dbproxy`,
+            undefined,
+          );
         }),
       );
-      const phase2Error = phase2Results.find((r) => r.status === 'rejected') as
-        | PromiseRejectedResult
-        | undefined;
-      if (phase2Error) {
-        throw phase2Error.reason;
-      }
+      this.throwOnSettledErrors(phase2Results);
 
       // Phase 3: All services + chromium in parallel
       const svcItems = ctx.definition.items.filter((i) => i.type === 'SERVICE');
@@ -181,12 +180,7 @@ export class DockerDeployerService {
         ...servicePromises,
         chromiumPromise,
       ]);
-      const phase3Error = phase3Results.find((r) => r.status === 'rejected') as
-        | PromiseRejectedResult
-        | undefined;
-      if (phase3Error) {
-        throw phase3Error.reason;
-      }
+      this.throwOnSettledErrors(phase3Results);
 
       await this.instanceService.updateInstanceStatus(
         instanceId,
@@ -220,7 +214,7 @@ export class DockerDeployerService {
           instance.status === 'STOPPED' ||
           instance.status === 'FAILED'
         ) {
-          clearInterval(checkInterval);
+          this.clearCrashMonitor(instanceId);
           return;
         }
 
@@ -229,27 +223,63 @@ export class DockerDeployerService {
           (c) => c.role === 'service' || c.role === 'database',
         );
         if (crashedServices.length > 0) {
-          clearInterval(checkInterval);
+          this.clearCrashMonitor(instanceId);
           const names = crashedServices.map((c) => c.name).join(', ');
           const errorMsg = `Container(s) crashed: ${names}`;
           this.logger.error(`${errorMsg} (instance ${instanceId})`);
-          await this.instanceService.updateInstanceStatus(
-            instanceId,
-            InstanceStatus.FAILED,
-          );
-          await this.teardown(instanceId);
+
+          // Only set FAILED if instance is still in an active state
+          const current = await this.instanceService.findInstance(instanceId);
+          if (
+            current &&
+            current.status !== 'STOPPED' &&
+            current.status !== 'FAILED'
+          ) {
+            await this.instanceService.updateInstanceStatus(
+              instanceId,
+              InstanceStatus.FAILED,
+            );
+            await this.teardown(instanceId);
+          }
         }
       } catch {
-        clearInterval(checkInterval);
+        this.clearCrashMonitor(instanceId);
       }
     }, 3000);
+    this.crashMonitors.set(instanceId, checkInterval);
+  }
+
+  private clearCrashMonitor(instanceId: string): void {
+    const interval = this.crashMonitors.get(instanceId);
+    if (interval) {
+      clearInterval(interval);
+      this.crashMonitors.delete(instanceId);
+    }
   }
 
   async teardown(instanceId: string): Promise<void> {
+    this.clearCrashMonitor(instanceId);
     this.logCollector.stopCollecting(instanceId);
     await this.dockerClient.removeNetwork(instanceId);
     this.dockerConfig.cleanupConfigDir(instanceId);
     this.logger.log(`Teardown complete for instance ${instanceId}`);
+  }
+
+  private throwOnSettledErrors(results: PromiseSettledResult<unknown>[]): void {
+    const errors = results
+      .filter((r): r is PromiseRejectedResult => r.status === 'rejected')
+      .map((r) => r.reason);
+    if (errors.length === 1) {
+      throw errors[0];
+    }
+    if (errors.length > 1) {
+      const messages = errors.map((e) =>
+        e instanceof Error ? e.message : String(e),
+      );
+      throw new Error(
+        `${errors.length} containers failed:\n${messages.join('\n')}`,
+      );
+    }
   }
 
   private async markMockItems(ctx: DeploymentContext): Promise<void> {

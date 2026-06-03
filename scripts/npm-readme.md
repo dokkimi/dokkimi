@@ -148,7 +148,7 @@ Image tags and other values can be centralized in `.dokkimi/config.yaml` using `
 | `dokkimi clean`             | Stop all instances and clean up resources         |
 | `dokkimi config`            | View and edit Dokkimi settings                    |
 | `dokkimi reboot`            | Restart Dokkimi services                          |
-| `dokkimi uninstall`         | Remove Dokkimi from your cluster                  |
+| `dokkimi uninstall`         | Remove Dokkimi from your system                   |
 | `dokkimi version`           | Show installed version                            |
 
 The `[target]` argument is flexible — pass a directory, a specific file, a glob pattern, or a substring to match definition names.

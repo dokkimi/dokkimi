@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import { getConfig } from '@dokkimi/config';
 import {
   ConfigMapBuilderService,
   MockEndpoint,
@@ -29,7 +30,8 @@ export class DockerConfigService {
     fs.mkdirSync(dnsmasqDir, { recursive: true });
 
     const resolvConfPath = path.join(configDir, 'resolv.conf');
-    fs.writeFileSync(resolvConfPath, 'nameserver 127.0.0.1\n');
+    const dnsNameserver = getConfig().network.dns.nameserver;
+    fs.writeFileSync(resolvConfPath, `nameserver ${dnsNameserver}\n`);
 
     return {
       configDir,

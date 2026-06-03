@@ -475,8 +475,8 @@ describe('DockerDeployerService', () => {
         'user-service',
         'item-2',
       );
-      // 2 user containers + 2 interceptors = 4 calls
-      expect(mockLogCollector.startCollecting).toHaveBeenCalledTimes(4);
+      // 2 user containers + 2 interceptors + 1 db-proxy = 5 calls
+      expect(mockLogCollector.startCollecting).toHaveBeenCalledTimes(5);
     });
   });
 

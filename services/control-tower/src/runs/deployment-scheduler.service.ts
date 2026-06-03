@@ -133,8 +133,6 @@ export class DeploymentSchedulerService {
     const terminalStatuses = new Set<InstanceStatus>([
       InstanceStatus.STOPPED,
       InstanceStatus.FAILED,
-      InstanceStatus.STOPPING,
-      InstanceStatus.TERMINATING,
     ]);
 
     let allDone = true;
