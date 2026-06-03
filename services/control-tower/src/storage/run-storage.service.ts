@@ -1,36 +1,102 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
+import { runDirPath } from '@dokkimi/config';
 import * as fs from 'fs/promises';
-import * as fsSync from 'fs';
-import * as os from 'os';
 import * as path from 'path';
 /**
  * Filesystem-backed run storage for local/desktop mode.
  *
  * Layout:
- *   {storageDir}/instances/{instanceId}/definition.json
- *   {storageDir}/instances/{instanceId}/db-init-files/{itemName}/{filename}
- *   {storageDir}/instances/{instanceId}/artifacts/{folder}/{filename}
- *     where folder = 'screenshot' | 'diff' | 'failure' (failure for nameless captures)
+ *   {projectPath}/.dokkimi/__runs__/{YYYYMMDD-HHmmss}/snapshots/{definitionName}/definition.json
+ *   {projectPath}/.dokkimi/__runs__/{YYYYMMDD-HHmmss}/snapshots/{definitionName}/db-init-files/{itemName}/{filename}
+ *   {projectPath}/.dokkimi/__runs__/{YYYYMMDD-HHmmss}/snapshots/{definitionName}/artifacts/{folder}/{filename}
  */
 export interface ArtifactPath {
   folder: string;
   filename: string;
   fullPath: string;
-  uri: string; // path relative to storageDir, used as Artifact.uri
+  uri: string;
 }
+
 @Injectable()
 export class RunStorageService {
   private readonly logger = new Logger(RunStorageService.name);
-  private readonly storageDir: string;
+  private readonly instancePaths = new Map<string, string>();
 
-  constructor(private readonly configService: ConfigService) {
-    this.storageDir = this.configService.get<string>('STORAGE_DIR')!;
+  registerInstance(
+    instanceId: string,
+    projectPath: string | null,
+    createdAt: Date,
+    definitionName: string,
+  ): void {
+    if (projectPath) {
+      const dir = path.join(
+        runDirPath(projectPath, createdAt),
+        'snapshots',
+        definitionName,
+      );
+      this.instancePaths.set(instanceId, dir);
+    }
+  }
 
-    const instancesDir = path.join(this.storageDir, 'instances');
-    if (!fsSync.existsSync(instancesDir)) {
-      fsSync.mkdirSync(instancesDir, { recursive: true });
-      this.logger.log(`Created instances directory: ${instancesDir}`);
+  async ensureGitignore(projectPath: string): Promise<void> {
+    const repoRoot = await this.findGitRoot(projectPath);
+    if (!repoRoot) {
+      return;
+    }
+
+    const relative = path.relative(repoRoot, projectPath);
+    const prefix = relative === '' ? '' : `${relative}/`;
+    const entry = `${prefix}.dokkimi/__runs__/`;
+    const gitignorePath = path.join(repoRoot, '.gitignore');
+
+    try {
+      const content = await fs.readFile(gitignorePath, 'utf-8');
+      if (content.split('\n').some((line) => line.trim() === entry)) {
+        return;
+      }
+      const separator = content.endsWith('\n') ? '' : '\n';
+      await fs.appendFile(
+        gitignorePath,
+        `${separator}\n# Dokkimi\n${entry}\n`,
+      );
+    } catch (e: unknown) {
+      if (
+        e instanceof Error &&
+        (e as NodeJS.ErrnoException).code === 'ENOENT'
+      ) {
+        await fs.writeFile(
+          gitignorePath,
+          `# Dokkimi\n${entry}\n`,
+        );
+      }
+    }
+  }
+
+  private async findGitRoot(startPath: string): Promise<string | null> {
+    let dir = path.resolve(startPath);
+    const root = path.parse(dir).root;
+    while (dir !== root) {
+      try {
+        await fs.access(path.join(dir, '.git'));
+        return dir;
+      } catch {}
+      dir = path.dirname(dir);
+    }
+    return null;
+  }
+
+  async deleteRunDir(projectPath: string, createdAt: Date): Promise<void> {
+    const dir = runDirPath(projectPath, createdAt);
+    try {
+      await fs.rm(dir, { recursive: true });
+      this.logger.log(`Deleted run directory: ${dir}`);
+    } catch (e: unknown) {
+      if (
+        !(e instanceof Error) ||
+        (e as NodeJS.ErrnoException).code !== 'ENOENT'
+      ) {
+        throw e;
+      }
     }
   }
 
@@ -175,12 +241,14 @@ export class RunStorageService {
     }
     await fs.writeFile(fullPath, payload);
 
-    const uri = path.relative(this.storageDir, fullPath);
-    return { folder, filename, fullPath, uri };
+    return { folder, filename, fullPath, uri: fullPath };
   }
 
   async deleteInstance(instanceId: string): Promise<void> {
-    const dir = this.instanceDir(instanceId);
+    const dir = this.instancePaths.get(instanceId);
+    if (!dir) {
+      return;
+    }
     try {
       await fs.rm(dir, { recursive: true });
       this.logger.log(`Deleted instance storage: ${dir}`);
@@ -195,7 +263,14 @@ export class RunStorageService {
   }
 
   private instanceDir(instanceId: string): string {
-    return path.join(this.storageDir, 'instances', instanceId);
+    const dir = this.instancePaths.get(instanceId);
+    if (!dir) {
+      throw new Error(
+        `No storage path registered for instance ${instanceId}. ` +
+          `Call registerInstance() before accessing storage.`,
+      );
+    }
+    return dir;
   }
 
   private initFilesDir(instanceId: string, itemName: string): string {
@@ -207,7 +282,7 @@ export class RunStorageService {
    * persistBaseline) to an absolute filesystem path.
    */
   absoluteUri(uri: string): string {
-    return path.join(this.storageDir, uri);
+    return uri;
   }
 
   private artifactsDir(instanceId: string): string {
@@ -220,9 +295,6 @@ export class RunStorageService {
    * The CLI uploads them at run-start; CT writes them under the instance
    * directory so the post-run diff job can read them locally without
    * touching the user's filesystem.
-   *
-   * Path: instances/<instanceId>/baselines/<name>.png
-   * Returned uri is relative to storageDir, mirroring artifacts.
    */
   async persistBaseline(
     instanceId: string,
@@ -242,8 +314,7 @@ export class RunStorageService {
     }
     await fs.writeFile(fullPath, payload);
 
-    const uri = path.relative(this.storageDir, fullPath);
-    return { fullPath, uri };
+    return { fullPath, uri: fullPath };
   }
 
   /**
@@ -266,10 +337,5 @@ export class RunStorageService {
 
   private baselinesDir(instanceId: string): string {
     return path.join(this.instanceDir(instanceId), 'baselines');
-  }
-
-  async deleteGeneratedFiles(): Promise<void> {
-    const dir = path.join(os.homedir(), '.dokkimi', 'generated');
-    await fs.rm(dir, { recursive: true, force: true }).catch(() => {});
   }
 }

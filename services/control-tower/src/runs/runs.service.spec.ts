@@ -35,7 +35,9 @@ describe('RunsService', () => {
     hasDefinition: jest.fn(),
     readDefinition: jest.fn(),
     deleteInstance: jest.fn(),
+    deleteRunDir: jest.fn(),
     deleteGeneratedFiles: jest.fn(),
+    registerInstance: jest.fn(),
   };
 
   const mockLifecycle = {
@@ -54,7 +56,7 @@ describe('RunsService', () => {
 
   const mockCleanup = {
     stopInstances: jest.fn().mockResolvedValue(undefined),
-    teardownExistingRuns: jest.fn().mockResolvedValue(undefined),
+    prepareForNewRun: jest.fn().mockResolvedValue(undefined),
     recoverOrphanedRuns: jest.fn().mockResolvedValue(undefined),
   };
 
@@ -131,7 +133,7 @@ describe('RunsService', () => {
 
       await service.createRun(['api-tests']);
 
-      expect(mockCleanup.teardownExistingRuns).toHaveBeenCalled();
+      expect(mockCleanup.prepareForNewRun).toHaveBeenCalled();
     });
 
     it('should throw ConflictException if a run is already active', async () => {

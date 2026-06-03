@@ -70,3 +70,5 @@ services/db-proxy/redis/redis
 .claude/settings.json
 .claude/settings.local.json
 
+# Dokkimi
+.dokkimi/__runs__/

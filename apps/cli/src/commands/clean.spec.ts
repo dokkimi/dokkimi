@@ -3,6 +3,7 @@ jest.mock('@dokkimi/config', () => ({
     services: { controlTower: { host: 'localhost', port: 19001 } },
   })),
   buildServiceUrl: jest.fn(() => 'http://localhost:19001'),
+  DOKKIMI_DIR: '/tmp/mock-dokkimi',
 }));
 jest.mock('../lib/cli-utils', () => ({
   fetchJson: jest.fn(),
@@ -106,7 +107,7 @@ describe('clean', () => {
       'POST',
     );
     expect(mockFetchAction).toHaveBeenCalledWith(
-      expect.stringContaining('/runs/run-1'),
+      expect.stringContaining('/runs/all'),
       'DELETE',
     );
   });

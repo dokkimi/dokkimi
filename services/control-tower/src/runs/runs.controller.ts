@@ -75,6 +75,15 @@ export class RunsController {
   }
 
   /**
+   * DELETE /runs/all
+   * Deletes all runs, optionally scoped to a project.
+   */
+  @Delete('all')
+  deleteAllRuns(@Query('projectPath') projectPath?: string) {
+    return this.runsService.deleteAllRuns(projectPath);
+  }
+
+  /**
    * DELETE /runs/:runId
    * Deletes a run and all its data (instances, logs, storage).
    */
@@ -88,7 +97,11 @@ export class RunsController {
    * Returns the stored definition snapshot for an instance.
    */
   @Get(':runId/instances/:instanceId/definition')
-  getInstanceDefinition(@Param('instanceId') instanceId: string) {
+  async getInstanceDefinition(
+    @Param('runId') runId: string,
+    @Param('instanceId') instanceId: string,
+  ) {
+    await this.runsService.ensureInstanceRegistered(runId, instanceId);
     return this.runStorage.readDefinition(instanceId);
   }
 }

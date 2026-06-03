@@ -78,6 +78,7 @@ model Run {
 
   @@index([status])
   @@index([projectPath])
+  @@index([projectPath, createdAt])
   @@map("runs")
 }
 

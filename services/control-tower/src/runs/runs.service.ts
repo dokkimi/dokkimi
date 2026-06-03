@@ -59,7 +59,7 @@ export class RunsService implements OnApplicationBootstrap {
       );
     }
 
-    await this.cleanup.teardownExistingRuns();
+    await this.cleanup.prepareForNewRun(projectPath);
 
     const run = await this.prisma.run.create({
       data: {
@@ -76,6 +76,15 @@ export class RunsService implements OnApplicationBootstrap {
         instances: true,
       },
     });
+
+    for (const inst of run.instances) {
+      this.runStorage.registerInstance(
+        inst.id,
+        run.projectPath,
+        run.createdAt,
+        inst.name,
+      );
+    }
 
     if (credentials?.length) {
       this.registryService.storeCredentials(run.id, credentials);
@@ -125,6 +134,13 @@ export class RunsService implements OnApplicationBootstrap {
       );
       return { instanceId, status: instance.status };
     }
+
+    this.runStorage.registerInstance(
+      instanceId,
+      run.projectPath,
+      run.createdAt,
+      instance.name,
+    );
 
     const { definition } = dto;
 
@@ -312,14 +328,67 @@ export class RunsService implements OnApplicationBootstrap {
 
     await this.prisma.run.delete({ where: { id: runId } });
 
-    for (const instance of run.instances) {
-      await this.runStorage.deleteInstance(instance.id);
-    }
+    await this.deleteRunStorage(run);
 
     this.registryService.clearCredentials(runId);
 
     this.logger.log(`Deleted run ${runId}`);
     return { runId, status: 'DELETED' };
+  }
+
+  async deleteAllRuns(projectPath?: string) {
+    const runs = await this.prisma.run.findMany({
+      where: projectPath ? { projectPath } : undefined,
+      include: { instances: true },
+    });
+
+    for (const run of runs) {
+      await this.cleanup.stopInstances(run.instances);
+      await this.prisma.run.delete({ where: { id: run.id } });
+      await this.deleteRunStorage(run);
+      this.registryService.clearCredentials(run.id);
+    }
+
+    this.logger.log(
+      `Deleted ${runs.length} run(s)${projectPath ? ` for project ${projectPath}` : ' (all projects)'}`,
+    );
+    return { deleted: runs.length };
+  }
+
+  async ensureInstanceRegistered(
+    runId: string,
+    instanceId: string,
+  ): Promise<void> {
+    const run = await this.prisma.run.findUnique({ where: { id: runId } });
+    if (!run) {
+      return;
+    }
+    const instance = await this.prisma.namespaceInstance.findUnique({
+      where: { id: instanceId },
+    });
+    if (!instance) {
+      return;
+    }
+    this.runStorage.registerInstance(
+      instanceId,
+      run.projectPath,
+      run.createdAt,
+      instance.name,
+    );
+  }
+
+  private async deleteRunStorage(run: {
+    projectPath: string | null;
+    createdAt: Date;
+    instances: { id: string }[];
+  }): Promise<void> {
+    if (run.projectPath) {
+      await this.runStorage.deleteRunDir(run.projectPath, run.createdAt);
+    } else {
+      for (const instance of run.instances) {
+        await this.runStorage.deleteInstance(instance.id);
+      }
+    }
   }
 
   async handleValidationComplete(

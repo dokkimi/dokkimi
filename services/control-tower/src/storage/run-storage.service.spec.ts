@@ -1,4 +1,5 @@
 import { RunStorageService } from './run-storage.service';
+import { runDirPath } from '@dokkimi/config';
 import * as fs from 'fs/promises';
 import * as fsSync from 'fs';
 import * as os from 'os';
@@ -8,19 +9,16 @@ describe('RunStorageService', () => {
   let service: RunStorageService;
   let tempDir: string;
 
+  const testCreatedAt = new Date('2026-06-03T12:00:00Z');
+
+  function registerTestInstance(id: string, name: string) {
+    service.registerInstance(id, tempDir, testCreatedAt, name);
+  }
+
   beforeEach(async () => {
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'run-storage-test-'));
-
-    const mockConfig = {
-      get: jest.fn((key: string) => {
-        if (key === 'STORAGE_DIR') {
-          return tempDir;
-        }
-        return undefined;
-      }),
-    };
-
-    service = new RunStorageService(mockConfig as any);
+    service = new RunStorageService();
+    registerTestInstance('inst-1', 'api-tests');
   });
 
   afterEach(async () => {
@@ -205,7 +203,7 @@ describe('RunStorageService', () => {
       expect(result.filename).toBe('3.5-failure.png');
     });
 
-    it('should return a relative uri', async () => {
+    it('should return an absolute uri', async () => {
       const result = await service.persistArtifact(
         'inst-1',
         'screenshot',
@@ -214,29 +212,38 @@ describe('RunStorageService', () => {
         'test',
       );
 
-      expect(result.uri).not.toContain(tempDir);
-      expect(path.isAbsolute(result.uri)).toBe(false);
+      expect(path.isAbsolute(result.uri)).toBe(true);
+      expect(result.uri).toBe(result.fullPath);
     });
   });
 
   describe('deleteInstance', () => {
     it('should recursively delete an instance directory', async () => {
       await service.writeDefinition('inst-1', { test: true });
-      const dir = path.join(tempDir, 'instances', 'inst-1');
-      expect(fsSync.existsSync(dir)).toBe(true);
+      const snapshotDir = path.join(
+        runDirPath(tempDir, testCreatedAt),
+        'snapshots',
+        'api-tests',
+      );
+      expect(fsSync.existsSync(snapshotDir)).toBe(true);
 
       await service.deleteInstance('inst-1');
-      expect(fsSync.existsSync(dir)).toBe(false);
+      expect(fsSync.existsSync(snapshotDir)).toBe(false);
     });
 
-    it('should handle deleting a nonexistent instance', async () => {
-      // In Jest's VM context, `instanceof Error` may fail for Node system errors,
-      // so the ENOENT suppression may not work. Just verify it doesn't crash hard.
-      try {
-        await service.deleteInstance('nonexistent');
-      } catch {
-        // acceptable in Jest VM context
-      }
+    it('should no-op for unregistered instance', async () => {
+      await service.deleteInstance('nonexistent');
+    });
+  });
+
+  describe('deleteRunDir', () => {
+    it('should delete the entire run directory', async () => {
+      await service.writeDefinition('inst-1', { test: true });
+      const runDir = runDirPath(tempDir, testCreatedAt);
+      expect(fsSync.existsSync(runDir)).toBe(true);
+
+      await service.deleteRunDir(tempDir, testCreatedAt);
+      expect(fsSync.existsSync(runDir)).toBe(false);
     });
   });
 
@@ -259,16 +266,14 @@ describe('RunStorageService', () => {
 
     it('should return the correct baseline path', () => {
       const p = service.baselinePath('inst-1', 'mybase');
-      expect(p).toContain(path.join('inst-1', 'baselines', 'mybase.png'));
+      expect(p).toContain(path.join('baselines', 'mybase.png'));
     });
   });
 
   describe('absoluteUri', () => {
-    it('should resolve a relative uri to an absolute path', () => {
-      const abs = service.absoluteUri('instances/inst-1/definition.json');
-      expect(abs).toBe(
-        path.join(tempDir, 'instances', 'inst-1', 'definition.json'),
-      );
+    it('should return the uri as-is (always absolute)', () => {
+      const abs = service.absoluteUri('/some/absolute/path');
+      expect(abs).toBe('/some/absolute/path');
     });
   });
 });

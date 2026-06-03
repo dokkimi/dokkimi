@@ -598,7 +598,9 @@ async function showStepScreenshots(
     }
     lastIndex = picked.index;
 
-    const absolutePath = path.join(storageDir, picked.value.uri);
+    const absolutePath = path.isAbsolute(picked.value.uri)
+      ? picked.value.uri
+      : path.join(storageDir, picked.value.uri);
     openFile(absolutePath);
   }
 }

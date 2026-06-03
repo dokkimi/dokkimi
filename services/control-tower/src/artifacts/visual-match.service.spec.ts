@@ -7,6 +7,7 @@ import { VisualMatchService } from './visual-match.service';
 import { ArtifactsService } from './artifacts.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { RunStorageService } from '../storage/run-storage.service';
+import { runDirPath } from '@dokkimi/config';
 
 /**
  * Generates a solid-color PNG buffer with the given dimensions and RGBA color.
@@ -49,26 +50,38 @@ describe('VisualMatchService.processInstance', () => {
   // Real RunStorageService with a temp dir so absoluteUri / hasBaseline /
   // baselinePath / readDefinition behave like production.
   const instanceId = 'inst-vm-test';
+  const testCreatedAt = new Date('2026-06-03T12:00:00Z');
+
+  function instanceDir(): string {
+    return path.join(
+      runDirPath(workDir, testCreatedAt),
+      'snapshots',
+      'vm-definition',
+    );
+  }
 
   async function writeBaseline(name: string, png: Buffer): Promise<void> {
-    const dir = path.join(workDir, 'instances', instanceId, 'baselines');
+    const dir = path.join(instanceDir(), 'baselines');
     await fs.mkdir(dir, { recursive: true });
     await fs.writeFile(path.join(dir, `${name}.png`), png);
   }
 
   async function writeCapture(uri: string, png: Buffer): Promise<void> {
-    const abs = path.join(workDir, uri);
-    await fs.mkdir(path.dirname(abs), { recursive: true });
-    await fs.writeFile(abs, png);
+    await fs.mkdir(path.dirname(uri), { recursive: true });
+    await fs.writeFile(uri, png);
   }
 
   async function writeDefinition(def: object): Promise<void> {
-    const dir = path.join(workDir, 'instances', instanceId);
+    const dir = instanceDir();
     await fs.mkdir(dir, { recursive: true });
     await fs.writeFile(
       path.join(dir, 'definition.json'),
       JSON.stringify(def, null, 2),
     );
+  }
+
+  function captureUriForName(name: string): string {
+    return path.join(instanceDir(), 'artifacts', 'screenshot', `${name}.png`);
   }
 
   beforeEach(async () => {
@@ -81,9 +94,16 @@ describe('VisualMatchService.processInstance', () => {
         { provide: PrismaService, useValue: mockPrisma },
         {
           provide: RunStorageService,
-          useValue: new RunStorageService({
-            get: (key: string) => (key === 'STORAGE_DIR' ? workDir : undefined),
-          } as any),
+          useFactory: () => {
+            const svc = new RunStorageService();
+            svc.registerInstance(
+              instanceId,
+              workDir,
+              testCreatedAt,
+              'vm-definition',
+            );
+            return svc;
+          },
         },
         { provide: ArtifactsService, useValue: mockArtifactsService },
       ],
@@ -125,7 +145,7 @@ describe('VisualMatchService.processInstance', () => {
     await writeDefinition(definitionWithVisualMatch('homepage'));
     const png = makePng(20, 20, [255, 0, 0, 255]);
     await writeBaseline('homepage', png);
-    const captureUri = `instances/${instanceId}/artifacts/screenshot/homepage.png`;
+    const captureUri = captureUriForName('homepage');
     await writeCapture(captureUri, png);
 
     mockArtifactFindFirst.mockResolvedValue({
@@ -145,7 +165,7 @@ describe('VisualMatchService.processInstance', () => {
 
   it('marks verdict=no-baseline when no baseline file exists', async () => {
     await writeDefinition(definitionWithVisualMatch('newpage'));
-    const captureUri = `instances/${instanceId}/artifacts/screenshot/newpage.png`;
+    const captureUri = captureUriForName('newpage');
     await writeCapture(captureUri, makePng(10, 10, [0, 0, 255, 255]));
 
     mockArtifactFindFirst.mockResolvedValue({
@@ -168,7 +188,7 @@ describe('VisualMatchService.processInstance', () => {
     const baseline = makePng(10, 10, [255, 0, 0, 255]);
     const capture = makePng(10, 10, [0, 255, 0, 255]); // 100% different
     await writeBaseline('changed', baseline);
-    const captureUri = `instances/${instanceId}/artifacts/screenshot/changed.png`;
+    const captureUri = captureUriForName('changed');
     await writeCapture(captureUri, capture);
 
     mockArtifactFindFirst.mockResolvedValue({
@@ -198,7 +218,7 @@ describe('VisualMatchService.processInstance', () => {
   it('treats size mismatch as fail (different dimensions)', async () => {
     await writeDefinition(definitionWithVisualMatch('resized'));
     await writeBaseline('resized', makePng(10, 10, [255, 0, 0, 255]));
-    const captureUri = `instances/${instanceId}/artifacts/screenshot/resized.png`;
+    const captureUri = captureUriForName('resized');
     await writeCapture(captureUri, makePng(20, 20, [255, 0, 0, 255]));
 
     mockArtifactFindFirst.mockResolvedValue({
@@ -236,7 +256,7 @@ describe('VisualMatchService.processInstance', () => {
     // 10/100 = 0.10 differing fraction. Override threshold to 0.20 → pass.
     await writeDefinition(definitionWithVisualMatch('tolerant', 0.2));
     await writeBaseline('tolerant', baseline);
-    const captureUri = `instances/${instanceId}/artifacts/screenshot/tolerant.png`;
+    const captureUri = captureUriForName('tolerant');
     await writeCapture(captureUri, capture);
 
     mockArtifactFindFirst.mockResolvedValue({
@@ -310,7 +330,7 @@ describe('VisualMatchService.processInstance', () => {
     });
     const png = makePng(10, 10, [128, 128, 128, 255]);
     await writeBaseline('bool-form', png);
-    const captureUri = `instances/${instanceId}/artifacts/screenshot/bool-form.png`;
+    const captureUri = captureUriForName('bool-form');
     await writeCapture(captureUri, png);
 
     mockArtifactFindFirst.mockResolvedValue({
@@ -338,7 +358,7 @@ describe('VisualMatchService.processInstance', () => {
     await writeDefinition(definitionWithVisualMatch('homepage'));
     const png = makePng(20, 20, [255, 0, 0, 255]);
     await writeBaseline('homepage', png);
-    const captureUri = `instances/${instanceId}/artifacts/screenshot/homepage.png`;
+    const captureUri = captureUriForName('homepage');
     await writeCapture(captureUri, png);
     mockArtifactFindFirst.mockResolvedValue({
       id: 'art-pass',
@@ -352,7 +372,7 @@ describe('VisualMatchService.processInstance', () => {
 
   it('returns a failure for verdict=no-baseline (with approval-cmd hint)', async () => {
     await writeDefinition(definitionWithVisualMatch('newpage'));
-    const captureUri = `instances/${instanceId}/artifacts/screenshot/newpage.png`;
+    const captureUri = captureUriForName('newpage');
     await writeCapture(captureUri, makePng(10, 10, [0, 0, 255, 255]));
     mockArtifactFindFirst.mockResolvedValue({
       id: 'art-nb',
@@ -373,7 +393,7 @@ describe('VisualMatchService.processInstance', () => {
     const baseline = makePng(10, 10, [255, 0, 0, 255]);
     const capture = makePng(10, 10, [0, 255, 0, 255]); // 100% different
     await writeBaseline('changed', baseline);
-    const captureUri = `instances/${instanceId}/artifacts/screenshot/changed.png`;
+    const captureUri = captureUriForName('changed');
     await writeCapture(captureUri, capture);
     mockArtifactFindFirst.mockResolvedValue({
       id: 'art-fail',
@@ -405,7 +425,7 @@ describe('VisualMatchService.processInstance', () => {
     // capture file does not exist on disk.
     mockArtifactFindFirst.mockResolvedValue({
       id: 'art-err',
-      uri: 'instances/inst-vm-test/artifacts/screenshot/does-not-exist.png',
+      uri: captureUriForName('does-not-exist'),
       name: 'broken',
     });
     // Baseline exists so it tries to read files and fails.
@@ -531,7 +551,7 @@ describe('VisualMatchService.processInstance', () => {
 
     const png = makePng(5, 5, [100, 100, 100, 255]);
     await writeBaseline('deep', png);
-    const captureUri = `instances/${instanceId}/artifacts/screenshot/deep.png`;
+    const captureUri = captureUriForName('deep');
     await writeCapture(captureUri, png);
     mockArtifactFindFirst.mockResolvedValue({
       id: 'art-deep',
@@ -567,7 +587,7 @@ describe('VisualMatchService.processInstance', () => {
   it('fails when only height differs (width same)', async () => {
     await writeDefinition(definitionWithVisualMatch('height-diff'));
     await writeBaseline('height-diff', makePng(10, 10, [0, 0, 0, 255]));
-    const captureUri = `instances/${instanceId}/artifacts/screenshot/height-diff.png`;
+    const captureUri = captureUriForName('height-diff');
     await writeCapture(captureUri, makePng(10, 20, [0, 0, 0, 255]));
 
     mockArtifactFindFirst.mockResolvedValue({
@@ -602,7 +622,7 @@ describe('VisualMatchService.processInstance', () => {
 
     await writeDefinition(definitionWithVisualMatch('boundary', 0.01));
     await writeBaseline('boundary', baseline);
-    const captureUri = `instances/${instanceId}/artifacts/screenshot/boundary.png`;
+    const captureUri = captureUriForName('boundary');
     await writeCapture(captureUri, capture);
 
     mockArtifactFindFirst.mockResolvedValue({
@@ -646,8 +666,8 @@ describe('VisualMatchService.processInstance', () => {
 
     // 'missing-bl' has no baseline; 'bad-diff' has a different capture.
     await writeBaseline('bad-diff', makePng(5, 5, [255, 0, 0, 255]));
-    const capUri1 = `instances/${instanceId}/artifacts/screenshot/missing-bl.png`;
-    const capUri2 = `instances/${instanceId}/artifacts/screenshot/bad-diff.png`;
+    const capUri1 = captureUriForName('missing-bl');
+    const capUri2 = captureUriForName('bad-diff');
     await writeCapture(capUri1, makePng(5, 5, [0, 0, 0, 255]));
     await writeCapture(capUri2, makePng(5, 5, [0, 255, 0, 255]));
 
@@ -688,7 +708,7 @@ describe('VisualMatchService.processInstance', () => {
 
     const png = makePng(5, 5, [50, 50, 50, 255]);
     await writeBaseline('after-click', png);
-    const captureUri = `instances/${instanceId}/artifacts/screenshot/after-click.png`;
+    const captureUri = captureUriForName('after-click');
     await writeCapture(captureUri, png);
 
     mockArtifactFindFirst.mockResolvedValue({
@@ -747,7 +767,7 @@ describe('VisualMatchService.processInstance', () => {
       ],
     });
     await writeBaseline('default-thresh', baseline);
-    const captureUri = `instances/${instanceId}/artifacts/screenshot/default-thresh.png`;
+    const captureUri = captureUriForName('default-thresh');
     await writeCapture(captureUri, capture);
 
     mockArtifactFindFirst.mockResolvedValue({

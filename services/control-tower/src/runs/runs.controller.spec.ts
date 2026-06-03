@@ -10,6 +10,7 @@ describe('RunsController', () => {
     getRunStatus: jest.fn(),
     stopCurrentRun: jest.fn(),
     deleteRun: jest.fn(),
+    ensureInstanceRegistered: jest.fn().mockResolvedValue(undefined),
   };
 
   const mockRunStorage: any = {
@@ -162,8 +163,12 @@ describe('RunsController', () => {
       const expected = { name: 'test', items: [] };
       mockRunStorage.readDefinition.mockResolvedValue(expected);
 
-      const result = await controller.getInstanceDefinition('inst-1');
+      const result = await controller.getInstanceDefinition('run-1', 'inst-1');
 
+      expect(mockRunsService.ensureInstanceRegistered).toHaveBeenCalledWith(
+        'run-1',
+        'inst-1',
+      );
       expect(mockRunStorage.readDefinition).toHaveBeenCalledWith('inst-1');
       expect(result).toEqual(expected);
     });

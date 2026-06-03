@@ -19,7 +19,7 @@ import type {
   ArtifactsResponse,
 } from '../lib/inspect-types';
 
-import { DUMP_PATH } from '@dokkimi/config';
+import { dumpPath } from '@dokkimi/config';
 import { getProjectPath, latestRunUrl } from '../lib/project-path';
 
 // ---------------------------------------------------------------------------
@@ -28,26 +28,24 @@ import { getProjectPath, latestRunUrl } from '../lib/project-path';
 
 export interface WriteDumpOptions {
   ctUrl: string;
-  storageDir: string;
   instances: InstanceSummary[];
   runId: string;
   runStatus: string;
   createdAt: string;
   completedAt: string | null;
-  outputPath?: string;
+  outputPath: string;
   inlineArtifacts?: boolean;
 }
 
 export async function writeDump(opts: WriteDumpOptions): Promise<void> {
   const {
     ctUrl,
-    storageDir,
     instances,
     runId,
     runStatus,
     createdAt,
     completedAt,
-    outputPath = DUMP_PATH,
+    outputPath,
     inlineArtifacts = false,
   } = opts;
 
@@ -64,7 +62,6 @@ export async function writeDump(opts: WriteDumpOptions): Promise<void> {
 
   for (let i = 0; i < instances.length; i++) {
     const instanceData = await dumpInstance(ctUrl, runId, instances[i], {
-      storageDir,
       inlineArtifacts,
     });
     const json = JSON.stringify(instanceData, null, 2);
@@ -94,7 +91,9 @@ export async function dump(args: string[]): Promise<void> {
       'Output a raw JSON data dump of the last run for LLM-assisted debugging.',
     );
     console.log('');
-    console.log(`By default, writes to ${DUMP_PATH}`);
+    console.log(
+      'By default, writes to .dokkimi/__runs__/{timestamp}/dump.json',
+    );
     console.log('');
     console.log('Arguments:');
     console.log(
@@ -122,12 +121,10 @@ export async function dump(args: string[]): Promise<void> {
   }
 
   const explicitOutput = parseOutputFlag(args);
-  const outputFile = explicitOutput ?? DUMP_PATH;
   const failedOnly = parseBoolFlag(args, '--failed');
   const inlineArtifacts = parseBoolFlag(args, '--inline-artifacts');
   const config = loadConfig();
   const ctUrl = buildServiceUrl(config.services.controlTower);
-  const storageDir = config.storage.dir;
 
   const projectPath = getProjectPath();
   const latestRun = await fetchJson<LatestRunResponse>(
@@ -137,6 +134,15 @@ export async function dump(args: string[]): Promise<void> {
     console.error('No run history found. Run `dokkimi run` first.');
     process.exit(1);
   }
+
+  const outputFile =
+    explicitOutput ??
+    (projectPath
+      ? dumpPath(projectPath, new Date(latestRun.createdAt), failedOnly)
+      : path.join(
+          process.cwd(),
+          failedOnly ? 'dump_failed.json' : 'dump.json',
+        ));
 
   let instances = latestRun.instances;
   const target = args.find((a) => !a.startsWith('-'));
@@ -171,7 +177,6 @@ export async function dump(args: string[]): Promise<void> {
 
   await writeDump({
     ctUrl,
-    storageDir,
     instances,
     runId: latestRun.runId,
     runStatus: latestRun.status,
@@ -220,7 +225,6 @@ function parseOutputFlag(args: string[]): string | null {
 }
 
 interface DumpOptions {
-  storageDir: string;
   inlineArtifacts: boolean;
 }
 
@@ -276,41 +280,31 @@ async function dumpInstance(
     consoleLogs: (consoleRes?.logs ?? []).map((l) => stripIds(l)),
     artifacts: hydrateArtifacts(
       artifactsRes?.artifacts ?? [],
-      opts.storageDir,
       opts.inlineArtifacts,
     ),
   };
 }
 
 /**
- * Resolve relative artifact URIs to absolute paths so the LLM consumer
- * (Claude Code, Cursor, etc.) can read them with its file-reading tool.
- *
- * When `inline` is true, also embed text artifact contents (HTML) inline
- * for paste workflows where the LLM has no filesystem access. PNG screenshots
- * and diffs stay as paths regardless — base64-in-JSON is gross and most chat
- * tools accept image attachments separately.
+ * Artifact URIs are absolute paths. When `inline` is true, embed text
+ * artifact contents (HTML) inline for paste workflows where the LLM has
+ * no filesystem access. PNG screenshots and diffs stay as paths regardless.
  */
-function hydrateArtifacts(
-  rows: ArtifactRow[],
-  storageDir: string,
-  inline: boolean,
-): unknown[] {
+function hydrateArtifacts(rows: ArtifactRow[], inline: boolean): unknown[] {
   return rows.map((a) => {
-    const absolutePath = path.join(storageDir, a.uri);
     const base = {
       type: a.type,
       name: a.name,
       stepIndex: a.stepIndex,
       subStepIndex: a.subStepIndex,
-      path: absolutePath,
+      path: a.uri,
       createdAt: a.createdAt,
     };
     if (!inline || a.type !== 'html') {
       return base;
     }
     try {
-      const content = fs.readFileSync(absolutePath, 'utf-8');
+      const content = fs.readFileSync(a.uri, 'utf-8');
       return { ...base, content };
     } catch {
       return base;
