@@ -400,4 +400,12 @@ function cleanupLegacyStorage(): void {
       fs.rmSync(dir, { recursive: true });
     } catch {}
   }
+
+  const projectPath = getProjectPath();
+  if (projectPath) {
+    const runsDir = path.join(projectPath, '.dokkimi', '__runs__');
+    try {
+      fs.rmSync(runsDir, { recursive: true });
+    } catch {}
+  }
 }

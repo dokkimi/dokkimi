@@ -76,11 +76,24 @@ export function setTelemetryPrefs(telemetry: TelemetryPrefs): void {
   updateUserPrefs((prefs) => ({ ...prefs, telemetry }));
 }
 
-export function getConcurrencyPrefs(): ConcurrencyPrefs {
-  return getUserPrefs().concurrency ?? {};
+export function getConcurrencyPrefs(projectPath?: string): ConcurrencyPrefs {
+  const prefs = getUserPrefs();
+  const global = prefs.concurrency ?? {};
+  if (projectPath) {
+    const project = prefs.projects?.[projectPath]?.concurrency ?? {};
+    return {
+      maxConcurrentTests:
+        project.maxConcurrentTests ?? global.maxConcurrentTests,
+      maxBootingTests: project.maxBootingTests ?? global.maxBootingTests,
+    };
+  }
+  return global;
 }
 
-export function setConcurrencyPrefs(concurrency: ConcurrencyPrefs): void {
+export function setConcurrencyPrefs(
+  concurrency: ConcurrencyPrefs,
+  projectPath?: string,
+): void {
   updateUserPrefs((prefs) => {
     const cleaned = { ...concurrency };
     if (cleaned.maxConcurrentTests === undefined) {
@@ -89,11 +102,50 @@ export function setConcurrencyPrefs(concurrency: ConcurrencyPrefs): void {
     if (cleaned.maxBootingTests === undefined) {
       delete cleaned.maxBootingTests;
     }
-    if (Object.keys(cleaned).length === 0) {
+
+    if (projectPath) {
+      const projects = { ...prefs.projects };
+      const project = { ...projects[projectPath] };
+      if (Object.keys(cleaned).length === 0) {
+        delete project.concurrency;
+      } else {
+        const merged = { ...project.concurrency, ...cleaned };
+        if (merged.maxConcurrentTests === undefined) {
+          delete merged.maxConcurrentTests;
+        }
+        if (merged.maxBootingTests === undefined) {
+          delete merged.maxBootingTests;
+        }
+        project.concurrency =
+          Object.keys(merged).length > 0 ? merged : undefined;
+        if (!project.concurrency) {
+          delete project.concurrency;
+        }
+      }
+      if (Object.keys(project).length === 0) {
+        delete projects[projectPath];
+      } else {
+        projects[projectPath] = project;
+      }
+      if (Object.keys(projects).length === 0) {
+        const { projects: _, ...rest } = prefs;
+        return rest;
+      }
+      return { ...prefs, projects };
+    }
+
+    const merged = { ...prefs.concurrency, ...cleaned };
+    if (merged.maxConcurrentTests === undefined) {
+      delete merged.maxConcurrentTests;
+    }
+    if (merged.maxBootingTests === undefined) {
+      delete merged.maxBootingTests;
+    }
+    if (Object.keys(merged).length === 0) {
       const { concurrency: _, ...rest } = prefs;
       return rest;
     }
-    return { ...prefs, concurrency: cleaned };
+    return { ...prefs, concurrency: merged };
   });
 }
 
@@ -101,13 +153,14 @@ const DEFAULT_MAX_RUN_HISTORY = 2;
 
 export function getMaxRunHistory(projectPath?: string): number {
   const prefs = getUserPrefs();
+  let value = prefs.maxRunHistory ?? DEFAULT_MAX_RUN_HISTORY;
   if (projectPath) {
     const projectValue = prefs.projects?.[projectPath]?.maxRunHistory;
     if (projectValue !== undefined) {
-      return projectValue;
+      value = projectValue;
     }
   }
-  return prefs.maxRunHistory ?? DEFAULT_MAX_RUN_HISTORY;
+  return Math.max(1, value);
 }
 
 export function setMaxRunHistory(

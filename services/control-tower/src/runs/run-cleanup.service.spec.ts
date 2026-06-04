@@ -27,7 +27,8 @@ describe('RunCleanupService', () => {
   const mockRunStorage: any = {
     deleteInstance: jest.fn().mockResolvedValue(undefined),
     deleteRunDir: jest.fn().mockResolvedValue(undefined),
-    ensureGitignore: jest.fn().mockResolvedValue(undefined),
+    ensureRunsExcluded: jest.fn().mockResolvedValue(undefined),
+    pruneRunDirs: jest.fn().mockResolvedValue(undefined),
   };
 
   const mockRegistryService: any = {

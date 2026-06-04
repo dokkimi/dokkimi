@@ -49,7 +49,7 @@ export class RunCleanupService {
 
   async prepareForNewRun(projectPath?: string) {
     if (projectPath) {
-      await this.runStorage.ensureGitignore(projectPath);
+      await this.runStorage.ensureRunsExcluded(projectPath);
     }
 
     const maxRunHistory = getMaxRunHistory(projectPath);
@@ -113,6 +113,10 @@ export class RunCleanupService {
       this.logger.log(
         `Pruned ${runsToDelete.length} old run(s) for project ${projectPath ?? '(global)'}`,
       );
+    }
+
+    if (projectPath) {
+      await this.runStorage.pruneRunDirs(projectPath, maxRunHistory - 1);
     }
   }
 

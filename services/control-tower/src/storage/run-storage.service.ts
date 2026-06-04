@@ -38,12 +38,20 @@ export class RunStorageService {
     }
   }
 
-  async ensureGitignore(projectPath: string): Promise<void> {
+  async ensureRunsExcluded(projectPath: string): Promise<void> {
     const repoRoot = await this.findGitRoot(projectPath);
     if (!repoRoot) {
       return;
     }
 
+    await this.ensureGitignoreEntry(repoRoot, projectPath);
+    await this.ensureVscodeWatcherExclude(repoRoot);
+  }
+
+  private async ensureGitignoreEntry(
+    repoRoot: string,
+    projectPath: string,
+  ): Promise<void> {
     const relative = path.relative(repoRoot, projectPath);
     const prefix = relative === '' ? '' : `${relative}/`;
     const entry = `${prefix}.dokkimi/__runs__/`;
@@ -55,20 +63,71 @@ export class RunStorageService {
         return;
       }
       const separator = content.endsWith('\n') ? '' : '\n';
-      await fs.appendFile(
-        gitignorePath,
-        `${separator}\n# Dokkimi\n${entry}\n`,
+      await fs.appendFile(gitignorePath, `${separator}\n# Dokkimi\n${entry}\n`);
+    } catch (e: unknown) {
+      if (
+        e instanceof Error &&
+        (e as NodeJS.ErrnoException).code === 'ENOENT'
+      ) {
+        await fs.writeFile(gitignorePath, `# Dokkimi\n${entry}\n`);
+      }
+    }
+  }
+
+  private async ensureVscodeWatcherExclude(repoRoot: string): Promise<void> {
+    const settingsPath = path.join(repoRoot, '.vscode', 'settings.json');
+    const excludeKey = '**/.dokkimi/__runs__/**';
+
+    try {
+      const raw = await fs.readFile(settingsPath, 'utf-8');
+      const settings = JSON.parse(raw);
+      const exclude = settings['files.watcherExclude'] ?? {};
+      if (exclude[excludeKey] === true) {
+        return;
+      }
+      exclude[excludeKey] = true;
+      settings['files.watcherExclude'] = exclude;
+      await fs.writeFile(
+        settingsPath,
+        JSON.stringify(settings, null, 2) + '\n',
       );
     } catch (e: unknown) {
       if (
         e instanceof Error &&
         (e as NodeJS.ErrnoException).code === 'ENOENT'
       ) {
+        await fs.mkdir(path.join(repoRoot, '.vscode'), { recursive: true });
         await fs.writeFile(
-          gitignorePath,
-          `# Dokkimi\n${entry}\n`,
+          settingsPath,
+          JSON.stringify(
+            { 'files.watcherExclude': { [excludeKey]: true } },
+            null,
+            2,
+          ) + '\n',
         );
       }
+    }
+  }
+
+  async pruneRunDirs(
+    projectPath: string,
+    maxRunHistory: number,
+  ): Promise<void> {
+    const runsDir = path.join(projectPath, '.dokkimi', '__runs__');
+    let entries: string[];
+    try {
+      entries = await fs.readdir(runsDir);
+    } catch {
+      return;
+    }
+    const sorted = entries.sort().reverse();
+    const toDelete = sorted.slice(maxRunHistory);
+    for (const entry of toDelete) {
+      const dir = path.join(runsDir, entry);
+      try {
+        await fs.rm(dir, { recursive: true });
+        this.logger.log(`Pruned run directory: ${dir}`);
+      } catch {}
     }
   }
 
