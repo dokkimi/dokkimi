@@ -5,7 +5,12 @@ import {
   checkService,
   sleep,
 } from '../lib/cli-utils';
-import { loadConfig, buildServiceUrl, DOKKIMI_DIR } from '@dokkimi/config';
+import {
+  loadConfig,
+  buildServiceUrl,
+  DOKKIMI_DIR,
+  projectRunsDir,
+} from '@dokkimi/config';
 import { getProjectPath, latestRunUrl } from '../lib/project-path';
 import { formatDuration, statusColor } from '../lib/formatting';
 import { clearLines } from '../lib/terminal';
@@ -139,7 +144,7 @@ async function cleanViaCT(
 
     const startTime = Date.now();
     await fetchAction(`${ctUrl}/runs/all`, 'DELETE');
-    cleanupDokkimiDockerResources();
+    cleanupDokkimiDockerResources(true);
 
     console.log('');
     console.log(
@@ -349,7 +354,7 @@ function findDokkimiNetworks(): string[] {
   }
 }
 
-function cleanupDokkimiDockerResources(): void {
+function cleanupDokkimiDockerResources(all = false): void {
   // Remove containers
   const containers = findDokkimiContainers();
   if (containers.length > 0) {
@@ -386,26 +391,32 @@ function cleanupDokkimiDockerResources(): void {
     }
   }
 
-  // Remove legacy global storage
-  cleanupLegacyStorage();
+  // Remove legacy global storage and run artifacts
+  cleanupRunStorage(all);
 }
 
-function cleanupLegacyStorage(): void {
-  const dirs = [
+function cleanupRunStorage(all: boolean): void {
+  const legacyDirs = [
     path.join(DOKKIMI_DIR, 'storage'),
     path.join(DOKKIMI_DIR, 'generated'),
   ];
-  for (const dir of dirs) {
+  for (const dir of legacyDirs) {
     try {
       fs.rmSync(dir, { recursive: true });
     } catch {}
   }
 
+  if (all) {
+    try {
+      fs.rmSync(path.join(DOKKIMI_DIR, 'runs'), { recursive: true });
+    } catch {}
+    return;
+  }
+
   const projectPath = getProjectPath();
   if (projectPath) {
-    const runsDir = path.join(projectPath, '.dokkimi', '__runs__');
     try {
-      fs.rmSync(runsDir, { recursive: true });
+      fs.rmSync(projectRunsDir(projectPath), { recursive: true });
     } catch {}
   }
 }

@@ -9,6 +9,27 @@ import { PrismaService } from '../prisma/prisma.service';
 import { RunStorageService } from '../storage/run-storage.service';
 import { runDirPath } from '@dokkimi/config';
 
+let mockDokkimiDir: string;
+jest.mock('@dokkimi/config', () => {
+  const actual = jest.requireActual('@dokkimi/config');
+  return {
+    ...actual,
+    get DOKKIMI_DIR() {
+      return mockDokkimiDir;
+    },
+    runDirPath(projectPath: string, createdAt: Date) {
+      const stripped = projectPath.replace(/^\//, '');
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      return require('path').join(
+        mockDokkimiDir,
+        'runs',
+        stripped,
+        actual.formatRunTimestamp(createdAt),
+      );
+    },
+  };
+});
+
 /**
  * Generates a solid-color PNG buffer with the given dimensions and RGBA color.
  * Used to construct controlled baseline / capture inputs for the diff path.
@@ -52,9 +73,11 @@ describe('VisualMatchService.processInstance', () => {
   const instanceId = 'inst-vm-test';
   const testCreatedAt = new Date('2026-06-03T12:00:00Z');
 
+  const testProjectPath = '/test/project';
+
   function instanceDir(): string {
     return path.join(
-      runDirPath(workDir, testCreatedAt),
+      runDirPath(testProjectPath, testCreatedAt),
       'snapshots',
       'vm-definition',
     );
@@ -87,6 +110,7 @@ describe('VisualMatchService.processInstance', () => {
   beforeEach(async () => {
     jest.clearAllMocks();
     workDir = await fs.mkdtemp(path.join(os.tmpdir(), 'vm-spec-'));
+    mockDokkimiDir = workDir;
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -98,7 +122,7 @@ describe('VisualMatchService.processInstance', () => {
             const svc = new RunStorageService();
             svc.registerInstance(
               instanceId,
-              workDir,
+              testProjectPath,
               testCreatedAt,
               'vm-definition',
             );

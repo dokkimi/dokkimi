@@ -80,7 +80,7 @@ export class RunsService implements OnApplicationBootstrap {
     for (const inst of run.instances) {
       this.runStorage.registerInstance(
         inst.id,
-        run.projectPath,
+        run.projectPath ?? '',
         run.createdAt,
         inst.name,
       );
@@ -135,12 +135,14 @@ export class RunsService implements OnApplicationBootstrap {
       return { instanceId, status: instance.status };
     }
 
-    this.runStorage.registerInstance(
-      instanceId,
-      run.projectPath,
-      run.createdAt,
-      instance.name,
-    );
+    if (run.projectPath) {
+      this.runStorage.registerInstance(
+        instanceId,
+        run.projectPath,
+        run.createdAt,
+        instance.name,
+      );
+    }
 
     const { definition } = dto;
 
@@ -369,25 +371,22 @@ export class RunsService implements OnApplicationBootstrap {
     if (!instance) {
       return;
     }
-    this.runStorage.registerInstance(
-      instanceId,
-      run.projectPath,
-      run.createdAt,
-      instance.name,
-    );
+    if (run.projectPath) {
+      this.runStorage.registerInstance(
+        instanceId,
+        run.projectPath,
+        run.createdAt,
+        instance.name,
+      );
+    }
   }
 
   private async deleteRunStorage(run: {
     projectPath: string | null;
     createdAt: Date;
-    instances: { id: string }[];
   }): Promise<void> {
     if (run.projectPath) {
       await this.runStorage.deleteRunDir(run.projectPath, run.createdAt);
-    } else {
-      for (const instance of run.instances) {
-        await this.runStorage.deleteInstance(instance.id);
-      }
     }
   }
 

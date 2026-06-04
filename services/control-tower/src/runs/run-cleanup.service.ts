@@ -48,10 +48,6 @@ export class RunCleanupService {
   }
 
   async prepareForNewRun(projectPath?: string) {
-    if (projectPath) {
-      await this.runStorage.ensureRunsExcluded(projectPath);
-    }
-
     const maxRunHistory = getMaxRunHistory(projectPath);
     // Stop the active run for this project (if any)
     const activeRuns = await this.prisma.run.findMany({
@@ -89,7 +85,9 @@ export class RunCleanupService {
       include: { instances: true },
     });
 
-    const runsToDelete = completedRuns.slice(maxRunHistory);
+    // Keep maxRunHistory - 1 completed runs because the new run about to be
+    // created will occupy a slot, bringing the total to maxRunHistory.
+    const runsToDelete = completedRuns.slice(maxRunHistory - 1);
 
     for (const run of runsToDelete) {
       this.logger.log(
@@ -100,10 +98,6 @@ export class RunCleanupService {
 
       if (run.projectPath) {
         await this.runStorage.deleteRunDir(run.projectPath, run.createdAt);
-      } else {
-        for (const instance of run.instances) {
-          await this.runStorage.deleteInstance(instance.id);
-        }
       }
 
       this.registryService.clearCredentials(run.id);
@@ -113,10 +107,6 @@ export class RunCleanupService {
       this.logger.log(
         `Pruned ${runsToDelete.length} old run(s) for project ${projectPath ?? '(global)'}`,
       );
-    }
-
-    if (projectPath) {
-      await this.runStorage.pruneRunDirs(projectPath, maxRunHistory - 1);
     }
   }
 

@@ -547,12 +547,16 @@ describe('RunsService', () => {
     });
 
     it('should stop instances, delete run, clean storage, and delete secret', async () => {
+      const createdAt = new Date('2026-01-01');
+      const projectPath = '/my/project';
       const instances = [
         { id: 'inst-1', status: InstanceStatus.RUNNING },
         { id: 'inst-2', status: InstanceStatus.STOPPED },
       ];
       mockPrisma.run.findUnique.mockResolvedValue({
         id: 'run-1',
+        projectPath,
+        createdAt,
         instances,
       });
 
@@ -562,8 +566,10 @@ describe('RunsService', () => {
       expect(mockPrisma.run.delete).toHaveBeenCalledWith({
         where: { id: 'run-1' },
       });
-      expect(mockRunStorage.deleteInstance).toHaveBeenCalledWith('inst-1');
-      expect(mockRunStorage.deleteInstance).toHaveBeenCalledWith('inst-2');
+      expect(mockRunStorage.deleteRunDir).toHaveBeenCalledWith(
+        projectPath,
+        createdAt,
+      );
       expect(mockRegistryService.clearCredentials).toHaveBeenCalledWith(
         'run-1',
       );
@@ -573,6 +579,8 @@ describe('RunsService', () => {
     it('should clear registry credentials on delete', async () => {
       mockPrisma.run.findUnique.mockResolvedValue({
         id: 'run-1',
+        projectPath: '/my/project',
+        createdAt: new Date('2026-01-01'),
         instances: [],
       });
 

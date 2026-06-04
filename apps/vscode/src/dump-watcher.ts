@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
+import { projectRunsDir } from '@dokkimi/config';
 
 export interface DumpOutput {
   runId: string;
@@ -43,7 +44,7 @@ export interface AssertionResult {
 }
 
 export function findLatestDumpPath(projectPath: string): string | null {
-  const runsDir = path.join(projectPath, '.dokkimi', '__runs__');
+  const runsDir = projectRunsDir(projectPath);
   try {
     const entries = fs.readdirSync(runsDir).sort().reverse();
     for (const entry of entries) {

@@ -91,9 +91,7 @@ export async function dump(args: string[]): Promise<void> {
       'Output a raw JSON data dump of the last run for LLM-assisted debugging.',
     );
     console.log('');
-    console.log(
-      'By default, writes to .dokkimi/__runs__/{timestamp}/dump.json',
-    );
+    console.log('By default, writes to ~/.dokkimi/runs/{timestamp}/dump.json');
     console.log('');
     console.log('Arguments:');
     console.log(

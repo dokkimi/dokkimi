@@ -5,18 +5,49 @@ import * as fsSync from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 
+jest.mock('@dokkimi/config', () => {
+  const actual = jest.requireActual('@dokkimi/config');
+  let mockDokkimiDir: string;
+  return {
+    ...actual,
+    get DOKKIMI_DIR() {
+      return mockDokkimiDir;
+    },
+    setMockDokkimiDir(dir: string) {
+      mockDokkimiDir = dir;
+    },
+    runDirPath(projectPath: string, createdAt: Date) {
+      const stripped = projectPath.replace(/^\//, '');
+      return path.join(
+        mockDokkimiDir,
+        'runs',
+        stripped,
+        actual.formatRunTimestamp(createdAt),
+      );
+    },
+  };
+});
+
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const { setMockDokkimiDir } = require('@dokkimi/config') as {
+  setMockDokkimiDir: (dir: string) => void;
+};
+
 describe('RunStorageService', () => {
   let service: RunStorageService;
   let tempDir: string;
 
   const testCreatedAt = new Date('2026-06-03T12:00:00Z');
 
+  const testProjectPath = '/test/project';
+
   function registerTestInstance(id: string, name: string) {
-    service.registerInstance(id, tempDir, testCreatedAt, name);
+    service.registerInstance(id, testProjectPath, testCreatedAt, name);
   }
 
   beforeEach(async () => {
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'run-storage-test-'));
+    setMockDokkimiDir(tempDir);
     service = new RunStorageService();
     registerTestInstance('inst-1', 'api-tests');
   });
@@ -221,7 +252,7 @@ describe('RunStorageService', () => {
     it('should recursively delete an instance directory', async () => {
       await service.writeDefinition('inst-1', { test: true });
       const snapshotDir = path.join(
-        runDirPath(tempDir, testCreatedAt),
+        runDirPath(testProjectPath, testCreatedAt),
         'snapshots',
         'api-tests',
       );
@@ -239,10 +270,10 @@ describe('RunStorageService', () => {
   describe('deleteRunDir', () => {
     it('should delete the entire run directory', async () => {
       await service.writeDefinition('inst-1', { test: true });
-      const runDir = runDirPath(tempDir, testCreatedAt);
+      const runDir = runDirPath(testProjectPath, testCreatedAt);
       expect(fsSync.existsSync(runDir)).toBe(true);
 
-      await service.deleteRunDir(tempDir, testCreatedAt);
+      await service.deleteRunDir(testProjectPath, testCreatedAt);
       expect(fsSync.existsSync(runDir)).toBe(false);
     });
   });

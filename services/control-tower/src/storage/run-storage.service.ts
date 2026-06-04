@@ -6,9 +6,9 @@ import * as path from 'path';
  * Filesystem-backed run storage for local/desktop mode.
  *
  * Layout:
- *   {projectPath}/.dokkimi/__runs__/{YYYYMMDD-HHmmss}/snapshots/{definitionName}/definition.json
- *   {projectPath}/.dokkimi/__runs__/{YYYYMMDD-HHmmss}/snapshots/{definitionName}/db-init-files/{itemName}/{filename}
- *   {projectPath}/.dokkimi/__runs__/{YYYYMMDD-HHmmss}/snapshots/{definitionName}/artifacts/{folder}/{filename}
+ *   ~/.dokkimi/runs/{YYYYMMDD-HHmmss}/snapshots/{definitionName}/definition.json
+ *   ~/.dokkimi/runs/{YYYYMMDD-HHmmss}/snapshots/{definitionName}/db-init-files/{itemName}/{filename}
+ *   ~/.dokkimi/runs/{YYYYMMDD-HHmmss}/snapshots/{definitionName}/artifacts/{folder}/{filename}
  */
 export interface ArtifactPath {
   folder: string;
@@ -24,124 +24,16 @@ export class RunStorageService {
 
   registerInstance(
     instanceId: string,
-    projectPath: string | null,
+    projectPath: string,
     createdAt: Date,
     definitionName: string,
   ): void {
-    if (projectPath) {
-      const dir = path.join(
-        runDirPath(projectPath, createdAt),
-        'snapshots',
-        definitionName,
-      );
-      this.instancePaths.set(instanceId, dir);
-    }
-  }
-
-  async ensureRunsExcluded(projectPath: string): Promise<void> {
-    const repoRoot = await this.findGitRoot(projectPath);
-    if (!repoRoot) {
-      return;
-    }
-
-    await this.ensureGitignoreEntry(repoRoot, projectPath);
-    await this.ensureVscodeWatcherExclude(repoRoot);
-  }
-
-  private async ensureGitignoreEntry(
-    repoRoot: string,
-    projectPath: string,
-  ): Promise<void> {
-    const relative = path.relative(repoRoot, projectPath);
-    const prefix = relative === '' ? '' : `${relative}/`;
-    const entry = `${prefix}.dokkimi/__runs__/`;
-    const gitignorePath = path.join(repoRoot, '.gitignore');
-
-    try {
-      const content = await fs.readFile(gitignorePath, 'utf-8');
-      if (content.split('\n').some((line) => line.trim() === entry)) {
-        return;
-      }
-      const separator = content.endsWith('\n') ? '' : '\n';
-      await fs.appendFile(gitignorePath, `${separator}\n# Dokkimi\n${entry}\n`);
-    } catch (e: unknown) {
-      if (
-        e instanceof Error &&
-        (e as NodeJS.ErrnoException).code === 'ENOENT'
-      ) {
-        await fs.writeFile(gitignorePath, `# Dokkimi\n${entry}\n`);
-      }
-    }
-  }
-
-  private async ensureVscodeWatcherExclude(repoRoot: string): Promise<void> {
-    const settingsPath = path.join(repoRoot, '.vscode', 'settings.json');
-    const excludeKey = '**/.dokkimi/__runs__/**';
-
-    try {
-      const raw = await fs.readFile(settingsPath, 'utf-8');
-      const settings = JSON.parse(raw);
-      const exclude = settings['files.watcherExclude'] ?? {};
-      if (exclude[excludeKey] === true) {
-        return;
-      }
-      exclude[excludeKey] = true;
-      settings['files.watcherExclude'] = exclude;
-      await fs.writeFile(
-        settingsPath,
-        JSON.stringify(settings, null, 2) + '\n',
-      );
-    } catch (e: unknown) {
-      if (
-        e instanceof Error &&
-        (e as NodeJS.ErrnoException).code === 'ENOENT'
-      ) {
-        await fs.mkdir(path.join(repoRoot, '.vscode'), { recursive: true });
-        await fs.writeFile(
-          settingsPath,
-          JSON.stringify(
-            { 'files.watcherExclude': { [excludeKey]: true } },
-            null,
-            2,
-          ) + '\n',
-        );
-      }
-    }
-  }
-
-  async pruneRunDirs(
-    projectPath: string,
-    maxRunHistory: number,
-  ): Promise<void> {
-    const runsDir = path.join(projectPath, '.dokkimi', '__runs__');
-    let entries: string[];
-    try {
-      entries = await fs.readdir(runsDir);
-    } catch {
-      return;
-    }
-    const sorted = entries.sort().reverse();
-    const toDelete = sorted.slice(maxRunHistory);
-    for (const entry of toDelete) {
-      const dir = path.join(runsDir, entry);
-      try {
-        await fs.rm(dir, { recursive: true });
-        this.logger.log(`Pruned run directory: ${dir}`);
-      } catch {}
-    }
-  }
-
-  private async findGitRoot(startPath: string): Promise<string | null> {
-    let dir = path.resolve(startPath);
-    const root = path.parse(dir).root;
-    while (dir !== root) {
-      try {
-        await fs.access(path.join(dir, '.git'));
-        return dir;
-      } catch {}
-      dir = path.dirname(dir);
-    }
-    return null;
+    const dir = path.join(
+      runDirPath(projectPath, createdAt),
+      'snapshots',
+      definitionName,
+    );
+    this.instancePaths.set(instanceId, dir);
   }
 
   async deleteRunDir(projectPath: string, createdAt: Date): Promise<void> {
@@ -267,10 +159,6 @@ export class RunStorageService {
    * Path convention:
    *   - Named (visualMatch capture/diff, explicit screenshot): {type}/{name}.{ext}
    *   - Nameless (debug failure capture): failure/{stepIndex}.{subStepIndex}-failure.{ext}
-   *
-   * The caller is expected to have validated `name` against the sanitization
-   * rules (alphanumeric + dash + underscore, max 64) at the controller layer.
-   * This method does a defensive basename + sep check as a final guard.
    */
   async persistArtifact(
     instanceId: string,
@@ -336,10 +224,6 @@ export class RunStorageService {
     return path.join(this.instanceDir(instanceId), 'db-init-files', itemName);
   }
 
-  /**
-   * Resolves a stored relative `uri` (as returned by persistArtifact /
-   * persistBaseline) to an absolute filesystem path.
-   */
   absoluteUri(uri: string): string {
     return uri;
   }
@@ -348,13 +232,6 @@ export class RunStorageService {
     return path.join(this.instanceDir(instanceId), 'artifacts');
   }
 
-  /**
-   * Persist a visual-regression baseline for the run. Baselines are user
-   * inputs (checked into .dokkimi/<project>/baselines/<name>.png in git).
-   * The CLI uploads them at run-start; CT writes them under the instance
-   * directory so the post-run diff job can read them locally without
-   * touching the user's filesystem.
-   */
   async persistBaseline(
     instanceId: string,
     name: string,
@@ -376,11 +253,6 @@ export class RunStorageService {
     return { fullPath, uri: fullPath };
   }
 
-  /**
-   * Returns the absolute filesystem path for an instance's baseline file,
-   * or null if no baseline exists for that name. Used by the post-run
-   * visualMatch diff job.
-   */
   baselinePath(instanceId: string, name: string): string {
     return path.join(this.baselinesDir(instanceId), `${name}.png`);
   }

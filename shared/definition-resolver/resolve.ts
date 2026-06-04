@@ -584,7 +584,7 @@ function scanDefinitionFiles(
       return;
     }
     for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-      if (entry.name.startsWith('.') || entry.name === '__runs__') {
+      if (entry.name.startsWith('.')) {
         continue;
       }
       const full = path.join(dir, entry.name);

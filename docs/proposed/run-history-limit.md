@@ -20,12 +20,12 @@ The `projectPath` filter on `GET /runs/latest` works correctly in isolation — 
 
 ## Approach
 
-Move run artifacts into the project's `.dokkimi/` directory, organized by timestamp. Each run gets its own folder with everything needed for debugging — dump files, definition snapshots, logs, and artifacts. CT writes instance data directly into the run folder instead of a global `storage/` directory. Completed runs in the DB are retained up to a configurable history limit, and CT owns all pruning (both DB rows and filesystem directories).
+Keep run artifacts in the global `~/.dokkimi/` directory, organized per-run by timestamp. Each run gets its own folder with everything needed for debugging — dump files, definition snapshots, logs, and artifacts. CT writes instance data directly into the run folder instead of a flat `storage/` directory. Completed runs in the DB are retained up to a configurable history limit, and CT owns all pruning (both DB rows and filesystem directories). The DB's `projectPath` field provides per-project scoping for queries and pruning — no need for project-local storage.
 
 ### Storage structure
 
 ```
-my-project/.dokkimi/__runs__/{YYYYMMDD-HHmmss}/
+~/.dokkimi/runs/{YYYYMMDD-HHmmss}/
   dump.json          (generated on demand via `dokkimi dump`)
   dump_failed.json   (generated on demand via `dokkimi dump --failed`)
   snapshots/{definition-name}/
@@ -36,19 +36,18 @@ my-project/.dokkimi/__runs__/{YYYYMMDD-HHmmss}/
 
 - **Timestamp ID** (`YYYYMMDD-HHmmss`): Human-readable, naturally sorted. Uniqueness is guaranteed by CT's single-run-at-a-time constraint — only one run can be active per project, so timestamp collisions are impossible.
 - **Definition name as folder key**: Navigable — `ls snapshots/` shows meaningful names instead of UUIDs. The resolver already enforces unique definition names within a run.
-- **`__runs__/`**: Double underscores signal auto-generated content, visually distinct from user-authored definition folders.
-- **`.gitignore`**: Add `.dokkimi/__runs__/` to the project's `.gitignore`.
+- **Global directory**: All runs live under `~/.dokkimi/runs/`, avoiding repo pollution — no `.gitignore` entries, no VSCode watcher exclusions, no auto-modifying project files. CT always has write access to `~/.dokkimi/` regardless of project directory permissions.
 - **Dump files**: Not auto-generated. Created on demand when the user runs `dokkimi dump` (or the MCP `dump_results` tool). Written into the run's folder so they don't overwrite each other.
 
 ### DB retention and pruning
 
-The SQLite DB retains completed runs (and their logs/assertions) up to the `maxRunHistory` limit. CT owns all pruning — both DB rows and the corresponding `__runs__/` directory on disk. This avoids orphans (CLI deletes folder but DB rows remain, or vice versa).
+The SQLite DB retains completed runs (and their logs/assertions) up to the `maxRunHistory` limit. CT owns all pruning — both DB rows and the corresponding `~/.dokkimi/runs/{timestamp}/` directory on disk. This avoids orphans (CLI deletes folder but DB rows remain, or vice versa).
 
 CT enforces a single active run per project. When a new run is created, CT:
 
 1. Stops the active run for this `projectPath` (if any)
 2. Counts completed runs for this `projectPath`
-3. If the count exceeds `maxRunHistory`, deletes the oldest runs — both `prisma.run.delete` (cascading to all related rows) and `fs.rm` on the `__runs__/{timestamp}/` directory
+3. If the count exceeds `maxRunHistory`, deletes the oldest runs — both `prisma.run.delete` (cascading to all related rows) and `fs.rm` on the `runs/{timestamp}/` directory
 
 The `projectPath` on the run record is the scoping key. Other projects' runs are never touched.
 
@@ -184,30 +183,28 @@ Fix the core problem first: stop deleting other projects' data, and retain compl
 
 With retained logs, the SQLite file will grow. At 2 runs × ~500 traffic logs each, this is ~4MB — fine for local use. Add a note to `dokkimi doctor` if the DB exceeds a threshold (e.g., 500MB).
 
-### Phase 2: Move CT instance storage into the run folder
+### Phase 2: Move CT instance storage into per-run folders
 
-Moves CT's instance snapshots from `~/.dokkimi/storage/instances/` into `.dokkimi/__runs__/{timestamp}/snapshots/{definition-name}/`. Artifact paths become durable — they survive across runs because each run's artifacts live in its own folder.
+Moves CT's instance snapshots from `~/.dokkimi/storage/instances/` into `~/.dokkimi/runs/{timestamp}/snapshots/{definition-name}/`. Artifact paths become durable — they survive across runs because each run's artifacts live in its own folder.
 
 **CT changes:**
 
-- **Storage path**: The CLI passes the run's storage root (`{project}/.dokkimi/__runs__/{timestamp}/snapshots/`) when creating a run. CT writes instance data there instead of the global path. The timestamp is derived from `Run.createdAt` formatted as `YYYYMMDD-HHmmss`.
+- **Storage path**: CT derives the run's storage root from `Run.createdAt` (`~/.dokkimi/runs/{YYYYMMDD-HHmmss}/snapshots/`). No project path needed in the filesystem layout.
 - **Folder key**: Use definition name instead of instance ID for the snapshot subfolder.
-- **`RunStorageService`**: `storageDir` becomes per-run (passed in on creation) rather than a global config value. The service needs the run's storage root, not a hardcoded `~/.dokkimi/storage/`.
-- **Instance storage**: Every feature that reads/writes instance data (artifacts, baselines, init files, visual matching) needs to use the new path convention.
-- **Pruning update**: `prepareForNewRun` now deletes `__runs__/{timestamp}/` directories instead of `~/.dokkimi/storage/instances/{instanceId}/`.
+- **`RunStorageService`**: `registerInstance` takes `createdAt` and `definitionName` to derive the path. No more global `storageDir` config.
+- **Instance storage**: Every feature that reads/writes instance data (artifacts, baselines, init files, visual matching) uses the new path convention.
+- **Pruning update**: `prepareForNewRun` deletes `~/.dokkimi/runs/{timestamp}/` directories for pruned runs.
 
-**Risk:** The storage path threads through multiple CT modules (storage service, run cleanup, namespace lifecycle, visual matching). Should be done after phase 1 is stable.
+### Phase 3: Per-run dump files
 
-### Phase 3: Local per-project dump files
-
-Moves dump files from the global path to `.dokkimi/__runs__/{timestamp}/`. Generated on demand, not at run completion.
+Moves dump files from the global path to `~/.dokkimi/runs/{timestamp}/`. Generated on demand, not at run completion.
 
 **CLI changes:**
 
-- **`writeDump`**: Write `dump.json` and `dump_failed.json` into `.dokkimi/__runs__/{timestamp}/` in the project directory.
-- **`DUMP_PATH` / `DUMP_FAILED_PATH`**: These are currently global constants. They need to resolve dynamically based on the project's `.dokkimi/` path and the run's timestamp.
-- **`--failed`**: Read from the latest run folder for the current project, not the global path.
-- **`dokkimi dump`**: Resolve to the current project's latest (or specified) run folder.
+- **`writeDump`**: Write `dump.json` and `dump_failed.json` into `~/.dokkimi/runs/{timestamp}/`.
+- **`DUMP_PATH` / `DUMP_FAILED_PATH`**: Replaced by `dumpPath(createdAt)` which resolves to the run's folder.
+- **`--failed`**: Read from the latest run folder (via CT API query scoped by `projectPath`).
+- **`dokkimi dump`**: Resolve to the latest (or specified) run folder.
 - **`dokkimi inspect --run <timestamp>`**: Pick a specific run from history.
 
 **MCP changes:**
@@ -215,11 +212,6 @@ Moves dump files from the global path to `.dokkimi/__runs__/{timestamp}/`. Gener
 - **`run_tests`**: Return the run's timestamp ID in the response.
 - **`dump_results`**: Accept an optional `runId` (timestamp) parameter. Default to the latest run for the current project.
 - **`get_config` / `set_config`**: Add `maxRunHistory` as a configurable key. `get_config` returns source annotations. `set_config` accepts `scope` parameter.
-
-**Other:**
-
-- **VS Code extension**: Update any references to the global dump path.
-- **`.gitignore`**: The `get_reference` MCP tool should mention in its setup/best practices output that `__runs__/` is auto-generated and should be added to `.gitignore`. The CLI itself does not create or modify `.gitignore`.
 
 ### Phase 4: History endpoints and new MCP tools
 
@@ -233,7 +225,8 @@ New capabilities unlocked by DB retention and per-run storage.
 
 - **Append-mode results**: Returning full results inline from `run_tests` and not depending on dump files. Loses the ability to re-query and debug after the fact.
 - **Per-project config in the repo**: Considered `.dokkimi/config.yaml` `settings:` key for per-project overrides, but this gets committed and causes merge conflicts when developers want different values. Per-project overrides live in the global `~/.dokkimi/config.json` under `projects[path]` instead — local to the machine, no repo changes.
-- **Symlinks for `latest`**: Considered a `latest` symlink pointing to the most recent run folder. Not needed — the CLI can just sort `__runs__/` by timestamp to find the latest.
+- **Project-local run storage**: Initially implemented run artifacts under `{project}/.dokkimi/__runs__/`, but reverted to global `~/.dokkimi/runs/`. Project-local storage required auto-modifying `.gitignore` and `.vscode/settings.json` to suppress repo pollution, expanded CT's write surface to arbitrary project directories, and made the stale-path problem worse (moved projects orphan both filesystem dirs and DB rows). The DB's `projectPath` scoping provides all the per-project isolation needed without touching the project directory.
+- **Symlinks for `latest`**: Considered a `latest` symlink pointing to the most recent run folder. Not needed — the CLI queries CT for the latest run and derives the path.
 - **Per-project SQLite DBs**: Considered and rejected — confusing and unnecessary. A single shared DB with `projectPath` scoping is simpler and sufficient.
 - **Remove `projectPath`**: Considered during the K8s migration audit. CT is a shared daemon and needs a discriminator to return the right project's data. Keeping `projectPath` as the scoping key on API queries and retention pruning.
 - **Auto-generate dump files**: Dump files are generated on demand (`dokkimi dump`), not automatically at run completion. Avoids writing potentially large files that may never be read. The DB has all the data; the dump is a convenience export.

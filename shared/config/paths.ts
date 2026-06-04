@@ -13,13 +13,13 @@ export function formatRunTimestamp(date: Date): string {
   return `${y}${mo}${d}-${h}${mi}${s}`;
 }
 
+export function projectRunsDir(projectPath: string): string {
+  const stripped = projectPath.replace(/^\//, '');
+  return path.join(DOKKIMI_DIR, 'runs', stripped);
+}
+
 export function runDirPath(projectPath: string, createdAt: Date): string {
-  return path.join(
-    projectPath,
-    '.dokkimi',
-    '__runs__',
-    formatRunTimestamp(createdAt),
-  );
+  return path.join(projectRunsDir(projectPath), formatRunTimestamp(createdAt));
 }
 
 export function dumpPath(

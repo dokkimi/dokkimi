@@ -27,8 +27,6 @@ describe('RunCleanupService', () => {
   const mockRunStorage: any = {
     deleteInstance: jest.fn().mockResolvedValue(undefined),
     deleteRunDir: jest.fn().mockResolvedValue(undefined),
-    ensureRunsExcluded: jest.fn().mockResolvedValue(undefined),
-    pruneRunDirs: jest.fn().mockResolvedValue(undefined),
   };
 
   const mockRegistryService: any = {
@@ -140,11 +138,13 @@ describe('RunCleanupService', () => {
           },
           {
             id: 'completed-2',
+            projectPath: '/my/project',
             createdAt: new Date('2026-01-02'),
             instances: [{ id: 'inst-3' }],
           },
           {
             id: 'completed-3',
+            projectPath: '/my/project',
             createdAt: new Date('2026-01-01'),
             instances: [{ id: 'inst-4' }],
           },
@@ -164,18 +164,26 @@ describe('RunCleanupService', () => {
         'active-run',
       );
 
-      // Oldest completed run (beyond maxRunHistory=2) should be deleted
+      // With maxRunHistory=2, keep 1 completed run (the new run occupies a slot).
+      // completed-2 and completed-3 should be pruned.
+      expect(mockPrisma.run.delete).toHaveBeenCalledWith({
+        where: { id: 'completed-2' },
+      });
+      expect(mockRunStorage.deleteRunDir).toHaveBeenCalledWith(
+        '/my/project',
+        new Date('2026-01-02'),
+      );
       expect(mockPrisma.run.delete).toHaveBeenCalledWith({
         where: { id: 'completed-3' },
       });
-      expect(mockRunStorage.deleteInstance).toHaveBeenCalledWith('inst-4');
+      expect(mockRunStorage.deleteRunDir).toHaveBeenCalledWith(
+        '/my/project',
+        new Date('2026-01-01'),
+      );
 
-      // Newer completed runs should be preserved
+      // Newest completed run should be preserved
       expect(mockPrisma.run.delete).not.toHaveBeenCalledWith({
         where: { id: 'completed-1' },
-      });
-      expect(mockPrisma.run.delete).not.toHaveBeenCalledWith({
-        where: { id: 'completed-2' },
       });
     });
 
