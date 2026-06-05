@@ -21,9 +21,6 @@ import { PrismaModule } from '../prisma/prisma.module';
     TestExecutionLogProcessorService,
     UiTimelineService,
   ],
-  exports: [
-    UiTimelineService,
-    ConsoleLogProcessorService,
-  ],
+  exports: [UiTimelineService, ConsoleLogProcessorService],
 })
 export class LogProcessingModule {}
