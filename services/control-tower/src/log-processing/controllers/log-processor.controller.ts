@@ -15,7 +15,6 @@ import { HttpLogMessageDto } from '../dto/http-log-message.dto';
 import { FluentBitLogMessageDto } from '../dto/fluentbit-log-message.dto';
 import { DatabaseLogMessageDto } from '../dto/database-log-message.dto';
 import { TestExecutionLogMessageDto } from '../dto/test-execution-log-message.dto';
-import { InFlightTrackerService } from '../in-flight-tracker.service';
 
 const BATCH_INTERVAL_MS = 30_000; // 30 seconds
 
@@ -34,7 +33,6 @@ export class LogProcessorController implements OnModuleInit, OnModuleDestroy {
     private readonly databaseLogProcessor: DatabaseLogProcessorService,
     private readonly testExecutionLogProcessor: TestExecutionLogProcessorService,
     private readonly telemetry: TelemetryService,
-    private readonly inFlightTracker: InFlightTrackerService,
   ) {}
 
   onModuleInit() {
@@ -79,9 +77,7 @@ export class LogProcessorController implements OnModuleInit, OnModuleDestroy {
 
   @Post('http')
   async receiveHttpLog(@Body() message: HttpLogMessageDto) {
-    await this.inFlightTracker.trackAsync(() =>
-      this.httpLogProcessor.process(message, message.instanceId),
-    );
+    await this.httpLogProcessor.process(message, message.instanceId);
     this.httpLogCount++;
     return { received: true };
   }
@@ -90,9 +86,7 @@ export class LogProcessorController implements OnModuleInit, OnModuleDestroy {
   async receiveConsoleLog(
     @Body() message: FluentBitLogMessageDto | FluentBitLogMessageDto[],
   ) {
-    await this.inFlightTracker.trackAsync(() =>
-      this.consoleLogProcessor.processFromFluentBit(message),
-    );
+    await this.consoleLogProcessor.processFromFluentBit(message);
     this.consoleLogCount += Array.isArray(message) ? message.length : 1;
     return { received: true };
   }
@@ -114,18 +108,14 @@ export class LogProcessorController implements OnModuleInit, OnModuleDestroy {
       timestamp: body.timestamp,
     };
 
-    await this.inFlightTracker.trackAsync(() =>
-      this.databaseLogProcessor.process(message, message.instanceId),
-    );
+    await this.databaseLogProcessor.process(message, message.instanceId);
     this.databaseLogCount++;
     return { received: true };
   }
 
   @Post('test-execution')
   async receiveTestExecutionLog(@Body() message: TestExecutionLogMessageDto) {
-    await this.inFlightTracker.trackAsync(() =>
-      this.testExecutionLogProcessor.process(message, message.instanceId),
-    );
+    await this.testExecutionLogProcessor.process(message, message.instanceId);
     this.testExecutionLogCount++;
     return { received: true };
   }

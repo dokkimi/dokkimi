@@ -6,7 +6,7 @@ import { ConsoleLogProcessorService } from './processors/console-log-processor.s
 import { DatabaseLogProcessorService } from './processors/database-log-processor.service';
 import { TestExecutionLogProcessorService } from './processors/test-execution-log-processor.service';
 import { UiTimelineService } from './ui-timeline.service';
-import { InFlightTrackerService } from './in-flight-tracker.service';
+
 import { NamespaceValidationModule } from './namespace-validation/namespace-validation.module';
 import { PrismaModule } from '../prisma/prisma.module';
 
@@ -20,11 +20,9 @@ import { PrismaModule } from '../prisma/prisma.module';
     DatabaseLogProcessorService,
     TestExecutionLogProcessorService,
     UiTimelineService,
-    InFlightTrackerService,
   ],
   exports: [
     UiTimelineService,
-    InFlightTrackerService,
     ConsoleLogProcessorService,
   ],
 })

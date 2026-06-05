@@ -22,6 +22,9 @@ inputs:
   viewport-height:
     description: Default browser viewport height for UI tests
     default: '720'
+  dump-retention-days:
+    description: Days to retain the failed-run dump artifact (0 to disable)
+    default: '1'
   dokkimi-version:
     description: Dokkimi CLI version to install
     default: latest
@@ -58,6 +61,19 @@ runs:
         DOKKIMI_DEFAULT_VIEWPORT_WIDTH: ${{ inputs.viewport-width }}
         DOKKIMI_DEFAULT_VIEWPORT_HEIGHT: ${{ inputs.viewport-height }}
       run: dokkimi run ${{ inputs.tests }} --ci
+
+    - name: Dump failed results
+      if: failure() && inputs.dump-retention-days != '0'
+      shell: bash
+      run: dokkimi dump --failed > /tmp/dokkimi-dump.json 2>/dev/null || true
+
+    - name: Upload dump artifact
+      if: failure() && inputs.dump-retention-days != '0'
+      uses: actions/upload-artifact@v4
+      with:
+        name: dokkimi-failed-dump
+        path: /tmp/dokkimi-dump.json
+        retention-days: ${{ inputs.dump-retention-days }}
 
     - name: Cleanup
       if: always()

@@ -2,7 +2,6 @@ import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { ColoredLoggerService } from '../logging/colored-logger.service';
 import { TelemetryService } from '../telemetry/telemetry.service';
-import { InFlightTrackerService } from '../log-processing/in-flight-tracker.service';
 
 @Injectable()
 export class QuiescenceDetectionService {
@@ -13,7 +12,6 @@ export class QuiescenceDetectionService {
     private readonly logger: ColoredLoggerService,
     private readonly prisma: PrismaService,
     private readonly telemetry: TelemetryService,
-    private readonly inFlightTracker: InFlightTrackerService,
   ) {}
 
   async waitForLogsToSettle(
@@ -38,7 +36,6 @@ export class QuiescenceDetectionService {
         break;
       }
 
-      const inFlight = this.inFlightTracker.inFlightCount;
       const [httpCount, consoleCount] = await Promise.all([
         this.prisma.httpLog.count({
           where: { instanceId, timestamp: { gte: afterTime } },
@@ -49,7 +46,7 @@ export class QuiescenceDetectionService {
       ]);
       const currentCount = httpCount + consoleCount;
 
-      if (currentCount !== lastLogCount || inFlight > 0) {
+      if (currentCount !== lastLogCount) {
         lastLogCount = currentCount;
         lastChangeTime = Date.now();
       }
