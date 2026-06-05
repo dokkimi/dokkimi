@@ -1,5 +1,6 @@
 export interface LatestRunResponse {
   runId: string;
+  projectPath?: string | null;
   status: string;
   createdAt: string;
   completedAt: string | null;

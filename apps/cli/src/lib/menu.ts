@@ -100,7 +100,7 @@ export function selectMenu<T>(
           ? `\x1b[K\x1b[90m  ▼ ${remaining} more below\x1b[0m\n`
           : '\x1b[K\n',
       );
-      const backHint = leftArrowBack ? '←/ESC/q back' : 'ESC/q back';
+      const backHint = leftArrowBack ? '←/ESC/q back' : 'ESC/q exit';
       const extra = extraHint ? `   ${extraHint}` : '';
       process.stdout.write(
         `\x1b[K\x1b[90m↑↓ navigate   →/Enter select   ${backHint}${extra}\x1b[0m\n`,

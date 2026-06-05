@@ -19,14 +19,19 @@ export async function inspectRun(
   runId: string,
   instances: InstanceSummary[],
   storageDir: string,
+  options?: { manageAltScreen?: boolean },
 ): Promise<void> {
-  enterAltScreen();
+  const manageAltScreen = options?.manageAltScreen ?? true;
+  if (manageAltScreen) {
+    enterAltScreen();
+  }
 
   try {
     while (true) {
       const picked = await selectMenu(
         instances.map((i) => ({ label: formatInstanceLabel(i), value: i })),
         'Select a definition to inspect:',
+        { leftArrowBack: !manageAltScreen },
       );
       if (!picked) {
         break;
@@ -70,6 +75,8 @@ export async function inspectRun(
       process.stdout.write('\x1b[2J\x1b[H');
     }
   } finally {
-    exitAltScreen();
+    if (manageAltScreen) {
+      exitAltScreen();
+    }
   }
 }

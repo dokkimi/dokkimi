@@ -228,6 +228,7 @@ export class RunsService implements OnApplicationBootstrap {
 
     return runs.map((run) => ({
       runId: run.id,
+      projectPath: run.projectPath,
       status: run.status,
       createdAt: run.createdAt,
       completedAt: run.completedAt,
