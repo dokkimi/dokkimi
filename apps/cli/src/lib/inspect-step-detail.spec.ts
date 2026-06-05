@@ -1,5 +1,6 @@
 jest.mock('./cli-utils', () => ({
   fetchJson: jest.fn(),
+  resolveUri: jest.fn((uri: string, _dir: string) => uri),
 }));
 jest.mock('./menu', () => ({
   selectMenu: jest.fn(),

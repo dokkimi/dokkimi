@@ -6,7 +6,7 @@ Run artifacts (dump files, definition snapshots, screenshots) are stored in a si
 
 1. **Cross-project collisions.** Switching between projects overwrites the dump file. `--failed` picks up failures from the wrong project. With multiple repos using Dokkimi on one machine, this is a regular occurrence.
 2. **No run history.** Only the most recent run's results are stored. Sequential `run_tests` calls overwrite previous results. The dump file and instance snapshots are wiped when a new run starts.
-3. **`teardownExistingRuns` destroys everything.** `createRun` calls `teardownExistingRuns` which deletes *all* runs from the DB — not just the current project's. This means Project A starting a run wipes Project B's data. The `projectPath` field on the run is stored but the teardown ignores it.
+3. **`teardownExistingRuns` destroys everything.** `createRun` calls `teardownExistingRuns` which deletes _all_ runs from the DB — not just the current project's. This means Project A starting a run wipes Project B's data. The `projectPath` field on the run is stored but the teardown ignores it.
 
 ## Current state
 

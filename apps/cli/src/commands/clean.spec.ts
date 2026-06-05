@@ -4,6 +4,7 @@ jest.mock('@dokkimi/config', () => ({
   })),
   buildServiceUrl: jest.fn(() => 'http://localhost:19001'),
   DOKKIMI_DIR: '/tmp/mock-dokkimi',
+  projectRunsDir: jest.fn(() => '/tmp/mock-dokkimi/runs/test/project'),
 }));
 jest.mock('../lib/cli-utils', () => ({
   fetchJson: jest.fn(),
