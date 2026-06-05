@@ -2,16 +2,16 @@
 
 Features and fixes to ship before the next publish. All build on top of the run-history-limit work (per-project scoping, per-run storage, `maxRunHistory` config, `GET /runs/history` endpoint).
 
-## 1. Structured dump path output
+## ~~1. Structured dump path output~~ ✅ Done
 
-**Problem:** The MCP `dump_results` tool parses stdout for `__DUMP_PATH__=<path>` to return the dump file location to the LLM. The `dump` CLI command never emits this — it only writes `Dump written to <path>` to stderr. The tool works today because it falls back to parsing stderr, but that's a human-readable message that could change without warning.
+The `dump` CLI command now emits `__DUMP_PATH__=<path>` to stdout before the human-readable stderr message. The MCP `dump_results` tool picks this up as the primary channel.
 
-**Fix:** After writing the dump file, emit `__DUMP_PATH__=<resolved path>` to stdout in `apps/cli/src/commands/dump.ts` (line ~186). Keep the stderr message for human consumers. The MCP tool already handles both — this just makes the structured path the primary channel.
+**Also fixed:**
+- `deleteAllRuns` and `prepareForNewRun` now run `VACUUM` after bulk deletes so SQLite reclaims disk space.
+- `dokkimi doctor` checks both Database and Run Storage (`~/.dokkimi/runs/`) size, warning (yellow `○`) at 500MB with a `dokkimi clean --all` fix hint.
+- Doctor's warning system generalized: any check can set `warning: true` to show as yellow instead of red, without counting as a failure.
 
-**Files:**
-- `apps/cli/src/commands/dump.ts` — add `process.stdout.write(`__DUMP_PATH__=${path.resolve(outputFile)}\n`)` before the stderr message
-
-## 2. Project-aware `get_config` / `set_config` MCP tools
+## ~~2. Project-aware `get_config` / `set_config` MCP tools~~ ✅ Done
 
 **Problem:** The per-project config system is fully implemented (`projects[path]` in `~/.dokkimi/config.json`, the config TUI supports global vs project scope, `getConcurrencyPrefs(projectPath)` / `getMaxRunHistory(projectPath)` resolve with fallback). But the MCP tools that LLMs use to read and write config don't expose any of it:
 
@@ -148,31 +148,10 @@ Add an optional `runTimestamp` parameter to the `dump_results` MCP tool. When pr
 
 No new CT endpoint is needed. `GET /runs/history` already returns `createdAt` and instance data for each run, and all existing per-instance endpoints work with any instance ID regardless of which run it belongs to. The CLI resolves the target run client-side and then uses the instance IDs from that run.
 
-## 4. DB size warning in `dokkimi doctor`
+## ~~4. DB size warning in `dokkimi doctor`~~ ✅ Done
 
-**Problem:** With run history retention, the SQLite DB grows over time. `dokkimi doctor` already reports DB size (e.g. "initialized (4.2 MB)") but doesn't warn when it gets large. The run-history design doc specifies a 500MB threshold warning.
+Implemented alongside gap 1. See details above.
 
-**Fix:** In the `checkDatabase()` function in `apps/cli/src/commands/doctor.ts` (~line 184), add a warning when the DB exceeds 500MB:
+## Remaining work
 
-```typescript
-const mb = size / (1024 * 1024);
-if (mb > 500) {
-  return {
-    name: 'Database',
-    pass: true,
-    detail: `initialized (${sizeLabel}) — large; consider running \`dokkimi clean\` or reducing maxRunHistory`,
-  };
-}
-```
-
-This should `pass: true` (it's not a failure — the DB works fine) but surface the size concern in the doctor output. The existing `warning` display path in doctor is only for the `.dokkimi/` directory check, so this is just advisory text in the detail field.
-
-**Files:**
-- `apps/cli/src/commands/doctor.ts` — `checkDatabase()` function
-
-## Implementation order
-
-1. **Structured dump path** — one line, zero risk
-2. **DB size warning** — three lines, zero risk
-3. **`get_config` / `set_config` project awareness** — contained to one file, no CT changes
-4. **`--run` flag for inspect/dump + MCP `runTimestamp`** — largest change; verify `formatRunTimestamp` round-trips correctly with CT's `createdAt` dates before coding the resolver
+1. **`--run` flag for inspect/dump + MCP `runTimestamp`** (gap 3) — largest change; verify `formatRunTimestamp` round-trips correctly with CT's `createdAt` dates before coding the resolver
