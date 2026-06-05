@@ -38,6 +38,7 @@ type UIDriver interface {
 	WaitForText(sel, want string, timeout time.Duration) error
 	Screenshot(quality int, timeout time.Duration) ([]byte, error)
 	SelectorScreenshot(sel string, timeout time.Duration) ([]byte, error)
+	ElementBounds(sel string, timeout time.Duration) (x, y, w, h float64, err error)
 	PageHTML(timeout time.Duration) (string, error)
 	ScrollIntoView(sel string, timeout time.Duration) error
 	ScrollWindow(x, y int, timeout time.Duration) error
@@ -324,7 +325,23 @@ func (e *UIStepExecutor) runSubStep(
 			log.Printf("UI screenshot captured (no uploader): name=%q size=%d bytes", name, len(png))
 			return nil
 		}
-		uri, err := e.uploader.Upload(ctx, ArtifactTypeScreenshot, name, pos, png, false)
+		// Resolve ignoreRegions to bounding boxes while the browser is still open.
+		var bounds []BoundingBox
+		if sub.Screenshot.Match != nil && len(sub.Screenshot.Match.IgnoreRegions) > 0 {
+			for _, sel := range sub.Screenshot.Match.IgnoreRegions {
+				resolved, resolveErr := e.varCtx.Resolve(sel)
+				if resolveErr != nil {
+					return fmt.Errorf("ignoreRegions selector resolve %q: %w", sel, resolveErr)
+				}
+				bx, by, bw, bh, boundsErr := driver.ElementBounds(resolved, 2*time.Second)
+				if boundsErr != nil {
+					log.Printf("ignoreRegions: skipping %q (not found or not visible): %v", resolved, boundsErr)
+					continue
+				}
+				bounds = append(bounds, BoundingBox{Selector: resolved, X: bx, Y: by, Width: bw, Height: bh})
+			}
+		}
+		uri, err := e.uploader.Upload(ctx, ArtifactTypeScreenshot, name, pos, png, false, bounds)
 		if err != nil {
 			return fmt.Errorf("screenshot upload: %w", err)
 		}
@@ -456,13 +473,13 @@ func (e *UIStepExecutor) captureFailureArtifacts(
 
 	if png, err := driver.Screenshot(90, defaultUISubStepTimeout); err != nil {
 		log.Printf("failure-capture screenshot: %v", err)
-	} else if _, err := e.uploader.Upload(ctx, ArtifactTypeScreenshot, name, pos, png, true); err != nil {
+	} else if _, err := e.uploader.Upload(ctx, ArtifactTypeScreenshot, name, pos, png, true, nil); err != nil {
 		log.Printf("failure-capture screenshot upload: %v", err)
 	}
 
 	if html, err := driver.PageHTML(defaultUISubStepTimeout); err != nil {
 		log.Printf("failure-capture html: %v", err)
-	} else if _, err := e.uploader.Upload(ctx, ArtifactTypeHTML, "", pos, []byte(html), true); err != nil {
+	} else if _, err := e.uploader.Upload(ctx, ArtifactTypeHTML, "", pos, []byte(html), true, nil); err != nil {
 		log.Printf("failure-capture html upload: %v", err)
 	}
 }

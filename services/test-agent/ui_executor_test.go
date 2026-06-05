@@ -69,6 +69,10 @@ func (f *fakeDriver) SelectorScreenshot(sel string, _ time.Duration) ([]byte, er
 	}
 	return f.screenshot, nil
 }
+func (f *fakeDriver) ElementBounds(sel string, _ time.Duration) (float64, float64, float64, float64, error) {
+	f.calls = append(f.calls, driverCall{op: "elementBounds", args: []string{sel}})
+	return 10, 20, 100, 50, nil
+}
 func (f *fakeDriver) PageHTML(_ time.Duration) (string, error) {
 	f.calls = append(f.calls, driverCall{op: "pageHtml"})
 	return "<html><body/></html>", nil

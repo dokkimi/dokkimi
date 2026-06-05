@@ -1,4 +1,5 @@
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
+import * as fs from 'fs/promises';
 import { PrismaService } from '../prisma/prisma.service';
 import { RunStorageService } from '../storage/run-storage.service';
 import type {
@@ -64,6 +65,11 @@ export class ArtifactsService {
       dto.name ?? null,
       dto.isFailure ?? false,
     );
+
+    if (dto.ignoreRegionBounds) {
+      const boundsPath = written.fullPath.replace(/\.png$/, '.bounds.json');
+      await fs.writeFile(boundsPath, dto.ignoreRegionBounds, 'utf-8');
+    }
 
     const row = await this.prisma.artifact.create({
       data: {
