@@ -56,4 +56,8 @@ export class UploadArtifactDto {
   @Transform(({ value }) => value === 'true' || value === true)
   @IsBoolean()
   isFailure?: boolean;
+
+  @IsOptional()
+  @IsString()
+  ignoreRegionBounds?: string;
 }

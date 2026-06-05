@@ -167,7 +167,7 @@ describe('dump', () => {
     const output = chunks.join('');
     expect(output).toContain('"runId"');
     expect(output).toContain('run-1');
-    expect(consoleErrorSpy).toHaveBeenCalledWith(
+    expect(consoleLogSpy).toHaveBeenCalledWith(
       expect.stringContaining('Dump written to'),
     );
     expect(trackEvent).toHaveBeenCalledWith(

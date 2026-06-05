@@ -27,6 +27,16 @@ type SubStepPosition struct {
 	SubStepIndex int
 }
 
+// BoundingBox is a rectangle in CSS pixels, used to mask out ignore regions
+// during visual-match diffs.
+type BoundingBox struct {
+	Selector string  `json:"selector"`
+	X        float64 `json:"x"`
+	Y        float64 `json:"y"`
+	Width    float64 `json:"width"`
+	Height   float64 `json:"height"`
+}
+
 // ArtifactUploader pushes binary artifacts (screenshots, diffs, failure HTML)
 // to Control Tower's POST /artifacts endpoint via multipart upload.
 //
@@ -66,6 +76,7 @@ func (u *ArtifactUploader) Upload(
 	pos SubStepPosition,
 	payload []byte,
 	isFailure bool,
+	ignoreRegionBounds []BoundingBox,
 ) (string, error) {
 	if u == nil {
 		return "", fmt.Errorf("artifact uploader is nil (test-agent misconfigured)")
@@ -74,7 +85,7 @@ func (u *ArtifactUploader) Upload(
 		return "", fmt.Errorf("artifact payload is empty")
 	}
 
-	body, contentType, err := u.buildMultipartBody(artifactType, name, pos, payload, isFailure)
+	body, contentType, err := u.buildMultipartBody(artifactType, name, pos, payload, isFailure, ignoreRegionBounds)
 	if err != nil {
 		return "", fmt.Errorf("build multipart body: %w", err)
 	}
@@ -115,6 +126,7 @@ func (u *ArtifactUploader) buildMultipartBody(
 	pos SubStepPosition,
 	payload []byte,
 	isFailure bool,
+	ignoreRegionBounds []BoundingBox,
 ) (*bytes.Buffer, string, error) {
 	var buf bytes.Buffer
 	w := multipart.NewWriter(&buf)
@@ -139,6 +151,15 @@ func (u *ArtifactUploader) buildMultipartBody(
 	}
 	if isFailure {
 		if err := w.WriteField("isFailure", "true"); err != nil {
+			return nil, "", err
+		}
+	}
+	if len(ignoreRegionBounds) > 0 {
+		boundsJSON, err := json.Marshal(ignoreRegionBounds)
+		if err != nil {
+			return nil, "", fmt.Errorf("marshal ignoreRegionBounds: %w", err)
+		}
+		if err := w.WriteField("ignoreRegionBounds", string(boundsJSON)); err != nil {
 			return nil, "", err
 		}
 	}

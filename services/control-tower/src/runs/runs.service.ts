@@ -228,6 +228,7 @@ export class RunsService implements OnApplicationBootstrap {
 
     return runs.map((run) => ({
       runId: run.id,
+      projectPath: run.projectPath,
       status: run.status,
       createdAt: run.createdAt,
       completedAt: run.completedAt,
@@ -373,6 +374,8 @@ export class RunsService implements OnApplicationBootstrap {
       await this.deleteRunStorage(run);
       this.registryService.clearCredentials(run.id);
     }
+
+    await this.prisma.$queryRaw`VACUUM`;
 
     this.logger.log(
       `Deleted ${runs.length} run(s)${projectPath ? ` for project ${projectPath}` : ' (all projects)'}`,

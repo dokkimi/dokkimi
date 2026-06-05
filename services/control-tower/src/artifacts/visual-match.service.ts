@@ -25,6 +25,14 @@ interface VisualMatchSubStep {
   subStepIndex: number;
   name: string;
   threshold?: number;
+  hasIgnoreRegions: boolean;
+}
+
+interface BoundsRect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
 }
 
 /** A visualMatch outcome that warrants downgrading the test verdict. */
@@ -169,18 +177,27 @@ export class VisualMatchService {
           if (typeof ss.name !== 'string' || ss.name.length === 0) {
             continue;
           }
-          const threshold =
+          const matchObj =
             typeof ss.match === 'object' && ss.match !== null
-              ? typeof (ss.match as { threshold?: unknown }).threshold ===
-                'number'
-                ? ((ss.match as { threshold?: number }).threshold as number)
-                : undefined
+              ? (ss.match as {
+                  threshold?: unknown;
+                  ignoreRegions?: unknown;
+                })
+              : null;
+          const threshold =
+            matchObj && typeof matchObj.threshold === 'number'
+              ? matchObj.threshold
               : undefined;
+          const hasIgnoreRegions =
+            !!matchObj &&
+            Array.isArray(matchObj.ignoreRegions) &&
+            matchObj.ignoreRegions.length > 0;
           out.push({
             stepIndex: globalStepIndex,
             subStepIndex: subI,
             name: ss.name,
             threshold,
+            hasIgnoreRegions,
           });
         }
         globalStepIndex++;
@@ -257,12 +274,22 @@ export class VisualMatchService {
       return 'fail';
     }
 
-    // TODO: ignoreRegions masking. Validator + schema accept ignoreRegions on
-    // visualMatch, but we don't apply the masks here yet — diff runs over the
-    // full image. Implement by zeroing out the listed selector bounding boxes
-    // in both buffers before pixelmatch; needs the capture-time bounds (DOM
-    // coords) to ride along on the upload (extend POST /artifacts metadata or
-    // a sibling sidecar JSON). See UI_TEST_ARTIFACT_PIPELINE.md "ignoreRegions".
+    if (vm.hasIgnoreRegions) {
+      const boundsPath = captureAbsPath.replace(/\.png$/, '.bounds.json');
+      try {
+        const raw = await fs.readFile(boundsPath, 'utf-8');
+        const bounds: BoundsRect[] = JSON.parse(raw);
+        for (const b of bounds) {
+          this.maskRegion(baseline, b);
+          this.maskRegion(capture, b);
+        }
+      } catch {
+        this.logger.warn(
+          `ignoreRegions: bounds file not found for ${vm.name}, diffing without masks`,
+        );
+      }
+    }
+
     const diff = new PNG({ width: baseline.width, height: baseline.height });
     const numDifferent = pixelmatch(
       baseline.data,
@@ -284,6 +311,22 @@ export class VisualMatchService {
     const diffBuf = PNG.sync.write(diff);
     await this.persistDiffArtifact(instanceId, vm, diffBuf);
     return 'fail';
+  }
+
+  private maskRegion(img: PNG, bounds: BoundsRect): void {
+    const x0 = Math.max(0, Math.floor(bounds.x));
+    const y0 = Math.max(0, Math.floor(bounds.y));
+    const x1 = Math.min(img.width, Math.ceil(bounds.x + bounds.width));
+    const y1 = Math.min(img.height, Math.ceil(bounds.y + bounds.height));
+    for (let y = y0; y < y1; y++) {
+      for (let x = x0; x < x1; x++) {
+        const idx = (y * img.width + x) << 2;
+        img.data[idx] = 0;
+        img.data[idx + 1] = 0;
+        img.data[idx + 2] = 0;
+        img.data[idx + 3] = 255;
+      }
+    }
   }
 
   private async persistDiffArtifact(

@@ -25,6 +25,7 @@ import { registerWatchRun } from './tools/watch-run';
 import { registerGetRunHistory } from './tools/get-run-history';
 import { registerDiagnose } from './tools/diagnose';
 import { registerDiffTraffic } from './tools/diff-traffic';
+import { registerInit } from './tools/init';
 import { registerSpecResource } from './resources/spec';
 import { withToolTracking } from './lib/tracked-server';
 
@@ -61,6 +62,7 @@ export function createServer(): McpServer {
   registerGetRunHistory(server);
   registerDiagnose(server);
   registerDiffTraffic(server);
+  registerInit(server);
   registerSpecResource(server);
 
   return server;

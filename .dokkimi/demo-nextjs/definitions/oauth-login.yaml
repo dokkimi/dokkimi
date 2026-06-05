@@ -50,7 +50,9 @@ tests:
             - screenshot:
                 name: dashboard-signed-in
                 selector: "[data-testid='dashboard-page']"
-                match: true
+                match:
+                  ignoreRegions:
+                    - "[data-testid='dashboard-user-email']"
         assertions:
           # 1. Self-block: dashboard rendered the values returned by the
           # mocked userinfo endpoint.

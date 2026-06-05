@@ -4,6 +4,7 @@ describe('DockerLogCollectorService', () => {
   let service: DockerLogCollectorService;
   let mockDockerClient: any;
   let mockConsoleLogProcessor: any;
+  let mockInFlightTracker: any;
   let capturedCallback: ((data: Buffer) => void) | null;
 
   beforeEach(() => {
@@ -21,9 +22,14 @@ describe('DockerLogCollectorService', () => {
       processFromFluentBit: jest.fn().mockResolvedValue(undefined),
     };
 
+    mockInFlightTracker = {
+      trackAsync: jest.fn((fn: () => Promise<any>) => fn()),
+    };
+
     service = new DockerLogCollectorService(
       mockDockerClient,
       mockConsoleLogProcessor,
+      mockInFlightTracker,
     );
   });
 

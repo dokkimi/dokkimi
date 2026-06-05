@@ -485,6 +485,37 @@ func (c *BrowserClient) SelectorScreenshot(sel string, timeout time.Duration) ([
 	return buf, nil
 }
 
+// ElementBounds returns the bounding box of the first element matching sel,
+// in CSS pixels. Used by ignoreRegions to capture DOM coordinates at
+// screenshot time so the visual-match diff can mask those areas later.
+func (c *BrowserClient) ElementBounds(sel string, timeout time.Duration) (x, y, w, h float64, err error) {
+	var nodes []*cdp.Node
+	err = c.run(
+		timeout,
+		chromedp.WaitVisible(sel, chromedp.ByQuery),
+		chromedp.Nodes(sel, &nodes, chromedp.ByQuery),
+		chromedp.ActionFunc(func(ctx context.Context) error {
+			if len(nodes) == 0 {
+				return fmt.Errorf("elementBounds: selector not found: %s", sel)
+			}
+			box, boxErr := dom.GetBoxModel().WithNodeID(nodes[0].NodeID).Do(ctx)
+			if boxErr != nil {
+				return fmt.Errorf("elementBounds: get box model: %w", boxErr)
+			}
+			if len(box.Content) < 8 {
+				return fmt.Errorf("elementBounds: box model has < 8 points")
+			}
+			// Content quad: [x1,y1, x2,y2, x3,y3, x4,y4] (TL, TR, BR, BL)
+			x = box.Content[0]
+			y = box.Content[1]
+			w = box.Content[2] - box.Content[0]
+			h = box.Content[7] - box.Content[1]
+			return nil
+		}),
+	)
+	return
+}
+
 // PageHTML returns the full serialized page HTML. Useful as a failure artifact.
 func (c *BrowserClient) PageHTML(timeout time.Duration) (string, error) {
 	var out string

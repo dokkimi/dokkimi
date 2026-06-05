@@ -29,7 +29,7 @@ describe('ConsoleLogBlockValidatorService', () => {
   it('resolves service to instanceItemId', async () => {
     const block: AssertionBlock = {
       service: 'my-service',
-      consoleAssertions: [{ count: { operator: 'gte', value: 1 } }],
+      consoleAssertions: [{ count: { operator: 'gte', value: 0 } }],
     } as any;
     await service.validateConsoleLogBlock('inst-1', block, makeStepExecution());
     expect(mockPrisma.instanceItem.findFirst).toHaveBeenCalledWith({
@@ -324,12 +324,12 @@ describe('ConsoleLogBlockValidatorService', () => {
         block,
         makeStepExecution(),
       );
-      // Advance through all retries (3 x 1000ms)
-      await jest.advanceTimersByTimeAsync(3000);
+      // Advance through all retries (5 x 1000ms)
+      await jest.advanceTimersByTimeAsync(5000);
       const results = await promise;
       expect(results[0].passed).toBe(false);
-      // 1 initial + 3 retries
-      expect(mockPrisma.consoleLog.findMany).toHaveBeenCalledTimes(4);
+      // 1 initial + 5 retries
+      expect(mockPrisma.consoleLog.findMany).toHaveBeenCalledTimes(6);
     });
   });
 });

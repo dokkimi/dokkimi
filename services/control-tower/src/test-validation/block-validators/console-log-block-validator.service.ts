@@ -8,7 +8,7 @@ import {
 import { AssertionResult, validateCount } from '../assertion-engine';
 import { stepTimeWindow } from '../log-finder.service';
 
-const CONSOLE_LOG_RETRY_COUNT = 3;
+const CONSOLE_LOG_RETRY_COUNT = 5;
 const CONSOLE_LOG_RETRY_DELAY_MS = 1000;
 
 @Injectable()

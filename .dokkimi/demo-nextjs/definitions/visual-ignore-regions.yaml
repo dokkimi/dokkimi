@@ -1,0 +1,29 @@
+name: visual-ignore-regions
+description: |
+  Exercises the ignoreRegions feature of visualMatch. Takes a screenshot of
+  the login page and masks out the sign-in button region — this verifies
+  the full pipeline: bounding box computed at capture time, uploaded as
+  sidecar metadata, and zeroed out before pixelmatch diffing. Also tests
+  threshold + ignoreRegions together.
+config:
+  timeoutSeconds: 120
+items:
+  - $ref: ../shared/nextjs-demo.yaml
+  - $ref: ../shared/postgres.yaml
+tests:
+  - name: Login page screenshot with ignored regions
+    steps:
+      - name: Screenshot the login page, masking the sign-in button
+        action:
+          type: ui
+          target: nextjs-demo
+          steps:
+            - visit: /login
+            - waitFor: "[data-testid='login-page']"
+            - screenshot:
+                name: login-ignore-dynamic
+                selector: "[data-testid='login-page']"
+                match:
+                  threshold: 0.02
+                  ignoreRegions:
+                    - "[data-testid='login-google-button']"
