@@ -2,7 +2,7 @@
   "name": "dokkimi-vscode",
   "displayName": "Dokkimi",
   "description": "Dokkimi definition file authoring support — autocomplete, validation, and snippets for .dokkimi/ definition files.",
-  "version": "0.3.7",
+  "version": "0.4.0",
   "license": "Elastic-2.0",
   "publisher": "dokkimi",
   "icon": "icon.png",

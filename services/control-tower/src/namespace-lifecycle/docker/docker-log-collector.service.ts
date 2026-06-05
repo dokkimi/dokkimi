@@ -1,7 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { DockerClientService } from './docker-client.service';
 import { ConsoleLogProcessorService } from '../../log-processing/processors/console-log-processor.service';
-import { InFlightTrackerService } from '../../log-processing/in-flight-tracker.service';
 
 interface LogStream {
   containerId: string;
@@ -17,7 +16,6 @@ export class DockerLogCollectorService {
   constructor(
     private readonly dockerClient: DockerClientService,
     private readonly consoleLogProcessor: ConsoleLogProcessorService,
-    private readonly inFlightTracker: InFlightTrackerService,
   ) {}
 
   async startCollecting(
@@ -137,16 +135,14 @@ export class DockerLogCollectorService {
       return;
     }
 
-    this.inFlightTracker
-      .trackAsync(() =>
-        this.consoleLogProcessor.processFromFluentBit({
-          log: line,
-          stream,
-          time: new Date().toISOString(),
-          instanceId,
-          instanceItemId,
-        }),
-      )
+    this.consoleLogProcessor
+      .processFromFluentBit({
+        log: line,
+        stream,
+        time: new Date().toISOString(),
+        instanceId,
+        instanceItemId,
+      })
       .catch((err) => {
         this.logger.warn(`Failed to process log line: ${err}`);
       });

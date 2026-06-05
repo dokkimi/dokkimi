@@ -1,6 +1,6 @@
 {
   "name": "@dokkimi/definition-validator",
-  "version": "0.3.7",
+  "version": "0.4.0",
   "license": "Elastic-2.0",
   "description": "Shared item-definition validation constants and logic for CT, CLI, and VSCode",
   "main": "dist/index.js",

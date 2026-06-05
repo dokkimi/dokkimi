@@ -3,7 +3,6 @@ import { QuiescenceDetectionService } from './quiescence-detection.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { ColoredLoggerService } from '../logging/colored-logger.service';
 import { TelemetryService } from '../telemetry/telemetry.service';
-import { InFlightTrackerService } from '../log-processing/in-flight-tracker.service';
 
 describe('QuiescenceDetectionService', () => {
   let service: QuiescenceDetectionService;
@@ -23,12 +22,6 @@ describe('QuiescenceDetectionService', () => {
     track: jest.fn(),
   };
 
-  const mockInFlightTracker = {
-    get inFlightCount() {
-      return 0;
-    },
-  };
-
   beforeEach(async () => {
     jest.clearAllMocks();
     jest.useFakeTimers();
@@ -39,7 +32,6 @@ describe('QuiescenceDetectionService', () => {
         { provide: PrismaService, useValue: mockPrisma },
         { provide: ColoredLoggerService, useValue: mockLogger },
         { provide: TelemetryService, useValue: mockTelemetry },
-        { provide: InFlightTrackerService, useValue: mockInFlightTracker },
       ],
     }).compile();
 
@@ -89,37 +81,6 @@ describe('QuiescenceDetectionService', () => {
     await jest.advanceTimersByTimeAsync(100);
 
     // Logs stop arriving — advance enough for quiescence
-    for (let i = 0; i < 6; i++) {
-      await jest.advanceTimersByTimeAsync(100);
-    }
-
-    await promise;
-    expect(mockLogger.log).toHaveBeenCalled();
-  });
-
-  it('should not settle while in-flight requests exist', async () => {
-    mockPrisma.httpLog.count.mockResolvedValue(5);
-    mockPrisma.consoleLog.count.mockResolvedValue(0);
-
-    let inFlight = 1;
-    jest
-      .spyOn(mockInFlightTracker, 'inFlightCount', 'get')
-      .mockImplementation(() => inFlight);
-
-    const promise = service.waitForLogsToSettle('inst-1', new Date());
-
-    // Advance past initial sleep
-    await jest.advanceTimersByTimeAsync(500);
-
-    // Poll a few times with in-flight > 0
-    for (let i = 0; i < 5; i++) {
-      await jest.advanceTimersByTimeAsync(100);
-    }
-
-    // Clear in-flight
-    inFlight = 0;
-
-    // Now let it settle
     for (let i = 0; i < 6; i++) {
       await jest.advanceTimersByTimeAsync(100);
     }

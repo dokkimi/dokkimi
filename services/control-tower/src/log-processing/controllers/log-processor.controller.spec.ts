@@ -23,10 +23,6 @@ describe('LogProcessorController', () => {
     track: jest.fn(),
   };
 
-  const mockInFlightTracker: any = {
-    trackAsync: jest.fn((fn: () => Promise<any>) => fn()),
-  };
-
   beforeEach(() => {
     controller = new LogProcessorController(
       mockHttpLogProcessor,
@@ -34,7 +30,6 @@ describe('LogProcessorController', () => {
       mockDatabaseLogProcessor,
       mockTestExecutionLogProcessor,
       mockTelemetry,
-      mockInFlightTracker,
     );
     jest.clearAllMocks();
   });
@@ -45,7 +40,6 @@ describe('LogProcessorController', () => {
 
       const result = await controller.receiveHttpLog(message as any);
 
-      expect(mockInFlightTracker.trackAsync).toHaveBeenCalled();
       expect(mockHttpLogProcessor.process).toHaveBeenCalledWith(
         message,
         'inst-1',
