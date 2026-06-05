@@ -9,12 +9,12 @@ export class InitFilesController {
   constructor(private readonly runStorage: RunStorageService) {}
 
   @Get(':instanceId/:itemName')
-  getInitFiles(
+  async getInitFiles(
     @Param('instanceId') instanceId: string,
     @Param('itemName') itemName: string,
     @Res() res: express.Response,
-  ): void {
-    const dir = this.runStorage.getInitFilesDir(instanceId, itemName);
+  ): Promise<void> {
+    const dir = await this.runStorage.getInitFilesDir(instanceId, itemName);
 
     if (!fs.existsSync(dir)) {
       throw new NotFoundException(

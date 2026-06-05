@@ -403,20 +403,40 @@ function cleanupRunStorage(all: boolean): void {
   for (const dir of legacyDirs) {
     try {
       fs.rmSync(dir, { recursive: true });
-    } catch {}
+    } catch (e: unknown) {
+      if ((e as NodeJS.ErrnoException)?.code !== 'ENOENT') {
+        console.warn(
+          `Warning: could not remove ${dir}: ${(e as Error).message}`,
+        );
+      }
+    }
   }
 
   if (all) {
+    const runsDir = path.join(DOKKIMI_DIR, 'runs');
     try {
-      fs.rmSync(path.join(DOKKIMI_DIR, 'runs'), { recursive: true });
-    } catch {}
+      fs.rmSync(runsDir, { recursive: true });
+    } catch (e: unknown) {
+      if ((e as NodeJS.ErrnoException)?.code !== 'ENOENT') {
+        console.warn(
+          `Warning: could not remove ${runsDir}: ${(e as Error).message}`,
+        );
+      }
+    }
     return;
   }
 
   const projectPath = getProjectPath();
   if (projectPath) {
+    const dir = projectRunsDir(projectPath);
     try {
-      fs.rmSync(projectRunsDir(projectPath), { recursive: true });
-    } catch {}
+      fs.rmSync(dir, { recursive: true });
+    } catch (e: unknown) {
+      if ((e as NodeJS.ErrnoException)?.code !== 'ENOENT') {
+        console.warn(
+          `Warning: could not remove ${dir}: ${(e as Error).message}`,
+        );
+      }
+    }
   }
 }

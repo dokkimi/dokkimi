@@ -37,45 +37,49 @@ export function registerWatchRun(server: McpServer): void {
         let lastStatus = '';
 
         while (Date.now() - start < timeoutMs) {
-          const run = await ctFetchOrNull<LatestRunResponse>(
-            '/runs/latest',
-            projectPath ? { projectPath } : undefined,
-          );
-
-          if (!run) {
-            return {
-              content: [
-                {
-                  type: 'text' as const,
-                  text: JSON.stringify(
-                    {
-                      error: 'No run found. Start a run with run_tests first.',
-                    },
-                    null,
-                    2,
-                  ),
-                },
-              ],
-              isError: true,
-            };
-          }
-
-          if (runId && run.runId !== runId) {
-            return {
-              content: [
-                {
-                  type: 'text' as const,
-                  text: JSON.stringify(
-                    {
-                      error: `Run ${runId} not found. Latest run is ${run.runId}.`,
-                    },
-                    null,
-                    2,
-                  ),
-                },
-              ],
-              isError: true,
-            };
+          let run: LatestRunResponse | null;
+          if (runId) {
+            run = await ctFetchOrNull<LatestRunResponse>(
+              `/runs/${runId}/status`,
+            );
+            if (!run) {
+              return {
+                content: [
+                  {
+                    type: 'text' as const,
+                    text: JSON.stringify(
+                      { error: `Run ${runId} not found.` },
+                      null,
+                      2,
+                    ),
+                  },
+                ],
+                isError: true,
+              };
+            }
+          } else {
+            run = await ctFetchOrNull<LatestRunResponse>(
+              '/runs/latest',
+              projectPath ? { projectPath } : undefined,
+            );
+            if (!run) {
+              return {
+                content: [
+                  {
+                    type: 'text' as const,
+                    text: JSON.stringify(
+                      {
+                        error:
+                          'No run found. Start a run with run_tests first.',
+                      },
+                      null,
+                      2,
+                    ),
+                  },
+                ],
+                isError: true,
+              };
+            }
           }
 
           if (TERMINAL_STATUSES.has(run.status)) {

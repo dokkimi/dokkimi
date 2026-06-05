@@ -384,6 +384,9 @@ export class RunsService implements OnApplicationBootstrap {
     runId: string,
     instanceId: string,
   ): Promise<void> {
+    if (this.runStorage.hasInstance(instanceId)) {
+      return;
+    }
     const run = await this.prisma.run.findUnique({ where: { id: runId } });
     if (!run) {
       return;

@@ -69,7 +69,7 @@ export class DockerDatabaseGroupService {
     const initFileMountPath = this.getInitFileMountPath(item.database);
     const dbBinds: string[] = [];
     if ((item.initFiles?.length || isMongo) && initFileMountPath) {
-      const storageInitDir = this.runStorage.getInitFilesDir(
+      const storageInitDir = await this.runStorage.getInitFilesDir(
         instanceId,
         item.name,
       );

@@ -48,7 +48,7 @@ describe('RunStorageService', () => {
   beforeEach(async () => {
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'run-storage-test-'));
     setMockDokkimiDir(tempDir);
-    service = new RunStorageService();
+    service = new RunStorageService({} as any);
     registerTestInstance('inst-1', 'api-tests');
   });
 
@@ -96,7 +96,7 @@ describe('RunStorageService', () => {
         },
       ]);
 
-      const dir = service.getInitFilesDir('inst-1', 'my-db');
+      const dir = await service.getInitFilesDir('inst-1', 'my-db');
       const files = await fs.readdir(dir);
       expect(files).toContain('00_schema.sql');
       expect(files).toContain('01_seed.sql');
@@ -117,7 +117,7 @@ describe('RunStorageService', () => {
         },
       ]);
 
-      const dir = service.getInitFilesDir('inst-1', 'svc-a');
+      const dir = await service.getInitFilesDir('inst-1', 'svc-a');
       expect(fsSync.existsSync(dir)).toBe(false);
     });
 
@@ -126,7 +126,7 @@ describe('RunStorageService', () => {
         { name: 'mongo-db', type: 'DATABASE', database: 'mongodb' },
       ]);
 
-      const dir = service.getInitFilesDir('inst-1', 'mongo-db');
+      const dir = await service.getInitFilesDir('inst-1', 'mongo-db');
       const files = await fs.readdir(dir);
       expect(files).toContain('00_dokkimi_ready.js');
 
@@ -149,7 +149,7 @@ describe('RunStorageService', () => {
         },
       ]);
 
-      const dir = service.getInitFilesDir('inst-1', 'mongo-db');
+      const dir = await service.getInitFilesDir('inst-1', 'mongo-db');
       const files = (await fs.readdir(dir)).sort();
       expect(files).toEqual(['00_seed.js', '01_dokkimi_ready.js']);
     });
@@ -159,7 +159,7 @@ describe('RunStorageService', () => {
         { name: 'pg-db', type: 'DATABASE', database: 'postgresql' },
       ]);
 
-      const dir = service.getInitFilesDir('inst-1', 'pg-db');
+      const dir = await service.getInitFilesDir('inst-1', 'pg-db');
       expect(fsSync.existsSync(dir)).toBe(false);
     });
 
@@ -175,7 +175,7 @@ describe('RunStorageService', () => {
         },
       ]);
 
-      const dir = service.getInitFilesDir('inst-1', 'db');
+      const dir = await service.getInitFilesDir('inst-1', 'db');
       const files = await fs.readdir(dir);
       expect(files[0]).toBe('00_my_file__1_.sql');
     });
@@ -295,8 +295,8 @@ describe('RunStorageService', () => {
       expect(await service.hasBaseline('inst-1', 'missing')).toBe(false);
     });
 
-    it('should return the correct baseline path', () => {
-      const p = service.baselinePath('inst-1', 'mybase');
+    it('should return the correct baseline path', async () => {
+      const p = await service.baselinePath('inst-1', 'mybase');
       expect(p).toContain(path.join('baselines', 'mybase.png'));
     });
   });

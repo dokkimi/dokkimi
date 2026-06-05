@@ -117,9 +117,19 @@ export function registerDiffTraffic(server: McpServer): void {
           url: string;
           origin: string | null;
           target: string | null;
-          previousStatus: number | null;
-          currentStatus: number | null;
+          previousStatusCounts: Record<number, number>;
+          currentStatusCounts: Record<number, number>;
         }[] = [];
+
+        function statusCounts(logs: HttpLog[]): Record<number, number> {
+          const counts: Record<number, number> = {};
+          for (const log of logs) {
+            if (log.statusCode != null) {
+              counts[log.statusCode] = (counts[log.statusCode] ?? 0) + 1;
+            }
+          }
+          return counts;
+        }
 
         for (const fp of allFps) {
           const curr = currentByFp.get(fp);
@@ -142,16 +152,16 @@ export function registerDiffTraffic(server: McpServer): void {
               target: log.target,
             });
           } else if (curr && prev) {
-            const currStatus = curr[0].statusCode;
-            const prevStatus = prev[0].statusCode;
-            if (currStatus !== prevStatus) {
+            const currCounts = statusCounts(curr);
+            const prevCounts = statusCounts(prev);
+            if (JSON.stringify(currCounts) !== JSON.stringify(prevCounts)) {
               statusChanged.push({
                 method: curr[0].method,
                 url: curr[0].url,
                 origin: curr[0].origin,
                 target: curr[0].target,
-                previousStatus: prevStatus,
-                currentStatus: currStatus,
+                previousStatusCounts: prevCounts,
+                currentStatusCounts: currCounts,
               });
             }
           }

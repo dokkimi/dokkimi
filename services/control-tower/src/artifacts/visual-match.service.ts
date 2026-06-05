@@ -219,7 +219,7 @@ export class VisualMatchService {
       return 'no-baseline';
     }
 
-    const baselinePath = this.storage.baselinePath(instanceId, vm.name);
+    const baselinePath = await this.storage.baselinePath(instanceId, vm.name);
     const captureAbsPath = this.storage.absoluteUri(capture.uri);
 
     const verdict = await this.runDiff(

@@ -38,14 +38,20 @@ export function registerDumpResults(server: McpServer): void {
           env: { ...process.env },
         });
 
+        let stdout = '';
         let stderr = '';
+        child.stdout.on('data', (chunk: Buffer) => {
+          stdout += chunk.toString();
+        });
         child.stderr.on('data', (chunk: Buffer) => {
           stderr += chunk.toString();
         });
 
         child.on('close', (code) => {
-          const filePathMatch = stderr.match(/Dump written to (.+)/);
-          const filePath = filePathMatch?.[1]?.trim() ?? null;
+          const structuredMatch = stdout.match(/__DUMP_PATH__=(.+)/);
+          const stderrMatch = stderr.match(/Dump written to (.+)/);
+          const filePath =
+            structuredMatch?.[1]?.trim() ?? stderrMatch?.[1]?.trim() ?? null;
 
           if (code === 0) {
             resolve({

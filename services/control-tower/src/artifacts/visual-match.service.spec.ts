@@ -119,7 +119,7 @@ describe('VisualMatchService.processInstance', () => {
         {
           provide: RunStorageService,
           useFactory: () => {
-            const svc = new RunStorageService();
+            const svc = new RunStorageService({} as any);
             svc.registerInstance(
               instanceId,
               testProjectPath,

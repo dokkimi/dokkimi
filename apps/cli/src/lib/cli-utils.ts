@@ -1,3 +1,4 @@
+import * as path from 'path';
 import * as readline from 'readline';
 
 // ---------------------------------------------------------------------------
@@ -189,6 +190,10 @@ export function formatAge(dateStr: string): string {
 
 export function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+export function resolveUri(uri: string, storageDir: string): string {
+  return path.isAbsolute(uri) ? uri : path.join(storageDir, uri);
 }
 
 // ---------------------------------------------------------------------------

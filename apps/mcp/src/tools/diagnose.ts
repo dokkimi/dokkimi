@@ -88,7 +88,7 @@ export function registerDiagnose(server: McpServer): void {
 
         const diagnoses = await Promise.all(
           targetInstances.map(async (inst) => {
-            const [assertions, detail, traffic, console, execLogs] =
+            const [assertions, detail, traffic, consoleLogs, execLogs] =
               await Promise.all([
                 ctFetch<AssertionResult[]>(
                   `/logs/assertion-results/instance/${inst.id}`,
@@ -167,7 +167,7 @@ export function registerDiagnose(server: McpServer): void {
                 origin: l.origin,
                 target: l.target,
               })),
-              recentConsole: console.logs.slice(0, 20).map((l) => ({
+              recentConsole: consoleLogs.logs.slice(0, 20).map((l) => ({
                 level: l.level,
                 message: l.message,
                 timestamp: l.timestamp,

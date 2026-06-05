@@ -22,19 +22,19 @@ describe('InitFilesController', () => {
     mockRunStorage = {
       getInitFilesDir: jest
         .fn()
-        .mockReturnValue('/tmp/init-files/inst-1/svc-a'),
+        .mockResolvedValue('/tmp/init-files/inst-1/svc-a'),
     };
     mockRes = { setHeader: jest.fn() };
     controller = new InitFilesController(mockRunStorage as any);
     jest.clearAllMocks();
   });
 
-  it('should set Content-Type to application/x-tar and pipe tar stream when directory exists', () => {
+  it('should set Content-Type to application/x-tar and pipe tar stream when directory exists', async () => {
     (fs.existsSync as jest.Mock).mockReturnValue(true);
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const { createDirectoryTar } = require('@dokkimi/platform');
 
-    controller.getInitFiles('inst-1', 'svc-a', mockRes as any);
+    await controller.getInitFiles('inst-1', 'svc-a', mockRes as any);
 
     expect(mockRes.setHeader).toHaveBeenCalledWith(
       'Content-Type',
@@ -46,11 +46,11 @@ describe('InitFilesController', () => {
     expect(mockPipe).toHaveBeenCalledWith(mockRes);
   });
 
-  it('should throw NotFoundException when directory does not exist', () => {
+  it('should throw NotFoundException when directory does not exist', async () => {
     (fs.existsSync as jest.Mock).mockReturnValue(false);
 
-    expect(() =>
+    await expect(
       controller.getInitFiles('inst-1', 'svc-a', mockRes as any),
-    ).toThrow(NotFoundException);
+    ).rejects.toThrow(NotFoundException);
   });
 });

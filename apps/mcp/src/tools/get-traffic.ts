@@ -6,7 +6,7 @@ import type { HttpLog, PaginatedResponse } from '../lib/ct-types';
 export function registerGetTraffic(server: McpServer): void {
   server.tool(
     'get_traffic',
-    'Returns HTTP traffic logs captured by the interceptor sidecars for a given instance. Filter by origin, target, method, status code, URL path, or mocked status to narrow results.',
+    'Returns HTTP traffic logs captured by the interceptor sidecars for a given instance. Filter by origin, target, method, status code, URL path, or mocked status to narrow results. Note: filters are applied client-side after fetching `limit` rows, so filtered results may be fewer than total matching rows.',
     {
       instanceId: z
         .string()
@@ -92,8 +92,17 @@ export function registerGetTraffic(server: McpServer): void {
           logs = logs.filter((l) => !!l.isMocked === mockedOnly);
         }
 
+        const hasFilters =
+          origin ||
+          target ||
+          method ||
+          statusCode !== undefined ||
+          pathContains ||
+          mockedOnly !== undefined;
+
         const result = {
           total: response.total,
+          ...(hasFilters ? { filteredCount: logs.length } : {}),
           returned: logs.length,
           logs: logs.map((l) => ({
             method: l.method,

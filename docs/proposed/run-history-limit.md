@@ -88,7 +88,7 @@ The traversal (step 2) must be robust: the stored `projectPath` is an absolute p
 With multiple runs per project, `inspect` needs to know which run to show.
 
 - **Default** (no flags): Show the latest run for the current project (resolved via `cwd` traversal). Same behavior as today.
-- **`--run <timestamp>`**: Show a specific run from the current project's history. The timestamp is the folder name in `__runs__/` (e.g., `20260603-141522`).
+- **`--run <timestamp>`**: Show a specific run from the current project's history. The timestamp is the run directory name (e.g., `20260603-141522`).
 - **`--project <path>`**: Explicit project override when not in the project directory. Combine with `--run` for full specificity.
 - **Interactive picker** (future): If the user runs `dokkimi inspect` outside a project directory with no flags, show a project → run picker. Lower priority — the flags cover all use cases.
 

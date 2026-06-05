@@ -87,7 +87,8 @@ export class RunCleanupService {
 
     // Keep maxRunHistory - 1 completed runs because the new run about to be
     // created will occupy a slot, bringing the total to maxRunHistory.
-    const runsToDelete = completedRuns.slice(maxRunHistory - 1);
+    const keepCount = Math.max(1, maxRunHistory - 1);
+    const runsToDelete = completedRuns.slice(keepCount);
 
     for (const run of runsToDelete) {
       this.logger.log(

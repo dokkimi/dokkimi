@@ -139,7 +139,7 @@ const mockRegistryService = {
 const mockRunStorage = {
   getInitFilesDir: jest
     .fn()
-    .mockReturnValue(
+    .mockResolvedValue(
       '/home/.dokkimi/storage/instances/test-instance/db-init-files/postgres-db',
     ),
 };
