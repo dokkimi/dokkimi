@@ -374,6 +374,8 @@ export class RunsService implements OnApplicationBootstrap {
       this.registryService.clearCredentials(run.id);
     }
 
+    await this.prisma.$queryRaw`VACUUM`;
+
     this.logger.log(
       `Deleted ${runs.length} run(s)${projectPath ? ` for project ${projectPath}` : ' (all projects)'}`,
     );

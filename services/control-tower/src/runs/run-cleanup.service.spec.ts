@@ -18,6 +18,7 @@ describe('RunCleanupService', () => {
     namespaceInstance: {
       update: jest.fn(),
     },
+    $queryRaw: jest.fn().mockResolvedValue(undefined),
   };
 
   const mockLifecycle: any = {

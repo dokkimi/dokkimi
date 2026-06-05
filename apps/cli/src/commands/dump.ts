@@ -183,6 +183,7 @@ export async function dump(args: string[]): Promise<void> {
     outputPath: outputFile,
     inlineArtifacts,
   });
+  process.stdout.write(`__DUMP_PATH__=${path.resolve(outputFile)}\n`);
   console.error(`Dump written to ${path.resolve(outputFile)}`);
 
   trackEvent('cli_dump_result', {

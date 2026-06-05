@@ -105,6 +105,7 @@ export class RunCleanupService {
     }
 
     if (runsToDelete.length > 0) {
+      await this.prisma.$queryRaw`VACUUM`;
       this.logger.log(
         `Pruned ${runsToDelete.length} old run(s) for project ${projectPath ?? '(global)'}`,
       );

@@ -1,6 +1,6 @@
 import * as path from 'path';
 import * as os from 'os';
-import { existsSync, readFileSync, statSync } from 'fs';
+import { existsSync, readFileSync, readdirSync, statSync } from 'fs';
 import { PAD_LABEL } from '../lib/cli-utils';
 import { loadConfig } from '@dokkimi/config';
 import { getServiceStatus } from '@dokkimi/service-manager';
@@ -14,6 +14,7 @@ import {
 interface Check {
   name: string;
   pass: boolean;
+  warning?: boolean;
   detail: string;
   fix?: string;
 }
@@ -181,12 +182,17 @@ function checkDatabase(): Check {
         fix: `rm ${dbPath} && dokkimi run`,
       };
     }
-    const kb = Math.round(size / 1024);
-    const sizeLabel = kb < 1024 ? `${kb} KB` : `${(kb / 1024).toFixed(1)} MB`;
+    const sizeLabel = formatSize(size);
+    const mb = size / (1024 * 1024);
+    const large = mb > 500;
     return {
       name: 'Database',
-      pass: true,
-      detail: `initialized (${sizeLabel})`,
+      pass: !large,
+      warning: large,
+      detail: large
+        ? `initialized (${sizeLabel}) — consider running \`dokkimi clean\` or reducing maxRunHistory`
+        : `initialized (${sizeLabel})`,
+      fix: large ? 'dokkimi clean --all' : undefined,
     };
   } catch (err) {
     return {
@@ -195,6 +201,52 @@ function checkDatabase(): Check {
       detail: `unable to check (${err instanceof Error ? err.message : 'unknown error'})`,
     };
   }
+}
+
+function dirSizeBytes(dir: string): number {
+  let total = 0;
+  try {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        total += dirSizeBytes(full);
+      } else {
+        try {
+          total += statSync(full).size;
+        } catch {}
+      }
+    }
+  } catch {}
+  return total;
+}
+
+function formatSize(bytes: number): string {
+  const kb = Math.round(bytes / 1024);
+  return kb < 1024 ? `${kb} KB` : `${(kb / 1024).toFixed(1)} MB`;
+}
+
+function checkRunStorage(): Check {
+  const runsDir = path.join(os.homedir(), '.dokkimi', 'runs');
+  if (!existsSync(runsDir)) {
+    return {
+      name: 'Run Storage',
+      pass: true,
+      detail: 'no runs stored yet',
+    };
+  }
+  const size = dirSizeBytes(runsDir);
+  const mb = size / (1024 * 1024);
+  const sizeLabel = formatSize(size);
+  const large = mb > 500;
+  return {
+    name: 'Run Storage',
+    pass: !large,
+    warning: large,
+    detail: large
+      ? `${sizeLabel} — consider running \`dokkimi clean\` or reducing maxRunHistory`
+      : sizeLabel,
+    fix: large ? 'dokkimi clean --all' : undefined,
+  };
 }
 
 async function checkDokkimiServices(): Promise<Check> {
@@ -263,6 +315,9 @@ export async function doctor(args: string[]): Promise<void> {
   // Dokkimi database (schema + migration state)
   checks.push(checkDatabase());
 
+  // Run storage (~/.dokkimi/runs/)
+  checks.push(checkRunStorage());
+
   // Dokkimi services
   checks.push(await checkDokkimiServices());
 
@@ -272,18 +327,15 @@ export async function doctor(args: string[]): Promise<void> {
   checks.push({
     name: '.dokkimi/',
     pass: hasDokkimi,
+    warning: !hasDokkimi,
     detail: hasDokkimi
       ? 'found in current directory'
       : 'not found in current directory',
     fix: hasDokkimi ? undefined : "Run 'dokkimi init' to scaffold one",
   });
 
-  const failures = checks.filter(
-    (c) => !c.pass && c.name !== '.dokkimi/',
-  ).length;
-  const warnings = checks.filter(
-    (c) => !c.pass && c.name === '.dokkimi/',
-  ).length;
+  const failures = checks.filter((c) => !c.pass && !c.warning).length;
+  const warnings = checks.filter((c) => !c.pass && c.warning).length;
 
   // JSON output mode
   if (jsonMode) {
@@ -327,8 +379,7 @@ export async function doctor(args: string[]): Promise<void> {
         `  \x1b[32m✓\x1b[0m ${check.name.padEnd(PAD_LABEL)} ${check.detail}`,
       );
     } else {
-      const isWarning = check.name === '.dokkimi/';
-      if (isWarning) {
+      if (check.warning) {
         console.log(
           `  \x1b[33m○\x1b[0m ${check.name.padEnd(PAD_LABEL)} ${check.detail}`,
         );
