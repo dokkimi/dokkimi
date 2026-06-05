@@ -69,4 +69,3 @@ services/db-proxy/redis/redis
 # Claude Code
 .claude/settings.json
 .claude/settings.local.json
-

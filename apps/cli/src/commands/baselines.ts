@@ -1,6 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { fetchJson } from '../lib/cli-utils';
+import { fetchJson, resolveUri } from '../lib/cli-utils';
 import { loadConfig, buildServiceUrl } from '@dokkimi/config';
 import { trackEvent } from '@dokkimi/telemetry';
 import { resolveDefinitions } from '@dokkimi/definition-resolver';
@@ -371,7 +371,7 @@ async function approveAll(
 // ---------------------------------------------------------------------------
 
 function openImages(item: PendingItem, ctx: WriteContext): void {
-  const capturePath = path.join(ctx.storageDir, item.artifact.uri);
+  const capturePath = resolveUri(item.artifact.uri, ctx.storageDir);
   if (fs.existsSync(capturePath)) {
     openFile(capturePath);
   }
@@ -416,7 +416,7 @@ function writeBaseline(ctx: WriteContext, item: PendingItem): boolean {
   const baselinesDir =
     findBaselinesDir(sourceFile) ?? createBaselinesDir(sourceFile);
   const destPath = path.join(baselinesDir, `${item.artifact.name}.png`);
-  const captureAbsPath = path.join(ctx.storageDir, item.artifact.uri);
+  const captureAbsPath = resolveUri(item.artifact.uri, ctx.storageDir);
 
   try {
     fs.mkdirSync(baselinesDir, { recursive: true });

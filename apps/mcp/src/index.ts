@@ -20,6 +20,11 @@ import { registerGetStepDetail } from './tools/get-step-detail';
 import { registerGetTraffic } from './tools/get-traffic';
 import { registerGetConsoleLogs } from './tools/get-console-logs';
 import { registerGetDbLogs } from './tools/get-db-logs';
+import { registerGetContainerStatus } from './tools/get-container-status';
+import { registerWatchRun } from './tools/watch-run';
+import { registerGetRunHistory } from './tools/get-run-history';
+import { registerDiagnose } from './tools/diagnose';
+import { registerDiffTraffic } from './tools/diff-traffic';
 import { registerSpecResource } from './resources/spec';
 import { withToolTracking } from './lib/tracked-server';
 
@@ -51,6 +56,11 @@ export function createServer(): McpServer {
   registerGetTraffic(server);
   registerGetConsoleLogs(server);
   registerGetDbLogs(server);
+  registerGetContainerStatus(server);
+  registerWatchRun(server);
+  registerGetRunHistory(server);
+  registerDiagnose(server);
+  registerDiffTraffic(server);
   registerSpecResource(server);
 
   return server;

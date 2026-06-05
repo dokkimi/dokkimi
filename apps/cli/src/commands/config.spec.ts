@@ -8,12 +8,20 @@ jest.mock('../lib/terminal');
 jest.mock('@dokkimi/config');
 jest.mock('@dokkimi/telemetry');
 jest.mock('@dokkimi/service-manager');
+jest.mock('../lib/project-path', () => ({
+  getProjectPath: jest.fn(() => '/mock/project'),
+}));
 
 import { loadConfig } from '@dokkimi/config';
 import { selectMenu } from '../lib/menu';
 import { numberInput } from '../lib/number-input';
 import { enterAltScreen, exitAltScreen } from '../lib/terminal';
-import { getConcurrencyPrefs, setConcurrencyPrefs } from '@dokkimi/config';
+import {
+  getConcurrencyPrefs,
+  setConcurrencyPrefs,
+  getMaxRunHistory,
+  getUserPrefs,
+} from '@dokkimi/config';
 import {
   isTelemetryEnabled,
   setTelemetryEnabled,
@@ -54,6 +62,8 @@ beforeEach(() => {
     .mockImplementation(() => true);
 
   mockGetConcurrency.mockReturnValue({});
+  (getMaxRunHistory as jest.Mock).mockReturnValue(2);
+  (getUserPrefs as jest.Mock).mockReturnValue({});
   mockIsTelemetry.mockReturnValue(true);
   mockLoadConfig.mockReturnValue({
     services: { controlTower: { host: 'localhost', port: 19001 } },
@@ -96,18 +106,17 @@ describe('configCommand', () => {
     expect(mockSelectMenu).toHaveBeenCalledTimes(1);
 
     const items = mockSelectMenu.mock.calls[0][0];
-    expect(items).toHaveLength(2);
+    expect(items).toHaveLength(3);
     expect(items[0].label).toContain('Concurrency');
-    expect(items[1].label).toContain('Telemetry');
+    expect(items[1].label).toContain('Run History');
+    expect(items[2].label).toContain('Telemetry');
   });
 
   it('updates concurrency setting (maxConcurrentTests)', async () => {
-    mockGetConcurrency.mockReturnValue({ maxConcurrentTests: 6 });
-
     // Top menu -> select concurrency
     mockSelectMenu
       .mockResolvedValueOnce({ value: 'concurrency', index: 0 })
-      // Concurrency sub-menu -> select maxConcurrentTests
+      // Concurrency sub-menu -> select maxConcurrentTests (global)
       .mockResolvedValueOnce({ value: 'maxConcurrentTests', index: 0 })
       // Back to top menu -> escape
       .mockResolvedValueOnce(null)
@@ -120,10 +129,12 @@ describe('configCommand', () => {
 
     expect(mockSetConcurrency).toHaveBeenCalledWith(
       expect.objectContaining({ maxConcurrentTests: 10 }),
+      undefined,
     );
     expect(mockTrack).toHaveBeenCalledWith('cli_config_changed', {
       category: 'concurrency',
       setting: 'maxConcurrentTests',
+      scope: 'global',
       value: 10,
     });
   });
@@ -166,8 +177,6 @@ describe('configCommand', () => {
   });
 
   it('triggers reboot when settings change and user selects reboot', async () => {
-    mockGetConcurrency.mockReturnValue({});
-
     mockSelectMenu
       .mockResolvedValueOnce({ value: 'concurrency', index: 0 })
       .mockResolvedValueOnce({ value: 'maxConcurrentTests', index: 0 })
@@ -222,8 +231,6 @@ describe('configCommand', () => {
   });
 
   it('updates concurrency setting (maxBootingTests)', async () => {
-    mockGetConcurrency.mockReturnValue({ maxBootingTests: 2 });
-
     mockSelectMenu
       .mockResolvedValueOnce({ value: 'concurrency', index: 0 })
       .mockResolvedValueOnce({ value: 'maxBootingTests', index: 1 })
@@ -236,32 +243,30 @@ describe('configCommand', () => {
 
     expect(mockSetConcurrency).toHaveBeenCalledWith(
       expect.objectContaining({ maxBootingTests: 4 }),
+      undefined,
     );
     expect(mockTrack).toHaveBeenCalledWith('cli_config_changed', {
       category: 'concurrency',
       setting: 'maxBootingTests',
+      scope: 'global',
       value: 4,
     });
   });
 
-  it('resets concurrency to defaults', async () => {
-    mockGetConcurrency.mockReturnValue({
-      maxConcurrentTests: 10,
-      maxBootingTests: 5,
-    });
-
+  it('resets project concurrency overrides', async () => {
     mockSelectMenu
       .mockResolvedValueOnce({ value: 'concurrency', index: 0 })
-      .mockResolvedValueOnce({ value: 'reset', index: 2 })
+      .mockResolvedValueOnce({ value: 'resetProject', index: 4 })
       .mockResolvedValueOnce(null)
       .mockResolvedValueOnce({ value: 'exit', index: 1 });
 
     await configCommand([]);
 
-    expect(mockSetConcurrency).toHaveBeenCalledWith({});
+    expect(mockSetConcurrency).toHaveBeenCalledWith({}, '/mock/project');
     expect(mockTrack).toHaveBeenCalledWith('cli_config_changed', {
       category: 'concurrency',
       setting: 'reset',
+      scope: 'project',
     });
   });
 

@@ -1,5 +1,4 @@
-import * as path from 'path';
-import { fetchJson } from '../lib/cli-utils';
+import { fetchJson, resolveUri } from '../lib/cli-utils';
 import { selectMenu, MenuItem } from '../lib/menu';
 import {
   formatLogLine,
@@ -598,7 +597,6 @@ async function showStepScreenshots(
     }
     lastIndex = picked.index;
 
-    const absolutePath = path.join(storageDir, picked.value.uri);
-    openFile(absolutePath);
+    openFile(resolveUri(picked.value.uri, storageDir));
   }
 }

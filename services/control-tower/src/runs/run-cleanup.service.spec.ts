@@ -1,6 +1,11 @@
 import { InstanceStatus, RunStatus } from '@prisma/client';
 import { RunCleanupService } from './run-cleanup.service';
 
+jest.mock('@dokkimi/config', () => ({
+  ...jest.requireActual('@dokkimi/config'),
+  getMaxRunHistory: jest.fn().mockReturnValue(2),
+}));
+
 describe('RunCleanupService', () => {
   let service: RunCleanupService;
 
@@ -21,7 +26,7 @@ describe('RunCleanupService', () => {
 
   const mockRunStorage: any = {
     deleteInstance: jest.fn().mockResolvedValue(undefined),
-    deleteGeneratedFiles: jest.fn().mockResolvedValue(undefined),
+    deleteRunDir: jest.fn().mockResolvedValue(undefined),
   };
 
   const mockRegistryService: any = {
@@ -114,63 +119,113 @@ describe('RunCleanupService', () => {
     });
   });
 
-  describe('teardownExistingRuns', () => {
-    it('stops instances, deletes runs, cleans storage, deletes secrets', async () => {
-      mockPrisma.run.findMany.mockResolvedValue([
+  describe('prepareForNewRun', () => {
+    it('stops active runs for the given project and prunes old completed runs', async () => {
+      // First call: active runs query
+      mockPrisma.run.findMany
+        .mockResolvedValueOnce([
+          {
+            id: 'active-run',
+            instances: [{ id: 'inst-1', status: InstanceStatus.RUNNING }],
+          },
+        ])
+        // Second call: completed runs query
+        .mockResolvedValueOnce([
+          {
+            id: 'completed-1',
+            createdAt: new Date('2026-01-03'),
+            instances: [{ id: 'inst-2' }],
+          },
+          {
+            id: 'completed-2',
+            projectPath: '/my/project',
+            createdAt: new Date('2026-01-02'),
+            instances: [{ id: 'inst-3' }],
+          },
+          {
+            id: 'completed-3',
+            projectPath: '/my/project',
+            createdAt: new Date('2026-01-01'),
+            instances: [{ id: 'inst-4' }],
+          },
+        ]);
+
+      await service.prepareForNewRun('/my/project');
+
+      // Active run should be cancelled
+      expect(mockPrisma.run.update).toHaveBeenCalledWith({
+        where: { id: 'active-run' },
+        data: {
+          status: RunStatus.CANCELLED,
+          cancelledAt: expect.any(Date),
+        },
+      });
+      expect(mockRegistryService.clearCredentials).toHaveBeenCalledWith(
+        'active-run',
+      );
+
+      // With maxRunHistory=2, keep 1 completed run (the new run occupies a slot).
+      // completed-2 and completed-3 should be pruned.
+      expect(mockPrisma.run.delete).toHaveBeenCalledWith({
+        where: { id: 'completed-2' },
+      });
+      expect(mockRunStorage.deleteRunDir).toHaveBeenCalledWith(
+        '/my/project',
+        new Date('2026-01-02'),
+      );
+      expect(mockPrisma.run.delete).toHaveBeenCalledWith({
+        where: { id: 'completed-3' },
+      });
+      expect(mockRunStorage.deleteRunDir).toHaveBeenCalledWith(
+        '/my/project',
+        new Date('2026-01-01'),
+      );
+
+      // Newest completed run should be preserved
+      expect(mockPrisma.run.delete).not.toHaveBeenCalledWith({
+        where: { id: 'completed-1' },
+      });
+    });
+
+    it('scopes active run query by projectPath', async () => {
+      mockPrisma.run.findMany
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([]);
+
+      await service.prepareForNewRun('/my/project');
+
+      expect(mockPrisma.run.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            projectPath: '/my/project',
+          }),
+        }),
+      );
+    });
+
+    it('handles no active or completed runs', async () => {
+      mockPrisma.run.findMany
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([]);
+
+      await service.prepareForNewRun('/my/project');
+
+      expect(mockPrisma.run.update).not.toHaveBeenCalled();
+      expect(mockPrisma.run.delete).not.toHaveBeenCalled();
+    });
+
+    it('does not prune when completed runs are within limit', async () => {
+      mockPrisma.run.findMany.mockResolvedValueOnce([]).mockResolvedValueOnce([
         {
-          id: 'run-1',
-          instances: [
-            { id: 'inst-1', status: InstanceStatus.RUNNING },
-            { id: 'inst-2', status: InstanceStatus.STOPPED },
-          ],
+          id: 'completed-1',
+          createdAt: new Date('2026-01-02'),
+          instances: [],
         },
       ]);
 
-      await service.teardownExistingRuns();
-
-      expect(mockLifecycle.stopInstance).toHaveBeenCalledWith('inst-1');
-      expect(mockPrisma.run.delete).toHaveBeenCalledWith({
-        where: { id: 'run-1' },
-      });
-      expect(mockRunStorage.deleteInstance).toHaveBeenCalledWith('inst-1');
-      expect(mockRunStorage.deleteInstance).toHaveBeenCalledWith('inst-2');
-      expect(mockRegistryService.clearCredentials).toHaveBeenCalledWith(
-        'run-1',
-      );
-      expect(mockRunStorage.deleteGeneratedFiles).toHaveBeenCalled();
-    });
-
-    it('handles multiple existing runs', async () => {
-      mockPrisma.run.findMany.mockResolvedValue([
-        { id: 'run-1', instances: [] },
-        { id: 'run-2', instances: [] },
-      ]);
-
-      await service.teardownExistingRuns();
-
-      expect(mockPrisma.run.delete).toHaveBeenCalledTimes(2);
-      expect(mockRegistryService.clearCredentials).toHaveBeenCalledTimes(2);
-    });
-
-    it('handles no existing runs', async () => {
-      mockPrisma.run.findMany.mockResolvedValue([]);
-
-      await service.teardownExistingRuns();
+      await service.prepareForNewRun('/my/project');
 
       expect(mockPrisma.run.delete).not.toHaveBeenCalled();
-      expect(mockRunStorage.deleteGeneratedFiles).toHaveBeenCalled();
-    });
-
-    it('clears registry credentials for each run', async () => {
-      mockPrisma.run.findMany.mockResolvedValue([
-        { id: 'run-1', instances: [] },
-      ]);
-
-      await service.teardownExistingRuns();
-
-      expect(mockRegistryService.clearCredentials).toHaveBeenCalledWith(
-        'run-1',
-      );
     });
   });
 

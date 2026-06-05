@@ -1,4 +1,10 @@
-import { getConcurrencyPrefs, setConcurrencyPrefs } from '@dokkimi/config';
+import {
+  getConcurrencyPrefs,
+  setConcurrencyPrefs,
+  getMaxRunHistory,
+  setMaxRunHistory,
+  getUserPrefs,
+} from '@dokkimi/config';
 import {
   isTelemetryEnabled,
   setTelemetryEnabled,
@@ -13,6 +19,7 @@ import {
   resolveAppRoot,
 } from '@dokkimi/service-manager';
 import { loadConfig } from '@dokkimi/config';
+import { getProjectPath } from '../lib/project-path';
 
 const HELP = `
 Usage: dokkimi config
@@ -25,49 +32,100 @@ Options:
 
 const DEFAULT_MAX_CONCURRENT_TESTS = 6;
 const DEFAULT_MAX_BOOTING_TESTS = 2;
+const DEFAULT_MAX_RUN_HISTORY = 2;
 
-type SettingsCategory = 'concurrency' | 'telemetry';
+type SettingsCategory = 'concurrency' | 'runHistory' | 'telemetry';
+
+function runHistorySource(projectPath?: string): string {
+  if (!projectPath) {
+    return 'default';
+  }
+  const prefs = getUserPrefs();
+  if (prefs.projects?.[projectPath]?.maxRunHistory !== undefined) {
+    return 'project';
+  }
+  if (prefs.maxRunHistory !== undefined) {
+    return 'global';
+  }
+  return 'default';
+}
 
 function buildTopMenuItems(): MenuItem<SettingsCategory>[] {
-  const concurrency = getConcurrencyPrefs();
+  const projectPath = getProjectPath();
+  const concurrency = getConcurrencyPrefs(projectPath);
   const maxNs = concurrency.maxConcurrentTests ?? DEFAULT_MAX_CONCURRENT_TESTS;
   const maxBoot = concurrency.maxBootingTests ?? DEFAULT_MAX_BOOTING_TESTS;
 
+  const maxHistory = getMaxRunHistory(projectPath);
+  const historySource = runHistorySource(projectPath);
+
   const telemetryStatus = isTelemetryEnabled() ? 'on' : 'off';
+
+  const pad = (s: string) => s.padEnd(20);
 
   return [
     {
-      label: `Concurrency          \x1b[90mmax namespaces: ${maxNs}, max booting: ${maxBoot}\x1b[0m`,
+      label: `${pad('Concurrency')} \x1b[90mmax namespaces: ${maxNs}, max booting: ${maxBoot}\x1b[0m`,
       value: 'concurrency',
     },
     {
-      label: `Telemetry            \x1b[90m${telemetryStatus}\x1b[0m`,
+      label: `${pad('Run History')} \x1b[90mkeep ${maxHistory} runs  (${historySource})\x1b[0m`,
+      value: 'runHistory',
+    },
+    {
+      label: `${pad('Telemetry')} \x1b[90m${telemetryStatus}\x1b[0m`,
       value: 'telemetry',
     },
   ];
 }
 
 async function editConcurrency(): Promise<boolean> {
-  const prefs = getConcurrencyPrefs();
-  const currentMax = prefs.maxConcurrentTests ?? DEFAULT_MAX_CONCURRENT_TESTS;
-  const currentBoot = prefs.maxBootingTests ?? DEFAULT_MAX_BOOTING_TESTS;
+  const projectPath = getProjectPath();
+  const prefs = getUserPrefs();
+  const globalPrefs = prefs.concurrency ?? {};
+  const projectPrefs = projectPath
+    ? (prefs.projects?.[projectPath]?.concurrency ?? null)
+    : null;
 
-  type ConcurrencyAction = 'maxConcurrentTests' | 'maxBootingTests' | 'reset';
+  const globalMax =
+    globalPrefs.maxConcurrentTests ?? DEFAULT_MAX_CONCURRENT_TESTS;
+  const globalBoot = globalPrefs.maxBootingTests ?? DEFAULT_MAX_BOOTING_TESTS;
 
+  type ConcurrencyAction =
+    | 'maxConcurrentTests'
+    | 'maxConcurrentTestsProject'
+    | 'maxBootingTests'
+    | 'maxBootingTestsProject'
+    | 'resetProject';
+
+  const pad = (s: string) => s.padEnd(28);
   const items: MenuItem<ConcurrencyAction>[] = [
     {
-      label: `Max concurrent tests      \x1b[90m${currentMax}${prefs.maxConcurrentTests === undefined ? ' (default)' : ''}\x1b[0m`,
+      label: `${pad('Max concurrent tests')} \x1b[90m${globalMax}${globalPrefs.maxConcurrentTests === undefined ? ' (default)' : ''}\x1b[0m`,
       value: 'maxConcurrentTests',
     },
     {
-      label: `Max booting tests         \x1b[90m${currentBoot}${prefs.maxBootingTests === undefined ? ' (default)' : ''}\x1b[0m`,
+      label: `${pad('Max booting tests')} \x1b[90m${globalBoot}${globalPrefs.maxBootingTests === undefined ? ' (default)' : ''}\x1b[0m`,
       value: 'maxBootingTests',
     },
-    {
-      label: '\x1b[90mReset to defaults\x1b[0m',
-      value: 'reset',
-    },
   ];
+
+  if (projectPath) {
+    items.push({
+      label: `${pad('Project: concurrent')} \x1b[90m${projectPrefs?.maxConcurrentTests ?? 'not set'}\x1b[0m`,
+      value: 'maxConcurrentTestsProject',
+    });
+    items.push({
+      label: `${pad('Project: booting')} \x1b[90m${projectPrefs?.maxBootingTests ?? 'not set'}\x1b[0m`,
+      value: 'maxBootingTestsProject',
+    });
+    if (projectPrefs) {
+      items.push({
+        label: '\x1b[90mRemove project overrides\x1b[0m',
+        value: 'resetProject',
+      });
+    }
+  }
 
   const result = await selectMenu(items, 'Concurrency Settings', {
     leftArrowBack: true,
@@ -76,50 +134,124 @@ async function editConcurrency(): Promise<boolean> {
     return false;
   }
 
-  if (result.value === 'reset') {
-    setConcurrencyPrefs({});
+  if (result.value === 'resetProject') {
+    setConcurrencyPrefs({}, projectPath);
     trackEvent('cli_config_changed', {
       category: 'concurrency',
       setting: 'reset',
+      scope: 'project',
     });
     return true;
   }
 
-  if (result.value === 'maxConcurrentTests') {
-    const value = await numberInput('Max concurrent tests', currentMax, {
-      min: 1,
-      max: 50,
+  const isProject = result.value.endsWith('Project');
+  const scope = isProject ? projectPath : undefined;
+  const setting = result.value.replace('Project', '') as
+    | 'maxConcurrentTests'
+    | 'maxBootingTests';
+
+  const currentValue =
+    setting === 'maxConcurrentTests'
+      ? isProject
+        ? (projectPrefs?.maxConcurrentTests ?? globalMax)
+        : globalMax
+      : isProject
+        ? (projectPrefs?.maxBootingTests ?? globalBoot)
+        : globalBoot;
+
+  const label =
+    setting === 'maxConcurrentTests'
+      ? 'Max concurrent tests'
+      : 'Max booting tests';
+
+  const value = await numberInput(label, currentValue, {
+    min: 1,
+    max: 50,
+  });
+  if (value === null) {
+    return false;
+  }
+
+  setConcurrencyPrefs({ [setting]: value }, scope);
+  trackEvent('cli_config_changed', {
+    category: 'concurrency',
+    setting,
+    scope: scope ? 'project' : 'global',
+    value,
+  });
+  return true;
+}
+
+async function editRunHistory(): Promise<boolean> {
+  const projectPath = getProjectPath();
+  const prefs = getUserPrefs();
+  const globalValue = prefs.maxRunHistory ?? DEFAULT_MAX_RUN_HISTORY;
+  const projectValue = projectPath
+    ? prefs.projects?.[projectPath]?.maxRunHistory
+    : undefined;
+  const hasProjectOverride = projectValue !== undefined;
+  const effective = getMaxRunHistory(projectPath);
+
+  type HistoryAction = 'set' | 'setProject' | 'unsetProject';
+
+  const globalLabel = `${globalValue}${prefs.maxRunHistory === undefined ? ' (default)' : ''}`;
+  const items: MenuItem<HistoryAction>[] = [
+    {
+      label: `Set global default       \x1b[90m${globalLabel}\x1b[0m`,
+      value: 'set',
+    },
+  ];
+
+  if (projectPath) {
+    const projectLabel = hasProjectOverride ? String(projectValue) : 'not set';
+    items.push({
+      label: `Set for this project     \x1b[90m${projectLabel}\x1b[0m`,
+      value: 'setProject',
     });
-    if (value !== null) {
-      setConcurrencyPrefs({
-        ...prefs,
-        maxConcurrentTests:
-          value === DEFAULT_MAX_CONCURRENT_TESTS ? undefined : value,
+    if (hasProjectOverride) {
+      items.push({
+        label: '\x1b[90mRemove project override\x1b[0m',
+        value: 'unsetProject',
       });
-      trackEvent('cli_config_changed', {
-        category: 'concurrency',
-        setting: 'maxConcurrentTests',
-        value,
-      });
-      return true;
     }
   }
 
-  if (result.value === 'maxBootingTests') {
-    const value = await numberInput('Max booting tests', currentBoot, {
-      min: 1,
-      max: 50,
+  const result = await selectMenu(items, 'Run History', {
+    leftArrowBack: true,
+  });
+  if (!result) {
+    return false;
+  }
+
+  if (result.value === 'unsetProject') {
+    setMaxRunHistory(undefined, projectPath);
+    trackEvent('cli_config_changed', {
+      category: 'runHistory',
+      setting: 'maxRunHistory',
+      scope: 'project',
+      action: 'unset',
     });
-    if (value !== null) {
-      const updated = { ...prefs, maxBootingTests: value };
-      setConcurrencyPrefs(updated);
-      trackEvent('cli_config_changed', {
-        category: 'concurrency',
-        setting: 'maxBootingTests',
-        value,
-      });
-      return true;
-    }
+    return false;
+  }
+
+  const scope = result.value === 'setProject' ? projectPath : undefined;
+  const initial = scope ? (projectValue ?? effective) : globalValue;
+  const value = await numberInput('Max run history', initial, {
+    min: 1,
+    max: 20,
+  });
+  if (value !== null) {
+    setMaxRunHistory(
+      value === DEFAULT_MAX_RUN_HISTORY ? undefined : value,
+      scope,
+    );
+    trackEvent('cli_config_changed', {
+      category: 'runHistory',
+      setting: 'maxRunHistory',
+      scope: scope ? 'project' : 'global',
+      value,
+    });
+    return false;
   }
 
   return false;
@@ -181,6 +313,9 @@ export async function configCommand(args: string[]): Promise<void> {
     switch (result.value) {
       case 'concurrency':
         changed = await editConcurrency();
+        break;
+      case 'runHistory':
+        changed = await editRunHistory();
         break;
       case 'telemetry':
         changed = await editTelemetry();

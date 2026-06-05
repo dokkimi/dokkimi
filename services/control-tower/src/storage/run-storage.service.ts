@@ -1,36 +1,60 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
+import { runDirPath } from '@dokkimi/config';
+import { PrismaService } from '../prisma/prisma.service';
 import * as fs from 'fs/promises';
-import * as fsSync from 'fs';
-import * as os from 'os';
 import * as path from 'path';
 /**
  * Filesystem-backed run storage for local/desktop mode.
  *
  * Layout:
- *   {storageDir}/instances/{instanceId}/definition.json
- *   {storageDir}/instances/{instanceId}/db-init-files/{itemName}/{filename}
- *   {storageDir}/instances/{instanceId}/artifacts/{folder}/{filename}
- *     where folder = 'screenshot' | 'diff' | 'failure' (failure for nameless captures)
+ *   ~/.dokkimi/runs/{YYYYMMDD-HHmmss}/snapshots/{definitionName}/definition.json
+ *   ~/.dokkimi/runs/{YYYYMMDD-HHmmss}/snapshots/{definitionName}/db-init-files/{itemName}/{filename}
+ *   ~/.dokkimi/runs/{YYYYMMDD-HHmmss}/snapshots/{definitionName}/artifacts/{folder}/{filename}
  */
 export interface ArtifactPath {
   folder: string;
   filename: string;
   fullPath: string;
-  uri: string; // path relative to storageDir, used as Artifact.uri
+  uri: string;
 }
+
 @Injectable()
 export class RunStorageService {
   private readonly logger = new Logger(RunStorageService.name);
-  private readonly storageDir: string;
+  private readonly instancePaths = new Map<string, string>();
 
-  constructor(private readonly configService: ConfigService) {
-    this.storageDir = this.configService.get<string>('STORAGE_DIR')!;
+  constructor(private readonly prisma: PrismaService) {}
 
-    const instancesDir = path.join(this.storageDir, 'instances');
-    if (!fsSync.existsSync(instancesDir)) {
-      fsSync.mkdirSync(instancesDir, { recursive: true });
-      this.logger.log(`Created instances directory: ${instancesDir}`);
+  hasInstance(instanceId: string): boolean {
+    return this.instancePaths.has(instanceId);
+  }
+
+  registerInstance(
+    instanceId: string,
+    projectPath: string,
+    createdAt: Date,
+    definitionName: string,
+  ): void {
+    const dir = path.join(
+      runDirPath(projectPath, createdAt),
+      'snapshots',
+      definitionName,
+    );
+    this.instancePaths.set(instanceId, dir);
+  }
+
+  async deleteRunDir(projectPath: string, createdAt: Date): Promise<void> {
+    const dir = runDirPath(projectPath, createdAt);
+    try {
+      await fs.rm(dir, { recursive: true });
+      this.logger.log(`Deleted run directory: ${dir}`);
+    } catch (e: unknown) {
+      if (
+        !(e instanceof Error) ||
+        (e as NodeJS.ErrnoException).code !== 'ENOENT'
+      ) {
+        throw e;
+      }
     }
   }
 
@@ -38,7 +62,7 @@ export class RunStorageService {
     instanceId: string,
     content: Record<string, unknown>,
   ): Promise<void> {
-    const dir = this.instanceDir(instanceId);
+    const dir = await this.resolveInstanceDir(instanceId);
     await fs.mkdir(dir, { recursive: true });
 
     const filePath = path.join(dir, 'definition.json');
@@ -47,7 +71,8 @@ export class RunStorageService {
   }
 
   async hasDefinition(instanceId: string): Promise<boolean> {
-    const filePath = path.join(this.instanceDir(instanceId), 'definition.json');
+    const dir = await this.resolveInstanceDir(instanceId);
+    const filePath = path.join(dir, 'definition.json');
     try {
       await fs.access(filePath);
       return true;
@@ -57,7 +82,8 @@ export class RunStorageService {
   }
 
   async readDefinition(instanceId: string): Promise<Record<string, unknown>> {
-    const filePath = path.join(this.instanceDir(instanceId), 'definition.json');
+    const dir = await this.resolveInstanceDir(instanceId);
+    const filePath = path.join(dir, 'definition.json');
 
     try {
       const raw = await fs.readFile(filePath, 'utf-8');
@@ -96,7 +122,7 @@ export class RunStorageService {
         continue;
       }
 
-      const dir = this.initFilesDir(instanceId, item.name);
+      const dir = await this.resolveInitFilesDir(instanceId, item.name);
       await fs.mkdir(dir, { recursive: true });
 
       if (hasUserInitFiles) {
@@ -132,8 +158,8 @@ export class RunStorageService {
     }
   }
 
-  getInitFilesDir(instanceId: string, itemName: string): string {
-    return this.initFilesDir(instanceId, itemName);
+  async getInitFilesDir(instanceId: string, itemName: string): Promise<string> {
+    return this.resolveInitFilesDir(instanceId, itemName);
   }
 
   /**
@@ -142,10 +168,6 @@ export class RunStorageService {
    * Path convention:
    *   - Named (visualMatch capture/diff, explicit screenshot): {type}/{name}.{ext}
    *   - Nameless (debug failure capture): failure/{stepIndex}.{subStepIndex}-failure.{ext}
-   *
-   * The caller is expected to have validated `name` against the sanitization
-   * rules (alphanumeric + dash + underscore, max 64) at the controller layer.
-   * This method does a defensive basename + sep check as a final guard.
    */
   async persistArtifact(
     instanceId: string,
@@ -155,7 +177,7 @@ export class RunStorageService {
     name: string | null,
     isFailure = false,
   ): Promise<ArtifactPath> {
-    const artifactsRoot = this.artifactsDir(instanceId);
+    const artifactsRoot = await this.resolveArtifactsDir(instanceId);
     const folder = isFailure ? 'failure' : type;
     const ext = type === 'html' ? 'html' : 'png';
     const filename =
@@ -175,12 +197,14 @@ export class RunStorageService {
     }
     await fs.writeFile(fullPath, payload);
 
-    const uri = path.relative(this.storageDir, fullPath);
-    return { folder, filename, fullPath, uri };
+    return { folder, filename, fullPath, uri: fullPath };
   }
 
   async deleteInstance(instanceId: string): Promise<void> {
-    const dir = this.instanceDir(instanceId);
+    const dir = this.instancePaths.get(instanceId);
+    if (!dir) {
+      return;
+    }
     try {
       await fs.rm(dir, { recursive: true });
       this.logger.log(`Deleted instance storage: ${dir}`);
@@ -195,41 +219,72 @@ export class RunStorageService {
   }
 
   private instanceDir(instanceId: string): string {
-    return path.join(this.storageDir, 'instances', instanceId);
+    const cached = this.instancePaths.get(instanceId);
+    if (cached) {
+      return cached;
+    }
+    throw new Error(
+      `No storage path registered for instance ${instanceId}. ` +
+        `Call registerInstance() or resolveInstanceDir() before accessing storage.`,
+    );
+  }
+
+  async resolveInstanceDir(instanceId: string): Promise<string> {
+    const cached = this.instancePaths.get(instanceId);
+    if (cached) {
+      return cached;
+    }
+
+    const instance = await this.prisma.namespaceInstance.findUnique({
+      where: { id: instanceId },
+      include: { run: true },
+    });
+    if (!instance?.run?.projectPath) {
+      throw new Error(
+        `Cannot resolve storage path for instance ${instanceId}: run or projectPath not found.`,
+      );
+    }
+
+    const dir = path.join(
+      runDirPath(instance.run.projectPath, instance.run.createdAt),
+      'snapshots',
+      instance.name,
+    );
+    this.instancePaths.set(instanceId, dir);
+    return dir;
   }
 
   private initFilesDir(instanceId: string, itemName: string): string {
     return path.join(this.instanceDir(instanceId), 'db-init-files', itemName);
   }
 
-  /**
-   * Resolves a stored relative `uri` (as returned by persistArtifact /
-   * persistBaseline) to an absolute filesystem path.
-   */
+  private async resolveInitFilesDir(
+    instanceId: string,
+    itemName: string,
+  ): Promise<string> {
+    const dir = await this.resolveInstanceDir(instanceId);
+    return path.join(dir, 'db-init-files', itemName);
+  }
+
   absoluteUri(uri: string): string {
-    return path.join(this.storageDir, uri);
+    return uri;
   }
 
   private artifactsDir(instanceId: string): string {
     return path.join(this.instanceDir(instanceId), 'artifacts');
   }
 
-  /**
-   * Persist a visual-regression baseline for the run. Baselines are user
-   * inputs (checked into .dokkimi/<project>/baselines/<name>.png in git).
-   * The CLI uploads them at run-start; CT writes them under the instance
-   * directory so the post-run diff job can read them locally without
-   * touching the user's filesystem.
-   *
-   * Path: instances/<instanceId>/baselines/<name>.png
-   * Returned uri is relative to storageDir, mirroring artifacts.
-   */
+  private async resolveArtifactsDir(instanceId: string): Promise<string> {
+    const dir = await this.resolveInstanceDir(instanceId);
+    return path.join(dir, 'artifacts');
+  }
+
   async persistBaseline(
     instanceId: string,
     name: string,
     payload: Buffer,
   ): Promise<{ fullPath: string; uri: string }> {
-    const dir = this.baselinesDir(instanceId);
+    const dir = await this.resolveBaselinesDir(instanceId);
     await fs.mkdir(dir, { recursive: true });
 
     const filename = `${name}.png`;
@@ -242,22 +297,17 @@ export class RunStorageService {
     }
     await fs.writeFile(fullPath, payload);
 
-    const uri = path.relative(this.storageDir, fullPath);
-    return { fullPath, uri };
+    return { fullPath, uri: fullPath };
   }
 
-  /**
-   * Returns the absolute filesystem path for an instance's baseline file,
-   * or null if no baseline exists for that name. Used by the post-run
-   * visualMatch diff job.
-   */
-  baselinePath(instanceId: string, name: string): string {
-    return path.join(this.baselinesDir(instanceId), `${name}.png`);
+  async baselinePath(instanceId: string, name: string): Promise<string> {
+    const dir = await this.resolveBaselinesDir(instanceId);
+    return path.join(dir, `${name}.png`);
   }
 
   async hasBaseline(instanceId: string, name: string): Promise<boolean> {
     try {
-      await fs.access(this.baselinePath(instanceId, name));
+      await fs.access(await this.baselinePath(instanceId, name));
       return true;
     } catch {
       return false;
@@ -268,8 +318,8 @@ export class RunStorageService {
     return path.join(this.instanceDir(instanceId), 'baselines');
   }
 
-  async deleteGeneratedFiles(): Promise<void> {
-    const dir = path.join(os.homedir(), '.dokkimi', 'generated');
-    await fs.rm(dir, { recursive: true, force: true }).catch(() => {});
+  private async resolveBaselinesDir(instanceId: string): Promise<string> {
+    const dir = await this.resolveInstanceDir(instanceId);
+    return path.join(dir, 'baselines');
   }
 }

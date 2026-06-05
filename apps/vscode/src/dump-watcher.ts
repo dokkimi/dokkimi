@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import * as fs from 'fs';
-import { DUMP_PATH } from '@dokkimi/config';
+import * as path from 'path';
+import { projectRunsDir } from '@dokkimi/config';
 
 export interface DumpOutput {
   runId: string;
@@ -42,13 +43,38 @@ export interface AssertionResult {
   resultKind: string;
 }
 
+export function findLatestDumpPath(projectPath: string): string | null {
+  const runsDir = projectRunsDir(projectPath);
+  try {
+    const entries = fs.readdirSync(runsDir).sort().reverse();
+    for (const entry of entries) {
+      const dumpFile = path.join(runsDir, entry, 'dump.json');
+      if (fs.existsSync(dumpFile)) {
+        return dumpFile;
+      }
+    }
+  } catch {}
+  return null;
+}
+
 export function reportDumpResults(
   controller: vscode.TestController,
   run: vscode.TestRun,
+  dumpFilePath?: string,
 ): void {
+  const filePath =
+    dumpFilePath ??
+    (() => {
+      const ws = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+      return ws ? findLatestDumpPath(ws) : null;
+    })();
+  if (!filePath) {
+    return;
+  }
+
   let raw: string;
   try {
-    raw = fs.readFileSync(DUMP_PATH, 'utf-8');
+    raw = fs.readFileSync(filePath, 'utf-8');
   } catch {
     return;
   }

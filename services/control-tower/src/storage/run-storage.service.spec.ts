@@ -1,26 +1,55 @@
 import { RunStorageService } from './run-storage.service';
+import { runDirPath } from '@dokkimi/config';
 import * as fs from 'fs/promises';
 import * as fsSync from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 
+jest.mock('@dokkimi/config', () => {
+  const actual = jest.requireActual('@dokkimi/config');
+  let mockDokkimiDir: string;
+  return {
+    ...actual,
+    get DOKKIMI_DIR() {
+      return mockDokkimiDir;
+    },
+    setMockDokkimiDir(dir: string) {
+      mockDokkimiDir = dir;
+    },
+    runDirPath(projectPath: string, createdAt: Date) {
+      const stripped = projectPath.replace(/^\//, '');
+      return path.join(
+        mockDokkimiDir,
+        'runs',
+        stripped,
+        actual.formatRunTimestamp(createdAt),
+      );
+    },
+  };
+});
+
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const { setMockDokkimiDir } = require('@dokkimi/config') as {
+  setMockDokkimiDir: (dir: string) => void;
+};
+
 describe('RunStorageService', () => {
   let service: RunStorageService;
   let tempDir: string;
 
+  const testCreatedAt = new Date('2026-06-03T12:00:00Z');
+
+  const testProjectPath = '/test/project';
+
+  function registerTestInstance(id: string, name: string) {
+    service.registerInstance(id, testProjectPath, testCreatedAt, name);
+  }
+
   beforeEach(async () => {
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'run-storage-test-'));
-
-    const mockConfig = {
-      get: jest.fn((key: string) => {
-        if (key === 'STORAGE_DIR') {
-          return tempDir;
-        }
-        return undefined;
-      }),
-    };
-
-    service = new RunStorageService(mockConfig as any);
+    setMockDokkimiDir(tempDir);
+    service = new RunStorageService({} as any);
+    registerTestInstance('inst-1', 'api-tests');
   });
 
   afterEach(async () => {
@@ -67,7 +96,7 @@ describe('RunStorageService', () => {
         },
       ]);
 
-      const dir = service.getInitFilesDir('inst-1', 'my-db');
+      const dir = await service.getInitFilesDir('inst-1', 'my-db');
       const files = await fs.readdir(dir);
       expect(files).toContain('00_schema.sql');
       expect(files).toContain('01_seed.sql');
@@ -88,7 +117,7 @@ describe('RunStorageService', () => {
         },
       ]);
 
-      const dir = service.getInitFilesDir('inst-1', 'svc-a');
+      const dir = await service.getInitFilesDir('inst-1', 'svc-a');
       expect(fsSync.existsSync(dir)).toBe(false);
     });
 
@@ -97,7 +126,7 @@ describe('RunStorageService', () => {
         { name: 'mongo-db', type: 'DATABASE', database: 'mongodb' },
       ]);
 
-      const dir = service.getInitFilesDir('inst-1', 'mongo-db');
+      const dir = await service.getInitFilesDir('inst-1', 'mongo-db');
       const files = await fs.readdir(dir);
       expect(files).toContain('00_dokkimi_ready.js');
 
@@ -120,7 +149,7 @@ describe('RunStorageService', () => {
         },
       ]);
 
-      const dir = service.getInitFilesDir('inst-1', 'mongo-db');
+      const dir = await service.getInitFilesDir('inst-1', 'mongo-db');
       const files = (await fs.readdir(dir)).sort();
       expect(files).toEqual(['00_seed.js', '01_dokkimi_ready.js']);
     });
@@ -130,7 +159,7 @@ describe('RunStorageService', () => {
         { name: 'pg-db', type: 'DATABASE', database: 'postgresql' },
       ]);
 
-      const dir = service.getInitFilesDir('inst-1', 'pg-db');
+      const dir = await service.getInitFilesDir('inst-1', 'pg-db');
       expect(fsSync.existsSync(dir)).toBe(false);
     });
 
@@ -146,7 +175,7 @@ describe('RunStorageService', () => {
         },
       ]);
 
-      const dir = service.getInitFilesDir('inst-1', 'db');
+      const dir = await service.getInitFilesDir('inst-1', 'db');
       const files = await fs.readdir(dir);
       expect(files[0]).toBe('00_my_file__1_.sql');
     });
@@ -205,7 +234,7 @@ describe('RunStorageService', () => {
       expect(result.filename).toBe('3.5-failure.png');
     });
 
-    it('should return a relative uri', async () => {
+    it('should return an absolute uri', async () => {
       const result = await service.persistArtifact(
         'inst-1',
         'screenshot',
@@ -214,29 +243,38 @@ describe('RunStorageService', () => {
         'test',
       );
 
-      expect(result.uri).not.toContain(tempDir);
-      expect(path.isAbsolute(result.uri)).toBe(false);
+      expect(path.isAbsolute(result.uri)).toBe(true);
+      expect(result.uri).toBe(result.fullPath);
     });
   });
 
   describe('deleteInstance', () => {
     it('should recursively delete an instance directory', async () => {
       await service.writeDefinition('inst-1', { test: true });
-      const dir = path.join(tempDir, 'instances', 'inst-1');
-      expect(fsSync.existsSync(dir)).toBe(true);
+      const snapshotDir = path.join(
+        runDirPath(testProjectPath, testCreatedAt),
+        'snapshots',
+        'api-tests',
+      );
+      expect(fsSync.existsSync(snapshotDir)).toBe(true);
 
       await service.deleteInstance('inst-1');
-      expect(fsSync.existsSync(dir)).toBe(false);
+      expect(fsSync.existsSync(snapshotDir)).toBe(false);
     });
 
-    it('should handle deleting a nonexistent instance', async () => {
-      // In Jest's VM context, `instanceof Error` may fail for Node system errors,
-      // so the ENOENT suppression may not work. Just verify it doesn't crash hard.
-      try {
-        await service.deleteInstance('nonexistent');
-      } catch {
-        // acceptable in Jest VM context
-      }
+    it('should no-op for unregistered instance', async () => {
+      await service.deleteInstance('nonexistent');
+    });
+  });
+
+  describe('deleteRunDir', () => {
+    it('should delete the entire run directory', async () => {
+      await service.writeDefinition('inst-1', { test: true });
+      const runDir = runDirPath(testProjectPath, testCreatedAt);
+      expect(fsSync.existsSync(runDir)).toBe(true);
+
+      await service.deleteRunDir(testProjectPath, testCreatedAt);
+      expect(fsSync.existsSync(runDir)).toBe(false);
     });
   });
 
@@ -257,18 +295,16 @@ describe('RunStorageService', () => {
       expect(await service.hasBaseline('inst-1', 'missing')).toBe(false);
     });
 
-    it('should return the correct baseline path', () => {
-      const p = service.baselinePath('inst-1', 'mybase');
-      expect(p).toContain(path.join('inst-1', 'baselines', 'mybase.png'));
+    it('should return the correct baseline path', async () => {
+      const p = await service.baselinePath('inst-1', 'mybase');
+      expect(p).toContain(path.join('baselines', 'mybase.png'));
     });
   });
 
   describe('absoluteUri', () => {
-    it('should resolve a relative uri to an absolute path', () => {
-      const abs = service.absoluteUri('instances/inst-1/definition.json');
-      expect(abs).toBe(
-        path.join(tempDir, 'instances', 'inst-1', 'definition.json'),
-      );
+    it('should return the uri as-is (always absolute)', () => {
+      const abs = service.absoluteUri('/some/absolute/path');
+      expect(abs).toBe('/some/absolute/path');
     });
   });
 });

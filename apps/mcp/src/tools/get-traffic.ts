@@ -6,7 +6,7 @@ import type { HttpLog, PaginatedResponse } from '../lib/ct-types';
 export function registerGetTraffic(server: McpServer): void {
   server.tool(
     'get_traffic',
-    'Returns HTTP traffic logs captured by the interceptor sidecars for a given instance. Optionally filter by origin (calling service) or target (receiving service) to narrow results.',
+    'Returns HTTP traffic logs captured by the interceptor sidecars for a given instance. Filter by origin, target, method, status code, URL path, or mocked status to narrow results. Note: filters are applied client-side after fetching `limit` rows, so filtered results may be fewer than total matching rows.',
     {
       instanceId: z
         .string()
@@ -19,6 +19,27 @@ export function registerGetTraffic(server: McpServer): void {
         .string()
         .optional()
         .describe('Filter to requests targeting this service name'),
+      method: z
+        .string()
+        .optional()
+        .describe('Filter by HTTP method (e.g. "GET", "POST")'),
+      statusCode: z
+        .number()
+        .int()
+        .optional()
+        .describe('Filter by response status code (e.g. 500, 404)'),
+      pathContains: z
+        .string()
+        .optional()
+        .describe(
+          'Filter to requests where the URL contains this substring (e.g. "/api/checkout")',
+        ),
+      mockedOnly: z
+        .boolean()
+        .optional()
+        .describe(
+          'If true, show only mock-matched requests. If false, show only non-mocked requests.',
+        ),
       limit: z
         .number()
         .int()
@@ -27,7 +48,16 @@ export function registerGetTraffic(server: McpServer): void {
         .optional()
         .describe('Maximum number of logs to return (default: 500)'),
     },
-    async ({ instanceId, origin, target, limit }) => {
+    async ({
+      instanceId,
+      origin,
+      target,
+      method,
+      statusCode,
+      pathContains,
+      mockedOnly,
+      limit,
+    }) => {
       try {
         const response = await ctFetch<PaginatedResponse<HttpLog>>(
           `/logs/http/instance/${instanceId}`,
@@ -46,9 +76,33 @@ export function registerGetTraffic(server: McpServer): void {
             (l) => l.target?.toLowerCase() === target.toLowerCase(),
           );
         }
+        if (method) {
+          logs = logs.filter(
+            (l) => l.method?.toUpperCase() === method.toUpperCase(),
+          );
+        }
+        if (statusCode !== undefined) {
+          logs = logs.filter((l) => l.statusCode === statusCode);
+        }
+        if (pathContains) {
+          const search = pathContains.toLowerCase();
+          logs = logs.filter((l) => l.url?.toLowerCase().includes(search));
+        }
+        if (mockedOnly !== undefined) {
+          logs = logs.filter((l) => !!l.isMocked === mockedOnly);
+        }
+
+        const hasFilters =
+          origin ||
+          target ||
+          method ||
+          statusCode !== undefined ||
+          pathContains ||
+          mockedOnly !== undefined;
 
         const result = {
           total: response.total,
+          ...(hasFilters ? { filteredCount: logs.length } : {}),
           returned: logs.length,
           logs: logs.map((l) => ({
             method: l.method,

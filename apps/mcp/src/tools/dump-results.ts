@@ -1,8 +1,6 @@
 import { spawn } from 'child_process';
-import * as path from 'path';
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { DUMP_DIR } from '@dokkimi/config';
 import { findDokkimiBin } from '../lib/find-bin';
 
 export function registerDumpResults(server: McpServer): void {
@@ -21,9 +19,6 @@ export function registerDumpResults(server: McpServer): void {
     },
     async ({ target, failedOnly }) => {
       const bin = findDokkimiBin();
-      const outputFile = failedOnly
-        ? path.join(DUMP_DIR, 'dump_failed.json')
-        : path.join(DUMP_DIR, 'dump.json');
 
       const args = ['dump'];
       if (target) {
@@ -32,7 +27,6 @@ export function registerDumpResults(server: McpServer): void {
       if (failedOnly) {
         args.push('--failed');
       }
-      args.push('-o', outputFile);
 
       const isNodeScript = bin.endsWith('.js');
       const command = isNodeScript ? process.execPath : bin;
@@ -44,18 +38,27 @@ export function registerDumpResults(server: McpServer): void {
           env: { ...process.env },
         });
 
+        let stdout = '';
         let stderr = '';
+        child.stdout.on('data', (chunk: Buffer) => {
+          stdout += chunk.toString();
+        });
         child.stderr.on('data', (chunk: Buffer) => {
           stderr += chunk.toString();
         });
 
         child.on('close', (code) => {
+          const structuredMatch = stdout.match(/__DUMP_PATH__=(.+)/);
+          const stderrMatch = stderr.match(/Dump written to (.+)/);
+          const filePath =
+            structuredMatch?.[1]?.trim() ?? stderrMatch?.[1]?.trim() ?? null;
+
           if (code === 0) {
             resolve({
               content: [
                 {
                   type: 'text',
-                  text: JSON.stringify({ filePath: outputFile }, null, 2),
+                  text: JSON.stringify({ filePath }, null, 2),
                 },
               ],
             });
@@ -66,7 +69,7 @@ export function registerDumpResults(server: McpServer): void {
                   type: 'text',
                   text: JSON.stringify(
                     {
-                      filePath: outputFile,
+                      filePath,
                       error: stderr.trim() || `dump exited with code ${code}`,
                     },
                     null,

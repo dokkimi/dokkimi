@@ -4,6 +4,7 @@ import { InstanceStatus, RunStatus, NamespaceInstance } from '@prisma/client';
 import { RunStorageService } from '../storage/run-storage.service';
 import { NamespaceLifecycleService } from '../namespace-lifecycle/namespace-lifecycle.service';
 import { DockerRegistryService } from '../namespace-lifecycle/docker/docker-registry.service';
+import { getMaxRunHistory } from '@dokkimi/config';
 
 @Injectable()
 export class RunCleanupService {
@@ -46,26 +47,68 @@ export class RunCleanupService {
     );
   }
 
-  async teardownExistingRuns() {
-    const existingRuns = await this.prisma.run.findMany({
+  async prepareForNewRun(projectPath?: string) {
+    const maxRunHistory = getMaxRunHistory(projectPath);
+    // Stop the active run for this project (if any)
+    const activeRuns = await this.prisma.run.findMany({
+      where: {
+        status: { in: [RunStatus.PENDING, RunStatus.RUNNING] },
+        ...(projectPath ? { projectPath } : {}),
+      },
       include: { instances: true },
     });
 
-    for (const run of existingRuns) {
-      this.logger.log(`Tearing down existing run ${run.id}`);
-
+    for (const run of activeRuns) {
+      this.logger.log(
+        `Stopping active run ${run.id} for project ${projectPath ?? '(global)'}`,
+      );
       await this.stopInstances(run.instances);
+      await this.prisma.run.update({
+        where: { id: run.id },
+        data: {
+          status: RunStatus.CANCELLED,
+          cancelledAt: new Date(),
+        },
+      });
+      this.registryService.clearCredentials(run.id);
+    }
+
+    // Prune completed runs beyond maxRunHistory for this project
+    const completedRuns = await this.prisma.run.findMany({
+      where: {
+        status: {
+          in: [RunStatus.COMPLETED, RunStatus.FAILED, RunStatus.CANCELLED],
+        },
+        ...(projectPath ? { projectPath } : {}),
+      },
+      orderBy: { createdAt: 'desc' },
+      include: { instances: true },
+    });
+
+    // Keep maxRunHistory - 1 completed runs because the new run about to be
+    // created will occupy a slot, bringing the total to maxRunHistory.
+    const keepCount = Math.max(1, maxRunHistory - 1);
+    const runsToDelete = completedRuns.slice(keepCount);
+
+    for (const run of runsToDelete) {
+      this.logger.log(
+        `Pruning old run ${run.id} (created ${run.createdAt.toISOString()})`,
+      );
 
       await this.prisma.run.delete({ where: { id: run.id } });
 
-      for (const instance of run.instances) {
-        await this.runStorage.deleteInstance(instance.id);
+      if (run.projectPath) {
+        await this.runStorage.deleteRunDir(run.projectPath, run.createdAt);
       }
 
       this.registryService.clearCredentials(run.id);
     }
 
-    await this.runStorage.deleteGeneratedFiles();
+    if (runsToDelete.length > 0) {
+      this.logger.log(
+        `Pruned ${runsToDelete.length} old run(s) for project ${projectPath ?? '(global)'}`,
+      );
+    }
   }
 
   async recoverOrphanedRuns() {

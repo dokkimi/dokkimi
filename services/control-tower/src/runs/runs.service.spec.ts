@@ -35,7 +35,9 @@ describe('RunsService', () => {
     hasDefinition: jest.fn(),
     readDefinition: jest.fn(),
     deleteInstance: jest.fn(),
+    deleteRunDir: jest.fn(),
     deleteGeneratedFiles: jest.fn(),
+    registerInstance: jest.fn(),
   };
 
   const mockLifecycle = {
@@ -54,7 +56,7 @@ describe('RunsService', () => {
 
   const mockCleanup = {
     stopInstances: jest.fn().mockResolvedValue(undefined),
-    teardownExistingRuns: jest.fn().mockResolvedValue(undefined),
+    prepareForNewRun: jest.fn().mockResolvedValue(undefined),
     recoverOrphanedRuns: jest.fn().mockResolvedValue(undefined),
   };
 
@@ -131,7 +133,7 @@ describe('RunsService', () => {
 
       await service.createRun(['api-tests']);
 
-      expect(mockCleanup.teardownExistingRuns).toHaveBeenCalled();
+      expect(mockCleanup.prepareForNewRun).toHaveBeenCalled();
     });
 
     it('should throw ConflictException if a run is already active', async () => {
@@ -532,6 +534,99 @@ describe('RunsService', () => {
   });
 
   // ============================================
+  // getRunHistory
+  // ============================================
+
+  describe('getRunHistory', () => {
+    it('should return empty array when no runs exist', async () => {
+      mockPrisma.run.findMany.mockResolvedValue([]);
+
+      const result = await service.getRunHistory();
+
+      expect(result).toEqual([]);
+    });
+
+    it('should return runs with instance details', async () => {
+      mockPrisma.run.findMany.mockResolvedValue([
+        {
+          id: 'run-2',
+          status: RunStatus.COMPLETED,
+          createdAt: new Date('2026-01-02'),
+          completedAt: new Date('2026-01-02T00:05:00'),
+          instances: [
+            {
+              id: 'inst-2',
+              name: 'api-tests',
+              status: InstanceStatus.STOPPED,
+              testStatus: 'PASSED',
+              errorMessage: null,
+            },
+          ],
+        },
+        {
+          id: 'run-1',
+          status: RunStatus.FAILED,
+          createdAt: new Date('2026-01-01'),
+          completedAt: new Date('2026-01-01T00:05:00'),
+          instances: [
+            {
+              id: 'inst-1',
+              name: 'api-tests',
+              status: InstanceStatus.STOPPED,
+              testStatus: 'FAILED',
+              errorMessage: 'assertion failed',
+            },
+          ],
+        },
+      ]);
+
+      const result = await service.getRunHistory();
+
+      expect(result).toHaveLength(2);
+      expect(result[0].runId).toBe('run-2');
+      expect(result[0].status).toBe(RunStatus.COMPLETED);
+      expect(result[1].runId).toBe('run-1');
+      expect(result[1].instances[0].errorMessage).toBe('assertion failed');
+    });
+
+    it('should filter by projectPath when provided', async () => {
+      mockPrisma.run.findMany.mockResolvedValue([]);
+
+      await service.getRunHistory('/my/project');
+
+      expect(mockPrisma.run.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { projectPath: '/my/project' },
+        }),
+      );
+    });
+
+    it('should respect the limit parameter', async () => {
+      mockPrisma.run.findMany.mockResolvedValue([]);
+
+      await service.getRunHistory(undefined, 5);
+
+      expect(mockPrisma.run.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          take: 5,
+        }),
+      );
+    });
+
+    it('should default limit to 10', async () => {
+      mockPrisma.run.findMany.mockResolvedValue([]);
+
+      await service.getRunHistory();
+
+      expect(mockPrisma.run.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          take: 10,
+        }),
+      );
+    });
+  });
+
+  // ============================================
   // deleteRun
   // ============================================
 
@@ -545,12 +640,16 @@ describe('RunsService', () => {
     });
 
     it('should stop instances, delete run, clean storage, and delete secret', async () => {
+      const createdAt = new Date('2026-01-01');
+      const projectPath = '/my/project';
       const instances = [
         { id: 'inst-1', status: InstanceStatus.RUNNING },
         { id: 'inst-2', status: InstanceStatus.STOPPED },
       ];
       mockPrisma.run.findUnique.mockResolvedValue({
         id: 'run-1',
+        projectPath,
+        createdAt,
         instances,
       });
 
@@ -560,8 +659,10 @@ describe('RunsService', () => {
       expect(mockPrisma.run.delete).toHaveBeenCalledWith({
         where: { id: 'run-1' },
       });
-      expect(mockRunStorage.deleteInstance).toHaveBeenCalledWith('inst-1');
-      expect(mockRunStorage.deleteInstance).toHaveBeenCalledWith('inst-2');
+      expect(mockRunStorage.deleteRunDir).toHaveBeenCalledWith(
+        projectPath,
+        createdAt,
+      );
       expect(mockRegistryService.clearCredentials).toHaveBeenCalledWith(
         'run-1',
       );
@@ -571,6 +672,8 @@ describe('RunsService', () => {
     it('should clear registry credentials on delete', async () => {
       mockPrisma.run.findUnique.mockResolvedValue({
         id: 'run-1',
+        projectPath: '/my/project',
+        createdAt: new Date('2026-01-01'),
         instances: [],
       });
 

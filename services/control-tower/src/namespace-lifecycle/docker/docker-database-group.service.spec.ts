@@ -43,7 +43,7 @@ const mockDatabaseConfig = {
 };
 
 const mockRunStorage = {
-  getInitFilesDir: jest.fn().mockReturnValue('/home/.dokkimi/storage/init'),
+  getInitFilesDir: jest.fn().mockResolvedValue('/home/.dokkimi/storage/init'),
 };
 
 function pgConfig() {

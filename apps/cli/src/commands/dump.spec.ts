@@ -4,8 +4,10 @@ jest.mock('@dokkimi/config', () => ({
     storage: { dir: '/tmp/dokkimi-storage' },
   })),
   buildServiceUrl: jest.fn(() => 'http://localhost:19001'),
-  DUMP_PATH: '/mock-home/.dokkimi/generated/dump.json',
-  DUMP_FAILED_PATH: '/mock-home/.dokkimi/generated/dump_failed.json',
+  dumpPath: jest.fn(
+    (projectPath: string, createdAt: Date, failed: boolean) =>
+      `/mock-home/.dokkimi/runs/mock/project/20260101-000000/${failed ? 'dump_failed.json' : 'dump.json'}`,
+  ),
 }));
 jest.mock('../lib/cli-utils', () => ({
   fetchJson: jest.fn(),

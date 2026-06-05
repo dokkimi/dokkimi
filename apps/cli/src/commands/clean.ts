@@ -5,11 +5,18 @@ import {
   checkService,
   sleep,
 } from '../lib/cli-utils';
-import { loadConfig, buildServiceUrl } from '@dokkimi/config';
+import {
+  loadConfig,
+  buildServiceUrl,
+  DOKKIMI_DIR,
+  projectRunsDir,
+} from '@dokkimi/config';
 import { getProjectPath, latestRunUrl } from '../lib/project-path';
 import { formatDuration, statusColor } from '../lib/formatting';
 import { clearLines } from '../lib/terminal';
 import { execSilent } from '@dokkimi/platform';
+import * as fs from 'fs';
+import * as path from 'path';
 
 const SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
 const POLL_INTERVAL_MS = 2000;
@@ -37,6 +44,7 @@ export async function clean(args: string[]): Promise<void> {
     console.log('Stop all running instances and clean up resources.');
     console.log('');
     console.log('Options:');
+    console.log('  --all          Clean all projects (not just current)');
     console.log('  --force, -f    Skip confirmation prompt');
     console.log('  --json         Output results as JSON (implies --force)');
     console.log('  --help, -h     Show this help message');
@@ -45,6 +53,7 @@ export async function clean(args: string[]): Promise<void> {
 
   const jsonMode = args.includes('--json');
   const force = jsonMode || args.includes('--force') || args.includes('-f');
+  const all = args.includes('--all');
 
   const config = loadConfig();
   const ctUrl = buildServiceUrl(config.services.controlTower);
@@ -60,7 +69,7 @@ export async function clean(args: string[]): Promise<void> {
       ? await isNothingToCleanCT(ctUrl, orphanedContainers)
       : orphanedContainers.length === 0;
 
-    if (nothingToClean) {
+    if (nothingToClean && !all) {
       console.log(JSON.stringify({ success: true }));
       return;
     }
@@ -74,7 +83,7 @@ export async function clean(args: string[]): Promise<void> {
     let error: string | undefined;
     try {
       if (ctCheck.healthy) {
-        await cleanViaCT(ctUrl, true, orphanedContainers);
+        await cleanViaCT(ctUrl, true, orphanedContainers, all);
       } else {
         await cleanDirectDocker(true, orphanedContainers);
       }
@@ -94,7 +103,7 @@ export async function clean(args: string[]): Promise<void> {
   }
 
   if (ctCheck.healthy) {
-    await cleanViaCT(ctUrl, force, orphanedContainers);
+    await cleanViaCT(ctUrl, force, orphanedContainers, all);
   } else {
     await cleanDirectDocker(force, orphanedContainers);
   }
@@ -119,7 +128,32 @@ async function cleanViaCT(
   ctUrl: string,
   force: boolean,
   orphanedContainers: string[],
+  all = false,
 ): Promise<void> {
+  // --all: delete all runs across all projects via bulk endpoint
+  if (all) {
+    if (!force) {
+      const answer = await prompt(
+        'Delete all runs across all projects? (Y/n) ',
+      );
+      if (answer === 'n' || answer === 'no') {
+        console.log('Aborted.');
+        process.exit(0);
+      }
+    }
+
+    const startTime = Date.now();
+    await fetchAction(`${ctUrl}/runs/all`, 'DELETE');
+    cleanupDokkimiDockerResources(true);
+
+    console.log('');
+    console.log(
+      `\x1b[32mClean complete (all projects).\x1b[0m  \x1b[90m(${formatDuration(Date.now() - startTime)})\x1b[0m`,
+    );
+    console.log('');
+    return;
+  }
+
   const projectPath = getProjectPath();
   const latestRun = await fetchJson<RunStatus>(
     latestRunUrl(ctUrl, projectPath),
@@ -232,8 +266,11 @@ async function cleanViaCT(
       }
     }
 
-    // Delete run via CT
-    await fetchAction(`${ctUrl}/runs/${runId}`, 'DELETE');
+    // Delete all runs for current project
+    const deleteUrl = projectPath
+      ? `${ctUrl}/runs/all?projectPath=${encodeURIComponent(projectPath)}`
+      : `${ctUrl}/runs/${runId}`;
+    await fetchAction(deleteUrl, 'DELETE');
   }
 
   // Phase 2: Force-remove any remaining Docker containers and networks
@@ -317,7 +354,7 @@ function findDokkimiNetworks(): string[] {
   }
 }
 
-function cleanupDokkimiDockerResources(): void {
+function cleanupDokkimiDockerResources(all = false): void {
   // Remove containers
   const containers = findDokkimiContainers();
   if (containers.length > 0) {
@@ -349,6 +386,55 @@ function cleanupDokkimiDockerResources(): void {
       } catch (err) {
         console.log(
           `  \x1b[33mFailed to remove network ${name}: ${err instanceof Error ? err.message : err}\x1b[0m`,
+        );
+      }
+    }
+  }
+
+  // Remove legacy global storage and run artifacts
+  cleanupRunStorage(all);
+}
+
+function cleanupRunStorage(all: boolean): void {
+  const legacyDirs = [
+    path.join(DOKKIMI_DIR, 'storage'),
+    path.join(DOKKIMI_DIR, 'generated'),
+  ];
+  for (const dir of legacyDirs) {
+    try {
+      fs.rmSync(dir, { recursive: true });
+    } catch (e: unknown) {
+      if ((e as NodeJS.ErrnoException)?.code !== 'ENOENT') {
+        console.warn(
+          `Warning: could not remove ${dir}: ${(e as Error).message}`,
+        );
+      }
+    }
+  }
+
+  if (all) {
+    const runsDir = path.join(DOKKIMI_DIR, 'runs');
+    try {
+      fs.rmSync(runsDir, { recursive: true });
+    } catch (e: unknown) {
+      if ((e as NodeJS.ErrnoException)?.code !== 'ENOENT') {
+        console.warn(
+          `Warning: could not remove ${runsDir}: ${(e as Error).message}`,
+        );
+      }
+    }
+    return;
+  }
+
+  const projectPath = getProjectPath();
+  if (projectPath) {
+    const dir = projectRunsDir(projectPath);
+    try {
+      fs.rmSync(dir, { recursive: true });
+    } catch (e: unknown) {
+      if ((e as NodeJS.ErrnoException)?.code !== 'ENOENT') {
+        console.warn(
+          `Warning: could not remove ${dir}: ${(e as Error).message}`,
         );
       }
     }
