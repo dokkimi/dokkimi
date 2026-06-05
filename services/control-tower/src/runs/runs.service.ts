@@ -218,6 +218,29 @@ export class RunsService implements OnApplicationBootstrap {
     return { instanceId, status: 'PENDING' };
   }
 
+  async getRunHistory(projectPath?: string, limit = 10) {
+    const runs = await this.prisma.run.findMany({
+      where: projectPath ? { projectPath } : undefined,
+      orderBy: { createdAt: 'desc' },
+      take: limit,
+      include: { instances: true },
+    });
+
+    return runs.map((run) => ({
+      runId: run.id,
+      status: run.status,
+      createdAt: run.createdAt,
+      completedAt: run.completedAt,
+      instances: run.instances.map((inst) => ({
+        id: inst.id,
+        name: inst.name,
+        status: inst.status,
+        testStatus: inst.testStatus,
+        errorMessage: inst.errorMessage,
+      })),
+    }));
+  }
+
   async getLatestRun(projectPath?: string) {
     const run = await this.prisma.run.findFirst({
       where: projectPath ? { projectPath } : undefined,

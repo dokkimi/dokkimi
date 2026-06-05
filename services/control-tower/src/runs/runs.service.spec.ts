@@ -534,6 +534,99 @@ describe('RunsService', () => {
   });
 
   // ============================================
+  // getRunHistory
+  // ============================================
+
+  describe('getRunHistory', () => {
+    it('should return empty array when no runs exist', async () => {
+      mockPrisma.run.findMany.mockResolvedValue([]);
+
+      const result = await service.getRunHistory();
+
+      expect(result).toEqual([]);
+    });
+
+    it('should return runs with instance details', async () => {
+      mockPrisma.run.findMany.mockResolvedValue([
+        {
+          id: 'run-2',
+          status: RunStatus.COMPLETED,
+          createdAt: new Date('2026-01-02'),
+          completedAt: new Date('2026-01-02T00:05:00'),
+          instances: [
+            {
+              id: 'inst-2',
+              name: 'api-tests',
+              status: InstanceStatus.STOPPED,
+              testStatus: 'PASSED',
+              errorMessage: null,
+            },
+          ],
+        },
+        {
+          id: 'run-1',
+          status: RunStatus.FAILED,
+          createdAt: new Date('2026-01-01'),
+          completedAt: new Date('2026-01-01T00:05:00'),
+          instances: [
+            {
+              id: 'inst-1',
+              name: 'api-tests',
+              status: InstanceStatus.STOPPED,
+              testStatus: 'FAILED',
+              errorMessage: 'assertion failed',
+            },
+          ],
+        },
+      ]);
+
+      const result = await service.getRunHistory();
+
+      expect(result).toHaveLength(2);
+      expect(result[0].runId).toBe('run-2');
+      expect(result[0].status).toBe(RunStatus.COMPLETED);
+      expect(result[1].runId).toBe('run-1');
+      expect(result[1].instances[0].errorMessage).toBe('assertion failed');
+    });
+
+    it('should filter by projectPath when provided', async () => {
+      mockPrisma.run.findMany.mockResolvedValue([]);
+
+      await service.getRunHistory('/my/project');
+
+      expect(mockPrisma.run.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { projectPath: '/my/project' },
+        }),
+      );
+    });
+
+    it('should respect the limit parameter', async () => {
+      mockPrisma.run.findMany.mockResolvedValue([]);
+
+      await service.getRunHistory(undefined, 5);
+
+      expect(mockPrisma.run.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          take: 5,
+        }),
+      );
+    });
+
+    it('should default limit to 10', async () => {
+      mockPrisma.run.findMany.mockResolvedValue([]);
+
+      await service.getRunHistory();
+
+      expect(mockPrisma.run.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          take: 10,
+        }),
+      );
+    });
+  });
+
+  // ============================================
   // deleteRun
   // ============================================
 

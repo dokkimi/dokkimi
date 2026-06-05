@@ -47,6 +47,21 @@ export class RunsController {
   }
 
   /**
+   * GET /runs/history
+   * Returns the last N runs for a project.
+   */
+  @Get('history')
+  getRunHistory(
+    @Query('projectPath') projectPath?: string,
+    @Query('limit') limit?: string,
+  ) {
+    return this.runsService.getRunHistory(
+      projectPath,
+      limit ? parseInt(limit, 10) : undefined,
+    );
+  }
+
+  /**
    * GET /runs/latest
    * Returns the most recent run and all its instances.
    */
