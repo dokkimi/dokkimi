@@ -1,12 +1,22 @@
 import { spawn } from 'child_process';
+import * as path from 'path';
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { findDokkimiBin } from '../lib/find-bin';
+import { findDokkimiDir } from '../lib/dokkimi-dir';
+import { ctFetch } from '../lib/ct-client';
+
+interface HistoryRun {
+  runId: string;
+  status: string;
+  createdAt: string;
+  completedAt: string | null;
+}
 
 export function registerDumpResults(server: McpServer): void {
   server.tool(
     'dump_results',
-    "Exports the last run's full data dump to a JSON file for external consumption (sharing, archiving, CI). For targeted debugging, prefer get_run_summary, get_failures, get_step_detail, get_traffic, get_console_logs, or get_db_logs instead.",
+    "Exports a run's full data dump to a JSON file for external consumption (sharing, archiving, CI). Use runIndex to target a previous run (1 = latest, 2 = second most recent, etc.). For targeted debugging, prefer get_run_summary, get_failures, get_step_detail, get_traffic, get_console_logs, or get_db_logs instead.",
     {
       target: z
         .string()
@@ -16,8 +26,16 @@ export function registerDumpResults(server: McpServer): void {
         .boolean()
         .optional()
         .describe('If true, only include failed instances. Defaults to false.'),
+      runIndex: z
+        .number()
+        .int()
+        .min(1)
+        .optional()
+        .describe(
+          'Which run to dump: 1 = latest (default), 2 = second most recent, etc. Use get_run_history to see available runs.',
+        ),
     },
-    async ({ target, failedOnly }) => {
+    async ({ target, failedOnly, runIndex }) => {
       const bin = findDokkimiBin();
 
       const args = ['dump'];
@@ -26,6 +44,31 @@ export function registerDumpResults(server: McpServer): void {
       }
       if (failedOnly) {
         args.push('--failed');
+      }
+
+      if (runIndex && runIndex > 1) {
+        const dokkimiDir = findDokkimiDir(process.cwd());
+        const projectPath = dokkimiDir ? path.dirname(dokkimiDir) : undefined;
+        const params: Record<string, string> = { limit: String(runIndex) };
+        if (projectPath) {
+          params.projectPath = projectPath;
+        }
+        const history = await ctFetch<HistoryRun[]>('/runs/history', params);
+        if (!history || history.length < runIndex) {
+          return {
+            content: [
+              {
+                type: 'text' as const,
+                text: JSON.stringify({
+                  error: `Run index ${runIndex} not found. Only ${history?.length ?? 0} run(s) available.`,
+                }),
+              },
+            ],
+            isError: true,
+          };
+        }
+        const targetRun = history[runIndex - 1];
+        args.push('--run', targetRun.runId);
       }
 
       const isNodeScript = bin.endsWith('.js');
@@ -48,10 +91,10 @@ export function registerDumpResults(server: McpServer): void {
         });
 
         child.on('close', (code) => {
-          const structuredMatch = stdout.match(/__DUMP_PATH__=(.+)/);
-          const stderrMatch = stderr.match(/Dump written to (.+)/);
-          const filePath =
-            structuredMatch?.[1]?.trim() ?? stderrMatch?.[1]?.trim() ?? null;
+          const pathMatch =
+            stdout.match(/Dump written to (.+)/) ??
+            stderr.match(/Dump written to (.+)/);
+          const filePath = pathMatch?.[1]?.trim() ?? null;
 
           if (code === 0) {
             resolve({
