@@ -128,7 +128,7 @@ describe('inspect', () => {
     await inspect(['nonexistent']);
 
     expect(logSpy).toHaveBeenCalledWith(
-      'No run history found for "nonexistent".',
+      'No matching instances found for "nonexistent".',
     );
     expect(mockInspectRun).not.toHaveBeenCalled();
     logSpy.mockRestore();

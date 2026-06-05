@@ -79,6 +79,7 @@ describe('inspectRun', () => {
         expect.objectContaining({ label: 'other-def' }),
       ]),
       'Select a definition to inspect:',
+      { leftArrowBack: false },
     );
   });
 
