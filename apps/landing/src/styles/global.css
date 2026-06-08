@@ -92,3 +92,9 @@ pre {
   margin: 0 auto 32px;
   font-size: 1.05rem;
 }
+
+#cc-main {
+  --cc-btn-primary-bg: #0ea5e9;
+  --cc-btn-primary-hover-bg: #0284c7;
+  --cc-toggle-on-bg: #0ea5e9;
+}
