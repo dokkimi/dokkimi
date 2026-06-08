@@ -13,69 +13,68 @@ const { title, description = 'The only testing framework that does integration, 
 <!doctype html>
 <html lang="en">
   <head>
-    <!-- Consent Mode v2 defaults — must run before GTM loads -->
-      <script>
-        window.dataLayer = window.dataLayer || [];
-        function gtag() { dataLayer.push(arguments); }
-        gtag('consent', 'default', {
-          analytics_storage:     'denied',
-          ad_storage:            'denied',
-          ad_user_data:          'denied',
-          ad_personalization:    'denied',
-          functionality_storage: 'granted',
-          security_storage:      'granted'
-        });
-      </script>
+    <script is:inline>
+      window.dataLayer = window.dataLayer || [];
+      function gtag() { dataLayer.push(arguments); }
+      gtag('consent', 'default', {
+        analytics_storage:     'denied',
+        ad_storage:            'denied',
+        ad_user_data:          'denied',
+        ad_personalization:    'denied',
+        functionality_storage: 'granted',
+        security_storage:      'granted'
+      });
+    </script>
 
-      <!-- Cookie consent manager -->
-      <link rel="stylesheet" href="/assets/consent-manager/cookieconsent.css" />
-      <script src="/assets/consent-manager/cookieconsent.umd.js"></script>
+    <!-- Cookie consent manager -->
+    <link rel="stylesheet" href="/assets/consent-manager/cookieconsent.css" />
+    <script is:inline src="/assets/consent-manager/cookieconsent.umd.js"></script>
 
-      <!-- Consent manager init -->
-      <script>
-        CookieConsent.run({
-          guiOptions: {
-            consentModal: { layout: 'bar', position: 'bottom' }
-          },
-          categories: {
-            necessary: { enabled: true, readOnly: true },
-            analytics: {
-              autoClear: { cookies: [{ name: /^_ga/ }, { name: '_gid' }] },
-              services: {
-                ga4: {
-                  label: 'Google Analytics',
-                  onAccept: () => gtag('consent', 'update', { analytics_storage: 'granted' }),
-                  onReject: () => gtag('consent', 'update', { analytics_storage: 'denied' })
-                }
-              }
-            }
-          },
-          language: {
-            default: 'en',
-            translations: {
-              en: {
-                consentModal: {
-                  title: 'We use cookies',
-                  description: 'Analytics cookies help us understand how the site is used. No ads, no tracking beyond that.',
-                  acceptAllBtn: 'Accept',
-                  rejectAllBtn: 'Decline',
-                  showPreferencesBtn: 'Manage preferences'
-                },
-                preferencesModal: {
-                  title: 'Cookie preferences',
-                  acceptAllBtn: 'Accept all',
-                  rejectAllBtn: 'Reject all',
-                  savePreferencesBtn: 'Save',
-                  sections: [
-                    { title: 'Essential', description: 'Required for the site to work.', linkedCategory: 'necessary' },
-                    { title: 'Analytics', description: 'Helps us understand traffic and improve the site. Uses Google Analytics.', linkedCategory: 'analytics' }
-                  ]
-                }
+    <!-- Consent manager init -->
+    <script is:inline>
+      CookieConsent.run({
+        guiOptions: {
+          consentModal: { layout: 'bar', position: 'bottom' }
+        },
+        categories: {
+          necessary: { enabled: true, readOnly: true },
+          analytics: {
+            autoClear: { cookies: [{ name: /^_ga/ }, { name: '_gid' }] },
+            services: {
+              ga4: {
+                label: 'Google Analytics',
+                onAccept: () => gtag('consent', 'update', { analytics_storage: 'granted' }),
+                onReject: () => gtag('consent', 'update', { analytics_storage: 'denied' })
               }
             }
           }
-        });
-      </script>
+        },
+        language: {
+          default: 'en',
+          translations: {
+            en: {
+              consentModal: {
+                title: 'We use cookies',
+                description: 'Analytics cookies help us understand how the site is used. No ads, no tracking beyond that.',
+                acceptAllBtn: 'Accept',
+                rejectAllBtn: 'Decline',
+                showPreferencesBtn: 'Manage preferences'
+              },
+              preferencesModal: {
+                title: 'Cookie preferences',
+                acceptAllBtn: 'Accept all',
+                rejectAllBtn: 'Reject all',
+                savePreferencesBtn: 'Save',
+                sections: [
+                  { title: 'Essential', description: 'Required for the site to work.', linkedCategory: 'necessary' },
+                  { title: 'Analytics', description: 'Helps us understand traffic and improve the site. Uses Google Analytics.', linkedCategory: 'analytics' }
+                ]
+              }
+            }
+          }
+        }
+      });
+    </script>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="description" content={description} />

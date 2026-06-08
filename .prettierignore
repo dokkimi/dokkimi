@@ -14,3 +14,4 @@ shared/prisma/migrations/
 yarn.lock
 pnpm-lock.yaml
 package-lock.json
+apps/landing/public/assets/consent-manager/
