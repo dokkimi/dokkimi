@@ -34,6 +34,77 @@ const currentPath = Astro.url.pathname.replace(/\/$/, '') || '/docs';
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
+    <script is:inline>
+      window.dataLayer = window.dataLayer || [];
+      function gtag() { dataLayer.push(arguments); }
+      gtag('consent', 'default', {
+        analytics_storage:     'denied',
+        ad_storage:            'denied',
+        ad_user_data:          'denied',
+        ad_personalization:    'denied',
+        functionality_storage: 'granted',
+        security_storage:      'granted'
+      });
+    </script>
+
+    <!-- Cookie consent manager -->
+    <link rel="stylesheet" href="/assets/consent-manager/cookieconsent.css" />
+    <script is:inline src="/assets/consent-manager/cookieconsent.umd.js"></script>
+
+    <!-- Consent manager init -->
+    <script is:inline>
+      CookieConsent.run({
+        guiOptions: {
+          consentModal: { layout: 'bar', position: 'bottom' }
+        },
+        categories: {
+          necessary: { enabled: true, readOnly: true },
+          analytics: {
+            autoClear: { cookies: [{ name: /^_ga/ }, { name: '_gid' }] },
+            services: {
+              ga4: {
+                label: 'Google Analytics',
+                onAccept: () => gtag('consent', 'update', { analytics_storage: 'granted' }),
+                onReject: () => gtag('consent', 'update', { analytics_storage: 'denied' })
+              }
+            }
+          }
+        },
+        language: {
+          default: 'en',
+          translations: {
+            en: {
+              consentModal: {
+                title: 'We use cookies',
+                description: 'Analytics cookies help us understand how the site is used. No ads, no tracking beyond that.',
+                acceptAllBtn: 'Accept',
+                rejectAllBtn: 'Decline',
+                showPreferencesBtn: 'Manage preferences'
+              },
+              preferencesModal: {
+                title: 'Cookie preferences',
+                acceptAllBtn: 'Accept all',
+                rejectAllBtn: 'Reject all',
+                savePreferencesBtn: 'Save',
+                sections: [
+                  { title: 'Essential', description: 'Required for the site to work.', linkedCategory: 'necessary' },
+                  { title: 'Analytics', description: 'Helps us understand traffic and improve the site. Uses Google Analytics.', linkedCategory: 'analytics' }
+                ]
+              }
+            }
+          }
+        }
+      });
+    </script>
+
+    <!-- Google Tag Manager -->
+    <script is:inline>(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':
+new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],
+j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
+'https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);
+})(window,document,'script','dataLayer','GTM-K9K2L7R4');</script>
+    <!-- End Google Tag Manager -->
+
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="description" content={description} />
     <meta name="generator" content={Astro.generator} />
@@ -41,8 +112,10 @@ const currentPath = Astro.url.pathname.replace(/\/$/, '') || '/docs';
     <meta property="og:title" content={title} />
     <meta property="og:description" content={description} />
     <meta property="og:type" content="website" />
-    <meta property="og:url" content={Astro.url.href} />
+    <meta property="og:url" content={`https://dokkimi.com${Astro.url.pathname}`} />
     <meta property="og:image" content="https://dokkimi.com/og-image.png" />
+
+    <link rel="canonical" href={`https://dokkimi.com${Astro.url.pathname}`} />
 
     <link rel="icon" href="/logo-teal.png" type="image/png" />
     <link rel="preload" href="/logo-teal.png" as="image" />
@@ -54,6 +127,10 @@ const currentPath = Astro.url.pathname.replace(/\/$/, '') || '/docs';
     <title>{title}</title>
   </head>
   <body>
+    <!-- Google Tag Manager (noscript) -->
+    <noscript><iframe src="https://www.googletagmanager.com/ns.html?id=GTM-K9K2L7R4"
+height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
+    <!-- End Google Tag Manager (noscript) -->
     <Nav />
     <div class="docs-layout">
       <button class="sidebar-toggle" aria-label="Toggle docs sidebar">Menu</button>
