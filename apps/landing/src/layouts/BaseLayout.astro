@@ -86,7 +86,7 @@ const { title, description = 'The only testing framework that does integration, 
     <meta property="og:url" content={Astro.url.href} />
     <meta property="og:image" content="https://dokkimi.com/og-image.png" />
 
-    <link rel="canonical" href={Astro.url.href} />
+    <link rel="canonical" href={`https://dokkimi.com${Astro.url.pathname}`} />
 
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content={title} />
