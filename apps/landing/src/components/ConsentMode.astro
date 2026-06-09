@@ -1,0 +1,93 @@
+---
+/**
+ * Consent Mode v2 + cookie banner + GTM loader.
+ *
+ * Single source of truth — imported by EVERY layout so consent/analytics can
+ * never drift between layouts again. Render this in <head>, immediately after
+ * <meta charset>. Render <GtmNoscript /> as the first child of <body>.
+ *
+ * Load order matters and is intentional:
+ *   1. gtag('consent', 'default', ...)  — deny everything before anything loads
+ *   2. cookieconsent.umd.js (sync)      — CMP available before init runs
+ *   3. CookieConsent.run(...)           — applies a returning user's stored
+ *                                         choice (onAccept -> consent update)
+ *                                         BEFORE GTM reads consent state
+ *   4. GTM container                    — fires tags respecting current consent
+ */
+import { GTM_ID } from '../lib/analytics';
+
+const gtmSnippet = `(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':
+new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],
+j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
+'https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);
+})(window,document,'script','dataLayer','${GTM_ID}');`;
+---
+
+<!-- Consent Mode v2 defaults: deny all storage until the user opts in -->
+<script is:inline>
+  window.dataLayer = window.dataLayer || [];
+  function gtag() { dataLayer.push(arguments); }
+  gtag('consent', 'default', {
+    analytics_storage:     'denied',
+    ad_storage:            'denied',
+    ad_user_data:          'denied',
+    ad_personalization:    'denied',
+    functionality_storage: 'granted',
+    security_storage:      'granted',
+    wait_for_update:       500
+  });
+</script>
+
+<!-- Cookie consent manager (self-hosted) -->
+<link rel="stylesheet" href="/assets/consent-manager/cookieconsent.css" />
+<script is:inline src="/assets/consent-manager/cookieconsent.umd.js"></script>
+
+<!-- Consent manager init -->
+<script is:inline>
+  CookieConsent.run({
+    guiOptions: {
+      consentModal: { layout: 'bar', position: 'bottom' }
+    },
+    categories: {
+      necessary: { enabled: true, readOnly: true },
+      analytics: {
+        autoClear: { cookies: [{ name: /^_ga/ }, { name: '_gid' }] },
+        services: {
+          ga4: {
+            label: 'Google Analytics',
+            onAccept: () => gtag('consent', 'update', { analytics_storage: 'granted' }),
+            onReject: () => gtag('consent', 'update', { analytics_storage: 'denied' })
+          }
+        }
+      }
+    },
+    language: {
+      default: 'en',
+      translations: {
+        en: {
+          consentModal: {
+            title: 'We use cookies',
+            description: 'Analytics cookies help us understand how the site is used. No ads, no tracking beyond that.',
+            acceptAllBtn: 'Accept',
+            rejectAllBtn: 'Decline',
+            showPreferencesBtn: 'Manage preferences'
+          },
+          preferencesModal: {
+            title: 'Cookie preferences',
+            acceptAllBtn: 'Accept all',
+            rejectAllBtn: 'Reject all',
+            savePreferencesBtn: 'Save',
+            sections: [
+              { title: 'Essential', description: 'Required for the site to work.', linkedCategory: 'necessary' },
+              { title: 'Analytics', description: 'Helps us understand traffic and improve the site. Uses Google Analytics.', linkedCategory: 'analytics' }
+            ]
+          }
+        }
+      }
+    }
+  });
+</script>
+
+<!-- Google Tag Manager -->
+<script is:inline set:html={gtmSnippet}></script>
+<!-- End Google Tag Manager -->

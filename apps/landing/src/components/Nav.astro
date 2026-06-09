@@ -17,7 +17,7 @@
       <a href="/docs">Docs</a>
       <a href="/tutorials">Tutorials</a>
       <a href="/blog">Blog</a>
-      <a href="https://github.com/dokkimi/dokkimi/discussions">Community</a>
+      <a href="https://github.com/dokkimi/dokkimi/discussions" target="_blank" rel="noopener noreferrer">Community</a>
     </div>
   </div>
 </nav>
@@ -32,11 +32,18 @@
     links?.classList.toggle('open');
   });
 
-  // Close menu when a link is clicked
+  // Close menu when a link is clicked + track nav clicks
   links?.querySelectorAll('a').forEach((link) => {
     link.addEventListener('click', () => {
       toggle?.setAttribute('aria-expanded', 'false');
       links.classList.remove('open');
+      (window as any).dataLayer = (window as any).dataLayer || [];
+      (window as any).dataLayer.push({
+        event: 'nav_click',
+        link_text: link.textContent?.trim(),
+        link_url: link.getAttribute('href'),
+        link_type: link.getAttribute('target') === '_blank' ? 'external' : 'internal',
+      });
     });
   });
 </script>

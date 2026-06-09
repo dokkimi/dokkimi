@@ -232,6 +232,13 @@
     });
 
     if (labelEl) labelEl.textContent = tool.label;
+    const activeBtn = document.querySelector<HTMLButtonElement>(`.tool-btn[data-tool="${toolName}"]`);
+    (window as any).dataLayer = (window as any).dataLayer || [];
+    (window as any).dataLayer.push({
+      event: 'coverage_tool_view',
+      tool_name: toolName,
+      tool_label: activeBtn?.textContent?.trim(),
+    });
   }
 
   buttons.forEach((btn) => {

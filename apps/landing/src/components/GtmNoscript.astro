@@ -1,0 +1,12 @@
+---
+/**
+ * GTM <noscript> fallback. Render as the FIRST child of <body>.
+ * Pairs with <ConsentMode /> in <head>.
+ */
+import { GTM_ID } from '../lib/analytics';
+---
+
+<!-- Google Tag Manager (noscript) -->
+<noscript><iframe src={`https://www.googletagmanager.com/ns.html?id=${GTM_ID}`}
+height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
+<!-- End Google Tag Manager (noscript) -->
