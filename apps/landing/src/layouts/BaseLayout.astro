@@ -13,6 +13,7 @@ const { title, description = 'The only testing framework that does integration, 
 <!doctype html>
 <html lang="en">
   <head>
+    <meta charset="UTF-8" />
     <script is:inline>
       window.dataLayer = window.dataLayer || [];
       function gtag() { dataLayer.push(arguments); }
@@ -75,7 +76,6 @@ const { title, description = 'The only testing framework that does integration, 
         }
       });
     </script>
-    <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="description" content={description} />
     <meta name="generator" content={Astro.generator} />
@@ -83,7 +83,7 @@ const { title, description = 'The only testing framework that does integration, 
     <meta property="og:title" content={title} />
     <meta property="og:description" content={description} />
     <meta property="og:type" content="website" />
-    <meta property="og:url" content={Astro.url.href} />
+    <meta property="og:url" content={`https://dokkimi.com${Astro.url.pathname}`} />
     <meta property="og:image" content="https://dokkimi.com/og-image.png" />
 
     <link rel="canonical" href={`https://dokkimi.com${Astro.url.pathname}`} />
