@@ -149,7 +149,7 @@
       window.dataLayer.push({
         event: 'cta_click',
         cta_label: el.dataset.cta,
-        cta_text: el.textContent.trim(),
+        cta_text: el.textContent?.trim(),
         cta_plan: el.closest('.card')?.querySelector('h3')?.textContent?.trim(),
         cta_destination: el.getAttribute('href'),
       });
