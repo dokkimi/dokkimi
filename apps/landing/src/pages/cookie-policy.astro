@@ -1,0 +1,198 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import Nav from '../components/Nav.astro';
+import Footer from '../components/Footer.astro';
+
+const lastUpdated = '10 June 2026';
+---
+
+<BaseLayout
+  title="Cookie Policy — Dokkimi"
+  description="How Dokkimi uses cookies, what we collect, and how to manage your consent."
+>
+  <Nav />
+  <main class="container policy">
+    <h1>Cookie Policy</h1>
+    <p class="updated">Last updated: {lastUpdated}</p>
+
+    <p>
+      This policy explains how Dokkimi uses cookies and similar technologies on
+      <a href="https://dokkimi.com">dokkimi.com</a>, what each cookie does, and how you
+      can control them. We keep this deliberately simple: we use cookies only for privacy-
+      respecting analytics, and we do not set any analytics cookies until you opt in.
+    </p>
+
+    <h2>What cookies are</h2>
+    <p>
+      Cookies are small text files a website stores in your browser. Some are required for
+      the site to function; others help us understand how the site is used so we can improve
+      it. You are always in control of the optional ones.
+    </p>
+
+    <h2>How we use them</h2>
+    <p>
+      We use one category of optional cookies — <strong>analytics</strong> — provided by
+      Google Analytics 4, loaded through Google Tag Manager. These cookies are set
+      <strong>only after you click “Accept”</strong> on our cookie banner. If you decline, or
+      ignore the banner, no analytics cookies are stored and no analytics data is collected.
+      We do not use advertising cookies, and we do not sell or share your personal
+      information.
+    </p>
+
+    <h2>Cookies we may set</h2>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Cookie</th><th>Category</th><th>Purpose</th><th>Typical duration</th><th>Provider</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>cc_cookie</code></td>
+            <td>Necessary</td>
+            <td>Stores your cookie consent choice so we don’t ask again on every visit.</td>
+            <td>6 months</td>
+            <td>Dokkimi (first-party)</td>
+          </tr>
+          <tr>
+            <td><code>_ga</code></td>
+            <td>Analytics</td>
+            <td>Distinguishes individual visitors to measure site usage.</td>
+            <td>Up to 2 years</td>
+            <td>Google Analytics</td>
+          </tr>
+          <tr>
+            <td><code>_ga_&lt;id&gt;</code></td>
+            <td>Analytics</td>
+            <td>Maintains Google Analytics 4 session state.</td>
+            <td>Up to 2 years</td>
+            <td>Google Analytics</td>
+          </tr>
+          <tr>
+            <td><code>_gid</code></td>
+            <td>Analytics</td>
+            <td>Distinguishes visitors (set by Google Analytics in some configurations).</td>
+            <td>24 hours</td>
+            <td>Google Analytics</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="note">
+      Durations for the Google cookies are set by Google and may change; the values above
+      reflect Google’s published defaults at the time of writing.
+    </p>
+
+    <h2>Third parties</h2>
+    <p>
+      Analytics data is processed by Google as our data processor. For details on how Google
+      uses this data, see
+      <a href="https://policies.google.com/technologies/cookies" target="_blank" rel="noopener noreferrer">Google’s cookie information</a>.
+      We have enabled Consent Mode v2, which means Google’s tags respect your consent choice
+      and do not store analytics cookies or collect analytics data until you opt in.
+    </p>
+
+    <h2>Managing your consent</h2>
+    <p>
+      You can change or withdraw your choice at any time using the button below, or by clearing
+      cookies in your browser settings.
+    </p>
+    <button type="button" class="manage-btn" data-cc="show-preferencesModal">
+      Manage cookie preferences
+    </button>
+
+    <h2>Contact</h2>
+    <p>
+      Questions about this policy? Email
+      <a href="mailto:hello@dokkimi.com">hello@dokkimi.com</a>.
+    </p>
+  </main>
+  <Footer />
+</BaseLayout>
+
+<style>
+  .policy {
+    padding: 140px 0 var(--section-spacing);
+    max-width: 760px;
+  }
+
+  .policy h1 {
+    font-size: 2.4rem;
+    font-weight: 700;
+    letter-spacing: -0.03em;
+    margin-bottom: 8px;
+  }
+
+  .updated {
+    color: var(--color-text-muted);
+    font-size: 0.9rem;
+    margin-bottom: 32px;
+  }
+
+  .policy h2 {
+    font-size: 1.3rem;
+    font-weight: 600;
+    margin: 40px 0 12px;
+  }
+
+  .policy p {
+    color: var(--color-text-muted);
+    margin-bottom: 16px;
+  }
+
+  .policy strong {
+    color: var(--color-text);
+    font-weight: 600;
+  }
+
+  .table-wrap {
+    overflow-x: auto;
+    margin: 8px 0 12px;
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.9rem;
+  }
+
+  th,
+  td {
+    text-align: left;
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--color-border);
+    vertical-align: top;
+  }
+
+  th {
+    color: var(--color-text);
+    font-weight: 600;
+    white-space: nowrap;
+  }
+
+  td {
+    color: var(--color-text-muted);
+  }
+
+  .note {
+    font-size: 0.85rem;
+    color: var(--color-text-muted);
+  }
+
+  .manage-btn {
+    font-family: var(--font-sans);
+    font-size: 0.95rem;
+    font-weight: 500;
+    padding: 12px 24px;
+    border: 1px solid var(--color-primary);
+    border-radius: 8px;
+    background: transparent;
+    color: var(--color-primary-soft);
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+
+  .manage-btn:hover {
+    background: var(--color-primary);
+    color: var(--color-bg);
+  }
+</style>

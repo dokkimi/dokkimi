@@ -20,6 +20,33 @@
   </div>
 </section>
 
+<script is:inline>
+  (function () {
+    var form = document.getElementById('newsletter-form');
+    if (!form) return;
+    form.addEventListener('submit', function (e) {
+      // Intercept so the GA4 event is recorded before the form POSTs to
+      // Buttondown and the page navigates away (avoids the lost-event race).
+      e.preventDefault();
+      var submitted = false;
+      function submitForm() {
+        if (submitted) return;
+        submitted = true;
+        form.submit();
+      }
+      window.dataLayer = window.dataLayer || [];
+      window.dataLayer.push({
+        event: 'newsletter_subscribe',
+        form_location: 'subscribe_section',
+        eventCallback: submitForm, // submit once GTM has fired the tag
+        eventTimeout: 1000,
+      });
+      // Fallback: if GTM is blocked/absent, submit anyway after 1s.
+      setTimeout(submitForm, 1000);
+    });
+  })();
+</script>
+
 <style>
   .subscribe {
     padding: var(--section-spacing) 0;

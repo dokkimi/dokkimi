@@ -211,7 +211,7 @@
   const labelEl = document.querySelector('.coverage-label-text');
   const buttons = document.querySelectorAll<HTMLButtonElement>('.tool-btn');
 
-  function activate(toolName: string) {
+  function activate(toolName: string, track = true) {
     const tool = tools[toolName];
     if (!tool) return;
 
@@ -232,18 +232,23 @@
     });
 
     if (labelEl) labelEl.textContent = tool.label;
-    const activeBtn = document.querySelector<HTMLButtonElement>(`.tool-btn[data-tool="${toolName}"]`);
-    (window as any).dataLayer = (window as any).dataLayer || [];
-    (window as any).dataLayer.push({
-      event: 'coverage_tool_view',
-      tool_name: toolName,
-      tool_label: activeBtn?.textContent?.trim(),
-    });
+
+    // Only record a view for a real user selection — not the initial load below,
+    // which just sets the default diagram state.
+    if (track) {
+      const activeBtn = document.querySelector<HTMLButtonElement>(`.tool-btn[data-tool="${toolName}"]`);
+      (window as any).dataLayer = (window as any).dataLayer || [];
+      (window as any).dataLayer.push({
+        event: 'coverage_tool_view',
+        tool_name: toolName,
+        tool_label: activeBtn?.textContent?.trim(),
+      });
+    }
   }
 
   buttons.forEach((btn) => {
     btn.addEventListener('click', () => activate(btn.dataset.tool!));
   });
 
-  activate('dokkimi');
+  activate('dokkimi', false);
 </script>

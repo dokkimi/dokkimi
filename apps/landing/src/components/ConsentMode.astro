@@ -44,7 +44,13 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
 
 <!-- Consent manager init -->
 <script is:inline>
-  CookieConsent.run({
+  // This component renders in <head>, so the banner can't be injected until the
+  // <body> exists. Defer init to DOMContentLoaded (the library appends the modal
+  // to document.body — running it during head parsing throws "appendChild of null").
+  window.addEventListener('DOMContentLoaded', function () {
+    // Use the library's built-in dark theme so the banner matches the dark site.
+    document.documentElement.classList.add('cc--darkmode');
+    CookieConsent.run({
     guiOptions: {
       consentModal: { layout: 'bar', position: 'bottom' }
     },
@@ -85,8 +91,53 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
         }
       }
     }
+    });
   });
 </script>
+
+<!--
+  Brand theme for the consent banner.
+  vanilla-cookieconsent themes itself through its own --cc-* CSS variables; we map
+  them to the site's design tokens. Scoped to #cc-main (id specificity) so these
+  win over the library's :root and .cc--darkmode defaults regardless of load order.
+-->
+<style is:global>
+  #cc-main {
+    --cc-font-family: var(--font-sans);
+    --cc-bg: var(--color-bg-soft);
+    --cc-primary-color: var(--color-text);
+    --cc-secondary-color: var(--color-text-muted);
+    --cc-link-color: var(--color-primary-soft);
+
+    --cc-btn-primary-bg: var(--color-primary);
+    --cc-btn-primary-color: var(--color-bg);
+    --cc-btn-primary-border-color: var(--color-primary);
+    --cc-btn-primary-hover-bg: var(--color-primary-soft);
+    --cc-btn-primary-hover-color: var(--color-bg);
+    --cc-btn-primary-hover-border-color: var(--color-primary-soft);
+
+    --cc-btn-secondary-bg: var(--color-bg-muted);
+    --cc-btn-secondary-color: var(--color-text);
+    --cc-btn-secondary-border-color: var(--color-border);
+    --cc-btn-secondary-hover-bg: var(--color-border);
+    --cc-btn-secondary-hover-color: var(--color-text);
+
+    --cc-toggle-on-bg: var(--color-primary);
+    --cc-cookie-category-block-bg: var(--color-bg-muted);
+    --cc-cookie-category-block-hover-bg: var(--color-border);
+    --cc-separator-border-color: var(--color-border);
+    --cc-footer-bg: var(--color-bg-soft);
+    --cc-footer-border-color: var(--color-border);
+
+    --cc-btn-border-radius: 8px;
+    --cc-modal-border-radius: 12px;
+  }
+
+  /* Brand accent so the banner reads as a distinct surface, not part of the page. */
+  #cc-main .cm {
+    border-top: 3px solid var(--color-primary);
+  }
+</style>
 
 <!-- Google Tag Manager -->
 <script is:inline set:html={gtmSnippet}></script>
