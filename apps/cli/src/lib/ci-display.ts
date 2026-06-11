@@ -159,41 +159,45 @@ async function printFailureDetails(
     console.log(`           \x1b[31m${inst.errorMessage}\x1b[0m`);
   }
 
-  const [assertions, execLogs] = await Promise.all([
-    fetchJson<AssertionResult[]>(
-      `${ctUrl}/logs/assertion-results/instance/${inst.id}`,
-    ),
-    fetchJson<{ logs: TestExecutionLog[]; total: number }>(
-      `${ctUrl}/logs/test-execution/instance/${inst.id}`,
-    ),
-  ]);
+  try {
+    const [assertions, execLogs] = await Promise.all([
+      fetchJson<AssertionResult[]>(
+        `${ctUrl}/logs/assertion-results/instance/${inst.id}`,
+      ),
+      fetchJson<{ logs: TestExecutionLog[]; total: number }>(
+        `${ctUrl}/logs/test-execution/instance/${inst.id}`,
+      ),
+    ]);
 
-  const failedAssertions = (assertions ?? []).filter(
-    (a) => !a.passed && a.assertionType !== 'skip',
-  );
-  const errorLogs = (execLogs?.logs ?? []).filter(
-    (l) => l.eventType === 'step_error' || l.error,
-  );
+    const failedAssertions = (assertions ?? []).filter(
+      (a) => !a.passed && a.assertionType !== 'skip',
+    );
+    const errorLogs = (execLogs?.logs ?? []).filter(
+      (l) => l.eventType === 'step_error' || l.error,
+    );
 
-  if (failedAssertions.length > 0) {
-    for (const a of failedAssertions) {
-      const loc = a.path ? ` at ${a.path}` : '';
-      const op = a.operator ?? 'equals';
-      console.log(
-        `           \x1b[31m✘\x1b[0m ${a.assertionType}${loc}  \x1b[90m(${op})\x1b[0m`,
-      );
-      console.log(
-        `             expected: \x1b[32m${formatValue(a.expected)}\x1b[0m`,
-      );
-      console.log(
-        `             received: \x1b[31m${formatValue(a.actual)}\x1b[0m`,
-      );
+    if (failedAssertions.length > 0) {
+      for (const a of failedAssertions) {
+        const loc = a.path ? ` at ${a.path}` : '';
+        const op = a.operator ?? 'equals';
+        console.log(
+          `           \x1b[31m✘\x1b[0m ${a.assertionType}${loc}  \x1b[90m(${op})\x1b[0m`,
+        );
+        console.log(
+          `             expected: \x1b[32m${formatValue(a.expected)}\x1b[0m`,
+        );
+        console.log(
+          `             received: \x1b[31m${formatValue(a.actual)}\x1b[0m`,
+        );
+      }
+    } else if (errorLogs.length > 0) {
+      for (const log of errorLogs.slice(0, 5)) {
+        const msg = log.error ?? log.message;
+        console.log(`           \x1b[31m${msg}\x1b[0m`);
+      }
     }
-  } else if (errorLogs.length > 0) {
-    for (const log of errorLogs.slice(0, 5)) {
-      const msg = log.error ?? log.message;
-      console.log(`           \x1b[31m${msg}\x1b[0m`);
-    }
+  } catch {
+    console.log(`           \x1b[90m(could not fetch failure details)\x1b[0m`);
   }
 }
 

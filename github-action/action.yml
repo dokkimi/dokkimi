@@ -65,7 +65,10 @@ runs:
     - name: Dump failed results
       if: failure() && inputs.dump-retention-days != '0'
       shell: bash
-      run: dokkimi dump --failed > /tmp/dokkimi-dump.json 2>/dev/null || true
+      run: |
+        dokkimi dump --failed || true
+        found=$(find "$HOME/.dokkimi/runs" -name dump_failed.json -type f 2>/dev/null | sort | tail -1)
+        [ -n "$found" ] && cp "$found" /tmp/dokkimi-dump.json || echo "no dump file found" > /tmp/dokkimi-dump.json
 
     - name: Upload dump artifact
       if: failure() && inputs.dump-retention-days != '0'
