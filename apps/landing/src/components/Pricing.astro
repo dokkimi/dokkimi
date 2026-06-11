@@ -23,7 +23,7 @@
           <li>CI/CD with the GitHub Action</li>
           <li>CLI + AI agent integration</li>
         </ul>
-        <a href="/docs" class="card-cta" data-cta="get_started">Get started</a>
+        <a href="/docs" class="card-cta" data-cta="get_started" data-plan="Community">Get started</a>
       </div>
       <div class="card featured">
         <div class="card-header">
@@ -37,7 +37,7 @@
           <li>Flaky test detection and regression tracking</li>
           <li>Visual baseline management UI</li>
         </ul>
-        <a href="#subscribe" class="card-cta" data-cta="join_waitlist">Join the waitlist</a>
+        <a href="#subscribe" class="card-cta" data-cta="join_waitlist" data-plan="Dokkimi Cloud">Join the waitlist</a>
       </div>
     </div>
   </div>
@@ -142,17 +142,9 @@
   }
 </style>
 
-<script is:inline>
-  document.querySelectorAll('.card-cta[data-cta]').forEach(function (el) {
-    el.addEventListener('click', function () {
-      window.dataLayer = window.dataLayer || [];
-      window.dataLayer.push({
-        event: 'cta_click',
-        cta_label: el.dataset.cta,
-        cta_text: el.textContent?.trim(),
-        cta_plan: el.closest('.card')?.querySelector('h3')?.textContent?.trim(),
-        cta_destination: el.getAttribute('href'),
-      });
-    });
-  });
-</script>
+<!--
+  cta_click is tracked in GTM via a native click trigger on .card-cta[data-cta].
+  GTM reads data-cta (label), data-plan (which plan), the link text, and the
+  href via Click Element variables - no inline dataLayer push needed.
+-->
+

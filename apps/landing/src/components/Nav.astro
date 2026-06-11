@@ -4,7 +4,7 @@
 
 <nav class="nav">
   <div class="container nav-inner">
-    <a href="/" class="logo"><img src="/logo-teal.png" alt="Dokkimi" class="logo-img" />Dokkimi</a>
+    <a href="/" class="logo"><img src="/logo-teal.png" alt="Dokkimi" class="logo-img" width="476" height="524" />Dokkimi</a>
     <button class="menu-toggle" aria-label="Toggle menu" aria-expanded="false">
       <span class="bar"></span>
       <span class="bar"></span>
@@ -32,18 +32,12 @@
     links?.classList.toggle('open');
   });
 
-  // Close menu when a link is clicked + track nav clicks
+  // Close menu when a link is clicked. (nav_click is tracked in GTM via a
+  // native click trigger - no inline dataLayer push needed.)
   links?.querySelectorAll('a').forEach((link) => {
     link.addEventListener('click', () => {
       toggle?.setAttribute('aria-expanded', 'false');
       links.classList.remove('open');
-      (window as any).dataLayer = (window as any).dataLayer || [];
-      (window as any).dataLayer.push({
-        event: 'nav_click',
-        link_text: link.textContent?.trim(),
-        link_url: link.getAttribute('href'),
-        link_type: link.getAttribute('target') === '_blank' ? 'external' : 'internal',
-      });
     });
   });
 </script>

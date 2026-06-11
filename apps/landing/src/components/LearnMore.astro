@@ -83,15 +83,5 @@
   }
 </style>
 
-<script is:inline>
-  document.querySelectorAll('.link-card').forEach(function (card) {
-    card.addEventListener('click', function () {
-      window.dataLayer = window.dataLayer || [];
-      window.dataLayer.push({
-        event: 'resource_click',
-        resource_name: card.querySelector('strong')?.textContent?.trim(),
-        resource_url: card.getAttribute('href'),
-      });
-    });
-  });
-</script>
+<!-- resource_click is tracked in GTM via a native click trigger on .link-card -->
+
