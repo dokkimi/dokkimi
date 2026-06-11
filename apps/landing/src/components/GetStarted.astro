@@ -116,6 +116,12 @@
         await navigator.clipboard.writeText(text);
         btn.classList.add('copied');
         setTimeout(() => btn.classList.remove('copied'), 1500);
+        window.dataLayer = window.dataLayer || [];
+        window.dataLayer.push({
+          event: 'install_copy',
+          install_method: text.startsWith('brew') ? 'brew' : 'npm',
+          install_command: text,
+        });
       } catch {
         // Clipboard API not available
       }

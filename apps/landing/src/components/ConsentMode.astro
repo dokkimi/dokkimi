@@ -1,0 +1,144 @@
+---
+/**
+ * Consent Mode v2 + cookie banner + GTM loader.
+ *
+ * Single source of truth — imported by EVERY layout so consent/analytics can
+ * never drift between layouts again. Render this in <head>, immediately after
+ * <meta charset>. Render <GtmNoscript /> as the first child of <body>.
+ *
+ * Load order matters and is intentional:
+ *   1. gtag('consent', 'default', ...)  — deny everything before anything loads
+ *   2. cookieconsent.umd.js (sync)      — CMP available before init runs
+ *   3. CookieConsent.run(...)           — applies a returning user's stored
+ *                                         choice (onAccept -> consent update)
+ *                                         BEFORE GTM reads consent state
+ *   4. GTM container                    — fires tags respecting current consent
+ */
+import { GTM_ID } from '../lib/analytics';
+
+const gtmSnippet = `(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':
+new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],
+j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
+'https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);
+})(window,document,'script','dataLayer','${GTM_ID}');`;
+---
+
+<!-- Consent Mode v2 defaults: deny all storage until the user opts in -->
+<script is:inline>
+  window.dataLayer = window.dataLayer || [];
+  function gtag() { dataLayer.push(arguments); }
+  gtag('consent', 'default', {
+    analytics_storage:     'denied',
+    ad_storage:            'denied',
+    ad_user_data:          'denied',
+    ad_personalization:    'denied',
+    functionality_storage: 'granted',
+    security_storage:      'granted',
+    wait_for_update:       500
+  });
+</script>
+
+<!-- Cookie consent manager (self-hosted) -->
+<link rel="stylesheet" href="/assets/consent-manager/cookieconsent.css" />
+<script is:inline src="/assets/consent-manager/cookieconsent.umd.js"></script>
+
+<!-- Consent manager init -->
+<script is:inline>
+  // This component renders in <head>, so the banner can't be injected until the
+  // <body> exists. Defer init to DOMContentLoaded (the library appends the modal
+  // to document.body — running it during head parsing throws "appendChild of null").
+  window.addEventListener('DOMContentLoaded', function () {
+    // Use the library's built-in dark theme so the banner matches the dark site.
+    document.documentElement.classList.add('cc--darkmode');
+    CookieConsent.run({
+    guiOptions: {
+      consentModal: { layout: 'bar', position: 'bottom' }
+    },
+    categories: {
+      necessary: { enabled: true, readOnly: true },
+      analytics: {
+        autoClear: { cookies: [{ name: /^_ga/ }, { name: '_gid' }] },
+        services: {
+          ga4: {
+            label: 'Google Analytics',
+            onAccept: () => gtag('consent', 'update', { analytics_storage: 'granted' }),
+            onReject: () => gtag('consent', 'update', { analytics_storage: 'denied' })
+          }
+        }
+      }
+    },
+    language: {
+      default: 'en',
+      translations: {
+        en: {
+          consentModal: {
+            title: 'We use cookies',
+            description: 'Analytics cookies help us understand how the site is used. No ads, no tracking beyond that.',
+            acceptAllBtn: 'Accept',
+            acceptNecessaryBtn: 'Decline',
+            showPreferencesBtn: 'Manage preferences'
+          },
+          preferencesModal: {
+            title: 'Cookie preferences',
+            acceptAllBtn: 'Accept all',
+            acceptNecessaryBtn: 'Reject all',
+            savePreferencesBtn: 'Save',
+            sections: [
+              { title: 'Essential', description: 'Required for the site to work.', linkedCategory: 'necessary' },
+              { title: 'Analytics', description: 'Helps us understand traffic and improve the site. Uses Google Analytics.', linkedCategory: 'analytics' }
+            ]
+          }
+        }
+      }
+    }
+    });
+  });
+</script>
+
+<!--
+  Brand theme for the consent banner.
+  vanilla-cookieconsent themes itself through its own --cc-* CSS variables; we map
+  them to the site's design tokens. Scoped to #cc-main (id specificity) so these
+  win over the library's :root and .cc--darkmode defaults regardless of load order.
+-->
+<style is:global>
+  #cc-main {
+    --cc-font-family: var(--font-sans);
+    --cc-bg: var(--color-bg-soft);
+    --cc-primary-color: var(--color-text);
+    --cc-secondary-color: var(--color-text-muted);
+    --cc-link-color: var(--color-primary-soft);
+
+    --cc-btn-primary-bg: var(--color-primary);
+    --cc-btn-primary-color: var(--color-bg);
+    --cc-btn-primary-border-color: var(--color-primary);
+    --cc-btn-primary-hover-bg: var(--color-primary-soft);
+    --cc-btn-primary-hover-color: var(--color-bg);
+    --cc-btn-primary-hover-border-color: var(--color-primary-soft);
+
+    --cc-btn-secondary-bg: var(--color-bg-muted);
+    --cc-btn-secondary-color: var(--color-text);
+    --cc-btn-secondary-border-color: var(--color-border);
+    --cc-btn-secondary-hover-bg: var(--color-border);
+    --cc-btn-secondary-hover-color: var(--color-text);
+
+    --cc-toggle-on-bg: var(--color-primary);
+    --cc-cookie-category-block-bg: var(--color-bg-muted);
+    --cc-cookie-category-block-hover-bg: var(--color-border);
+    --cc-separator-border-color: var(--color-border);
+    --cc-footer-bg: var(--color-bg-soft);
+    --cc-footer-border-color: var(--color-border);
+
+    --cc-btn-border-radius: 8px;
+    --cc-modal-border-radius: 12px;
+  }
+
+  /* Brand accent so the banner reads as a distinct surface, not part of the page. */
+  #cc-main .cm {
+    border-top: 3px solid var(--color-primary);
+  }
+</style>
+
+<!-- Google Tag Manager -->
+<script is:inline set:html={gtmSnippet}></script>
+<!-- End Google Tag Manager -->

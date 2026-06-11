@@ -5,7 +5,7 @@
 <footer class="footer">
   <div class="container footer-inner">
     <div class="footer-left">
-      <span class="logo"><img src="/logo-teal.png" alt="Dokkimi" class="footer-logo" />Dokkimi</span>
+      <span class="logo"><img src="/logo-teal.png" alt="Dokkimi" class="footer-logo" width="476" height="524" />Dokkimi</span>
       <p>Integration, E2E, and visual regression testing.</p>
     </div>
     <div class="footer-links">
@@ -41,6 +41,12 @@
   </div>
   <div class="container footer-bottom">
     <p>&copy; {new Date().getFullYear()} Dokkimi LLC. All rights reserved.</p>
+    <div class="footer-legal">
+      <a href="/cookie-policy">Cookie policy</a>
+      <button type="button" class="legal-link" data-cc="show-preferencesModal">
+        Do not sell or share my personal information
+      </button>
+    </div>
   </div>
 </footer>
 
@@ -114,11 +120,42 @@
   .footer-bottom {
     border-top: 1px solid var(--color-border);
     padding-top: 24px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 16px;
+    flex-wrap: wrap;
   }
 
   .footer-bottom p {
     font-size: 0.8rem;
     color: var(--color-text-muted);
+  }
+
+  .footer-legal {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    flex-wrap: wrap;
+  }
+
+  .footer-legal a,
+  .legal-link {
+    font-size: 0.8rem;
+    color: var(--color-text-muted);
+  }
+
+  .legal-link {
+    font-family: var(--font-sans);
+    background: none;
+    border: none;
+    padding: 0;
+    cursor: pointer;
+  }
+
+  .footer-legal a:hover,
+  .legal-link:hover {
+    color: var(--color-text);
   }
 
   @media (max-width: 640px) {

@@ -6,7 +6,8 @@
   "private": true,
   "scripts": {
     "dev": "astro dev",
-    "build": "astro build",
+    "check:analytics": "node scripts/check-analytics-integrity.mjs",
+    "build": "node scripts/check-analytics-integrity.mjs && astro build",
     "preview": "astro preview",
     "astro": "astro"
   },

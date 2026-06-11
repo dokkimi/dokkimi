@@ -4,7 +4,7 @@
 
 <nav class="nav">
   <div class="container nav-inner">
-    <a href="/" class="logo"><img src="/logo-teal.png" alt="Dokkimi" class="logo-img" />Dokkimi</a>
+    <a href="/" class="logo"><img src="/logo-teal.png" alt="Dokkimi" class="logo-img" width="476" height="524" />Dokkimi</a>
     <button class="menu-toggle" aria-label="Toggle menu" aria-expanded="false">
       <span class="bar"></span>
       <span class="bar"></span>
@@ -17,7 +17,7 @@
       <a href="/docs">Docs</a>
       <a href="/tutorials">Tutorials</a>
       <a href="/blog">Blog</a>
-      <a href="https://github.com/dokkimi/dokkimi/discussions">Community</a>
+      <a href="https://github.com/dokkimi/dokkimi/discussions" target="_blank" rel="noopener noreferrer">Community</a>
     </div>
   </div>
 </nav>
@@ -32,7 +32,8 @@
     links?.classList.toggle('open');
   });
 
-  // Close menu when a link is clicked
+  // Close menu when a link is clicked. (nav_click is tracked in GTM via a
+  // native click trigger - no inline dataLayer push needed.)
   links?.querySelectorAll('a').forEach((link) => {
     link.addEventListener('click', () => {
       toggle?.setAttribute('aria-expanded', 'false');
