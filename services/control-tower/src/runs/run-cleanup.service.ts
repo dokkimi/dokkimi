@@ -4,6 +4,7 @@ import { InstanceStatus, RunStatus, NamespaceInstance } from '@prisma/client';
 import { RunStorageService } from '../storage/run-storage.service';
 import { NamespaceLifecycleService } from '../namespace-lifecycle/namespace-lifecycle.service';
 import { DockerRegistryService } from '../namespace-lifecycle/docker/docker-registry.service';
+import { DockerClientService } from '../namespace-lifecycle/docker/docker-client.service';
 import { getMaxRunHistory } from '@dokkimi/config';
 
 @Injectable()
@@ -13,6 +14,7 @@ export class RunCleanupService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly lifecycle: NamespaceLifecycleService,
+    private readonly dockerClient: DockerClientService,
     private readonly runStorage: RunStorageService,
     private readonly registryService: DockerRegistryService,
   ) {}
@@ -110,6 +112,53 @@ export class RunCleanupService {
         `Pruned ${runsToDelete.length} old run(s) for project ${projectPath ?? '(global)'}`,
       );
     }
+  }
+
+  async recoverStaleRuns() {
+    const activeRuns = await this.prisma.run.findMany({
+      where: {
+        status: { in: [RunStatus.PENDING, RunStatus.RUNNING] },
+      },
+      include: { instances: true },
+    });
+
+    for (const run of activeRuns) {
+      const hasLiveInstance = await this.hasLiveContainers(run.instances);
+      if (!hasLiveInstance) {
+        this.logger.warn(
+          `Run ${run.id} is ${run.status} but has no live containers — marking as FAILED`,
+        );
+        await this.stopInstances(run.instances);
+        await this.prisma.run.update({
+          where: { id: run.id },
+          data: {
+            status: RunStatus.FAILED,
+            completedAt: new Date(),
+          },
+        });
+        this.registryService.clearCredentials(run.id);
+      }
+    }
+  }
+
+  private async hasLiveContainers(
+    instances: NamespaceInstance[],
+  ): Promise<boolean> {
+    for (const instance of instances) {
+      if (instance.status === InstanceStatus.PENDING) {
+        return true;
+      }
+      if (
+        instance.status === InstanceStatus.STARTING ||
+        instance.status === InstanceStatus.RUNNING
+      ) {
+        const exists = await this.dockerClient.networkExists(instance.id);
+        if (exists) {
+          return true;
+        }
+      }
+    }
+    return false;
   }
 
   async recoverOrphanedRuns() {

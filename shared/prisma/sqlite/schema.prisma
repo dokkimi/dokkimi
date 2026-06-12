@@ -241,7 +241,7 @@ model TestExecutionLog {
   duration       Int? // Duration in milliseconds (for *_COMPLETED events)
   error          String? // Error message (if network/transport error)
   errorType      String? // Error type (if error occurred)
-  variables      Json     @default(dbgenerated("'{}'")) // Variable state snapshot at this point in execution
+  variables      Json     @default(dbgenerated("'{}'")) // SQLite requires dbgenerated(); PostgreSQL uses @default("{}") — intentional divergence
   timestamp      DateTime @default(now())
 
   // Relations

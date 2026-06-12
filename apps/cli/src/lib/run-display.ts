@@ -44,7 +44,7 @@ export interface RunOnceResult {
 
 const POLL_INTERVAL_MS = 1000;
 const RENDER_INTERVAL_MS = 100;
-const TERMINAL_RUN_STATUSES = ['COMPLETED', 'FAILED'];
+const TERMINAL_RUN_STATUSES = ['COMPLETED', 'FAILED', 'CANCELLED'];
 
 // ---------------------------------------------------------------------------
 // Status polling

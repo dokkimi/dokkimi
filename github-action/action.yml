@@ -55,6 +55,7 @@ runs:
     - name: Run tests
       shell: bash
       env:
+        CONTROL_TOWER_HOST: 0.0.0.0
         DOKKIMI_MAX_CONCURRENT_NAMESPACES: ${{ inputs.max-parallel }}
         DOKKIMI_MAX_BOOTING_NAMESPACES: ${{ inputs.max-booting }}
         DOKKIMI_HTTP_TIMEOUT: ${{ inputs.timeout }}

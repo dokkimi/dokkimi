@@ -2,12 +2,24 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { TestValidationController } from './test-validation.controller';
 import { TestValidationService } from '../test-validation.service';
 import { TestCompletionNotificationDto } from '../dto/test-completion-notification.dto';
+import { PrismaService } from '../../prisma/prisma.service';
+import { RunsService } from '../../runs/runs.service';
 
 describe('TestValidationController', () => {
   let controller: TestValidationController;
 
   const mockService = {
     processTestCompletion: jest.fn(),
+  };
+
+  const mockPrisma = {
+    namespaceInstance: {
+      update: jest.fn().mockResolvedValue({}),
+    },
+  };
+
+  const mockRunsService = {
+    handleValidationComplete: jest.fn().mockResolvedValue(undefined),
   };
 
   beforeEach(async () => {
@@ -17,6 +29,14 @@ describe('TestValidationController', () => {
         {
           provide: TestValidationService,
           useValue: mockService,
+        },
+        {
+          provide: PrismaService,
+          useValue: mockPrisma,
+        },
+        {
+          provide: RunsService,
+          useValue: mockRunsService,
         },
       ],
     }).compile();
@@ -138,14 +158,11 @@ describe('TestValidationController', () => {
       );
     });
 
-    it('should not throw on service error (async processing)', async () => {
-      const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation();
-
+    it('should mark instance failed on service error', async () => {
       mockService.processTestCompletion.mockRejectedValue(
         new Error('Processing error'),
       );
 
-      // Should return 202 immediately, error handled asynchronously
       const result = await controller.handleTestCompletion(dto);
 
       expect(result).toEqual({
@@ -153,15 +170,44 @@ describe('TestValidationController', () => {
         message: 'Test completion notification received',
       });
 
-      // Wait a bit for async error handling
+      // Wait for async error handling
       await new Promise((resolve) => setTimeout(resolve, 10));
 
-      expect(consoleErrorSpy).toHaveBeenCalledWith(
-        'Error processing test completion:',
-        expect.any(Error),
+      expect(mockPrisma.namespaceInstance.update).toHaveBeenCalledWith({
+        where: { id: dto.testRunId },
+        data: {
+          testStatus: 'FAILED',
+          testCompletedAt: expect.any(Date),
+          errorMessage: expect.stringContaining('Processing error'),
+        },
+      });
+
+      expect(mockRunsService.handleValidationComplete).toHaveBeenCalledWith(
+        dto.testRunId,
+        false,
+        'Internal validation error',
+      );
+    });
+
+    it('should not throw if fallback error handling also fails', async () => {
+      mockService.processTestCompletion.mockRejectedValue(
+        new Error('Processing error'),
+      );
+      mockPrisma.namespaceInstance.update.mockRejectedValue(
+        new Error('DB error'),
       );
 
-      consoleErrorSpy.mockRestore();
+      const result = await controller.handleTestCompletion(dto);
+
+      expect(result).toEqual({
+        status: 'accepted',
+        message: 'Test completion notification received',
+      });
+
+      // Wait for async error handling
+      await new Promise((resolve) => setTimeout(resolve, 10));
+
+      expect(mockRunsService.handleValidationComplete).not.toHaveBeenCalled();
     });
   });
 });

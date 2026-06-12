@@ -1400,6 +1400,7 @@ The `dokkimi` CLI manages the full lifecycle: validate definitions, run tests, i
 | `dokkimi version`               | Show version (e.g., `v0.1.0`)                           |
 | `dokkimi status`                | Show service and instance status                        |
 | `dokkimi doctor`                | Run environment pre-flight checks                       |
+| `dokkimi stop`                  | Stop the current test run                               |
 | `dokkimi clean`                 | Stop all instances and clean up resources               |
 | `dokkimi config`                | View and edit Dokkimi settings (concurrency, telemetry) |
 

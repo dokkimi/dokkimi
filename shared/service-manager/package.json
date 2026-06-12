@@ -1,6 +1,6 @@
 {
   "name": "@dokkimi/service-manager",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "license": "Elastic-2.0",
   "description": "Daemon lifecycle manager for Dokkimi backend services",
   "main": "dist/index.js",

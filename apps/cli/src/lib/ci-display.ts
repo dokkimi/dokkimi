@@ -17,7 +17,7 @@ const TERMINAL_INSTANCE_STATUSES = new Set([
   'SKIPPED',
 ]);
 
-const TERMINAL_RUN_STATUSES = ['COMPLETED', 'FAILED'];
+const TERMINAL_RUN_STATUSES = ['COMPLETED', 'FAILED', 'CANCELLED'];
 
 export async function pollForCompletionCI(
   ctUrl: string,

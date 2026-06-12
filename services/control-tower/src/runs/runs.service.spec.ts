@@ -57,6 +57,7 @@ describe('RunsService', () => {
   const mockCleanup = {
     stopInstances: jest.fn().mockResolvedValue(undefined),
     prepareForNewRun: jest.fn().mockResolvedValue(undefined),
+    recoverStaleRuns: jest.fn().mockResolvedValue(undefined),
     recoverOrphanedRuns: jest.fn().mockResolvedValue(undefined),
   };
 
@@ -137,6 +138,7 @@ describe('RunsService', () => {
     });
 
     it('should throw ConflictException if a run is already active', async () => {
+      mockCleanup.recoverStaleRuns.mockResolvedValue(undefined);
       mockPrisma.run.findFirst.mockResolvedValue({ id: 'active-run' });
 
       await expect(service.createRun(['api-tests'])).rejects.toThrow(

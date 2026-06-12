@@ -11,6 +11,7 @@ import { registerDumpResults } from './tools/dump-results';
 import { registerDoctor } from './tools/doctor';
 import { registerStatus } from './tools/status';
 import { registerClean } from './tools/clean';
+import { registerStop } from './tools/stop';
 import { registerReboot } from './tools/reboot';
 import { registerGetConfig, registerSetConfig } from './tools/config';
 import { registerSendFeedback } from './tools/send-feedback';
@@ -47,6 +48,7 @@ export function createServer(): McpServer {
   registerDoctor(server);
   registerStatus(server);
   registerClean(server);
+  registerStop(server);
   registerReboot(server);
   registerGetConfig(server);
   registerSetConfig(server);

@@ -8,6 +8,7 @@ import { inspect } from '../commands/inspect';
 import { status } from '../commands/status';
 import { doctor } from '../commands/doctor';
 import { clean } from '../commands/clean';
+import { stop } from '../commands/stop';
 import { dump } from '../commands/dump';
 import { baselines } from '../commands/baselines';
 import { shutdown } from '../commands/shutdown';
@@ -30,6 +31,7 @@ Commands:
   validate [path]       Validate definition files without running
   status                Show service and instance status
   doctor                Run environment pre-flight checks
+  stop                  Stop the current test run
   clean                 Stop all instances and clean up resources
   run [path]            Run definition(s) headless and stream results
   inspect [path]        Inspect traffic logs from the last run
@@ -96,6 +98,9 @@ async function main() {
         break;
       case 'doctor':
         await doctor(commandArgs);
+        break;
+      case 'stop':
+        await stop(commandArgs);
         break;
       case 'clean':
         await clean(commandArgs);

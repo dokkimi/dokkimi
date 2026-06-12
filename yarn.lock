@@ -928,9 +928,12 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "@dokkimi/config@workspace:shared/config"
   dependencies:
+    "@types/jest": "npm:^30.0.0"
     "@types/js-yaml": "npm:^4.0.9"
     "@types/node": "npm:^25.6.2"
+    jest: "npm:^30.4.1"
     js-yaml: "npm:^4.1.1"
+    ts-jest: "npm:^29.4.9"
     typescript: "npm:^6.0.3"
   languageName: unknown
   linkType: soft
