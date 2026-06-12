@@ -8,7 +8,7 @@ describe('LogProcessorController', () => {
   };
 
   const mockConsoleLogProcessor: any = {
-    processFromFluentBit: jest.fn().mockResolvedValue(undefined),
+    processRawLogs: jest.fn().mockResolvedValue(undefined),
   };
 
   const mockDatabaseLogProcessor: any = {
@@ -54,7 +54,7 @@ describe('LogProcessorController', () => {
 
       const result = await controller.receiveConsoleLog(message as any);
 
-      expect(mockConsoleLogProcessor.processFromFluentBit).toHaveBeenCalledWith(
+      expect(mockConsoleLogProcessor.processRawLogs).toHaveBeenCalledWith(
         message,
       );
       expect(result).toEqual({ received: true });
@@ -68,7 +68,7 @@ describe('LogProcessorController', () => {
 
       const result = await controller.receiveConsoleLog(messages as any);
 
-      expect(mockConsoleLogProcessor.processFromFluentBit).toHaveBeenCalledWith(
+      expect(mockConsoleLogProcessor.processRawLogs).toHaveBeenCalledWith(
         messages,
       );
       expect(result).toEqual({ received: true });

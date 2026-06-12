@@ -43,6 +43,10 @@ jobs:
       - uses: actions/setup-go@v6
         with:
           go-version: '1.26'
+          cache-dependency-path: |
+            services/interceptor/go.sum
+            services/test-agent/go.sum
+            services/db-proxy/postgres/go.sum
 
       - name: Go format check
         run: test -z "$(gofmt -l services/)"
@@ -70,6 +74,10 @@ jobs:
       - uses: actions/setup-go@v6
         with:
           go-version: '1.26'
+          cache-dependency-path: |
+            services/interceptor/go.sum
+            services/test-agent/go.sum
+            services/db-proxy/postgres/go.sum
 
       - name: Install dependencies
         run: yarn install --immutable
@@ -194,7 +202,7 @@ jobs:
 
       - name: Upload dump artifact
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: dokkimi-failed-dump
           path: /tmp/dokkimi-dump.json

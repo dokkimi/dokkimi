@@ -12,7 +12,7 @@ import { ConsoleLogProcessorService } from '../processors/console-log-processor.
 import { DatabaseLogProcessorService } from '../processors/database-log-processor.service';
 import { TestExecutionLogProcessorService } from '../processors/test-execution-log-processor.service';
 import { HttpLogMessageDto } from '../dto/http-log-message.dto';
-import { FluentBitLogMessageDto } from '../dto/fluentbit-log-message.dto';
+import { RawConsoleLogDto } from '../dto/raw-console-log.dto';
 import { DatabaseLogMessageDto } from '../dto/database-log-message.dto';
 import { TestExecutionLogMessageDto } from '../dto/test-execution-log-message.dto';
 
@@ -84,9 +84,9 @@ export class LogProcessorController implements OnModuleInit, OnModuleDestroy {
 
   @Post('console')
   async receiveConsoleLog(
-    @Body() message: FluentBitLogMessageDto | FluentBitLogMessageDto[],
+    @Body() message: RawConsoleLogDto | RawConsoleLogDto[],
   ) {
-    await this.consoleLogProcessor.processFromFluentBit(message);
+    await this.consoleLogProcessor.processRawLogs(message);
     this.consoleLogCount += Array.isArray(message) ? message.length : 1;
     return { received: true };
   }

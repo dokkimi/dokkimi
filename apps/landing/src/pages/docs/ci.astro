@@ -27,7 +27,7 @@ jobs:
         with:
           tests: .dokkimi/`} lang="yaml" />
 
-  <p>That's it. The action installs the Dokkimi CLI, pulls sidecar images, and runs your tests. Results stream to the GitHub Actions log.</p>
+  <p>That's it. The action installs the Dokkimi CLI, pulls sidecar images, runs your tests, and uploads a dump artifact on failure. Results stream to the GitHub Actions log.</p>
 
   <h3>Configuration</h3>
   <p>Override defaults with <code>with:</code> inputs — no config files needed:</p>
@@ -52,8 +52,8 @@ jobs:
       <tr><td><code>timeout</code></td><td><code>30000</code></td><td>HTTP request timeout in milliseconds</td></tr>
       <tr><td><code>viewport-width</code></td><td><code>1280</code></td><td>Default browser viewport width for UI tests</td></tr>
       <tr><td><code>viewport-height</code></td><td><code>720</code></td><td>Default browser viewport height for UI tests</td></tr>
+      <tr><td><code>dump-retention-days</code></td><td><code>1</code></td><td>Days to retain the failed-run dump artifact (0 to disable)</td></tr>
       <tr><td><code>dokkimi-version</code></td><td><code>latest</code></td><td>Dokkimi CLI version to install</td></tr>
-      <tr><td><code>timeout-minutes</code></td><td><code>15</code></td><td>Overall job timeout</td></tr>
     </tbody>
   </table>
 
@@ -105,17 +105,12 @@ jobs:
 
   <CodeBlock code={`docker build -t my-app:latest .`} lang="bash" />
 
-  <h3>Step 3: Pre-pull external images</h3>
-  <p>Dokkimi sidecars depend on a few external images. Pre-pulling them avoids timeouts during test runs:</p>
-
-  <CodeBlock code={`docker pull busybox:1.37
-docker pull fluent/fluent-bit:3.2
-docker pull andyshinn/dnsmasq:2.83`} lang="bash" />
-
-  <h3>Step 4: Run tests</h3>
+  <h3>Step 3: Run tests</h3>
   <p>The <code>--ci</code> flag enables CI-optimized output (no spinners, no interactive prompts):</p>
 
   <CodeBlock code="dokkimi run .dokkimi/ --ci" lang="bash" />
+
+  <p>The CLI automatically pulls any sidecar images it needs (interceptor, test-agent, dnsmasq, etc.) on first run. To speed up repeated runs, you can pre-pull them — see <a href="#pre-pull-images">Pre-pull sidecar images</a> below.</p>
 
   <h3>Environment variable overrides</h3>
   <p>Dokkimi reads these environment variables to override default configuration. Set them before running <code>dokkimi run</code>:</p>
@@ -153,21 +148,15 @@ jobs:
         with:
           node-version: 22
 
-      - name: Build service images
-        run: |
-          docker build -t api-gateway:latest -f services/api/Dockerfile .
-          docker build -t web-app:latest -f apps/web/Dockerfile .
-
       - name: Free disk space
         run: |
           sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/share/powershell
           docker builder prune -af
 
-      - name: Pull external images
+      - name: Build service images
         run: |
-          docker pull busybox:1.37
-          docker pull fluent/fluent-bit:3.2
-          docker pull andyshinn/dnsmasq:2.83
+          docker build -t api-gateway:latest -f services/api/Dockerfile .
+          docker build -t web-app:latest -f apps/web/Dockerfile .
 
       - name: Install Dokkimi
         run: npm install -g dokkimi
@@ -175,6 +164,17 @@ jobs:
       - name: Run tests
         timeout-minutes: 15
         run: dokkimi run .dokkimi/ --ci
+
+      - name: Export failures
+        if: failure()
+        run: dokkimi dump --failed -o test-failures.json || true
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: test-failures
+          path: test-failures.json
+          retention-days: 1
 
       - name: Cleanup
         if: always()
@@ -192,11 +192,10 @@ jobs:
     DOKKIMI_MAX_CONCURRENT_NAMESPACES: "3"
     DOKKIMI_MAX_BOOTING_NAMESPACES: "1"
   before_script:
-    - docker build -t my-app:latest .
     - sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc || true
     - docker builder prune -af
+    - docker build -t my-app:latest .
   script:
-    - docker pull busybox:1.37 && docker pull fluent/fluent-bit:3.2 && docker pull andyshinn/dnsmasq:2.83
     - npm install -g dokkimi
     - dokkimi run .dokkimi/ --ci
   after_script:
@@ -246,8 +245,17 @@ jobs:
     sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/share/powershell
     docker builder prune -af`} lang="yaml" />
 
+  <h3 id="pre-pull-images">Pre-pull sidecar images</h3>
+  <p>The CLI pulls sidecar images automatically, but pre-pulling avoids delays during the first test run. Add this step before <code>dokkimi run</code>:</p>
+  <CodeBlock code={`- name: Pre-pull sidecar images
+  run: |
+    docker pull andyshinn/dnsmasq:2.83
+    docker pull ghcr.io/dokkimi/interceptor:latest
+    docker pull ghcr.io/dokkimi/test-agent:latest`} lang="bash" />
+  <p>Only <code>dnsmasq</code>, <code>interceptor</code>, and <code>test-agent</code> are needed for every run. DB proxy images (<code>db-proxy-postgres</code>, <code>db-proxy-mysql</code>, etc.) are only needed if your definitions include databases.</p>
+
   <h3>UI test viewport</h3>
-  <p>Dokkimi sets a default browser viewport of 1280×720 for UI tests. Override it globally via environment variables, or per-test with the <code>viewport</code> sub-step:</p>
+  <p>Dokkimi sets a default browser viewport of 1280x720 for UI tests. Override it globally via environment variables, or per-test with the <code>viewport</code> sub-step:</p>
   <CodeBlock code={`# Override the global default
 steps:
   - visit: /

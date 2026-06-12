@@ -2,7 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConsoleLogMessage } from '../../types/messages';
 import { StorageService } from '../storage.service';
 import { NamespaceValidationService } from '../namespace-validation/namespace-validation.service';
-import { FluentBitLogMessageDto } from '../dto/fluentbit-log-message.dto';
+import { RawConsoleLogDto } from '../dto/raw-console-log.dto';
 
 @Injectable()
 export class ConsoleLogProcessorService {
@@ -14,11 +14,11 @@ export class ConsoleLogProcessorService {
   ) {}
 
   /**
-   * Processes console logs from Fluent Bit
-   * Fluent Bit sends: { log, stream, time, instanceId, instanceItemId } or array of these
+   * Processes raw console log messages from container stdout/stderr.
+   * Accepts: { log, stream, time, instanceId, instanceItemId } or array of these
    */
-  async processFromFluentBit(
-    message: FluentBitLogMessageDto | FluentBitLogMessageDto[],
+  async processRawLogs(
+    message: RawConsoleLogDto | RawConsoleLogDto[],
   ): Promise<void> {
     const messages = Array.isArray(message) ? message : [message];
 
@@ -50,7 +50,7 @@ export class ConsoleLogProcessorService {
         await this.process(consoleLog, consoleLog.instanceId);
       } catch (error) {
         this.logger.error(
-          `Error processing Fluent Bit log: ${JSON.stringify(msg)}`,
+          `Error processing console log: ${JSON.stringify(msg)}`,
           error,
         );
         // Continue processing other messages
@@ -93,7 +93,7 @@ export class ConsoleLogProcessorService {
       return { message: '' };
     }
 
-    // First, check if it's JSON-wrapped (common Fluent Bit output format)
+    // First, check if it's JSON-wrapped
     // Format: {"log":"actual message\n","stream":"stdout","time":"2026-01-25T20:40:53.405954346Z"}
     if (line.startsWith('{')) {
       try {

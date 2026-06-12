@@ -166,7 +166,7 @@ Every user service gets two sidecars:
 1. **Sidecar Interceptor** — sits between the service and all outbound HTTP. Captures request/response pairs, POSTs them to Control Tower's `log-processing` module, and can serve mock responses based on config file rules.
 2. **DNSMasq** — rewrites DNS so service-to-service calls route through the interceptor. Joins the user container's network namespace.
 
-Console logs are collected via the Docker API (log streaming), replacing the previous Fluent Bit sidecar approach.
+Console logs are collected via the Docker API (log streaming).
 
 Databases additionally get a **DB Proxy** sidecar — a transparent wire protocol proxy that sits between the application and the database. Client connections hit the proxy port, which forwards traffic to the real database while parsing the native wire protocol (MongoDB OP_MSG, PostgreSQL frontend/backend messages, MySQL packet protocol, Redis RESP) to extract queries and results for logging. The proxy also runs adaptive health checks (1.5s polling while booting, 20s once healthy) and reports readiness to Control Tower. MongoDB uses a sentinel document written by the final init script to ensure health checks don't pass before database initialization completes.
 

@@ -1,5 +1,5 @@
 # Build context: repo root (docker build -f services/control-tower/Dockerfile .)
-FROM node:20-alpine AS builder
+FROM node:22-alpine AS builder
 
 WORKDIR /app
 
@@ -45,7 +45,7 @@ RUN yarn workspace @dokkimi/config build && \
     yarn workspace control-tower build
 
 # Production stage
-FROM node:20-alpine
+FROM node:22-alpine
 
 ARG VERSION=dev
 ENV APP_VERSION=${VERSION}

@@ -4,6 +4,19 @@
 
 Dokkimi spins up isolated Docker environments from simple YAML/JSON definitions. It deploys your services, databases, and mocks into dedicated networks, drives a real browser through your UI, intercepts all inter-service HTTP traffic, and runs automated test suites that assert on responses, traffic patterns, database state, and screenshots.
 
+## Built for AI-Assisted Development
+
+Dokkimi ships with a built-in [MCP server](https://modelcontextprotocol.io/) that gives your AI coding agent full access to the testing workflow. On first run, the MCP server auto-registers with Claude Code, Cursor, and GitHub Copilot — no manual configuration needed.
+
+Your AI agent can:
+
+- **Write and validate definitions** — look up the spec with `get_reference`, scaffold with `init`, validate with `validate_file`, list shared fragments with `list_fragments`
+- **Run and monitor tests** — `run_tests` to execute, `watch_run` for live status, `get_run_summary` for results
+- **Debug failures** — `get_failures` for what broke, `get_traffic` / `get_console_logs` / `get_db_logs` for the raw data, `diagnose` for automated root-cause analysis, `diff_traffic` to compare runs
+- **Manage the environment** — `status`, `doctor`, `clean`, `reboot`, `get_config` / `set_config`
+
+Ask your AI to "write a test definition for the checkout flow" or paste a `dokkimi dump` into your conversation and it just works.
+
 ## Why Dokkimi?
 
 Testing microservices is hard. Unit tests mock away the interesting parts. Integration tests are flaky and slow to set up. Staging environments drift from reality.
@@ -36,7 +49,7 @@ yarn add -D dokkimi
 
 ## Prerequisites
 
-- Node.js 20+
+- Node.js 22+
 - Docker
 
 Run `dokkimi doctor` after installing to verify your setup.
@@ -144,6 +157,7 @@ Image tags and other values can be centralized in `.dokkimi/config.yaml` using `
 | `dokkimi baselines`         | Review and approve pending visual baselines       |
 | `dokkimi dump`              | Export last run as JSON for AI-assisted debugging |
 | `dokkimi doctor`            | Check prerequisites and system health             |
+| `dokkimi mcp`               | Start the MCP server (auto-registered on install) |
 | `dokkimi status`            | Show whether Dokkimi is running                   |
 | `dokkimi clean`             | Stop all instances and clean up resources         |
 | `dokkimi config`            | View and edit Dokkimi settings                    |
@@ -152,15 +166,6 @@ Image tags and other values can be centralized in `.dokkimi/config.yaml` using `
 | `dokkimi version`           | Show installed version                            |
 
 The `[target]` argument is flexible — pass a directory, a specific file, a glob pattern, or a substring to match definition names.
-
-## Built for AI-Assisted Development
-
-Dokkimi definitions are designed for coding agents. Let Claude, Cursor, or Copilot write and debug your tests.
-
-- **Auto-registers with your AI tools** — on first run, Dokkimi installs context into Claude Code, Cursor, and GitHub Copilot so your AI assistant understands the `.dokkimi/` definition format.
-- **AI-readable definition format** — YAML/JSON definitions are structured data that LLMs can read, generate, and modify accurately. Ask your AI to "write a test definition for the checkout flow" and it just works.
-- **`dokkimi dump`** — exports a complete JSON snapshot of your last run (traffic logs, test results, assertions, errors) formatted for LLM context. Paste it into your AI tool to debug failures without manually digging through logs.
-- **1,000+ line reference spec** — the full definition reference (`dokkimi-instructions.md`) is automatically available to your AI agent, covering every field, type, and pattern.
 
 ## Documentation
 

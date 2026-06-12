@@ -8,7 +8,6 @@ const mockConfigMapBuilder = {
     data: {
       urlMap: '{}',
       httpMocks: '[]',
-      'fluent-bit.conf': '[SERVICE]',
       podNameToNamespaceItemId: '{}',
     },
   }),
