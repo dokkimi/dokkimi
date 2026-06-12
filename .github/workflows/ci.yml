@@ -123,6 +123,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: build-and-test
     env:
+      CONTROL_TOWER_HOST: 0.0.0.0
       DOKKIMI_MAX_CONCURRENT_NAMESPACES: 4
       DOKKIMI_MAX_BOOTING_NAMESPACES: 2
     steps:
