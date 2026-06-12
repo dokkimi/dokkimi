@@ -1,4 +1,4 @@
-import { DokkimiConfig, buildServiceUrl } from './config.types';
+import { DokkimiConfig, buildClusterServiceUrl } from './config.types';
 import {
   InterceptorEnvVars,
   TestAgentEnvVars,
@@ -49,7 +49,7 @@ export function buildInterceptorEnvVars(
   // TypeScript enforces all required fields are present!
   const envVars: InterceptorEnvVars = {
     PORT: config.services.interceptor.port.toString(),
-    CONTROL_TOWER_URL: buildServiceUrl(config.services.controlTower, true),
+    CONTROL_TOWER_URL: buildClusterServiceUrl(config.services.controlTower),
     NAMESPACE: runtimeConfig.namespace,
     API_KEY: runtimeConfig.apiKey,
     DNS_IP: runtimeConfig.dnsIP,
@@ -90,7 +90,7 @@ export function buildTestAgentEnvVars(
 
   const envVars: TestAgentEnvVars = {
     PORT: config.services.testAgent.port.toString(),
-    CONTROL_TOWER_URL: buildServiceUrl(config.services.controlTower, true),
+    CONTROL_TOWER_URL: buildClusterServiceUrl(config.services.controlTower),
     CONFIG_MAP_NAME: 'dokkimi-interceptor-config',
     BROWSER_URL: runtimeConfig.browserURL,
     DEFAULT_VIEWPORT_WIDTH: runtimeConfig.defaultViewportWidth?.toString(),
@@ -152,7 +152,7 @@ export function buildDbProxyEnvVars(
     DATABASE_PORT: runtimeConfig.databasePort,
     INSTANCE_ITEM_NAME: runtimeConfig.instanceItemName,
     NAMESPACE: runtimeConfig.namespace,
-    CONTROL_TOWER_URL: buildServiceUrl(config.services.controlTower, true),
+    CONTROL_TOWER_URL: buildClusterServiceUrl(config.services.controlTower),
     NAMESPACE_ITEM_ID: runtimeConfig.namespaceItemId,
     TEST_AGENT_URL: runtimeConfig.testAgentUrl,
     QUERY_PORT: queryPort,

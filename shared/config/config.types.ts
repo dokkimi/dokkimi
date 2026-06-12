@@ -83,23 +83,16 @@ interface ServiceConfig {
   port: number;
 }
 
-/**
- * Build URL from service configuration
- * @param service - Service configuration
- * @param forCluster - If true, use host.docker.internal instead of the config host (for containers)
- */
-export function buildServiceUrl(
-  service: ServiceConfig,
-  forCluster: boolean = false,
-): string {
-  let host: string;
-  if (forCluster) {
-    const isLocalhost =
-      service.host === 'localhost' || service.host === '127.0.0.1';
-    host = isLocalhost ? 'host.docker.internal' : service.host;
-  } else {
-    host = service.host;
-  }
+export function buildServiceUrl(service: ServiceConfig): string {
+  return `${service.protocol}://${service.host}:${service.port}`;
+}
+
+export function buildClusterServiceUrl(service: ServiceConfig): string {
+  const isLocal =
+    service.host === 'localhost' ||
+    service.host === '127.0.0.1' ||
+    service.host === '0.0.0.0';
+  const host = isLocal ? 'host.docker.internal' : service.host;
   return `${service.protocol}://${host}:${service.port}`;
 }
 
