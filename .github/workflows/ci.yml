@@ -20,6 +20,7 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: 22
+          cache: yarn
 
       - name: Enable Corepack (Yarn 4)
         run: corepack enable
@@ -42,7 +43,6 @@ jobs:
       - uses: actions/setup-go@v6
         with:
           go-version: '1.26'
-          cache: false
 
       - name: Go format check
         run: test -z "$(gofmt -l services/)"
@@ -62,6 +62,7 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: 22
+          cache: yarn
 
       - name: Enable Corepack (Yarn 4)
         run: corepack enable
@@ -69,7 +70,6 @@ jobs:
       - uses: actions/setup-go@v6
         with:
           go-version: '1.26'
-          cache: false
 
       - name: Install dependencies
         run: yarn install --immutable
@@ -123,6 +123,7 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: 22
+          cache: yarn
 
       - name: Enable Corepack (Yarn 4)
         run: corepack enable
@@ -139,18 +140,16 @@ jobs:
       - name: Build Docker images
         run: |
           docker build -t dokkimi/control-tower:latest \
-            -f services/control-tower/Dockerfile .
-
+            -f services/control-tower/Dockerfile . &
           docker build -t ghcr.io/dokkimi/interceptor:latest \
-            -f services/interceptor/Dockerfile services/interceptor
-
+            -f services/interceptor/Dockerfile services/interceptor &
           docker build -t ghcr.io/dokkimi/test-agent:latest \
-            -f services/test-agent/Dockerfile services/test-agent
-
+            -f services/test-agent/Dockerfile services/test-agent &
           for db in postgres mysql mongo redis; do
             docker build -t ghcr.io/dokkimi/db-proxy-${db}:latest \
-              -f services/db-proxy/${db}/Dockerfile services/db-proxy
+              -f services/db-proxy/${db}/Dockerfile services/db-proxy &
           done
+          wait
 
       - name: Free disk space
         run: |

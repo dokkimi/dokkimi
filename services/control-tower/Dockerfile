@@ -31,22 +31,18 @@ RUN yarn install --immutable
 # src/lib/prisma imports @prisma/client)
 RUN npx prisma generate --schema=shared/prisma/postgresql/schema.prisma
 
-# Copy shared source and build
+# Copy shared source and service source, then build all
 COPY shared/config/ shared/config/
-RUN yarn workspace @dokkimi/config build
-
 COPY shared/platform/ shared/platform/
-RUN yarn workspace @dokkimi/platform build
-
 COPY shared/telemetry/ shared/telemetry/
-RUN yarn workspace @dokkimi/telemetry build
-
 COPY shared/definition-validator/ shared/definition-validator/
-RUN yarn workspace @dokkimi/definition-validator build
-
-# Copy service source and build
 COPY services/control-tower/ services/control-tower/
-RUN yarn workspace control-tower build
+
+RUN yarn workspace @dokkimi/config build && \
+    yarn workspace @dokkimi/platform build && \
+    yarn workspace @dokkimi/telemetry build && \
+    yarn workspace @dokkimi/definition-validator build && \
+    yarn workspace control-tower build
 
 # Production stage
 FROM node:20-alpine
