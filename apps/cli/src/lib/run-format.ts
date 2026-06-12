@@ -148,7 +148,9 @@ export function printSummary(
   }
   const stats = `\x1b[90m(${statParts.join(', ')})\x1b[0m`;
 
-  if (failed === 0) {
+  if (status.status === 'CANCELLED') {
+    console.log(`\x1b[33mRun cancelled.\x1b[0m  ${stats}`);
+  } else if (failed === 0) {
     console.log(
       `\x1b[32m${ran} of ${ran} definition${ran === 1 ? '' : 's'} passed.\x1b[0m  ${stats}`,
     );

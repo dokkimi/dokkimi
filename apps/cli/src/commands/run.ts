@@ -154,7 +154,9 @@ export async function run(args: string[]): Promise<void> {
     try {
       await inFlight;
     } catch {}
-    await fetchAction(`${ctUrl}/runs/stop`, 'POST').catch(() => {});
+    if (lastResult?.runId) {
+      await fetchAction(`${ctUrl}/runs/stop`, 'POST').catch(() => {});
+    }
     if (process.stdin.isTTY) {
       process.stdin.setRawMode(false);
     }
@@ -469,7 +471,9 @@ export async function run(args: string[]): Promise<void> {
 
   // CI mode: exit immediately with appropriate code
   if (ciMode) {
-    await fetchAction(`${ctUrl}/runs/stop`, 'POST');
+    if ((lastResult as RunOnceResult | null)?.runId) {
+      await fetchAction(`${ctUrl}/runs/stop`, 'POST');
+    }
     process.exit((lastResult as RunOnceResult | null)?.passed ? 0 : 1);
   }
 
@@ -480,7 +484,9 @@ export async function run(args: string[]): Promise<void> {
 
   // Non-TTY without watch: exit immediately with appropriate code
   if (!process.stdout.isTTY && !watchMode) {
-    await fetchAction(`${ctUrl}/runs/stop`, 'POST');
+    if ((lastResult as RunOnceResult | null)?.runId) {
+      await fetchAction(`${ctUrl}/runs/stop`, 'POST');
+    }
     process.exit((lastResult as RunOnceResult | null)?.passed ? 0 : 1);
   }
 

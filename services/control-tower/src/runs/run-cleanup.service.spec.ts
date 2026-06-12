@@ -30,6 +30,10 @@ describe('RunCleanupService', () => {
     deleteRunDir: jest.fn().mockResolvedValue(undefined),
   };
 
+  const mockDockerClient: any = {
+    networkExists: jest.fn().mockResolvedValue(false),
+  };
+
   const mockRegistryService: any = {
     clearCredentials: jest.fn(),
   };
@@ -38,6 +42,7 @@ describe('RunCleanupService', () => {
     service = new RunCleanupService(
       mockPrisma,
       mockLifecycle,
+      mockDockerClient,
       mockRunStorage,
       mockRegistryService,
     );
@@ -227,6 +232,87 @@ describe('RunCleanupService', () => {
       await service.prepareForNewRun('/my/project');
 
       expect(mockPrisma.run.delete).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('recoverStaleRuns', () => {
+    it('marks runs as FAILED when no live containers exist', async () => {
+      mockPrisma.run.findMany.mockResolvedValue([
+        {
+          id: 'stale-run',
+          status: RunStatus.RUNNING,
+          instances: [{ id: 'inst-1', status: InstanceStatus.STOPPED }],
+        },
+      ]);
+
+      await service.recoverStaleRuns();
+
+      expect(mockPrisma.run.update).toHaveBeenCalledWith({
+        where: { id: 'stale-run' },
+        data: {
+          status: RunStatus.FAILED,
+          completedAt: expect.any(Date),
+        },
+      });
+    });
+
+    it('leaves runs alone when instances are still PENDING', async () => {
+      mockPrisma.run.findMany.mockResolvedValue([
+        {
+          id: 'active-run',
+          status: RunStatus.RUNNING,
+          instances: [{ id: 'inst-1', status: InstanceStatus.PENDING }],
+        },
+      ]);
+
+      await service.recoverStaleRuns();
+
+      expect(mockPrisma.run.update).not.toHaveBeenCalled();
+    });
+
+    it('leaves runs alone when Docker networks exist for RUNNING instances', async () => {
+      mockDockerClient.networkExists.mockResolvedValue(true);
+      mockPrisma.run.findMany.mockResolvedValue([
+        {
+          id: 'active-run',
+          status: RunStatus.RUNNING,
+          instances: [{ id: 'inst-1', status: InstanceStatus.RUNNING }],
+        },
+      ]);
+
+      await service.recoverStaleRuns();
+
+      expect(mockDockerClient.networkExists).toHaveBeenCalledWith('inst-1');
+      expect(mockPrisma.run.update).not.toHaveBeenCalled();
+    });
+
+    it('marks run FAILED when STARTING instances have no Docker network', async () => {
+      mockDockerClient.networkExists.mockResolvedValue(false);
+      mockPrisma.run.findMany.mockResolvedValue([
+        {
+          id: 'stale-run',
+          status: RunStatus.RUNNING,
+          instances: [{ id: 'inst-1', status: InstanceStatus.STARTING }],
+        },
+      ]);
+
+      await service.recoverStaleRuns();
+
+      expect(mockPrisma.run.update).toHaveBeenCalledWith({
+        where: { id: 'stale-run' },
+        data: {
+          status: RunStatus.FAILED,
+          completedAt: expect.any(Date),
+        },
+      });
+    });
+
+    it('does nothing when no active runs exist', async () => {
+      mockPrisma.run.findMany.mockResolvedValue([]);
+
+      await service.recoverStaleRuns();
+
+      expect(mockPrisma.run.update).not.toHaveBeenCalled();
     });
   });
 

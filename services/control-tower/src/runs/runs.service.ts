@@ -49,13 +49,15 @@ export class RunsService implements OnApplicationBootstrap {
     credentials?: RegistryCredential[],
     projectPath?: string,
   ) {
+    await this.cleanup.recoverStaleRuns();
+
     const activeRun = await this.prisma.run.findFirst({
       where: { status: { in: [RunStatus.PENDING, RunStatus.RUNNING] } },
       select: { id: true },
     });
     if (activeRun) {
       throw new ConflictException(
-        `A run is already in progress (${activeRun.id}). Stop it with \`dokkimi run --stop\` or wait for it to finish.`,
+        `A run is already in progress. Stop it with \`dokkimi stop\` or wait for it to finish.`,
       );
     }
 
@@ -435,13 +437,13 @@ export class RunsService implements OnApplicationBootstrap {
 
     this.lifecycle
       .stopInstance(instanceId)
+      .catch((err) => {
+        this.logger.error(`Failed to stop instance ${instanceId}:`, err);
+      })
       .then(() => {
         if (instance.runId) {
           return this.scheduler.handleInstancesStopped([instance.runId]);
         }
-      })
-      .catch((err) => {
-        this.logger.error(`Failed to stop instance ${instanceId}:`, err);
       });
   }
 

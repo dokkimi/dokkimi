@@ -93,13 +93,14 @@ async function bootstrap() {
     }),
   );
 
-  const port = dokkimiConfig.services.controlTower.port;
+  const { port, host } = dokkimiConfig.services.controlTower;
+  const bindAddress = host === 'localhost' ? '127.0.0.1' : host;
 
   console.log(
-    `${TEAL}${BOLD}[CT]${RESET}${TEAL} Control Tower running on http://localhost:${port}${RESET}`,
+    `${TEAL}${BOLD}[CT]${RESET}${TEAL} Control Tower running on http://${host}:${port}${RESET}`,
   );
 
-  await app.listen(port);
+  await app.listen(port, bindAddress);
 
   const shutdown = () => {
     console.log(

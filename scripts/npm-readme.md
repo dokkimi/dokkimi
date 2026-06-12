@@ -13,7 +13,7 @@ Your AI agent can:
 - **Write and validate definitions** — look up the spec with `get_reference`, scaffold with `init`, validate with `validate_file`, list shared fragments with `list_fragments`
 - **Run and monitor tests** — `run_tests` to execute, `watch_run` for live status, `get_run_summary` for results
 - **Debug failures** — `get_failures` for what broke, `get_traffic` / `get_console_logs` / `get_db_logs` for the raw data, `diagnose` for automated root-cause analysis, `diff_traffic` to compare runs
-- **Manage the environment** — `status`, `doctor`, `clean`, `reboot`, `get_config` / `set_config`
+- **Manage the environment** — `status`, `doctor`, `stop`, `clean`, `reboot`, `get_config` / `set_config`
 
 Ask your AI to "write a test definition for the checkout flow" or paste a `dokkimi dump` into your conversation and it just works.
 
@@ -156,6 +156,7 @@ Image tags and other values can be centralized in `.dokkimi/config.yaml` using `
 | `dokkimi inspect`           | Inspect traffic logs from the last run            |
 | `dokkimi baselines`         | Review and approve pending visual baselines       |
 | `dokkimi dump`              | Export last run as JSON for AI-assisted debugging |
+| `dokkimi stop`              | Stop the current test run                         |
 | `dokkimi doctor`            | Check prerequisites and system health             |
 | `dokkimi mcp`               | Start the MCP server (auto-registered on install) |
 | `dokkimi status`            | Show whether Dokkimi is running                   |
