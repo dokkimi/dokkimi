@@ -19,7 +19,7 @@ describe('DockerLogCollectorService', () => {
     };
 
     mockConsoleLogProcessor = {
-      processFromFluentBit: jest.fn().mockResolvedValue(undefined),
+      processRawLogs: jest.fn().mockResolvedValue(undefined),
     };
 
     service = new DockerLogCollectorService(
@@ -101,7 +101,7 @@ describe('DockerLogCollectorService', () => {
       const frame = buildDockerFrame(1, 'hello world\n');
       capturedCallback!(frame);
 
-      expect(mockConsoleLogProcessor.processFromFluentBit).toHaveBeenCalledWith(
+      expect(mockConsoleLogProcessor.processRawLogs).toHaveBeenCalledWith(
         expect.objectContaining({
           log: 'hello world',
           stream: 'stdout',
@@ -116,7 +116,7 @@ describe('DockerLogCollectorService', () => {
       const frame = buildDockerFrame(2, 'error message\n');
       capturedCallback!(frame);
 
-      expect(mockConsoleLogProcessor.processFromFluentBit).toHaveBeenCalledWith(
+      expect(mockConsoleLogProcessor.processRawLogs).toHaveBeenCalledWith(
         expect.objectContaining({
           log: 'error message',
           stream: 'stderr',
@@ -131,9 +131,7 @@ describe('DockerLogCollectorService', () => {
       const combined = Buffer.concat([frame1, frame2]);
       capturedCallback!(combined);
 
-      expect(
-        mockConsoleLogProcessor.processFromFluentBit,
-      ).toHaveBeenCalledTimes(2);
+      expect(mockConsoleLogProcessor.processRawLogs).toHaveBeenCalledTimes(2);
     });
 
     it('should split multi-line payloads into separate log entries', async () => {
@@ -141,13 +139,11 @@ describe('DockerLogCollectorService', () => {
       const frame = buildDockerFrame(1, 'first\nsecond\nthird\n');
       capturedCallback!(frame);
 
-      expect(
-        mockConsoleLogProcessor.processFromFluentBit,
-      ).toHaveBeenCalledTimes(3);
-      expect(mockConsoleLogProcessor.processFromFluentBit).toHaveBeenCalledWith(
+      expect(mockConsoleLogProcessor.processRawLogs).toHaveBeenCalledTimes(3);
+      expect(mockConsoleLogProcessor.processRawLogs).toHaveBeenCalledWith(
         expect.objectContaining({ log: 'first' }),
       );
-      expect(mockConsoleLogProcessor.processFromFluentBit).toHaveBeenCalledWith(
+      expect(mockConsoleLogProcessor.processRawLogs).toHaveBeenCalledWith(
         expect.objectContaining({ log: 'third' }),
       );
     });
@@ -157,9 +153,7 @@ describe('DockerLogCollectorService', () => {
       const frame = buildDockerFrame(1, '  \n');
       capturedCallback!(frame);
 
-      expect(
-        mockConsoleLogProcessor.processFromFluentBit,
-      ).not.toHaveBeenCalled();
+      expect(mockConsoleLogProcessor.processRawLogs).not.toHaveBeenCalled();
     });
 
     it('should handle incomplete header as raw text', async () => {
@@ -167,7 +161,7 @@ describe('DockerLogCollectorService', () => {
       const partial = Buffer.from('short');
       capturedCallback!(partial);
 
-      expect(mockConsoleLogProcessor.processFromFluentBit).toHaveBeenCalledWith(
+      expect(mockConsoleLogProcessor.processRawLogs).toHaveBeenCalledWith(
         expect.objectContaining({ log: 'short' }),
       );
     });
@@ -180,13 +174,13 @@ describe('DockerLogCollectorService', () => {
       const truncated = Buffer.concat([header, Buffer.from('hello')]);
       capturedCallback!(truncated);
 
-      expect(mockConsoleLogProcessor.processFromFluentBit).toHaveBeenCalledWith(
+      expect(mockConsoleLogProcessor.processRawLogs).toHaveBeenCalledWith(
         expect.objectContaining({ log: 'hello' }),
       );
     });
 
-    it('should not crash if processFromFluentBit rejects', async () => {
-      mockConsoleLogProcessor.processFromFluentBit.mockRejectedValue(
+    it('should not crash if processRawLogs rejects', async () => {
+      mockConsoleLogProcessor.processRawLogs.mockRejectedValue(
         new Error('db error'),
       );
 

@@ -10,7 +10,6 @@ export const DOKKIMI_IMAGES = {
   dbProxyMysql: `ghcr.io/dokkimi/db-proxy-mysql:${VERSION}`,
   dbProxyMongo: `ghcr.io/dokkimi/db-proxy-mongo:${VERSION}`,
   dbProxyRedis: `ghcr.io/dokkimi/db-proxy-redis:${VERSION}`,
-  fluentBit: 'fluent/fluent-bit:3.2',
   dnsmasq: 'andyshinn/dnsmasq:2.83',
   // Standalone chromium pod for UI e2e tests. chromedp/headless-shell is the
   // build the chromedp Go library targets, ~120 MB compressed. Deployed as its

@@ -3,7 +3,7 @@ import { ConsoleLogProcessorService } from './console-log-processor.service';
 import { StorageService } from '../storage.service';
 import { NamespaceValidationService } from '../namespace-validation/namespace-validation.service';
 import { ConsoleLogMessage } from '../../types/messages';
-import { FluentBitLogMessageDto } from '../dto/fluentbit-log-message.dto';
+import { RawConsoleLogDto } from '../dto/raw-console-log.dto';
 
 describe('ConsoleLogProcessorService', () => {
   let service: ConsoleLogProcessorService;
@@ -111,11 +111,11 @@ describe('ConsoleLogProcessorService', () => {
     });
   });
 
-  describe('processFromFluentBit', () => {
+  describe('processRawLogs', () => {
     const instanceId = 'test-instance';
 
-    it('should process single Fluent Bit message', async () => {
-      const message: FluentBitLogMessageDto = {
+    it('should process single raw console log message', async () => {
+      const message: RawConsoleLogDto = {
         instanceId,
         log: '2025-11-27T17:50:38.989944416Z stdout F [INFO] Service started',
         stream: 'stdout',
@@ -125,7 +125,7 @@ describe('ConsoleLogProcessorService', () => {
       namespaceValidationService.validateInstance.mockResolvedValue(true);
       storageService.storeConsoleLog.mockResolvedValue('log-id-123');
 
-      await service.processFromFluentBit(message);
+      await service.processRawLogs(message);
 
       expect(namespaceValidationService.validateInstance).toHaveBeenCalledWith(
         instanceId,
@@ -139,8 +139,8 @@ describe('ConsoleLogProcessorService', () => {
       );
     });
 
-    it('should process array of Fluent Bit messages', async () => {
-      const messages: FluentBitLogMessageDto[] = [
+    it('should process array of raw console log messages', async () => {
+      const messages: RawConsoleLogDto[] = [
         {
           instanceId,
           log: '2025-11-27T17:50:38.989944416Z stdout F [INFO] First log',
@@ -158,7 +158,7 @@ describe('ConsoleLogProcessorService', () => {
         .mockResolvedValueOnce('log-id-1')
         .mockResolvedValueOnce('log-id-2');
 
-      await service.processFromFluentBit(messages);
+      await service.processRawLogs(messages);
 
       expect(storageService.storeConsoleLog).toHaveBeenCalledTimes(2);
       expect(storageService.storeConsoleLog).toHaveBeenNthCalledWith(
@@ -180,11 +180,11 @@ describe('ConsoleLogProcessorService', () => {
     });
 
     it('should skip message without instanceId', async () => {
-      const message: FluentBitLogMessageDto = {
+      const message: RawConsoleLogDto = {
         log: '[INFO] Service started',
       } as any;
 
-      await service.processFromFluentBit(message);
+      await service.processRawLogs(message);
 
       expect(
         namespaceValidationService.validateInstance,
@@ -193,7 +193,7 @@ describe('ConsoleLogProcessorService', () => {
     });
 
     it('should handle CRI format log line', async () => {
-      const message: FluentBitLogMessageDto = {
+      const message: RawConsoleLogDto = {
         instanceId,
         log: '2025-11-27T17:50:38.989944416Z stdout F [WARN] Warning message',
       };
@@ -201,7 +201,7 @@ describe('ConsoleLogProcessorService', () => {
       namespaceValidationService.validateInstance.mockResolvedValue(true);
       storageService.storeConsoleLog.mockResolvedValue('log-id-123');
 
-      await service.processFromFluentBit(message);
+      await service.processRawLogs(message);
 
       expect(storageService.storeConsoleLog).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -214,7 +214,7 @@ describe('ConsoleLogProcessorService', () => {
     });
 
     it('should handle non-CRI format log line', async () => {
-      const message: FluentBitLogMessageDto = {
+      const message: RawConsoleLogDto = {
         instanceId,
         log: '[DEBUG] Simple log message',
         time: '2025-11-27T17:50:38.989944416Z',
@@ -223,7 +223,7 @@ describe('ConsoleLogProcessorService', () => {
       namespaceValidationService.validateInstance.mockResolvedValue(true);
       storageService.storeConsoleLog.mockResolvedValue('log-id-123');
 
-      await service.processFromFluentBit(message);
+      await service.processRawLogs(message);
 
       expect(storageService.storeConsoleLog).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -235,8 +235,8 @@ describe('ConsoleLogProcessorService', () => {
       );
     });
 
-    it('should use time from Fluent Bit if CRI timestamp not available', async () => {
-      const message: FluentBitLogMessageDto = {
+    it('should use time from raw console log if CRI timestamp not available', async () => {
+      const message: RawConsoleLogDto = {
         instanceId,
         log: 'Simple log without CRI format',
         time: '2025-11-27T17:50:38.000Z',
@@ -245,7 +245,7 @@ describe('ConsoleLogProcessorService', () => {
       namespaceValidationService.validateInstance.mockResolvedValue(true);
       storageService.storeConsoleLog.mockResolvedValue('log-id-123');
 
-      await service.processFromFluentBit(message);
+      await service.processRawLogs(message);
 
       expect(storageService.storeConsoleLog).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -272,12 +272,12 @@ describe('ConsoleLogProcessorService', () => {
 
       for (const testCase of testCases) {
         jest.clearAllMocks();
-        const message: FluentBitLogMessageDto = {
+        const message: RawConsoleLogDto = {
           instanceId,
           log: testCase.log,
         };
 
-        await service.processFromFluentBit(message);
+        await service.processRawLogs(message);
 
         expect(storageService.storeConsoleLog).toHaveBeenCalledWith(
           expect.objectContaining({
@@ -287,8 +287,8 @@ describe('ConsoleLogProcessorService', () => {
       }
     });
 
-    it('should handle instanceItemId from Fluent Bit', async () => {
-      const message: FluentBitLogMessageDto = {
+    it('should handle instanceItemId from raw console log', async () => {
+      const message: RawConsoleLogDto = {
         instanceId,
         instanceItemId: 'service-id-123',
         log: '[INFO] Service heartbeat',
@@ -297,7 +297,7 @@ describe('ConsoleLogProcessorService', () => {
       namespaceValidationService.validateInstance.mockResolvedValue(true);
       storageService.storeConsoleLog.mockResolvedValue('log-id-123');
 
-      await service.processFromFluentBit(message);
+      await service.processRawLogs(message);
 
       expect(storageService.storeConsoleLog).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -308,7 +308,7 @@ describe('ConsoleLogProcessorService', () => {
     });
 
     it('should continue processing other messages if one fails', async () => {
-      const messages: FluentBitLogMessageDto[] = [
+      const messages: RawConsoleLogDto[] = [
         {
           instanceId,
           log: '[INFO] First log',
@@ -329,13 +329,13 @@ describe('ConsoleLogProcessorService', () => {
         .mockRejectedValueOnce(new Error('Storage error'))
         .mockResolvedValueOnce('log-id-3');
 
-      await service.processFromFluentBit(messages);
+      await service.processRawLogs(messages);
 
       expect(storageService.storeConsoleLog).toHaveBeenCalledTimes(3);
     });
 
     it('should handle empty log line', async () => {
-      const message: FluentBitLogMessageDto = {
+      const message: RawConsoleLogDto = {
         instanceId,
         log: '',
       };
@@ -343,7 +343,7 @@ describe('ConsoleLogProcessorService', () => {
       namespaceValidationService.validateInstance.mockResolvedValue(true);
       storageService.storeConsoleLog.mockResolvedValue('log-id-123');
 
-      await service.processFromFluentBit(message);
+      await service.processRawLogs(message);
 
       expect(storageService.storeConsoleLog).toHaveBeenCalledWith(
         expect.objectContaining({

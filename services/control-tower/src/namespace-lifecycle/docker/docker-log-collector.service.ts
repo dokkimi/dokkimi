@@ -135,16 +135,35 @@ export class DockerLogCollectorService {
       return;
     }
 
+    // With timestamps: true, Docker prefixes each line with an RFC3339Nano
+    // timestamp: "2026-06-12T15:29:02.213456789Z <log content>"
+    const { timestamp, message } = this.parseDockerTimestamp(line);
+
     this.consoleLogProcessor
-      .processFromFluentBit({
-        log: line,
+      .processRawLogs({
+        log: message,
         stream,
-        time: new Date().toISOString(),
+        time: timestamp,
         instanceId,
         instanceItemId,
       })
       .catch((err) => {
         this.logger.warn(`Failed to process log line: ${err}`);
       });
+  }
+
+  private parseDockerTimestamp(line: string): {
+    timestamp: string;
+    message: string;
+  } {
+    // Docker timestamp format: "2026-06-12T15:29:02.213456789Z <rest>"
+    const spaceIdx = line.indexOf(' ');
+    if (spaceIdx > 0 && spaceIdx <= 35) {
+      const candidate = line.substring(0, spaceIdx);
+      if (/^\d{4}-\d{2}-\d{2}T[\d:.]+Z$/.test(candidate)) {
+        return { timestamp: candidate, message: line.substring(spaceIdx + 1) };
+      }
+    }
+    return { timestamp: new Date().toISOString(), message: line };
   }
 }

@@ -36,7 +36,7 @@ export class ConsoleLogBlockValidatorService {
       (a) => !a.disabled,
     );
 
-    // Console logs arrive via Fluent Bit which flushes on a 1s interval.
+    // Console logs arrive asynchronously via Docker log streaming.
     // Retry when any assertion that expects logs to exist fails, to allow
     // time for in-flight logs to be ingested.
     for (let attempt = 0; attempt <= CONSOLE_LOG_RETRY_COUNT; attempt++) {

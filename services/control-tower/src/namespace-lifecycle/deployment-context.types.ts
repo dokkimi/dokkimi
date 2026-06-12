@@ -19,8 +19,8 @@ export interface DeploymentContext {
    * Item name -> InstanceItem DB row ID.
    *
    * Used in configmap (urlMap, databaseMap, podNameToNamespaceItemId) and
-   * per-pod env vars (INSTANCE_ITEM_ID) so interceptor, fluent-bit, and
-   * db-proxy can attribute traffic/logs to the correct instance item.
+   * per-pod env vars (INSTANCE_ITEM_ID) so interceptor and db-proxy can
+   * attribute traffic/logs to the correct instance item.
    */
   instanceItemIds: Map<string, string>;
 
