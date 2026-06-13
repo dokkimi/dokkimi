@@ -4,7 +4,7 @@
 
 Today, assertion validation happens **after** all test steps have executed. The test-agent runs every action, posts a `/test-complete` notification to Control Tower (CT), and CT's Test Validation Service (TVS) retroactively evaluates assertions against accumulated traffic logs in the database.
 
-This post-hoc model makes step-level flow control impossible. Features like `retryUntil` (repeat a step until an assertion passes) and loops require the test-agent to know assertion results *between* steps — but right now it fires-and-forgets, and only CT has the verdict after the entire test finishes.
+This post-hoc model makes step-level flow control impossible. Features like `retryUntil` (repeat a step until an assertion passes) and loops require the test-agent to know assertion results _between_ steps — but right now it fires-and-forgets, and only CT has the verdict after the entire test finishes.
 
 ## Decision
 
@@ -54,6 +54,7 @@ Interceptors and DB-proxies already POST logs to CT via `CONTROL_TOWER_URL`. The
 **Change:** The Go loggers add a second POST to `TEST_AGENT_URL` alongside the existing CT POST. The two writes are independent and fire in separate goroutines — if the test-agent write fails, the CT write is unaffected. Only the test-agent write matters for validation timing; the CT write is fire-and-forget for storage.
 
 **Affected files:**
+
 - `services/interceptor/logger.go` — add second POST in `logRequest()` goroutine
 - `services/db-proxy/shared/logger.go` — add second POST in `logQuery()` goroutine
 
@@ -66,6 +67,7 @@ CT currently streams console logs from containers using Docker's native log API 
 **Change:** Service containers are created with Docker's GELF log driver, configured to forward stdout/stderr to the test-agent over UDP. No Docker socket mount, no privilege escalation — the log driver is set at container creation time by CT's namespace-lifecycle module, and logs flow directly from the container runtime to the test-agent within the Docker network.
 
 **Docker LogConfig (set at container creation):**
+
 ```json
 {
   "Type": "gelf",
@@ -77,6 +79,7 @@ CT currently streams console logs from containers using Docker's native log API 
 ```
 
 **What GELF provides automatically per log line:**
+
 - `short_message` — the log line
 - `_container_name` — which service produced it
 - `_source` — `"stdout"` or `"stderr"`
@@ -97,6 +100,7 @@ for {
 **Why GELF over Docker socket:** Docker socket access is root-equivalent on the host — an unnecessary privilege escalation. GELF keeps everything within the namespace network with no elevated permissions. The container runtime handles forwarding; the test-agent is just a UDP listener.
 
 **Why GELF over other log drivers:**
+
 - **syslog** — can't distinguish stdout from stderr (dealbreaker for console log assertions)
 - **fluentd** — no good Go receiver library; binary msgpack protocol; blocks container on startup without `fluentd-async=true`
 - **splunk** — requires faking a Splunk HEC endpoint with auth tokens and health check
@@ -111,10 +115,10 @@ To preserve console logs in CT for dump/inspect, the test-agent forwards receive
 
 New HTTP endpoints on the test-agent (port 8080, alongside existing `/execute` and `/health`):
 
-| Endpoint | Source | Purpose |
-|---|---|---|
-| `POST /logs/http` | Interceptors | Receive HTTP traffic logs |
-| `POST /logs/database` | DB-proxies | Receive database query logs |
+| Endpoint              | Source       | Purpose                     |
+| --------------------- | ------------ | --------------------------- |
+| `POST /logs/http`     | Interceptors | Receive HTTP traffic logs   |
+| `POST /logs/database` | DB-proxies   | Receive database query logs |
 
 Console logs are received via GELF (see section 2), not via HTTP POST.
 
@@ -243,15 +247,15 @@ The Go assertion engine must produce identical results to the TypeScript one. St
 
 ## What Changes Where
 
-| Component | Change |
-|---|---|
-| **test-agent** (Go) | Add `/logs/http`, `/logs/database` endpoints. Add GELF UDP listener (port 12201, exposed in container config) for console logs. Forward console logs to CT via `POST /logs/console`. Add in-memory log buffer. Port assertion engine, document assembler, block validators, and extract resolver from TS. Add quiescence detection. Add step result reporting to CT. New dependency: `github.com/Graylog2/go-gelf/v2/gelf`. |
-| **interceptor** (Go) | Add second POST to `TEST_AGENT_URL` in logger goroutine (env var already injected). |
-| **db-proxy** (Go) | Add second POST to `TEST_AGENT_URL` in logger goroutine (env var already injected). |
-| **CT namespace-lifecycle** | Set GELF log driver on service containers (pointing at test-agent:12201). Expose UDP port 12201 on test-agent container. Remove dockerode console log streaming (replaced by test-agent forwarding). Stop stripping assertion blocks from test-agent ConfigMap. |
-| **CT log-processing** | Add `POST /logs/test-validation` endpoint (with `@SkipThrottle()`) to receive step results from test-agent. |
-| **CT test-validation (TVS)** | Eventually removed. Intermediate state: skip validation when inline results exist. Shadow mode for divergence detection during migration. |
-| **definition-resolver** | No change — already outputs full step definitions. |
+| Component                    | Change                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **test-agent** (Go)          | Add `/logs/http`, `/logs/database` endpoints. Add GELF UDP listener (port 12201, exposed in container config) for console logs. Forward console logs to CT via `POST /logs/console`. Add in-memory log buffer. Port assertion engine, document assembler, block validators, and extract resolver from TS. Add quiescence detection. Add step result reporting to CT. New dependency: `github.com/Graylog2/go-gelf/v2/gelf`. |
+| **interceptor** (Go)         | Add second POST to `TEST_AGENT_URL` in logger goroutine (env var already injected).                                                                                                                                                                                                                                                                                                                                         |
+| **db-proxy** (Go)            | Add second POST to `TEST_AGENT_URL` in logger goroutine (env var already injected).                                                                                                                                                                                                                                                                                                                                         |
+| **CT namespace-lifecycle**   | Set GELF log driver on service containers (pointing at test-agent:12201). Expose UDP port 12201 on test-agent container. Remove dockerode console log streaming (replaced by test-agent forwarding). Stop stripping assertion blocks from test-agent ConfigMap.                                                                                                                                                             |
+| **CT log-processing**        | Add `POST /logs/test-validation` endpoint (with `@SkipThrottle()`) to receive step results from test-agent.                                                                                                                                                                                                                                                                                                                 |
+| **CT test-validation (TVS)** | Eventually removed. Intermediate state: skip validation when inline results exist. Shadow mode for divergence detection during migration.                                                                                                                                                                                                                                                                                   |
+| **definition-resolver**      | No change — already outputs full step definitions.                                                                                                                                                                                                                                                                                                                                                                          |
 
 ## What Doesn't Change
 
