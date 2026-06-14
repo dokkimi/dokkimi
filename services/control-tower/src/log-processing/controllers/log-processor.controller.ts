@@ -128,9 +128,7 @@ export class LogProcessorController implements OnModuleInit, OnModuleDestroy {
   }
 
   @Post('test-validation')
-  async receiveTestValidationLog(
-    @Body() message: TestValidationLogMessageDto,
-  ) {
+  async receiveTestValidationLog(@Body() message: TestValidationLogMessageDto) {
     await this.testValidationLogProcessor.process(message, message.instanceId);
     this.testValidationLogCount++;
     return { received: true };

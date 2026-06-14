@@ -228,7 +228,7 @@ export class DockerServiceGroupService {
               Config: {
                 'gelf-address': `udp://${testAgentIP}:12201`,
                 'gelf-compression-type': 'none',
-                'tag': item.name,
+                tag: item.name,
               },
             },
           }
