@@ -42,7 +42,7 @@ export interface VisualMatchFailure {
   message: string;
 }
 
-/** Summary returned by processInstance — used by the test-validation flow. */
+/** Summary returned by processInstance. */
 export interface VisualMatchSummary {
   failures: VisualMatchFailure[];
 }

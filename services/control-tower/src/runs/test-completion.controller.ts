@@ -6,37 +6,30 @@ import {
   HttpStatus,
   Logger,
 } from '@nestjs/common';
-import { TestValidationService } from '../test-validation.service';
-import { TestCompletionNotificationDto } from '../dto/test-completion-notification.dto';
-import { PrismaService } from '../../prisma/prisma.service';
-import { RunsService } from '../../runs/runs.service';
+import { RunsService } from './runs.service';
+import { TestCompletionDto } from './dto/test-completion.dto';
+import { PrismaService } from '../prisma/prisma.service';
 
 @Controller('test-complete')
-export class TestValidationController {
-  private readonly logger = new Logger(TestValidationController.name);
+export class TestCompletionController {
+  private readonly logger = new Logger(TestCompletionController.name);
 
   constructor(
-    private readonly testValidationService: TestValidationService,
-    private readonly prisma: PrismaService,
     private readonly runsService: RunsService,
+    private readonly prisma: PrismaService,
   ) {}
 
-  /**
-   * POST /test-complete
-   * Receives test completion notification from test-agent (Desktop mode)
-   */
   @Post()
   @HttpCode(HttpStatus.ACCEPTED)
   async handleTestCompletion(
-    @Body() dto: TestCompletionNotificationDto,
+    @Body() dto: TestCompletionDto,
   ): Promise<{ status: string; message: string }> {
-    this.testValidationService
-      .processTestCompletion(
+    this.runsService
+      .handleTestCompletion(
         dto.testRunId,
         dto.status,
         dto.message,
         dto.stepExecutions,
-        dto.partial,
       )
       .catch(async (error) => {
         this.logger.error(
@@ -49,13 +42,13 @@ export class TestValidationController {
             data: {
               testStatus: 'FAILED',
               testCompletedAt: new Date(),
-              errorMessage: `Internal error during validation: ${error instanceof Error ? error.message : String(error)}`,
+              errorMessage: `Internal error during test completion: ${error instanceof Error ? error.message : String(error)}`,
             },
           });
           await this.runsService.handleValidationComplete(
             dto.testRunId,
             false,
-            'Internal validation error',
+            'Internal error',
           );
         } catch (fallbackError) {
           this.logger.error(
