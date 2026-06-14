@@ -273,7 +273,9 @@ export const VALID_ASSERTION_OPERATORS = [
   'lt',
   'lte',
   'contains',
+  'containsIgnoreCase',
   'notContains',
+  'notContainsIgnoreCase',
   'matches',
   'exists',
   'notExists',
@@ -311,4 +313,9 @@ export const VALID_CONSOLE_LOG_LEVELS = [
 
 export const VALID_MESSAGE_FILTER_KEYS = new Set(['operator', 'value']);
 
-export const VALID_MESSAGE_OPERATORS = ['eq', 'contains', 'matches'] as const;
+export const VALID_MESSAGE_OPERATORS = [
+  'eq',
+  'contains',
+  'containsIgnoreCase',
+  'matches',
+] as const;

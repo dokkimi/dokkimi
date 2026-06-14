@@ -256,10 +256,17 @@ func TestCompareValues(t *testing.T) {
 		}
 	})
 
-	t.Run("contains passes for substring match case-insensitive", func(t *testing.T) {
-		r := CompareValues("contains", "Hello World", "hello")
+	t.Run("contains passes for exact case substring match", func(t *testing.T) {
+		r := CompareValues("contains", "Hello World", "Hello")
 		if !r.Passed {
 			t.Error("expected pass")
+		}
+	})
+
+	t.Run("contains fails for case mismatch", func(t *testing.T) {
+		r := CompareValues("contains", "Hello World", "hello")
+		if r.Passed {
+			t.Error("expected fail")
 		}
 	})
 
@@ -277,8 +284,43 @@ func TestCompareValues(t *testing.T) {
 		}
 	})
 
-	t.Run("notContains fails for substring match", func(t *testing.T) {
+	t.Run("notContains fails for exact case substring match", func(t *testing.T) {
+		r := CompareValues("notContains", "Hello World", "World")
+		if r.Passed {
+			t.Error("expected fail")
+		}
+	})
+
+	t.Run("notContains passes for case mismatch", func(t *testing.T) {
 		r := CompareValues("notContains", "Hello World", "world")
+		if !r.Passed {
+			t.Error("expected pass")
+		}
+	})
+
+	t.Run("containsIgnoreCase passes for case-insensitive match", func(t *testing.T) {
+		r := CompareValues("containsIgnoreCase", "Hello World", "hello")
+		if !r.Passed {
+			t.Error("expected pass")
+		}
+	})
+
+	t.Run("containsIgnoreCase fails when substring not present", func(t *testing.T) {
+		r := CompareValues("containsIgnoreCase", "Hello", "xyz")
+		if r.Passed {
+			t.Error("expected fail")
+		}
+	})
+
+	t.Run("notContainsIgnoreCase passes when substring not present", func(t *testing.T) {
+		r := CompareValues("notContainsIgnoreCase", "Hello", "xyz")
+		if !r.Passed {
+			t.Error("expected pass")
+		}
+	})
+
+	t.Run("notContainsIgnoreCase fails for case-insensitive match", func(t *testing.T) {
+		r := CompareValues("notContainsIgnoreCase", "Hello World", "world")
 		if r.Passed {
 			t.Error("expected fail")
 		}

@@ -202,12 +202,18 @@ func CompareValues(operator string, actual, expected interface{}) AssertionResul
 		passed := aOk && eOk && af <= ef
 		return AssertionResult{Passed: passed, Expected: expected, Actual: actual}
 	case "contains":
+		passed := strings.Contains(fmt.Sprintf("%v", actual), fmt.Sprintf("%v", expected))
+		return AssertionResult{Passed: passed, Expected: expected, Actual: actual}
+	case "notContains":
+		passed := !strings.Contains(fmt.Sprintf("%v", actual), fmt.Sprintf("%v", expected))
+		return AssertionResult{Passed: passed, Expected: expected, Actual: actual}
+	case "containsIgnoreCase":
 		passed := strings.Contains(
 			strings.ToLower(fmt.Sprintf("%v", actual)),
 			strings.ToLower(fmt.Sprintf("%v", expected)),
 		)
 		return AssertionResult{Passed: passed, Expected: expected, Actual: actual}
-	case "notContains":
+	case "notContainsIgnoreCase":
 		passed := !strings.Contains(
 			strings.ToLower(fmt.Sprintf("%v", actual)),
 			strings.ToLower(fmt.Sprintf("%v", expected)),

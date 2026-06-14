@@ -292,14 +292,14 @@ Visual matching moves into the test-agent, consistent with all other validation.
 | **db-proxy** (Go)            | Add second POST to `TEST_AGENT_URL` in logger goroutine (env var already injected).                                                                                                                                                                                                                                                                                                                                                                                                                              |
 | **CT namespace-lifecycle**   | Set GELF log driver on service containers (pointing at test-agent:12201). Expose UDP port 12201 on test-agent container. Remove dockerode console log streaming (replaced by test-agent forwarding). Bind-mount baselines directory into test-agent container. Stop stripping assertion blocks from test-agent ConfigMap.                                                                                                                                                                                        |
 | **CT log-processing**        | Add `POST /logs/test-validation` endpoint (with `@SkipThrottle()`) to receive step results from test-agent.                                                                                                                                                                                                                                                                                                                                                                                                      |
-| **CT test-validation (TVS)** | Eventually removed (including `VisualMatchService`). Intermediate state: skip validation when inline results exist. Shadow mode for divergence detection during migration.                                                                                                                                                                                                                                                                                                                                       |
+| **CT test-validation (TVS)** | Removed. `TestValidationModule` and `VisualMatchService` deleted. Assertion validation and visual baseline matching now run inline in test-agent.                                                                                                                                                                                                                                                                                                                                                                |
 | **definition-resolver**      | No change — already outputs full step definitions.                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| **CLI**                      | `dokkimi dump` includes `verdict` field on artifacts. `dokkimi baselines` TUI: named temp files for image comparison, temp file cleanup, `--run` flag for run picker. Run picker (inspect/dump/baselines) shows pending baseline counts per run, and displays PASSED/FAILED instead of COMPLETED/FAILED.                                                                                                                                                                                                         |
 
 ## What Doesn't Change
 
 - **CT log ingestion** — interceptors/db-proxies still POST HTTP/DB logs to CT. Console logs now come from test-agent instead of dockerode, but arrive at the same `POST /logs/console` endpoint. Dump/inspect/history work unchanged.
 - **Definition format** — no YAML/JSON schema changes for existing features.
-- **CLI** — no changes to run/dump/inspect commands.
 - **Assertion operators and semantics** — identical behavior, just evaluated in Go instead of TypeScript.
 
 ## Unlocked Features
@@ -313,15 +313,15 @@ With inline validation, the test-agent knows assertion results before moving to 
 
 ## Implementation Order
 
-1. **Assertion engine in Go** — port `compareValues()`, `evaluateDocPath()`, `validateCount()`, `resolveExtractRule()` with full test coverage using shared test corpus from TS
-2. **Document assembler in Go** — port `DocumentAssemblerService`: build assertion documents from raw log structs
-3. **Block validators in Go** — port `AssertionValidatorService` + self/httpCall/consoleLog block validators with `assertionScope` filtering
-4. **Log ingestion endpoints** — add `/logs/http` and `/logs/database` to test-agent with in-memory step buffer
-5. **Dual-write in sidecars** — interceptor and db-proxy add second POST to `TEST_AGENT_URL`
-6. **ConfigMap changes** — stop stripping assertion blocks from test-agent config
-7. **Per-step validation loop** — integrate into `executeStepAt()`: action → quiescence → validate → report → flush
-8. **Console log collection** — GELF UDP listener in test-agent + GELF log driver config in namespace-lifecycle
-9. **Result reporting** — POST step results to CT via `/logs/test-validation`, CT stores them
-10. **Shadow mode** — TVS validates in parallel, compare results, flag divergence
-11. **Visual baseline matching** — bind-mount baselines into test-agent, port `VisualMatchService` diffing logic to Go via `go-pixmatch`, upload captures/diffs to CT via `POST /artifacts`
-12. **TVS removal** — remove CT-side validation (including `VisualMatchService`) once inline is stable and shadow mode shows no divergence
+1. ~~**Assertion engine in Go** — port `compareValues()`, `evaluateDocPath()`, `validateCount()`, `resolveExtractRule()` with full test coverage using shared test corpus from TS~~ ✅
+2. ~~**Document assembler in Go** — port `DocumentAssemblerService`: build assertion documents from raw log structs~~ ✅
+3. ~~**Block validators in Go** — port `AssertionValidatorService` + self/httpCall/consoleLog block validators with `assertionScope` filtering~~ ✅
+4. ~~**Log ingestion endpoints** — add `/logs/http` and `/logs/database` to test-agent with in-memory step buffer~~ ✅
+5. ~~**Dual-write in sidecars** — interceptor and db-proxy add second POST to `TEST_AGENT_URL`~~ ✅
+6. ~~**ConfigMap changes** — stop stripping assertion blocks from test-agent config~~ ✅
+7. ~~**Per-step validation loop** — integrate into `executeStepAt()`: action → quiescence → validate → report → flush~~ ✅
+8. ~~**Console log collection** — GELF UDP listener in test-agent + GELF log driver config in namespace-lifecycle~~ ✅
+9. ~~**Result reporting** — POST step results to CT via `/logs/test-validation`, CT stores them~~ ✅
+10. ~~**Shadow mode** — TVS validates in parallel, compare results, flag divergence~~ ✅ (skipped — shared test corpus and integration runs showed no divergence; TVS removed directly)
+11. ~~**Visual baseline matching** — bind-mount baselines into test-agent, port `VisualMatchService` diffing logic to Go via `go-pixmatch`, upload captures/diffs with verdicts to CT via `POST /artifacts`~~ ✅
+12. ~~**TVS removal** — remove CT-side validation (including `VisualMatchService`) once inline is stable~~ ✅

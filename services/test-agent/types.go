@@ -88,7 +88,7 @@ type ConsoleLogAssertion struct {
 
 // MessageFilter specifies how to match console log messages.
 type MessageFilter struct {
-	Operator string `json:"operator"` // "eq", "contains", "matches"
+	Operator string `json:"operator"` // "eq", "contains", "containsIgnoreCase", "matches"
 	Value    string `json:"value"`
 }
 

@@ -211,6 +211,8 @@ func matchMessage(logMessage string, filter *MessageFilter) bool {
 		return logMessage == filter.Value
 	case "contains":
 		return strings.Contains(logMessage, filter.Value)
+	case "containsIgnoreCase":
+		return strings.Contains(strings.ToLower(logMessage), strings.ToLower(filter.Value))
 	case "matches":
 		re, err := regexp.Compile(filter.Value)
 		if err != nil {
