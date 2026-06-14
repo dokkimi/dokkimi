@@ -32,10 +32,12 @@ type HttpLogMessage struct {
 
 // Logger handles async logging to Log Processor Service (LPS)
 type Logger struct {
-	logEndpointURL string
-	httpClient     *http.Client
-	logChan        chan HttpLogMessage
-	stopChan       chan struct{}
+	logEndpointURL    string
+	testAgentURL      string
+	httpClient        *http.Client
+	testAgentClient   *http.Client
+	logChan           chan HttpLogMessage
+	stopChan          chan struct{}
 }
 
 // NewLogger creates a new async logger
@@ -46,16 +48,22 @@ func NewLogger(logEndpointURL string, timeout time.Duration, client *http.Client
 		client.Timeout = timeout
 	}
 	logger := &Logger{
-		logEndpointURL: logEndpointURL,
-		httpClient:     client,
-		logChan:        make(chan HttpLogMessage, 1000), // Buffered channel
-		stopChan:       make(chan struct{}),
+		logEndpointURL:  logEndpointURL,
+		httpClient:      client,
+		testAgentClient: &http.Client{Timeout: timeout},
+		logChan:         make(chan HttpLogMessage, 1000), // Buffered channel
+		stopChan:        make(chan struct{}),
 	}
 
 	// Start background worker
 	go logger.worker()
 
 	return logger
+}
+
+// SetTestAgentURL enables dual-write to the test-agent for inline validation.
+func (l *Logger) SetTestAgentURL(url string) {
+	l.testAgentURL = url
 }
 
 // LogResponse logs a complete HTTP request/response pair to LPS with timing information
@@ -224,6 +232,11 @@ func (l *Logger) sendLog(message HttpLogMessage) {
 		return // Drop log on marshal error
 	}
 
+	// Dual-write: send to test-agent in a separate goroutine (independent, fire-and-forget)
+	if l.testAgentURL != "" {
+		go l.sendToTestAgent(body, message.InstanceID)
+	}
+
 	url := l.logEndpointURL + "/logs/http"
 	req, err := http.NewRequest(http.MethodPost, url, bytes.NewBuffer(body))
 	if err != nil {
@@ -244,6 +257,23 @@ func (l *Logger) sendLog(message HttpLogMessage) {
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		log.Printf("[Logger] LPS returned non-success status for instance %s (method: %s, url: %s, status: %d)", message.InstanceID, message.Method, message.URL, resp.StatusCode)
 	}
+}
+
+// sendToTestAgent sends a copy of the log to the test-agent for inline validation.
+func (l *Logger) sendToTestAgent(body []byte, instanceID string) {
+	url := l.testAgentURL + "/logs/http"
+	req, err := http.NewRequest(http.MethodPost, url, bytes.NewBuffer(body))
+	if err != nil {
+		return
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := l.testAgentClient.Do(req)
+	if err != nil {
+		log.Printf("[Logger] Failed to send log to test-agent for instance %s: %v", instanceID, err)
+		return
+	}
+	resp.Body.Close()
 }
 
 // Stop stops the logger worker and drains remaining logs

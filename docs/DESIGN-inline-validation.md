@@ -325,4 +325,3 @@ With inline validation, the test-agent knows assertion results before moving to 
 10. **Shadow mode** — TVS validates in parallel, compare results, flag divergence
 11. **Visual baseline matching** — bind-mount baselines into test-agent, port `VisualMatchService` diffing logic to Go via `go-pixmatch`, upload captures/diffs to CT via `POST /artifacts`
 12. **TVS removal** — remove CT-side validation (including `VisualMatchService`) once inline is stable and shadow mode shows no divergence
-13. **`retryUntil`** — first flow-control feature using inline results

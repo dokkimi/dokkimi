@@ -41,6 +41,7 @@ export class DockerServiceGroupService {
       apiKey: 'dokkimi-interceptor-key',
       dnsIP: dockerDnsIP,
       origin: '',
+      testAgentUrl: `http://test-agent-service:${config.services.testAgent.port}`,
     });
 
     await this.dockerClient.runContainer({
@@ -100,6 +101,8 @@ export class DockerServiceGroupService {
         'io.dokkimi.role': 'test-agent',
       },
     });
+
+    this.logger.log('Test-agent GELF receiver will listen on UDP 12201');
   }
 
   async createServiceGroup(
@@ -112,6 +115,7 @@ export class DockerServiceGroupService {
     configPaths: InstanceConfigPaths,
     caBundlePaths: CaBundlePaths,
     databaseNames: string[],
+    testAgentIP?: string,
   ): Promise<{ userContainerId: string | null; interceptorName: string }> {
     if (!item.image) {
       this.logger.warn(`Skipping service ${item.name} — no image specified`);
@@ -217,6 +221,18 @@ export class DockerServiceGroupService {
         'io.dokkimi.role': 'service',
         'io.dokkimi.item-name': item.name,
       },
+      ...(testAgentIP
+        ? {
+            logConfig: {
+              Type: 'gelf',
+              Config: {
+                'gelf-address': `udp://${testAgentIP}:12201`,
+                'gelf-compression-type': 'none',
+                'tag': item.name,
+              },
+            },
+          }
+        : {}),
     });
 
     const dnsmasqName = `${containerName}-dnsmasq-${instanceId}`;

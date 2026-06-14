@@ -1,5 +1,7 @@
 filippo.io/edwards25519 v1.2.0 h1:crnVqOiS4jqYleHd9vaKZ+HKtHfllngJIiOpNpoJsjo=
 filippo.io/edwards25519 v1.2.0/go.mod h1:xzAOLCNug/yB62zG1bQ8uziwrIqIuxhctzJT18Q77mc=
+github.com/Graylog2/go-gelf v0.0.0-20170811154226-7ebf4f536d8f h1:xMWj7GzE4gCkm8e+661/GJHDXr4h7/jt4kM1Vvr9c5k=
+github.com/Graylog2/go-gelf v0.0.0-20170811154226-7ebf4f536d8f/go.mod h1:fBaQWrftOD5CrVCUfoYGHs4X4VViTuGOXA8WloCjTY0=
 github.com/bsm/ginkgo/v2 v2.12.0 h1:Ny8MWAHyOepLGlLKYmXG4IEkioBysk6GpaRTLC8zwWs=
 github.com/bsm/ginkgo/v2 v2.12.0/go.mod h1:SwYbGRRDovPVboqFv0tPTcG1sN61LM1Z4ARdbAV9g4c=
 github.com/bsm/gomega v1.27.10 h1:yeMWxP2pV2fG3FgAODIY8EiRE3dy0aeFYt4l7wh6yKA=

@@ -90,7 +90,7 @@ export class TestValidationService {
                 instance.id,
                 globalStepIndex,
                 'SKIPPED',
-                'Step was not executed — test-agent failed before reaching this step',
+                'Step was not executed — a previous step failed before reaching this step',
               );
               try {
                 await this.prisma.testExecutionLog.create({

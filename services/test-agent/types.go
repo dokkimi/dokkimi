@@ -50,13 +50,46 @@ type TestDefinition struct {
 	Steps          []TestStep        `json:"steps"`
 }
 
-// TestStep represents a single step: action + extract (assertions are stripped before reaching test-agent)
+// TestStep represents a single step: action + extract + assertions
 type TestStep struct {
 	Name          string                 `json:"name,omitempty"`
 	Description   string                 `json:"description,omitempty"`
 	StopOnFailure *bool                  `json:"stopOnFailure,omitempty"`
 	Action        StepAction             `json:"action"`
 	Extract       map[string]ExtractRule `json:"extract,omitempty"`
+	Assertions    []AssertionBlock       `json:"assertions,omitempty"`
+}
+
+// AssertionBlock represents a block of assertions for a test step.
+type AssertionBlock struct {
+	Extract           map[string]ExtractRule `json:"extract,omitempty"`
+	Match             *MatchCriteria         `json:"match,omitempty"`
+	Count             *CountAssertion        `json:"count,omitempty"`
+	AssertionScope    string                 `json:"assertionScope,omitempty"` // "all", "first", "last", "any"
+	Assertions        []Assertion            `json:"assertions,omitempty"`
+	Service           string                 `json:"service,omitempty"`
+	ConsoleAssertions []ConsoleLogAssertion  `json:"consoleAssertions,omitempty"`
+}
+
+// MatchCriteria specifies which HTTP logs to validate against.
+type MatchCriteria struct {
+	Origin string `json:"origin,omitempty"`
+	Method string `json:"method,omitempty"`
+	URL    string `json:"url,omitempty"`
+}
+
+// ConsoleLogAssertion validates console log output from a service.
+type ConsoleLogAssertion struct {
+	Level    string          `json:"level,omitempty"`
+	Message  *MessageFilter  `json:"message,omitempty"`
+	Count    CountAssertion  `json:"count"`
+	Disabled bool            `json:"disabled,omitempty"`
+}
+
+// MessageFilter specifies how to match console log messages.
+type MessageFilter struct {
+	Operator string `json:"operator"` // "eq", "contains", "matches"
+	Value    string `json:"value"`
 }
 
 // ExtractRule defines how to extract a variable from a response.

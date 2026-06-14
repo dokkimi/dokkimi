@@ -122,6 +122,63 @@ func (vc *VariableContext) ResolveAction(action StepAction) (StepAction, error) 
 }
 
 // resolveValue recursively resolves variables in a value.
+// ResolveAssertionBlocks resolves variable templates in assertion expected values,
+// match criteria, and console assertion message filters.
+func (vc *VariableContext) ResolveAssertionBlocks(blocks []AssertionBlock) []AssertionBlock {
+	resolved := make([]AssertionBlock, len(blocks))
+	for i, block := range blocks {
+		resolved[i] = block
+
+		// Resolve assertion values
+		if len(block.Assertions) > 0 {
+			resolvedAssertions := make([]Assertion, len(block.Assertions))
+			for j, a := range block.Assertions {
+				resolvedAssertions[j] = a
+				if a.Value != nil {
+					if rv, err := vc.resolveValue(a.Value); err == nil {
+						resolvedAssertions[j].Value = rv
+					}
+				}
+			}
+			resolved[i].Assertions = resolvedAssertions
+		}
+
+		// Resolve match criteria
+		if block.Match != nil {
+			m := *block.Match
+			if m.URL != "" {
+				if rv, err := vc.Resolve(m.URL); err == nil {
+					m.URL = rv
+				}
+			}
+			if m.Origin != "" {
+				if rv, err := vc.Resolve(m.Origin); err == nil {
+					m.Origin = rv
+				}
+			}
+			resolved[i].Match = &m
+		}
+
+		// Resolve console assertion message filters
+		if len(block.ConsoleAssertions) > 0 {
+			resolvedCA := make([]ConsoleLogAssertion, len(block.ConsoleAssertions))
+			for j, ca := range block.ConsoleAssertions {
+				resolvedCA[j] = ca
+				if ca.Message != nil && ca.Message.Value != "" {
+					if rv, err := vc.Resolve(ca.Message.Value); err == nil {
+						resolvedCA[j].Message = &MessageFilter{
+							Operator: ca.Message.Operator,
+							Value:    rv,
+						}
+					}
+				}
+			}
+			resolved[i].ConsoleAssertions = resolvedCA
+		}
+	}
+	return resolved
+}
+
 func (vc *VariableContext) resolveValue(value interface{}) (interface{}, error) {
 	switch v := value.(type) {
 	case string:

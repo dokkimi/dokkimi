@@ -27,26 +27,32 @@ type DatabaseLogMessage struct {
 
 // QueryLogger handles async logging of database queries to LPS
 type QueryLogger struct {
-	logEndpointURL string
-	httpClient     *http.Client
-	logChan        chan DatabaseLogMessage
-	stopChan       chan struct{}
+	logEndpointURL  string
+	testAgentURL    string
+	httpClient      *http.Client
+	testAgentClient *http.Client
+	logChan         chan DatabaseLogMessage
+	stopChan        chan struct{}
 }
 
 // NewQueryLogger creates a new async database query logger
 func NewQueryLogger(logEndpointURL string, timeout time.Duration) *QueryLogger {
 	logger := &QueryLogger{
-		logEndpointURL: logEndpointURL,
-		httpClient: &http.Client{
-			Timeout: timeout,
-		},
-		logChan:  make(chan DatabaseLogMessage, 1000),
-		stopChan: make(chan struct{}),
+		logEndpointURL:  logEndpointURL,
+		httpClient:      &http.Client{Timeout: timeout},
+		testAgentClient: &http.Client{Timeout: timeout},
+		logChan:         make(chan DatabaseLogMessage, 1000),
+		stopChan:        make(chan struct{}),
 	}
 
 	go logger.worker()
 
 	return logger
+}
+
+// SetTestAgentURL enables dual-write to the test-agent for inline validation.
+func (l *QueryLogger) SetTestAgentURL(url string) {
+	l.testAgentURL = url
 }
 
 // Log queues a database log message for async delivery to LPS
@@ -79,6 +85,11 @@ func (l *QueryLogger) sendLog(message DatabaseLogMessage) {
 		return
 	}
 
+	// Dual-write: send to test-agent in a separate goroutine (independent, fire-and-forget)
+	if l.testAgentURL != "" {
+		go l.sendToTestAgent(body)
+	}
+
 	url := l.logEndpointURL + "/logs/database"
 	req, err := http.NewRequest(http.MethodPost, url, bytes.NewBuffer(body))
 	if err != nil {
@@ -98,6 +109,23 @@ func (l *QueryLogger) sendLog(message DatabaseLogMessage) {
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		log.Printf("[QueryLogger] LPS returned non-success status %d for query: %.80s", resp.StatusCode, message.Query)
 	}
+}
+
+// sendToTestAgent sends a copy of the log to the test-agent for inline validation.
+func (l *QueryLogger) sendToTestAgent(body []byte) {
+	url := l.testAgentURL + "/logs/database"
+	req, err := http.NewRequest(http.MethodPost, url, bytes.NewBuffer(body))
+	if err != nil {
+		return
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := l.testAgentClient.Do(req)
+	if err != nil {
+		log.Printf("[QueryLogger] Failed to send log to test-agent: %v", err)
+		return
+	}
+	resp.Body.Close()
 }
 
 // Stop stops the logger worker and drains remaining logs

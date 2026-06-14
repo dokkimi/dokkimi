@@ -19,6 +19,10 @@ describe('LogProcessorController', () => {
     process: jest.fn().mockResolvedValue(undefined),
   };
 
+  const mockTestValidationLogProcessor: any = {
+    process: jest.fn().mockResolvedValue(undefined),
+  };
+
   const mockTelemetry: any = {
     track: jest.fn(),
   };
@@ -29,6 +33,7 @@ describe('LogProcessorController', () => {
       mockConsoleLogProcessor,
       mockDatabaseLogProcessor,
       mockTestExecutionLogProcessor,
+      mockTestValidationLogProcessor,
       mockTelemetry,
     );
     jest.clearAllMocks();

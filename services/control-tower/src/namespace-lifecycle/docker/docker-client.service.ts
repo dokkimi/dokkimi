@@ -15,6 +15,7 @@ export interface RunContainerOptions {
   cmd?: string[];
   entrypoint?: string[];
   exposedPorts?: number[];
+  logConfig?: { Type: string; Config: Record<string, string> };
 }
 
 export interface ContainerInfo {
@@ -157,6 +158,7 @@ export class DockerClientService implements OnApplicationBootstrap {
         ...(isSharedNetworkMode
           ? { NetworkMode: opts.networkMode }
           : { NetworkMode: opts.networkName }),
+        ...(opts.logConfig ? { LogConfig: opts.logConfig } : {}),
       },
       NetworkingConfig: networkingConfig,
     };
