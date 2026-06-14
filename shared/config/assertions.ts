@@ -151,6 +151,8 @@ export type AssertionOperator =
   | 'lte'
   | 'contains'
   | 'notContains'
+  | 'containsIgnoreCase'
+  | 'notContainsIgnoreCase'
   | 'matches'
   | 'exists'
   | 'notExists'

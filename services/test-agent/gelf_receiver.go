@@ -30,6 +30,7 @@ type GelfReceiver struct {
 	// serviceItemIDs maps service definition name → instanceItemId for CT forwarding.
 	serviceItemIDs map[string]string
 	forwardCh      chan ConsoleLogMessage
+	done           chan struct{}
 }
 
 // NewGelfReceiver creates and starts a GELF UDP listener on port 12201.
@@ -54,6 +55,7 @@ func NewGelfReceiver(
 		httpClient:      &http.Client{Timeout: 10 * time.Second},
 		serviceItemIDs:  serviceItemIDs,
 		forwardCh:       make(chan ConsoleLogMessage, gelfForwardBufferSize),
+		done:            make(chan struct{}),
 	}
 
 	for i := 0; i < gelfForwardWorkers; i++ {
@@ -64,10 +66,24 @@ func NewGelfReceiver(
 	return gr, nil
 }
 
+// Close signals Run() to stop. Run() closes forwardCh on exit,
+// which drains the forward workers.
+func (gr *GelfReceiver) Close() {
+	close(gr.done)
+}
+
 // Run reads GELF messages in a loop. Call from a goroutine.
-// The goroutine exits when the process shuts down.
+// The goroutine exits when Close is called or the process shuts down.
 func (gr *GelfReceiver) Run() {
+	defer close(gr.forwardCh)
+
 	for {
+		select {
+		case <-gr.done:
+			return
+		default:
+		}
+
 		msg, err := gr.reader.ReadMessage()
 		if err != nil {
 			if strings.Contains(err.Error(), "use of closed network connection") {
@@ -77,8 +93,6 @@ func (gr *GelfReceiver) Run() {
 			continue
 		}
 
-		// Docker GELF tag option sets the _tag extra field to the service
-		// definition name (configured in docker-service-group.service.ts).
 		serviceName := stringFromExtra(msg.Extra, "_tag")
 		if serviceName == "" {
 			serviceName = stringFromExtra(msg.Extra, "_container_name")

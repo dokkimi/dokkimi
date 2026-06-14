@@ -149,6 +149,33 @@ describe('LogProcessorController', () => {
     });
   });
 
+  describe('receiveTestValidationLog', () => {
+    it('processes test validation log and returns received', async () => {
+      const message = {
+        instanceId: 'inst-1',
+        stepIndex: 0,
+        assertions: [
+          {
+            passed: true,
+            path: 'response.status',
+            operator: 'eq',
+            expected: 200,
+            actual: 200,
+            resultKind: 'field',
+          },
+        ],
+      };
+
+      const result = await controller.receiveTestValidationLog(message as any);
+
+      expect(mockTestValidationLogProcessor.process).toHaveBeenCalledWith(
+        message,
+        'inst-1',
+      );
+      expect(result).toEqual({ received: true });
+    });
+  });
+
   describe('lifecycle and telemetry batching', () => {
     it('onModuleInit sets up batch timer', () => {
       jest.useFakeTimers();

@@ -57,9 +57,10 @@ func isRetryable(results []AssertionResult) bool {
 			if r.Error == "Step log not found" {
 				return true
 			}
-			// Count assertion failed — more logs may still be in flight.
-			// Logs only grow, so any count failure is potentially retryable.
-			if r.ResultKind == "count" {
+			// Count assertion failed — only retry when actual < expected,
+			// because logs only grow. If actual >= expected, more logs
+			// will never fix it (e.g., expected eq 1 but got 2).
+			if r.ResultKind == "count" && isCountRetryable(r) {
 				return true
 			}
 			if r.ResultKind == "extract" && strings.Contains(r.Error, "not found") {
@@ -68,6 +69,16 @@ func isRetryable(results []AssertionResult) bool {
 		}
 	}
 	return false
+}
+
+// isCountRetryable returns true when a count failure could resolve with more logs.
+func isCountRetryable(r AssertionResult) bool {
+	actual, aOk := toFloat(r.Actual)
+	expected, eOk := toFloat(r.Expected)
+	if !aOk || !eOk {
+		return false
+	}
+	return actual < expected
 }
 
 // validateStep runs all assertion blocks for a step against the buffered logs.

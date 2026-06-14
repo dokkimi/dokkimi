@@ -8,16 +8,12 @@ import {
 } from '@nestjs/common';
 import { RunsService } from './runs.service';
 import { TestCompletionDto } from './dto/test-completion.dto';
-import { PrismaService } from '../prisma/prisma.service';
 
 @Controller('test-complete')
 export class TestCompletionController {
   private readonly logger = new Logger(TestCompletionController.name);
 
-  constructor(
-    private readonly runsService: RunsService,
-    private readonly prisma: PrismaService,
-  ) {}
+  constructor(private readonly runsService: RunsService) {}
 
   @Post()
   @HttpCode(HttpStatus.ACCEPTED)

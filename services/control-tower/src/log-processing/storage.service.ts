@@ -179,7 +179,7 @@ export class StorageService {
         instanceId: message.instanceId,
         stepIndex: message.stepIndex,
         assertionIndex: index,
-        assertionType: a.resultKind ?? 'field',
+        assertionType: a.operator ?? a.resultKind ?? 'field',
         passed: a.passed,
         expected: a.expected as Prisma.InputJsonValue,
         actual: a.actual as Prisma.InputJsonValue,

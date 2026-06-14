@@ -185,23 +185,31 @@ func CompareValues(operator string, actual, expected interface{}) AssertionResul
 	case "gt":
 		af, aOk := toFloat(actual)
 		ef, eOk := toFloat(expected)
-		passed := aOk && eOk && af > ef
-		return AssertionResult{Passed: passed, Expected: expected, Actual: actual}
+		if !aOk || !eOk {
+			return AssertionResult{Passed: false, Expected: expected, Actual: actual, Error: fmt.Sprintf("cannot compare non-numeric values with %s", operator)}
+		}
+		return AssertionResult{Passed: af > ef, Expected: expected, Actual: actual}
 	case "gte":
 		af, aOk := toFloat(actual)
 		ef, eOk := toFloat(expected)
-		passed := aOk && eOk && af >= ef
-		return AssertionResult{Passed: passed, Expected: expected, Actual: actual}
+		if !aOk || !eOk {
+			return AssertionResult{Passed: false, Expected: expected, Actual: actual, Error: fmt.Sprintf("cannot compare non-numeric values with %s", operator)}
+		}
+		return AssertionResult{Passed: af >= ef, Expected: expected, Actual: actual}
 	case "lt":
 		af, aOk := toFloat(actual)
 		ef, eOk := toFloat(expected)
-		passed := aOk && eOk && af < ef
-		return AssertionResult{Passed: passed, Expected: expected, Actual: actual}
+		if !aOk || !eOk {
+			return AssertionResult{Passed: false, Expected: expected, Actual: actual, Error: fmt.Sprintf("cannot compare non-numeric values with %s", operator)}
+		}
+		return AssertionResult{Passed: af < ef, Expected: expected, Actual: actual}
 	case "lte":
 		af, aOk := toFloat(actual)
 		ef, eOk := toFloat(expected)
-		passed := aOk && eOk && af <= ef
-		return AssertionResult{Passed: passed, Expected: expected, Actual: actual}
+		if !aOk || !eOk {
+			return AssertionResult{Passed: false, Expected: expected, Actual: actual, Error: fmt.Sprintf("cannot compare non-numeric values with %s", operator)}
+		}
+		return AssertionResult{Passed: af <= ef, Expected: expected, Actual: actual}
 	case "contains":
 		passed := strings.Contains(fmt.Sprintf("%v", actual), fmt.Sprintf("%v", expected))
 		return AssertionResult{Passed: passed, Expected: expected, Actual: actual}

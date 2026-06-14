@@ -1,6 +1,7 @@
 package main
 
 import (
+	"log"
 	"math"
 	"strings"
 	"time"
@@ -276,8 +277,14 @@ func FindDirectDatabaseLog(dbLogs []DatabaseLogMessage, action StepAction, stepE
 }
 
 func stepTimeWindow(stepExec StepExecution) (time.Time, time.Time) {
-	start, _ := time.Parse(time.RFC3339Nano, stepExec.StartTime)
-	end, _ := time.Parse(time.RFC3339Nano, stepExec.EndTime)
+	start, startErr := time.Parse(time.RFC3339Nano, stepExec.StartTime)
+	end, endErr := time.Parse(time.RFC3339Nano, stepExec.EndTime)
+	if startErr != nil {
+		log.Printf("Warning: failed to parse step StartTime %q: %v", stepExec.StartTime, startErr)
+	}
+	if endErr != nil {
+		log.Printf("Warning: failed to parse step EndTime %q: %v", stepExec.EndTime, endErr)
+	}
 	// No backward buffer on start — the test-agent controls the step start
 	// time so there's no clock skew. Forward buffer on end catches interceptor
 	// logs that arrive slightly after the step response returns.
@@ -286,8 +293,14 @@ func stepTimeWindow(stepExec StepExecution) (time.Time, time.Time) {
 }
 
 func stepExecMidpoint(stepExec StepExecution) int64 {
-	start, _ := time.Parse(time.RFC3339Nano, stepExec.StartTime)
-	end, _ := time.Parse(time.RFC3339Nano, stepExec.EndTime)
+	start, startErr := time.Parse(time.RFC3339Nano, stepExec.StartTime)
+	end, endErr := time.Parse(time.RFC3339Nano, stepExec.EndTime)
+	if startErr != nil {
+		log.Printf("Warning: failed to parse step StartTime %q: %v", stepExec.StartTime, startErr)
+	}
+	if endErr != nil {
+		log.Printf("Warning: failed to parse step EndTime %q: %v", stepExec.EndTime, endErr)
+	}
 	return (start.UnixMilli() + end.UnixMilli()) / 2
 }
 

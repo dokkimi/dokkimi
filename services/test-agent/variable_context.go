@@ -5,12 +5,14 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"sync"
 )
 
 var variablePattern = regexp.MustCompile(`\{\{(\w+)\}\}`)
 
 // VariableContext stores and resolves variables during test execution.
 type VariableContext struct {
+	mu        sync.RWMutex
 	variables map[string]string
 }
 
@@ -25,17 +27,23 @@ func NewVariableContext() *VariableContext {
 // pointer when other components (UI executor, logger) hold references to the
 // same context — reassigning the pointer leaves them looking at stale state.
 func (vc *VariableContext) Reset() {
+	vc.mu.Lock()
+	defer vc.mu.Unlock()
 	vc.variables = make(map[string]string)
 }
 
 // Set stores a variable value.
 func (vc *VariableContext) Set(name, value string) {
+	vc.mu.Lock()
+	defer vc.mu.Unlock()
 	vc.variables[name] = value
 }
 
 // Resolve replaces {{variableName}} placeholders in a template string.
 // Returns an error if a referenced variable is not defined.
 func (vc *VariableContext) Resolve(template string) (string, error) {
+	vc.mu.RLock()
+	defer vc.mu.RUnlock()
 	var resolveErr error
 	result := variablePattern.ReplaceAllStringFunc(template, func(match string) string {
 		varName := variablePattern.FindStringSubmatch(match)[1]
@@ -253,6 +261,8 @@ func (vc *VariableContext) Extract(rules map[string]ExtractRule, doc map[string]
 
 // Snapshot returns a copy of all current variable values.
 func (vc *VariableContext) Snapshot() map[string]string {
+	vc.mu.RLock()
+	defer vc.mu.RUnlock()
 	snapshot := make(map[string]string, len(vc.variables))
 	for k, v := range vc.variables {
 		snapshot[k] = v
