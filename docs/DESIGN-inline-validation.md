@@ -245,16 +245,51 @@ The Go assertion engine must produce identical results to the TypeScript one. St
 
 3. **Integration test** — Run a Dokkimi test suite with TVS in shadow mode. Compare inline results from test-agent against TVS results from CT. Flag any divergence.
 
+## Visual Baseline Matching
+
+### Current Flow
+
+1. CLI uploads baseline PNGs to CT at run-start via `POST /baselines`
+2. CT writes them to `~/.dokkimi/runs/.../baselines/`
+3. Test-agent captures screenshots during UI steps, uploads them to CT via `POST /artifacts`
+4. After `/test-complete`, CT's `VisualMatchService` loads both images from disk, runs `pixelmatch`, sets verdict (`pass`/`fail`/`no-baseline`)
+5. User reviews failures via `dokkimi baselines` (approval workflow reads artifacts from CT)
+
+### Proposed Flow
+
+Visual matching moves into the test-agent, consistent with all other validation.
+
+**Baseline delivery:** Same mechanism as database init files. CT already receives baselines at run-start and writes them to disk. The baselines directory is bind-mounted into the test-agent container as a read-only volume, just as init file directories are bind-mounted into database containers. No network fetch needed — test-agent reads baselines from a local path.
+
+**Diffing in Go:** The `go-pixmatch` library (`github.com/dknight/go-pixmatch`) is a direct port of JS `pixelmatch` with zero external dependencies (stdlib only: `image`, `image/png`). Supports configurable threshold and anti-aliasing detection.
+
+**Per-step flow:**
+1. Test-agent captures screenshot during a UI step
+2. Test-agent reads the corresponding baseline from the mounted volume
+3. Test-agent runs pixel-level diff via `go-pixmatch`
+4. Test-agent uploads capture PNG and diff PNG (if any) to CT via `POST /artifacts` (same endpoint as today)
+5. Test-agent reports verdict (`pass`/`fail`/`no-baseline`) to CT
+
+**What stays in CT:**
+- Baseline storage (receives from CLI, persists to disk, bind-mounts into namespace)
+- Artifact storage (receives captures and diffs from test-agent)
+- `dokkimi baselines` approval workflow (reads artifacts, writes approved baselines to user's `.dokkimi/baselines/` directory)
+
+**What moves to test-agent:**
+- Pixel-level diffing (`VisualMatchService` logic)
+- Verdict determination (threshold comparison)
+- New dependency: `github.com/dknight/go-pixmatch` (stdlib only, zero transitive deps)
+
 ## What Changes Where
 
 | Component                    | Change                                                                                                                                                                                                                                                                                                                                                                                                                      |
 | ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **test-agent** (Go)          | Add `/logs/http`, `/logs/database` endpoints. Add GELF UDP listener (port 12201, exposed in container config) for console logs. Forward console logs to CT via `POST /logs/console`. Add in-memory log buffer. Port assertion engine, document assembler, block validators, and extract resolver from TS. Add quiescence detection. Add step result reporting to CT. New dependency: `github.com/Graylog2/go-gelf/v2/gelf`. |
+| **test-agent** (Go)          | Add `/logs/http`, `/logs/database` endpoints. Add GELF UDP listener (port 12201, exposed in container config) for console logs. Forward console logs to CT via `POST /logs/console`. Add in-memory log buffer. Port assertion engine, document assembler, block validators, and extract resolver from TS. Add quiescence detection. Add step result reporting to CT. Port visual baseline matching via `go-pixmatch`. New dependencies: `github.com/Graylog2/go-gelf/v2/gelf`, `github.com/dknight/go-pixmatch`. |
 | **interceptor** (Go)         | Add second POST to `TEST_AGENT_URL` in logger goroutine (env var already injected).                                                                                                                                                                                                                                                                                                                                         |
 | **db-proxy** (Go)            | Add second POST to `TEST_AGENT_URL` in logger goroutine (env var already injected).                                                                                                                                                                                                                                                                                                                                         |
-| **CT namespace-lifecycle**   | Set GELF log driver on service containers (pointing at test-agent:12201). Expose UDP port 12201 on test-agent container. Remove dockerode console log streaming (replaced by test-agent forwarding). Stop stripping assertion blocks from test-agent ConfigMap.                                                                                                                                                             |
+| **CT namespace-lifecycle**   | Set GELF log driver on service containers (pointing at test-agent:12201). Expose UDP port 12201 on test-agent container. Remove dockerode console log streaming (replaced by test-agent forwarding). Bind-mount baselines directory into test-agent container. Stop stripping assertion blocks from test-agent ConfigMap.                                                                                                    |
 | **CT log-processing**        | Add `POST /logs/test-validation` endpoint (with `@SkipThrottle()`) to receive step results from test-agent.                                                                                                                                                                                                                                                                                                                 |
-| **CT test-validation (TVS)** | Eventually removed. Intermediate state: skip validation when inline results exist. Shadow mode for divergence detection during migration.                                                                                                                                                                                                                                                                                   |
+| **CT test-validation (TVS)** | Eventually removed (including `VisualMatchService`). Intermediate state: skip validation when inline results exist. Shadow mode for divergence detection during migration.                                                                                                                                                                                                                                                  |
 | **definition-resolver**      | No change — already outputs full step definitions.                                                                                                                                                                                                                                                                                                                                                                          |
 
 ## What Doesn't Change
@@ -285,5 +320,6 @@ With inline validation, the test-agent knows assertion results before moving to 
 8. **Console log collection** — GELF UDP listener in test-agent + GELF log driver config in namespace-lifecycle
 9. **Result reporting** — POST step results to CT via `/logs/test-validation`, CT stores them
 10. **Shadow mode** — TVS validates in parallel, compare results, flag divergence
-11. **TVS removal** — remove CT-side validation once inline is stable and shadow mode shows no divergence
-12. **`retryUntil`** — first flow-control feature using inline results
+11. **Visual baseline matching** — bind-mount baselines into test-agent, port `VisualMatchService` diffing logic to Go via `go-pixmatch`, upload captures/diffs to CT via `POST /artifacts`
+12. **TVS removal** — remove CT-side validation (including `VisualMatchService`) once inline is stable and shadow mode shows no divergence
+13. **`retryUntil`** — first flow-control feature using inline results
