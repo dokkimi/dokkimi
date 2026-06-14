@@ -7,15 +7,8 @@ import { DeploymentSchedulerService } from './deployment-scheduler.service';
 import { NamespaceLifecycleModule } from '../namespace-lifecycle/namespace-lifecycle.module';
 import { StorageModule } from '../storage/storage.module';
 import { PrismaModule } from '../prisma/prisma.module';
-import { ArtifactsModule } from '../artifacts/artifacts.module';
-
 @Module({
-  imports: [
-    NamespaceLifecycleModule,
-    StorageModule,
-    PrismaModule,
-    ArtifactsModule,
-  ],
+  imports: [NamespaceLifecycleModule, StorageModule, PrismaModule],
   controllers: [RunsController, TestCompletionController],
   providers: [RunsService, RunCleanupService, DeploymentSchedulerService],
   exports: [RunsService],

@@ -20,6 +20,7 @@ export interface ArtifactRow {
   type: string;
   name: string | null;
   uri: string;
+  verdict: string | null;
   createdAt: Date;
 }
 
@@ -79,6 +80,7 @@ export class ArtifactsService {
         type: dto.type,
         name: dto.name ?? null,
         uri: written.uri,
+        ...(dto.verdict ? { verdict: dto.verdict } : {}),
       },
       select: { id: true, uri: true },
     });

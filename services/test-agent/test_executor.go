@@ -85,6 +85,15 @@ func (e *TestExecutor) SetUIStepExecutor(ui *UIStepExecutor) {
 	e.uiStepExecutor = ui
 }
 
+// VisualFailures returns any visual match failure messages collected during
+// UI step execution. Empty when no visual matching ran or all matched.
+func (e *TestExecutor) VisualFailures() []string {
+	if e.uiStepExecutor == nil {
+		return nil
+	}
+	return e.uiStepExecutor.VisualFailures()
+}
+
 // SetInlineValidation configures inline assertion validation for each step.
 func (e *TestExecutor) SetInlineValidation(sv *StepValidator, vr *ValidationReporter, instanceID string) {
 	e.stepValidator = sv

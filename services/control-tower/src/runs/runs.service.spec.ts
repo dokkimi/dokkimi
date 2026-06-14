@@ -67,10 +67,6 @@ describe('RunsService', () => {
   };
 
   beforeEach(() => {
-    const mockVisualMatch = {
-      processInstance: jest.fn().mockResolvedValue({ failures: [] }),
-    };
-
     service = new RunsService(
       mockPrisma as any,
       mockRunStorage as any,
@@ -79,7 +75,6 @@ describe('RunsService', () => {
       mockTelemetry as any,
       mockCleanup as any,
       mockScheduler as any,
-      mockVisualMatch as any,
     );
     jest.clearAllMocks();
   });

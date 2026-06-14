@@ -207,6 +207,7 @@ describe('DockerDeployerService', () => {
       mockDockerConfig as any,
       mockCaService as any,
       deployConfig,
+      { getBaselinesDir: () => '/nonexistent' } as any,
     );
     const databaseGroupSvc = new DockerDatabaseGroupService(
       mockDockerClient as any,

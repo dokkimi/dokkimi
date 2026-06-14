@@ -84,6 +84,7 @@ func main() {
 	// test-agent fails that step loudly with a clear message.
 	if cfg.BrowserURL != "" {
 		artifactUploader := NewArtifactUploader(cfg.ControlTowerURL, instanceId, cfg.RequestTimeout)
+		visualMatcher := NewVisualMatcher(cfg.BaselinesPath)
 		uiExecutor := NewUIStepExecutor(
 			cfg.BrowserURL,
 			cfg.DefaultViewportWidth, cfg.DefaultViewportHeight,
@@ -91,6 +92,7 @@ func main() {
 			testExecutor.VarContext(),
 			testExecutionLogger,
 			artifactUploader,
+			visualMatcher,
 		)
 		testExecutor.SetUIStepExecutor(uiExecutor)
 		log.Printf("UI step executor configured (browser at %s)", cfg.BrowserURL)
@@ -252,7 +254,14 @@ func main() {
 		}
 
 		log.Printf("Execution complete, notifying Control Tower...")
-		if notifyErr := completionNotifier.NotifyCompletion(req.TestRunID, "success", "", stepExecutions, isPartial); notifyErr != nil {
+		status := "success"
+		message := ""
+		if vf := testExecutor.VisualFailures(); len(vf) > 0 {
+			status = "failure"
+			message = strings.Join(vf, "\n")
+			log.Printf("Visual match failures detected: %s", message)
+		}
+		if notifyErr := completionNotifier.NotifyCompletion(req.TestRunID, status, message, stepExecutions, isPartial); notifyErr != nil {
 			log.Printf("Failed to notify Control Tower: %v", notifyErr)
 		}
 	}

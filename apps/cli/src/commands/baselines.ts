@@ -1,4 +1,5 @@
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 import { fetchJson, resolveUri } from '../lib/cli-utils';
 import { loadConfig, buildServiceUrl } from '@dokkimi/config';
@@ -14,6 +15,7 @@ import type {
   InstanceSummary,
 } from '../lib/inspect-types';
 import { getProjectPath, latestRunUrl } from '../lib/project-path';
+import { buildRunMenuItems, fetchAllRuns, pickRun } from '../lib/run-picker';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -41,10 +43,13 @@ interface WriteContext {
 
 export async function baselines(args: string[]): Promise<void> {
   if (args.includes('--help') || args.includes('-h')) {
-    console.log('Usage: dokkimi baselines');
+    console.log('Usage: dokkimi baselines [--run]');
     console.log('');
+    console.log('Review and approve pending visual baselines.');
+    console.log('');
+    console.log('Options:');
     console.log(
-      'Review and approve pending visual baselines from the last run.',
+      '  --run     Browse and select from run history instead of using the latest run',
     );
     process.exit(0);
   }
@@ -56,37 +61,97 @@ export async function baselines(args: string[]): Promise<void> {
 
   const config = loadConfig();
   const ctUrl = buildServiceUrl(config.services.controlTower);
+  const useHistory = args.includes('--run');
+
+  if (useHistory) {
+    const allRuns = await fetchAllRuns(ctUrl);
+    if (!allRuns) {
+      console.log('No run history found. Run `dokkimi run` first.');
+      return;
+    }
+
+    const menuItems = await buildRunMenuItems(ctUrl, allRuns);
+    enterAltScreen();
+    try {
+      while (true) {
+        const run = await pickRun(
+          menuItems,
+          'Select a run to review baselines:',
+        );
+        if (!run) {
+          break;
+        }
+        const items = await loadPendingForRun(ctUrl, run.instances);
+        if (items.length === 0) {
+          process.stdout.write('\x1b[2J\x1b[H');
+          process.stdout.write('No pending baselines in this run.\n\n');
+          process.stdout.write('\x1b[90mPress any key to go back...\x1b[0m');
+          await waitForAnyKey();
+          continue;
+        }
+        const result = await reviewRun(items, ctUrl);
+        printSummary(result);
+        process.stdout.write('\x1b[2J\x1b[H');
+      }
+    } finally {
+      exitAltScreen();
+      cleanupReviewTempDir();
+    }
+    return;
+  }
+
   const items = await loadPendingFromLatestRun(ctUrl);
   if (items.length === 0) {
     console.log('No pending baselines from the last run.');
     return;
   }
 
+  enterAltScreen();
+  let result: FlowResult;
+  try {
+    result = await reviewRun(items, ctUrl);
+  } finally {
+    exitAltScreen();
+    cleanupReviewTempDir();
+  }
+  printSummary(result);
+}
+
+async function reviewRun(
+  items: PendingItem[],
+  ctUrl: string,
+): Promise<FlowResult> {
   const ctx = buildWriteContext(ctUrl);
   const initialPendingCount = items.length;
   const initialNewCount = items.filter(
     (i) => i.artifact.verdict === 'no-baseline',
   ).length;
 
-  enterAltScreen();
-  let result: { approved: number; skipped: number };
-  try {
-    result = await testListView(items, ctx);
-  } finally {
-    exitAltScreen();
-  }
-  const { approved: totalApproved, skipped: totalSkipped } = result!;
+  const result = await testListView(items, ctx);
 
-  if (totalApproved > 0 || totalSkipped > 0) {
+  trackEvent('cli_baselines', {
+    approved: result.approved,
+    skipped: result.skipped,
+    total_pending: initialPendingCount,
+    new_count: initialNewCount,
+    changed_count: initialPendingCount - initialNewCount,
+    mode: 'interactive',
+  });
+
+  return result;
+}
+
+function printSummary(result: FlowResult): void {
+  if (result.approved > 0 || result.skipped > 0) {
     const parts: string[] = [];
-    if (totalApproved > 0) {
-      parts.push(`\x1b[32m${totalApproved} approved\x1b[0m`);
+    if (result.approved > 0) {
+      parts.push(`\x1b[32m${result.approved} approved\x1b[0m`);
     }
-    if (totalSkipped > 0) {
-      parts.push(`\x1b[90m${totalSkipped} skipped\x1b[0m`);
+    if (result.skipped > 0) {
+      parts.push(`\x1b[90m${result.skipped} skipped\x1b[0m`);
     }
     console.log(`\n${parts.join(', ')}`);
-    if (totalApproved > 0) {
+    if (result.approved > 0) {
       console.log(
         'Commit the updated baselines to git so they travel with the test definitions.',
       );
@@ -94,14 +159,15 @@ export async function baselines(args: string[]): Promise<void> {
   } else {
     console.log('\nNo baselines changed.');
   }
+}
 
-  trackEvent('cli_baselines', {
-    approved: totalApproved,
-    skipped: totalSkipped,
-    total_pending: initialPendingCount,
-    new_count: initialNewCount,
-    changed_count: initialPendingCount - initialNewCount,
-    mode: 'interactive',
+function waitForAnyKey(): Promise<void> {
+  return new Promise((resolve) => {
+    process.stdin.setRawMode(true);
+    process.stdin.resume();
+    process.stdin.once('data', () => {
+      resolve();
+    });
   });
 }
 
@@ -372,9 +438,9 @@ async function approveAll(
 
 function openImages(item: PendingItem, ctx: WriteContext): void {
   const capturePath = resolveUri(item.artifact.uri, ctx.storageDir);
-  if (fs.existsSync(capturePath)) {
-    openFile(capturePath);
-  }
+  const name = item.artifact.name ?? 'capture';
+  const itemDir = path.join(reviewTempDir(), item.instanceId);
+  fs.mkdirSync(itemDir, { recursive: true });
 
   if (item.artifact.verdict === 'fail') {
     const sourceFile = ctx.sourceByName.get(item.instanceName);
@@ -386,10 +452,19 @@ function openImages(item: PendingItem, ctx: WriteContext): void {
           `${item.artifact.name}.png`,
         );
         if (fs.existsSync(baselinePath)) {
-          openFile(baselinePath);
+          const namedPath = path.join(itemDir, `${name}--current.png`);
+          fs.copyFileSync(baselinePath, namedPath);
+          openFile(namedPath);
         }
       }
     }
+  }
+
+  if (fs.existsSync(capturePath)) {
+    const label = item.artifact.verdict === 'fail' ? 'incoming' : 'new';
+    const namedPath = path.join(itemDir, `${name}--${label}.png`);
+    fs.copyFileSync(capturePath, namedPath);
+    openFile(namedPath);
   }
 }
 
@@ -473,6 +548,27 @@ function groupByTest(
 }
 
 // ---------------------------------------------------------------------------
+// Review temp dir
+// ---------------------------------------------------------------------------
+
+function reviewTempDir(): string {
+  const dir = path.join(os.tmpdir(), 'dokkimi-baselines-review');
+  fs.mkdirSync(dir, { recursive: true });
+  return dir;
+}
+
+function cleanupReviewTempDir(): void {
+  try {
+    fs.rmSync(path.join(os.tmpdir(), 'dokkimi-baselines-review'), {
+      recursive: true,
+      force: true,
+    });
+  } catch {
+    // best-effort
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Load pending from CT
 // ---------------------------------------------------------------------------
 
@@ -485,9 +581,15 @@ async function loadPendingFromLatestRun(ctUrl: string): Promise<PendingItem[]> {
     console.error('No run history found. Run `dokkimi run` first.');
     process.exit(1);
   }
+  return loadPendingForRun(ctUrl, latest.instances);
+}
 
+async function loadPendingForRun(
+  ctUrl: string,
+  instances: InstanceSummary[],
+): Promise<PendingItem[]> {
   const items: PendingItem[] = [];
-  for (const inst of latest.instances) {
+  for (const inst of instances) {
     const res = await fetchJson<PendingResponse>(
       `${ctUrl}/artifacts/instance/${inst.id}/baselines-pending`,
     );

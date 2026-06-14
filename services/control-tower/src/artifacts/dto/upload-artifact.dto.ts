@@ -60,4 +60,8 @@ export class UploadArtifactDto {
   @IsOptional()
   @IsString()
   ignoreRegionBounds?: string;
+
+  @IsOptional()
+  @IsString()
+  verdict?: string;
 }

@@ -314,6 +314,10 @@ export class RunStorageService {
     }
   }
 
+  getBaselinesDir(instanceId: string): string {
+    return this.baselinesDir(instanceId);
+  }
+
   private baselinesDir(instanceId: string): string {
     return path.join(this.instanceDir(instanceId), 'baselines');
   }

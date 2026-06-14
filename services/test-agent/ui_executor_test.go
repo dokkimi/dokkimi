@@ -120,7 +120,7 @@ func newExecutor(d *fakeDriver) (*UIStepExecutor, *VariableContext) {
 	urlMap := map[string]URLMapEntry{
 		"frontend-svc": {Scheme: "http", URL: "frontend-svc.ns.svc.cluster.local", Name: "frontend"},
 	}
-	exec := NewUIStepExecutor("", 1280, 720, urlMap, varCtx, nil, nil).
+	exec := NewUIStepExecutor("", 1280, 720, urlMap, varCtx, nil, nil, nil).
 		WithDriverFactory(func(_ context.Context) (UIDriver, error) { return d, nil })
 	return exec, varCtx
 }
@@ -183,7 +183,7 @@ func TestUIExecutor_UnknownTargetErrors(t *testing.T) {
 func TestUIExecutor_FactoryFailureSurfaces(t *testing.T) {
 	exec := NewUIStepExecutor("", 1280, 720, map[string]URLMapEntry{
 		"svc": {Scheme: "http", URL: "svc"},
-	}, NewVariableContext(), nil, nil).WithDriverFactory(
+	}, NewVariableContext(), nil, nil, nil).WithDriverFactory(
 		func(_ context.Context) (UIDriver, error) {
 			return nil, errors.New("no browser")
 		},
@@ -496,7 +496,7 @@ func TestUIExecutor_ScreenshotSubStepUploads(t *testing.T) {
 	d := &fakeDriver{screenshot: []byte("PNG-DATA")}
 	varCtx := NewVariableContext()
 	urlMap := map[string]URLMapEntry{"frontend-svc": {Scheme: "http", URL: "h"}}
-	exec := NewUIStepExecutor("", 1280, 720, urlMap, varCtx, nil, uploader).
+	exec := NewUIStepExecutor("", 1280, 720, urlMap, varCtx, nil, uploader, nil).
 		WithDriverFactory(func(_ context.Context) (UIDriver, error) { return d, nil })
 
 	action := parseAction(t, `{
@@ -528,7 +528,7 @@ func TestUIExecutor_ScreenshotObjectFormWithMatchUploads(t *testing.T) {
 	d := &fakeDriver{screenshot: []byte("PNG-FULL")}
 	varCtx := NewVariableContext()
 	urlMap := map[string]URLMapEntry{"frontend-svc": {Scheme: "http", URL: "h"}}
-	exec := NewUIStepExecutor("", 1280, 720, urlMap, varCtx, nil, uploader).
+	exec := NewUIStepExecutor("", 1280, 720, urlMap, varCtx, nil, uploader, nil).
 		WithDriverFactory(func(_ context.Context) (UIDriver, error) { return d, nil })
 
 	// Object-form screenshot with a match block → full-page capture path.
@@ -566,7 +566,7 @@ func TestUIExecutor_ScreenshotObjectFormSelectorBoundedCapture(t *testing.T) {
 	d := &fakeDriver{screenshot: []byte("PNG-SEL")}
 	varCtx := NewVariableContext()
 	urlMap := map[string]URLMapEntry{"frontend-svc": {Scheme: "http", URL: "h"}}
-	exec := NewUIStepExecutor("", 1280, 720, urlMap, varCtx, nil, uploader).
+	exec := NewUIStepExecutor("", 1280, 720, urlMap, varCtx, nil, uploader, nil).
 		WithDriverFactory(func(_ context.Context) (UIDriver, error) { return d, nil })
 
 	action := parseAction(t, `{
@@ -601,7 +601,7 @@ func TestUIExecutor_FailureAutoCapturesScreenshotAndHTML(t *testing.T) {
 	}
 	varCtx := NewVariableContext()
 	urlMap := map[string]URLMapEntry{"frontend-svc": {Scheme: "http", URL: "h"}}
-	exec := NewUIStepExecutor("", 1280, 720, urlMap, varCtx, nil, uploader).
+	exec := NewUIStepExecutor("", 1280, 720, urlMap, varCtx, nil, uploader, nil).
 		WithDriverFactory(func(_ context.Context) (UIDriver, error) { return d, nil })
 
 	action := parseAction(t, `{
