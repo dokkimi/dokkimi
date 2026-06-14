@@ -274,7 +274,9 @@ func FindDirectDatabaseLog(dbLogs []DatabaseLogMessage, action StepAction, stepE
 func stepTimeWindow(stepExec StepExecution) (time.Time, time.Time) {
 	start, _ := time.Parse(time.RFC3339Nano, stepExec.StartTime)
 	end, _ := time.Parse(time.RFC3339Nano, stepExec.EndTime)
-	start = start.Add(-timestampBufferMs * time.Millisecond)
+	// No backward buffer on start — the test-agent controls the step start
+	// time so there's no clock skew. Forward buffer on end catches interceptor
+	// logs that arrive slightly after the step response returns.
 	end = end.Add(timestampBufferMs * time.Millisecond)
 	return start, end
 }

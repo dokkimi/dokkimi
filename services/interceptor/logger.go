@@ -32,12 +32,12 @@ type HttpLogMessage struct {
 
 // Logger handles async logging to Log Processor Service (LPS)
 type Logger struct {
-	logEndpointURL    string
-	testAgentURL      string
-	httpClient        *http.Client
-	testAgentClient   *http.Client
-	logChan           chan HttpLogMessage
-	stopChan          chan struct{}
+	logEndpointURL  string
+	testAgentURL    string
+	httpClient      *http.Client
+	testAgentClient *http.Client
+	logChan         chan HttpLogMessage
+	stopChan        chan struct{}
 }
 
 // NewLogger creates a new async logger
