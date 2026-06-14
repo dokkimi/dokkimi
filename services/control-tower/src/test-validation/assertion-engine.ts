@@ -117,13 +117,19 @@ export function compareValues(
   switch (operator) {
     case 'eq':
       return {
+        passed: actual === expected,
+        expected,
+        actual,
+      };
+    case 'eqIgnoreCase':
+      return {
         passed: ciEquals(actual, expected),
         expected,
         actual,
       };
     case 'ne':
       return {
-        passed: !ciEquals(actual, expected),
+        passed: actual !== expected,
         expected,
         actual,
       };

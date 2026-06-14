@@ -176,9 +176,11 @@ func toFloat(v interface{}) (float64, bool) {
 func CompareValues(operator string, actual, expected interface{}) AssertionResult {
 	switch operator {
 	case "eq":
+		return AssertionResult{Passed: reflect.DeepEqual(actual, expected), Expected: expected, Actual: actual}
+	case "eqIgnoreCase":
 		return AssertionResult{Passed: ciEquals(actual, expected), Expected: expected, Actual: actual}
 	case "ne":
-		return AssertionResult{Passed: !ciEquals(actual, expected), Expected: expected, Actual: actual}
+		return AssertionResult{Passed: !reflect.DeepEqual(actual, expected), Expected: expected, Actual: actual}
 	case "gt":
 		af, aOk := toFloat(actual)
 		ef, eOk := toFloat(expected)

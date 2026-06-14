@@ -143,6 +143,7 @@ export interface AssertionBlock {
 
 export type AssertionOperator =
   | 'eq'
+  | 'eqIgnoreCase'
   | 'ne'
   | 'gt'
   | 'gte'

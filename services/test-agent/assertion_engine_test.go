@@ -165,10 +165,10 @@ func TestCompareValues(t *testing.T) {
 		}
 	})
 
-	t.Run("eq is case-insensitive for strings", func(t *testing.T) {
+	t.Run("eq is case-sensitive for strings", func(t *testing.T) {
 		r := CompareValues("eq", "Hello", "hello")
-		if !r.Passed {
-			t.Error("expected pass")
+		if r.Passed {
+			t.Error("expected fail for case mismatch")
 		}
 	})
 
@@ -176,6 +176,20 @@ func TestCompareValues(t *testing.T) {
 		r := CompareValues("eq", float64(1), "1")
 		if r.Passed {
 			t.Error("expected fail for mismatched types")
+		}
+	})
+
+	t.Run("eqIgnoreCase passes for case-mismatched strings", func(t *testing.T) {
+		r := CompareValues("eqIgnoreCase", "Hello", "hello")
+		if !r.Passed {
+			t.Error("expected pass")
+		}
+	})
+
+	t.Run("eqIgnoreCase fails for different strings", func(t *testing.T) {
+		r := CompareValues("eqIgnoreCase", "Hello", "world")
+		if r.Passed {
+			t.Error("expected fail")
 		}
 	})
 
@@ -193,10 +207,10 @@ func TestCompareValues(t *testing.T) {
 		}
 	})
 
-	t.Run("ne is case-insensitive for strings", func(t *testing.T) {
+	t.Run("ne passes for case-mismatched strings", func(t *testing.T) {
 		r := CompareValues("ne", "Hello", "hello")
-		if r.Passed {
-			t.Error("expected fail")
+		if !r.Passed {
+			t.Error("expected pass for case mismatch")
 		}
 	})
 
