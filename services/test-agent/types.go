@@ -80,10 +80,10 @@ type MatchCriteria struct {
 
 // ConsoleLogAssertion validates console log output from a service.
 type ConsoleLogAssertion struct {
-	Level    string          `json:"level,omitempty"`
-	Message  *MessageFilter  `json:"message,omitempty"`
-	Count    CountAssertion  `json:"count"`
-	Disabled bool            `json:"disabled,omitempty"`
+	Level    string         `json:"level,omitempty"`
+	Message  *MessageFilter `json:"message,omitempty"`
+	Count    CountAssertion `json:"count"`
+	Disabled bool           `json:"disabled,omitempty"`
 }
 
 // MessageFilter specifies how to match console log messages.

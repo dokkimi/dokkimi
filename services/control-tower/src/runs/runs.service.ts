@@ -14,6 +14,7 @@ import { SubmitInstanceDto } from './dto/submit-instance.dto';
 import { NamespaceLifecycleService } from '../namespace-lifecycle/namespace-lifecycle.service';
 import { DockerRegistryService } from '../namespace-lifecycle/docker/docker-registry.service';
 import { RegistryCredential } from '@dokkimi/config';
+import { VisualMatchService } from '../artifacts/visual-match.service';
 import { RunCleanupService } from './run-cleanup.service';
 import { DeploymentSchedulerService } from './deployment-scheduler.service';
 import {
@@ -43,6 +44,7 @@ export class RunsService implements OnApplicationBootstrap {
     private readonly telemetry: TelemetryService,
     private readonly cleanup: RunCleanupService,
     private readonly scheduler: DeploymentSchedulerService,
+    private readonly visualMatch: VisualMatchService,
   ) {}
 
   async createRun(
@@ -500,11 +502,25 @@ export class RunsService implements OnApplicationBootstrap {
       }
     }
 
-    await this.handleValidationComplete(
-      testRunId,
-      status === 'success',
-      status === 'failure' ? message || 'Test execution failed' : undefined,
-    );
+    let finalPassed = status === 'success';
+    let finalError =
+      status === 'failure' ? message || 'Test execution failed' : undefined;
+
+    if (finalPassed) {
+      try {
+        const summary = await this.visualMatch.processInstance(testRunId);
+        if (summary.failures.length > 0) {
+          finalPassed = false;
+          finalError = summary.failures.map((f) => f.message).join('\n');
+        }
+      } catch (err) {
+        this.logger.error(
+          `visualMatch diff failed for ${testRunId}: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+    }
+
+    await this.handleValidationComplete(testRunId, finalPassed, finalError);
   }
 
   async handleValidationComplete(

@@ -29,11 +29,6 @@ func NewStepValidator(logBuffer *StepLogBuffer, varCtx *VariableContext) *StepVa
 // logs haven't arrived yet (retryable), it polls every 100ms and retries until
 // validation passes, a non-retryable failure occurs, or the deadline is hit.
 func (sv *StepValidator) ValidateStepWithRetry(step TestStep, stepExec StepExecution, stepResp map[string]interface{}) ([]AssertionResult, bool) {
-	// UI and wait steps don't depend on async logs — validate once.
-	if step.Action.Type == "ui" || step.Action.Type == "wait" {
-		return sv.validateStep(step, stepExec, stepResp)
-	}
-
 	results, passed := sv.validateStep(step, stepExec, stepResp)
 	if passed || !isRetryable(results) {
 		return results, passed
