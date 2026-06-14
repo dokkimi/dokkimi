@@ -459,7 +459,7 @@ export class RunsService implements OnApplicationBootstrap {
         );
         let globalStepIndex = 0;
         for (const test of testDefinitions) {
-          for (const _step of test.steps ?? []) {
+          for (let s = 0; s < (test.steps?.length ?? 0); s++) {
             if (!executedSteps.has(globalStepIndex)) {
               try {
                 await this.prisma.assertionResult.create({
@@ -523,13 +523,13 @@ export class RunsService implements OnApplicationBootstrap {
 
     this.lifecycle
       .stopInstance(instanceId)
-      .catch((err) => {
-        this.logger.error(`Failed to stop instance ${instanceId}:`, err);
-      })
       .then(() => {
         if (instance.runId) {
           return this.scheduler.handleInstancesStopped([instance.runId]);
         }
+      })
+      .catch((err) => {
+        this.logger.error(`Failed to stop instance ${instanceId}:`, err);
       });
   }
 

@@ -200,8 +200,6 @@ func (e *TestExecutor) executeStepAt(ctx context.Context, fs flatStep) (StepExec
 			e.validationReporter.ReportStepResultsAsync(e.instanceID, si, results, passed)
 		}
 
-		e.stepValidator.logBuffer.Flush()
-
 		summary := FormatStepResult(si, fs.label(), results, passed)
 		if !passed {
 			e.testExecutionLogger.LogEvent("STEP_FAILED", summary, &si, nil)

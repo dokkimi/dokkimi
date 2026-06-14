@@ -30,14 +30,12 @@ func NewCompletionNotifier(url string, testExecutionLogger *TestExecutionLogger)
 }
 
 // NotifyCompletion notifies Control Tower that tests have completed via HTTP POST.
-// partial=true signals a debug partial run; Control Tower will skip unexecuted steps.
-func (n *CompletionNotifier) NotifyCompletion(testRunID string, status string, message string, stepExecutions []StepExecution, partial bool) error {
+func (n *CompletionNotifier) NotifyCompletion(testRunID string, status string, message string, stepExecutions []StepExecution) error {
 	notification := TestCompletionNotification{
 		TestRunID:      testRunID,
 		Status:         status,
 		Message:        message,
 		StepExecutions: stepExecutions,
-		Partial:        partial,
 	}
 
 	body, err := json.Marshal(notification)

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"strings"
@@ -11,6 +12,9 @@ import (
 
 	"github.com/Graylog2/go-gelf/gelf"
 )
+
+const gelfForwardWorkers = 8
+const gelfForwardBufferSize = 256
 
 const gelfPort = 12201
 
@@ -25,6 +29,7 @@ type GelfReceiver struct {
 	httpClient      *http.Client
 	// serviceItemIDs maps service definition name → instanceItemId for CT forwarding.
 	serviceItemIDs map[string]string
+	forwardCh      chan ConsoleLogMessage
 }
 
 // NewGelfReceiver creates and starts a GELF UDP listener on port 12201.
@@ -48,6 +53,11 @@ func NewGelfReceiver(
 		instanceID:      instanceID,
 		httpClient:      &http.Client{Timeout: 10 * time.Second},
 		serviceItemIDs:  serviceItemIDs,
+		forwardCh:       make(chan ConsoleLogMessage, gelfForwardBufferSize),
+	}
+
+	for i := 0; i < gelfForwardWorkers; i++ {
+		go gr.forwardWorker()
 	}
 
 	log.Printf("GELF UDP listener started on %s", reader.Addr())
@@ -96,11 +106,19 @@ func (gr *GelfReceiver) Run() {
 
 		gr.logBuffer.AddConsoleLog(consoleLog)
 
-		go gr.forwardToControlTower(consoleLog)
+		select {
+		case gr.forwardCh <- consoleLog:
+		default:
+		}
 	}
 }
 
-// forwardToControlTower sends the console log to CT's POST /logs/console endpoint.
+func (gr *GelfReceiver) forwardWorker() {
+	for msg := range gr.forwardCh {
+		gr.forwardToControlTower(msg)
+	}
+}
+
 func (gr *GelfReceiver) forwardToControlTower(consoleLog ConsoleLogMessage) {
 	ts := time.Unix(int64(consoleLog.Timestamp), int64((consoleLog.Timestamp-float64(int64(consoleLog.Timestamp)))*1e9))
 
@@ -133,6 +151,7 @@ func (gr *GelfReceiver) forwardToControlTower(consoleLog ConsoleLogMessage) {
 		log.Printf("[GelfReceiver] Failed to forward console log to CT: %v", err)
 		return
 	}
+	io.Copy(io.Discard, resp.Body)
 	resp.Body.Close()
 }
 

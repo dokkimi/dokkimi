@@ -176,4 +176,138 @@ func TestFindDirectRequestLog(t *testing.T) {
 			t.Error("expected nil")
 		}
 	})
+
+	t.Run("selects log closest to midpoint when multiple match", func(t *testing.T) {
+		earlyTs := now.Add(-80 * time.Millisecond).Format(time.RFC3339Nano)
+		midTs := now.Add(5 * time.Millisecond).Format(time.RFC3339Nano)
+		lateTs := now.Add(80 * time.Millisecond).Format(time.RFC3339Nano)
+		logs := []HttpLogMessage{
+			{Method: "GET", URL: "/users", Timestamp: earlyTs, Target: &target},
+			{Method: "GET", URL: "/users", Timestamp: midTs, Target: &target},
+			{Method: "GET", URL: "/users", Timestamp: lateTs, Target: &target},
+		}
+		result := FindDirectRequestLog(logs, StepAction{Type: "httpRequest", Method: "GET", URL: "user-service/users"}, stepExec)
+		if result == nil {
+			t.Fatal("expected to find log")
+		}
+		if result.Timestamp != midTs {
+			t.Errorf("expected midpoint log, got timestamp %s", result.Timestamp)
+		}
+	})
+
+	t.Run("uses RequestSentAt for time matching", func(t *testing.T) {
+		outsideTs := now.Add(-500 * time.Millisecond).Format(time.RFC3339Nano)
+		sentAt := now.Format(time.RFC3339Nano)
+		logs := []HttpLogMessage{
+			{Method: "GET", URL: "/users", Timestamp: outsideTs, RequestSentAt: &sentAt, Target: &target},
+		}
+		result := FindDirectRequestLog(logs, StepAction{Type: "httpRequest", Method: "GET", URL: "user-service/users"}, stepExec)
+		if result == nil {
+			t.Fatal("expected to find log using RequestSentAt")
+		}
+	})
+}
+
+func TestAssembleStepDocument(t *testing.T) {
+	now := time.Now()
+	start := now.Add(-100 * time.Millisecond).Format(time.RFC3339Nano)
+	end := now.Add(100 * time.Millisecond).Format(time.RFC3339Nano)
+	stepExec := StepExecution{StartTime: start, EndTime: end}
+
+	t.Run("assembles HTTP document for httpRequest action", func(t *testing.T) {
+		target := "api"
+		status := 200
+		httpLogs := []HttpLogMessage{
+			{
+				Method: "GET", URL: "/items", StatusCode: &status,
+				Timestamp: now.Format(time.RFC3339Nano), Target: &target,
+				RequestHeaders: map[string]interface{}{}, ResponseHeaders: map[string]interface{}{},
+				ResponseBody: map[string]interface{}{"ok": true},
+			},
+		}
+		step := TestStep{Action: StepAction{Type: "httpRequest", Method: "GET", URL: "api/items"}}
+		doc := AssembleStepDocument(step, httpLogs, nil, stepExec)
+		resp, ok := doc["response"].(map[string]interface{})
+		if !ok {
+			t.Fatal("expected response in doc")
+		}
+		if resp["status"] != float64(200) {
+			t.Errorf("expected status 200, got %v", resp["status"])
+		}
+	})
+
+	t.Run("assembles DB document for dbQuery action", func(t *testing.T) {
+		rows := int64(3)
+		dbLogs := []DatabaseLogMessage{
+			{
+				DatabaseName: "mydb", Query: "SELECT 1",
+				Timestamp: now.Format(time.RFC3339Nano),
+				Success:   true, RowsAffected: &rows,
+			},
+		}
+		step := TestStep{Action: StepAction{Type: "dbQuery", Database: "mydb", Query: "SELECT 1"}}
+		doc := AssembleStepDocument(step, nil, dbLogs, stepExec)
+		if doc["success"] != true {
+			t.Error("expected success true")
+		}
+		if doc["rowsAffected"] != float64(3) {
+			t.Errorf("expected rowsAffected 3, got %v", doc["rowsAffected"])
+		}
+	})
+
+	t.Run("returns empty doc for wait action", func(t *testing.T) {
+		step := TestStep{Action: StepAction{Type: "wait"}}
+		doc := AssembleStepDocument(step, nil, nil, stepExec)
+		if len(doc) != 0 {
+			t.Errorf("expected empty doc, got %v", doc)
+		}
+	})
+}
+
+func TestAssembleExtractDocument(t *testing.T) {
+	now := time.Now()
+	start := now.Add(-100 * time.Millisecond).Format(time.RFC3339Nano)
+	end := now.Add(100 * time.Millisecond).Format(time.RFC3339Nano)
+	stepExec := StepExecution{StartTime: start, EndTime: end}
+
+	t.Run("returns flat response doc for httpRequest", func(t *testing.T) {
+		target := "api"
+		status := 201
+		httpLogs := []HttpLogMessage{
+			{
+				Method: "POST", URL: "/items", StatusCode: &status,
+				Timestamp: now.Format(time.RFC3339Nano), Target: &target,
+				RequestHeaders:  map[string]interface{}{},
+				ResponseHeaders: map[string]interface{}{"X-Id": "abc"},
+				ResponseBody:    map[string]interface{}{"id": float64(42)},
+			},
+		}
+		step := TestStep{Action: StepAction{Type: "httpRequest", Method: "POST", URL: "api/items"}}
+		doc := AssembleExtractDocument(step, httpLogs, nil, stepExec)
+		if doc["statusCode"] != float64(201) {
+			t.Errorf("expected statusCode 201, got %v", doc["statusCode"])
+		}
+		body, ok := doc["body"].(map[string]interface{})
+		if !ok {
+			t.Fatal("expected body in extract doc")
+		}
+		if body["id"] != float64(42) {
+			t.Errorf("expected body.id 42, got %v", body["id"])
+		}
+		headers, ok := doc["headers"].(map[string]interface{})
+		if !ok {
+			t.Fatal("expected headers in extract doc")
+		}
+		if headers["x-id"] != "abc" {
+			t.Errorf("expected normalized header x-id, got %v", headers["x-id"])
+		}
+	})
+
+	t.Run("returns empty doc when no matching log", func(t *testing.T) {
+		step := TestStep{Action: StepAction{Type: "httpRequest", Method: "GET", URL: "api/missing"}}
+		doc := AssembleExtractDocument(step, nil, nil, stepExec)
+		if len(doc) != 0 {
+			t.Errorf("expected empty doc, got %v", doc)
+		}
+	})
 }

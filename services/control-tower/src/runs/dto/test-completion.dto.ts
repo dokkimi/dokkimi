@@ -5,7 +5,6 @@ import {
   IsArray,
   ValidateNested,
   IsNumber,
-  IsBoolean,
   IsIn,
 } from 'class-validator';
 import { Type } from 'class-transformer';
@@ -40,8 +39,4 @@ export class TestCompletionDto {
   @ValidateNested({ each: true })
   @Type(() => StepExecutionDto)
   stepExecutions?: StepExecutionDto[];
-
-  @IsBoolean()
-  @IsOptional()
-  partial?: boolean;
 }

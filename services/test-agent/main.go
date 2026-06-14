@@ -129,8 +129,9 @@ func main() {
 	// Control Tower alongside everything else.
 	completionNotifier := NewCompletionNotifier(cfg.ControlTowerURL+"/test-complete", testExecutionLogger)
 
-	// Mutex to prevent concurrent executions
+	// Mutex and WaitGroup to prevent concurrent executions and drain on shutdown
 	var executionMu sync.Mutex
+	var executionWg sync.WaitGroup
 	executing := false
 
 	// runExecution performs health check (only on first-time calls), loads latest config,
@@ -140,10 +141,6 @@ func main() {
 
 	runExecution := func(req ExecuteRequest) {
 		timeout := time.Duration(testConfig.TimeoutSeconds) * time.Second
-
-		// partial=true for debug step commands (only a subset of steps run)
-		isPartial := req.Mode == "run-step" ||
-			(req.Mode == "all" && (req.StartAtStep != nil || req.StopBefore != nil))
 
 		if !healthChecked {
 			{
@@ -169,7 +166,6 @@ func main() {
 						"failure",
 						failureMessage,
 						nil,
-						false,
 					)
 					if notificationErr != nil {
 						log.Printf("Failed to notify Control Tower: %v", notificationErr)
@@ -219,7 +215,7 @@ func main() {
 		case "run-step":
 			if req.StepIndex == nil {
 				log.Printf("run-step mode requires stepIndex")
-				completionNotifier.NotifyCompletion(req.TestRunID, "failure", "run-step mode requires stepIndex", nil, true)
+				completionNotifier.NotifyCompletion(req.TestRunID, "failure", "run-step mode requires stepIndex", nil)
 				return
 			}
 			log.Printf("Debug: executing step %d", *req.StepIndex)
@@ -245,7 +241,6 @@ func main() {
 				"failure",
 				fmt.Sprintf("Test execution failed: %v", execErr),
 				stepExecutions,
-				isPartial,
 			)
 			if notificationErr != nil {
 				log.Printf("Failed to notify Control Tower: %v", notificationErr)
@@ -261,7 +256,7 @@ func main() {
 			message = strings.Join(vf, "\n")
 			log.Printf("Visual match failures detected: %s", message)
 		}
-		if notifyErr := completionNotifier.NotifyCompletion(req.TestRunID, status, message, stepExecutions, isPartial); notifyErr != nil {
+		if notifyErr := completionNotifier.NotifyCompletion(req.TestRunID, status, message, stepExecutions); notifyErr != nil {
 			log.Printf("Failed to notify Control Tower: %v", notifyErr)
 		}
 	}
@@ -346,11 +341,13 @@ func main() {
 		w.WriteHeader(http.StatusAccepted)
 		w.Write([]byte(`{"status":"accepted"}`))
 
+		executionWg.Add(1)
 		go func() {
 			defer func() {
 				executionMu.Lock()
 				executing = false
 				executionMu.Unlock()
+				executionWg.Done()
 			}()
 			runExecution(req)
 		}()
@@ -377,6 +374,7 @@ func main() {
 	}
 
 	if executionMode == "auto" {
+		executionWg.Add(1)
 		go func() {
 			executionMu.Lock()
 			executing = true
@@ -386,6 +384,7 @@ func main() {
 				executionMu.Lock()
 				executing = false
 				executionMu.Unlock()
+				executionWg.Done()
 			}()
 
 			runExecution(ExecuteRequest{TestRunID: testConfig.TestRunID, Mode: "all"})
@@ -399,7 +398,10 @@ func main() {
 	<-ctx.Done()
 	rootCancel()
 
-	log.Printf("Shutting down...")
+	log.Printf("Shutting down — waiting for in-flight execution to finish...")
+	executionWg.Wait()
+
+	log.Printf("Stopping HTTP server...")
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer shutdownCancel()
 

@@ -31,6 +31,7 @@ func NewStepValidator(logBuffer *StepLogBuffer, varCtx *VariableContext) *StepVa
 func (sv *StepValidator) ValidateStepWithRetry(step TestStep, stepExec StepExecution, stepResp map[string]interface{}) ([]AssertionResult, bool) {
 	results, passed := sv.validateStep(step, stepExec, stepResp)
 	if passed || !isRetryable(results) {
+		sv.logBuffer.Flush()
 		return results, passed
 	}
 
@@ -39,11 +40,13 @@ func (sv *StepValidator) ValidateStepWithRetry(step TestStep, stepExec StepExecu
 		time.Sleep(validationRetryInterval)
 		results, passed = sv.validateStep(step, stepExec, stepResp)
 		if passed || !isRetryable(results) {
+			sv.logBuffer.Flush()
 			return results, passed
 		}
 	}
 
 	log.Printf("Validation retry timed out after %v", validationMaxWait)
+	sv.logBuffer.Flush()
 	return results, passed
 }
 

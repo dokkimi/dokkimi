@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"reflect"
 	"regexp"
+	"strconv"
 	"strings"
 )
 
@@ -164,8 +165,8 @@ func toFloat(v interface{}) (float64, bool) {
 		f, err := n.Float64()
 		return f, err == nil
 	case string:
-		var f float64
-		if _, err := fmt.Sscanf(n, "%f", &f); err == nil {
+		f, err := strconv.ParseFloat(n, 64)
+		if err == nil {
 			return f, true
 		}
 		return 0, false

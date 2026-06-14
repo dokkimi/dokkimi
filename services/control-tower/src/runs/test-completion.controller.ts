@@ -37,18 +37,10 @@ export class TestCompletionController {
           error instanceof Error ? error.stack : String(error),
         );
         try {
-          await this.prisma.namespaceInstance.update({
-            where: { id: dto.testRunId },
-            data: {
-              testStatus: 'FAILED',
-              testCompletedAt: new Date(),
-              errorMessage: `Internal error during test completion: ${error instanceof Error ? error.message : String(error)}`,
-            },
-          });
           await this.runsService.handleValidationComplete(
             dto.testRunId,
             false,
-            'Internal error',
+            `Internal error during test completion: ${error instanceof Error ? error.message : String(error)}`,
           );
         } catch (fallbackError) {
           this.logger.error(

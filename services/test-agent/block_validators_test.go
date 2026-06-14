@@ -226,6 +226,233 @@ func TestValidateConsoleLogBlock(t *testing.T) {
 	})
 }
 
+func TestValidateSelfBlock_skipsDisabledOnEmptyDoc(t *testing.T) {
+	block := AssertionBlock{
+		Assertions: []Assertion{
+			{Path: "response.status", Operator: "eq", Value: float64(200)},
+			{Path: "response.body", Operator: "eq", Value: "x", Disabled: true},
+		},
+	}
+	results := ValidateSelfBlock(block, map[string]interface{}{})
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result (disabled skipped on empty doc), got %d", len(results))
+	}
+	if results[0].Passed {
+		t.Error("expected fail for non-disabled assertion")
+	}
+}
+
+func TestValidateHttpCallBlock_assertionScopes(t *testing.T) {
+	now := time.Now()
+	start := now.Add(-200 * time.Millisecond).Format(time.RFC3339Nano)
+	end := now.Add(200 * time.Millisecond).Format(time.RFC3339Nano)
+	stepExec := StepExecution{StartTime: start, EndTime: end}
+
+	origin := "test-agent"
+	target := "api"
+	status1 := 200
+	status2 := 201
+	status3 := 404
+
+	httpLogs := []HttpLogMessage{
+		{
+			Method: "GET", URL: "/items", StatusCode: &status1,
+			Timestamp: now.Add(-50 * time.Millisecond).Format(time.RFC3339Nano),
+			Origin:    &origin, Target: &target,
+			RequestHeaders: map[string]interface{}{}, ResponseHeaders: map[string]interface{}{},
+		},
+		{
+			Method: "GET", URL: "/items", StatusCode: &status2,
+			Timestamp: now.Format(time.RFC3339Nano),
+			Origin:    &origin, Target: &target,
+			RequestHeaders: map[string]interface{}{}, ResponseHeaders: map[string]interface{}{},
+		},
+		{
+			Method: "GET", URL: "/items", StatusCode: &status3,
+			Timestamp: now.Add(50 * time.Millisecond).Format(time.RFC3339Nano),
+			Origin:    &origin, Target: &target,
+			RequestHeaders: map[string]interface{}{}, ResponseHeaders: map[string]interface{}{},
+		},
+	}
+
+	t.Run("first scope validates only first log", func(t *testing.T) {
+		block := AssertionBlock{
+			Match:          &MatchCriteria{Origin: "test-agent", Method: "GET"},
+			AssertionScope: "first",
+			Assertions: []Assertion{
+				{Path: "response.status", Operator: "eq", Value: float64(200)},
+			},
+		}
+		results := ValidateHttpCallBlock(block, stepExec, httpLogs)
+		fieldResults := filterByKind(results, "field")
+		if len(fieldResults) != 1 || !fieldResults[0].Passed {
+			t.Error("expected first scope to validate first log (200) and pass")
+		}
+	})
+
+	t.Run("last scope validates only last log", func(t *testing.T) {
+		block := AssertionBlock{
+			Match:          &MatchCriteria{Origin: "test-agent", Method: "GET"},
+			AssertionScope: "last",
+			Assertions: []Assertion{
+				{Path: "response.status", Operator: "eq", Value: float64(404)},
+			},
+		}
+		results := ValidateHttpCallBlock(block, stepExec, httpLogs)
+		fieldResults := filterByKind(results, "field")
+		if len(fieldResults) != 1 || !fieldResults[0].Passed {
+			t.Error("expected last scope to validate last log (404) and pass")
+		}
+	})
+
+	t.Run("any scope passes if any log matches", func(t *testing.T) {
+		block := AssertionBlock{
+			Match:          &MatchCriteria{Origin: "test-agent", Method: "GET"},
+			AssertionScope: "any",
+			Assertions: []Assertion{
+				{Path: "response.status", Operator: "eq", Value: float64(201)},
+			},
+		}
+		results := ValidateHttpCallBlock(block, stepExec, httpLogs)
+		fieldResults := filterByKind(results, "field")
+		if len(fieldResults) != 1 || !fieldResults[0].Passed {
+			t.Error("expected any scope to find 201 and pass")
+		}
+	})
+
+	t.Run("any scope fails if no log matches", func(t *testing.T) {
+		block := AssertionBlock{
+			Match:          &MatchCriteria{Origin: "test-agent", Method: "GET"},
+			AssertionScope: "any",
+			Assertions: []Assertion{
+				{Path: "response.status", Operator: "eq", Value: float64(500)},
+			},
+		}
+		results := ValidateHttpCallBlock(block, stepExec, httpLogs)
+		fieldResults := filterByKind(results, "field")
+		if len(fieldResults) != 1 || fieldResults[0].Passed {
+			t.Error("expected any scope to fail when no log has status 500")
+		}
+	})
+}
+
+func filterByKind(results []AssertionResult, kind string) []AssertionResult {
+	var out []AssertionResult
+	for _, r := range results {
+		if r.ResultKind == kind {
+			out = append(out, r)
+		}
+	}
+	return out
+}
+
+func TestValidateStepWithRetry(t *testing.T) {
+	t.Run("passes immediately when logs are present", func(t *testing.T) {
+		buf := NewStepLogBuffer()
+		status := 200
+		now := time.Now()
+		buf.AddHttpLog(HttpLogMessage{
+			Method: "GET", URL: "/test", StatusCode: &status,
+			Timestamp:       now.Format(time.RFC3339Nano),
+			RequestHeaders:  map[string]interface{}{},
+			ResponseHeaders: map[string]interface{}{},
+			ResponseBody:    map[string]interface{}{"ok": true},
+		})
+
+		sv := NewStepValidator(buf, NewVariableContext())
+		step := TestStep{
+			Action: StepAction{Type: "httpRequest", Method: "GET", URL: "/test"},
+			Assertions: []AssertionBlock{{
+				Assertions: []Assertion{
+					{Path: "response.status", Operator: "eq", Value: float64(200)},
+				},
+			}},
+		}
+		stepExec := StepExecution{
+			StartTime: now.Add(-200 * time.Millisecond).Format(time.RFC3339Nano),
+			EndTime:   now.Add(200 * time.Millisecond).Format(time.RFC3339Nano),
+		}
+
+		results, passed := sv.ValidateStepWithRetry(step, stepExec, nil)
+		if !passed {
+			t.Error("expected pass")
+		}
+		if len(results) != 1 {
+			t.Errorf("expected 1 result, got %d", len(results))
+		}
+	})
+
+	t.Run("retries and passes when logs arrive late", func(t *testing.T) {
+		buf := NewStepLogBuffer()
+		now := time.Now()
+
+		sv := NewStepValidator(buf, NewVariableContext())
+		step := TestStep{
+			Action: StepAction{Type: "httpRequest", Method: "GET", URL: "/test"},
+			Assertions: []AssertionBlock{{
+				Assertions: []Assertion{
+					{Path: "response.status", Operator: "eq", Value: float64(200)},
+				},
+			}},
+		}
+		stepExec := StepExecution{
+			StartTime: now.Add(-200 * time.Millisecond).Format(time.RFC3339Nano),
+			EndTime:   now.Add(200 * time.Millisecond).Format(time.RFC3339Nano),
+		}
+
+		status := 200
+		go func() {
+			time.Sleep(150 * time.Millisecond)
+			buf.AddHttpLog(HttpLogMessage{
+				Method: "GET", URL: "/test", StatusCode: &status,
+				Timestamp:       now.Format(time.RFC3339Nano),
+				RequestHeaders:  map[string]interface{}{},
+				ResponseHeaders: map[string]interface{}{},
+				ResponseBody:    map[string]interface{}{},
+			})
+		}()
+
+		results, passed := sv.ValidateStepWithRetry(step, stepExec, nil)
+		if !passed {
+			t.Error("expected retry to eventually pass")
+		}
+		if len(results) != 1 {
+			t.Errorf("expected 1 result, got %d", len(results))
+		}
+	})
+
+	t.Run("flushes buffer after validation", func(t *testing.T) {
+		buf := NewStepLogBuffer()
+		status := 200
+		now := time.Now()
+		buf.AddHttpLog(HttpLogMessage{
+			Method: "GET", URL: "/test", StatusCode: &status,
+			Timestamp:       now.Format(time.RFC3339Nano),
+			RequestHeaders:  map[string]interface{}{},
+			ResponseHeaders: map[string]interface{}{},
+		})
+
+		sv := NewStepValidator(buf, NewVariableContext())
+		step := TestStep{
+			Action: StepAction{Type: "httpRequest", Method: "GET", URL: "/test"},
+			Assertions: []AssertionBlock{{
+				Assertions: []Assertion{
+					{Path: "response.status", Operator: "eq", Value: float64(200)},
+				},
+			}},
+		}
+		stepExec := StepExecution{
+			StartTime: now.Add(-200 * time.Millisecond).Format(time.RFC3339Nano),
+			EndTime:   now.Add(200 * time.Millisecond).Format(time.RFC3339Nano),
+		}
+
+		sv.ValidateStepWithRetry(step, stepExec, nil)
+		if buf.LogCount() != 0 {
+			t.Errorf("expected buffer flushed after validation, got %d logs", buf.LogCount())
+		}
+	})
+}
+
 func TestStepValidator(t *testing.T) {
 	t.Run("validates step with self-block assertions", func(t *testing.T) {
 		buf := NewStepLogBuffer()

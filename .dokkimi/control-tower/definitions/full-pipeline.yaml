@@ -121,7 +121,6 @@ tests:
           body:
             testRunId: '{{instanceId}}'
             status: success
-            partial: false
             stepExecutions:
               - stepIndex: 0
                 startTime: '2026-01-01T00:00:00.000Z'

@@ -150,7 +150,6 @@ type TestCompletionNotification struct {
 	Status         string          `json:"status"` // "success" or "failure"
 	Message        string          `json:"message,omitempty"`
 	StepExecutions []StepExecution `json:"stepExecutions,omitempty"`
-	Partial        bool            `json:"partial,omitempty"` // true for debug partial runs
 }
 
 // ConfigMapData represents the data structure in the ConfigMap

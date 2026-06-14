@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"time"
@@ -89,6 +90,7 @@ func (vr *ValidationReporter) ReportStepResults(instanceID string, stepIndex int
 		log.Printf("[ValidationReporter] Failed to send report to %s: %v", url, err)
 		return
 	}
+	io.Copy(io.Discard, resp.Body)
 	resp.Body.Close()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {

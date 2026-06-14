@@ -9,15 +9,18 @@ import (
 // ValidateSelfBlock validates assertions against the step's own action result.
 func ValidateSelfBlock(block AssertionBlock, stepDoc map[string]interface{}) []AssertionResult {
 	if len(stepDoc) == 0 {
-		results := make([]AssertionResult, len(block.Assertions))
-		for i, a := range block.Assertions {
-			results[i] = AssertionResult{
+		var results []AssertionResult
+		for _, a := range block.Assertions {
+			if a.Disabled {
+				continue
+			}
+			results = append(results, AssertionResult{
 				Passed:     false,
 				Error:      "Step log not found",
 				Path:       a.Path,
 				Operator:   a.Operator,
 				ResultKind: "field",
-			}
+			})
 		}
 		return results
 	}

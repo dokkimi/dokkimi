@@ -185,7 +185,11 @@ func FindDirectRequestLog(httpLogs []HttpLogMessage, action StepAction, stepExec
 	var candidates []*HttpLogMessage
 	for i := range httpLogs {
 		log := &httpLogs[i]
-		logTime := parseLogTimestamp(log.Timestamp)
+		ts := log.Timestamp
+		if log.RequestSentAt != nil {
+			ts = *log.RequestSentAt
+		}
+		logTime := parseLogTimestamp(ts)
 		if logTime.Before(startTime) || logTime.After(endTime) {
 			continue
 		}

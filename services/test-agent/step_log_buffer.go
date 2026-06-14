@@ -111,6 +111,20 @@ func (b *StepLogBuffer) Snapshot() ([]HttpLogMessage, []DatabaseLogMessage, []Co
 	return httpCopy, dbCopy, consoleCopy
 }
 
+// SnapshotAndFlush atomically snapshots and clears the buffer.
+func (b *StepLogBuffer) SnapshotAndFlush() ([]HttpLogMessage, []DatabaseLogMessage, []ConsoleLogMessage) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	httpCopy := b.httpLogs
+	dbCopy := b.dbLogs
+	consoleCopy := b.consoleLogs
+	b.httpLogs = nil
+	b.dbLogs = nil
+	b.consoleLogs = nil
+	b.lastLogTime = time.Time{}
+	return httpCopy, dbCopy, consoleCopy
+}
+
 // LogCount returns the total number of logs in the buffer.
 func (b *StepLogBuffer) LogCount() int {
 	b.mu.Lock()
