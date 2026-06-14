@@ -9,10 +9,12 @@ import { PrismaService } from '../prisma/prisma.service';
 import { TelemetryService } from '../telemetry/telemetry.service';
 import { InstanceStatus, RunStatus } from '@prisma/client';
 import { RunStorageService } from '../storage/run-storage.service';
+import { StepExecution, TestDefinition } from '@dokkimi/config';
 import { SubmitInstanceDto } from './dto/submit-instance.dto';
 import { NamespaceLifecycleService } from '../namespace-lifecycle/namespace-lifecycle.service';
 import { DockerRegistryService } from '../namespace-lifecycle/docker/docker-registry.service';
 import { RegistryCredential } from '@dokkimi/config';
+import { VisualMatchService } from '../artifacts/visual-match.service';
 import { RunCleanupService } from './run-cleanup.service';
 import { DeploymentSchedulerService } from './deployment-scheduler.service';
 import {
@@ -42,6 +44,7 @@ export class RunsService implements OnApplicationBootstrap {
     private readonly telemetry: TelemetryService,
     private readonly cleanup: RunCleanupService,
     private readonly scheduler: DeploymentSchedulerService,
+    private readonly visualMatch: VisualMatchService,
   ) {}
 
   async createRun(
@@ -419,6 +422,105 @@ export class RunsService implements OnApplicationBootstrap {
     if (run.projectPath) {
       await this.runStorage.deleteRunDir(run.projectPath, run.createdAt);
     }
+  }
+
+  async handleTestCompletion(
+    testRunId: string,
+    status: 'success' | 'failure',
+    message?: string,
+    stepExecutions?: StepExecution[],
+  ): Promise<void> {
+    const instance = await this.prisma.namespaceInstance.findUnique({
+      where: { id: testRunId },
+    });
+
+    if (!instance) {
+      this.logger.error(`Instance not found for testRunId ${testRunId}`);
+      throw new Error(`Instance not found for testRunId ${testRunId}`);
+    }
+
+    if (status === 'failure') {
+      let testDefinitions: TestDefinition[] | undefined;
+      try {
+        const stored = await this.runStorage.readDefinition(instance.id);
+        testDefinitions = stored.tests as TestDefinition[] | undefined;
+      } catch (err) {
+        this.logger.warn(
+          `Could not read definition for instance ${instance.id}: ${err instanceof Error ? err.message : err}`,
+        );
+      }
+
+      const hasTestSteps =
+        testDefinitions?.some(
+          (t) => Array.isArray(t.steps) && t.steps.length > 0,
+        ) ?? false;
+
+      if (testDefinitions && hasTestSteps) {
+        const executedSteps = new Set(
+          (stepExecutions ?? []).map((s) => s.stepIndex),
+        );
+        let globalStepIndex = 0;
+        for (const test of testDefinitions) {
+          for (const _step of test.steps ?? []) {
+            if (!executedSteps.has(globalStepIndex)) {
+              try {
+                await this.prisma.assertionResult.create({
+                  data: {
+                    instanceId: instance.id,
+                    stepIndex: globalStepIndex,
+                    assertionIndex: 0,
+                    assertionType: 'skip',
+                    passed: false,
+                    resultKind: 'SKIPPED',
+                    error:
+                      'Step was not executed — a previous step failed before reaching this step',
+                  },
+                });
+              } catch (err) {
+                this.logger.warn(
+                  `Failed to store SKIPPED result: ${err instanceof Error ? err.message : String(err)}`,
+                );
+              }
+              try {
+                await this.prisma.testExecutionLog.create({
+                  data: {
+                    instanceId: instance.id,
+                    eventType: 'REQUEST_SKIPPED',
+                    message: `Step ${globalStepIndex} skipped — a previous step failed`,
+                    stepIndex: globalStepIndex,
+                  },
+                });
+              } catch (err) {
+                this.logger.warn(
+                  `Failed to log step skip: ${err instanceof Error ? err.message : String(err)}`,
+                );
+              }
+            }
+            globalStepIndex++;
+          }
+        }
+      }
+    }
+
+    let finalPassed = status === 'success';
+    let finalError =
+      status === 'failure' ? message || 'Test execution failed' : undefined;
+
+    if (finalPassed) {
+      try {
+        const summary = await this.visualMatch.processInstance(testRunId);
+        if (summary.failures.length > 0) {
+          finalPassed = false;
+          finalError = summary.failures.map((f) => f.message).join('\n');
+        }
+      } catch (err) {
+        this.logger.error(
+          `visualMatch diff failed for ${testRunId}: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+    }
+
+    await this.handleValidationComplete(testRunId, finalPassed, finalError);
   }
 
   async handleValidationComplete(

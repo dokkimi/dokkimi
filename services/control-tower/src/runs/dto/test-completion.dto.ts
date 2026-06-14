@@ -23,7 +23,7 @@ export class StepExecutionDto {
   endTime!: string; // ISO timestamp
 }
 
-export class TestCompletionNotificationDto {
+export class TestCompletionDto {
   @IsString()
   @IsNotEmpty()
   testRunId!: string;
@@ -41,8 +41,6 @@ export class TestCompletionNotificationDto {
   @Type(() => StepExecutionDto)
   stepExecutions?: StepExecutionDto[];
 
-  /** When true, only steps present in stepExecutions were executed (debug partial run).
-   * TVS skips validation for steps that have no execution record. */
   @IsBoolean()
   @IsOptional()
   partial?: boolean;

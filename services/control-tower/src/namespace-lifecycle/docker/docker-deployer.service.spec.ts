@@ -460,23 +460,11 @@ describe('DockerDeployerService', () => {
   });
 
   describe('log collection', () => {
-    it('should start collecting logs for each service container', async () => {
+    it('should start collecting logs for interceptors and db-proxies (user containers use GELF)', async () => {
       await service.deploy(buildCtx());
 
-      expect(mockLogCollector.startCollecting).toHaveBeenCalledWith(
-        'test-instance',
-        'container-id',
-        'api-gateway',
-        'item-1',
-      );
-      expect(mockLogCollector.startCollecting).toHaveBeenCalledWith(
-        'test-instance',
-        'container-id',
-        'user-service',
-        'item-2',
-      );
-      // 2 user containers + 2 interceptors + 1 db-proxy = 5 calls
-      expect(mockLogCollector.startCollecting).toHaveBeenCalledTimes(5);
+      // 1 db-proxy = 1 call (user containers use GELF log driver instead of dockerode streaming)
+      expect(mockLogCollector.startCollecting).toHaveBeenCalledTimes(1);
     });
   });
 

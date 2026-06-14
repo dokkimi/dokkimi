@@ -266,6 +266,7 @@ export const VALID_ASSERTION_KEYS = new Set([
 
 export const VALID_ASSERTION_OPERATORS = [
   'eq',
+  'eqIgnoreCase',
   'ne',
   'gt',
   'gte',

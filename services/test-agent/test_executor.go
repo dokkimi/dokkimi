@@ -43,6 +43,9 @@ type TestExecutor struct {
 	testExecutionLogger   *TestExecutionLogger
 	varCtx                *VariableContext
 	uiStepExecutor        *UIStepExecutor // nil when no UI steps configured; executeStep fails loudly if a ui action arrives
+	stepValidator         *StepValidator
+	validationReporter    *ValidationReporter
+	instanceID            string
 }
 
 // NewTestExecutor creates a new test executor
@@ -80,6 +83,13 @@ func NewTestExecutor(interceptorURL string, timeout time.Duration, databaseQuery
 // steps can be dispatched. Leave unset for API/DB-only runs.
 func (e *TestExecutor) SetUIStepExecutor(ui *UIStepExecutor) {
 	e.uiStepExecutor = ui
+}
+
+// SetInlineValidation configures inline assertion validation for each step.
+func (e *TestExecutor) SetInlineValidation(sv *StepValidator, vr *ValidationReporter, instanceID string) {
+	e.stepValidator = sv
+	e.validationReporter = vr
+	e.instanceID = instanceID
 }
 
 // CloseUI tears down the browser session after an execution completes.
@@ -140,6 +150,8 @@ func (e *TestExecutor) flattenSteps(testConfig *TestConfig, resetVars bool) []fl
 }
 
 // executeStepAt executes a single flat step, emitting STEP_STARTED/COMPLETED/FAILED logs.
+// When inline validation is configured, it also waits for quiescence, validates assertions,
+// and reports results after each step.
 func (e *TestExecutor) executeStepAt(ctx context.Context, fs flatStep) (StepExecution, error) {
 	si := fs.globalIndex
 	label := fs.label()
@@ -161,13 +173,32 @@ func (e *TestExecutor) executeStepAt(ctx context.Context, fs flatStep) (StepExec
 		return stepExec, err
 	}
 
-	// Process extraction after successful execution
-	if resp != nil && len(fs.step.Extract) > 0 {
+	// Process extraction after successful execution (legacy path — used when
+	// inline validation is not configured, e.g. for extract-only steps without assertions)
+	if e.stepValidator == nil && resp != nil && len(fs.step.Extract) > 0 {
 		if extractErr := e.varCtx.Extract(fs.step.Extract, resp); extractErr != nil {
 			e.testExecutionLogger.LogEvent("STEP_FAILED",
 				fmt.Sprintf("%s extraction failed: %v", label, extractErr), &si, nil)
 			return stepExec, fmt.Errorf("variable extraction failed: %w", extractErr)
 		}
+	}
+
+	// Inline validation: try immediately, retry if logs haven't arrived yet
+	if e.stepValidator != nil && (len(fs.step.Assertions) > 0 || len(fs.step.Extract) > 0) {
+		results, passed := e.stepValidator.ValidateStepWithRetry(fs.step, stepExec, resp)
+
+		if e.validationReporter != nil {
+			e.validationReporter.ReportStepResultsAsync(e.instanceID, si, results, passed)
+		}
+
+		e.stepValidator.logBuffer.Flush()
+
+		summary := FormatStepResult(si, fs.label(), results, passed)
+		if !passed {
+			e.testExecutionLogger.LogEvent("STEP_FAILED", summary, &si, nil)
+			return stepExec, fmt.Errorf("assertion validation failed: %s", summary)
+		}
+		log.Printf("%s", summary)
 	}
 
 	log.Printf("%s completed successfully", label)

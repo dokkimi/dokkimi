@@ -80,6 +80,15 @@ export class DockerDeployerService {
       ]);
       this.throwOnSettledErrors(phase1Results);
 
+      // Resolve test-agent IP for GELF log driver (runs at daemon level, can't use network aliases)
+      const testAgentInfo = await this.dockerClient.inspectContainer(
+        `test-agent-${instanceId}`,
+      );
+      const testAgentIP = testAgentInfo?.ip;
+      if (!testAgentIP) {
+        throw new Error('Failed to get test-agent IP for GELF log driver');
+      }
+
       // Phase 2: All databases in parallel
       const dbItems = ctx.definition.items.filter((i) => i.type === 'DATABASE');
       const phase2Results = await Promise.allSettled(
@@ -134,34 +143,18 @@ export class DockerDeployerService {
           );
         }
 
-        const { userContainerId, interceptorName } =
-          await this.serviceGroup.createServiceGroup(
-            networkName,
-            instanceId,
-            item,
-            containerName,
-            instanceItemId,
-            dockerDnsIP,
-            configPaths,
-            caBundlePaths,
-            databaseNames,
-          );
-        if (userContainerId) {
-          await this.logCollector.startCollecting(
-            instanceId,
-            userContainerId,
-            item.name,
-            instanceItemId,
-          );
-        }
-        if (interceptorName) {
-          await this.logCollector.startCollecting(
-            instanceId,
-            interceptorName,
-            `${item.name}-interceptor`,
-            undefined,
-          );
-        }
+        await this.serviceGroup.createServiceGroup(
+          networkName,
+          instanceId,
+          item,
+          containerName,
+          instanceItemId,
+          dockerDnsIP,
+          configPaths,
+          caBundlePaths,
+          databaseNames,
+          testAgentIP,
+        );
       });
 
       const chromiumPromise = attachChromium

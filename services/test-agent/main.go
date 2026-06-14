@@ -73,6 +73,9 @@ func main() {
 		log.Printf("No databaseMap found in ConfigMap, database queries will not be available")
 	}
 
+	// Create step log buffer for inline validation
+	stepLogBuffer := NewStepLogBuffer()
+
 	// Create test executor (pass logger for test execution logging)
 	testExecutor := NewTestExecutor(cfg.InterceptorURL, cfg.RequestTimeout, databaseQueryExecutor, testExecutionLogger)
 
@@ -91,6 +94,32 @@ func main() {
 		)
 		testExecutor.SetUIStepExecutor(uiExecutor)
 		log.Printf("UI step executor configured (browser at %s)", cfg.BrowserURL)
+	}
+
+	// Configure inline assertion validation
+	stepValidator := NewStepValidator(stepLogBuffer, testExecutor.VarContext())
+	validationReporter := NewValidationReporter(cfg.ControlTowerURL)
+	testExecutor.SetInlineValidation(stepValidator, validationReporter, instanceId)
+	log.Printf("Inline assertion validation configured")
+
+	// Build service name → instanceItemId map for GELF console log forwarding
+	serviceItemIDs := make(map[string]string)
+	for serviceName, entry := range configMapData.URLMap {
+		if entry.InstanceItemID != "" {
+			name := entry.Name
+			if name == "" {
+				name = serviceName
+			}
+			serviceItemIDs[name] = entry.InstanceItemID
+		}
+	}
+
+	// Start GELF UDP receiver for console logs from service containers
+	gelfReceiver, gelfErr := NewGelfReceiver(stepLogBuffer, cfg.ControlTowerURL, instanceId, serviceItemIDs)
+	if gelfErr != nil {
+		log.Printf("Warning: failed to start GELF receiver: %v (console log assertions will not work)", gelfErr)
+	} else {
+		go gelfReceiver.Run()
 	}
 
 	// Create test-completion notifier (pass logger for notification logging).
@@ -238,6 +267,36 @@ func main() {
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte(`{"status":"healthy"}`))
+	})
+
+	// POST /logs/http — receive HTTP traffic logs from interceptors
+	mux.HandleFunc("/logs/http", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		var logMsg HttpLogMessage
+		if err := json.NewDecoder(r.Body).Decode(&logMsg); err != nil {
+			http.Error(w, fmt.Sprintf("Failed to decode log: %v", err), http.StatusBadRequest)
+			return
+		}
+		stepLogBuffer.AddHttpLog(logMsg)
+		w.WriteHeader(http.StatusOK)
+	})
+
+	// POST /logs/database — receive database query logs from db-proxies
+	mux.HandleFunc("/logs/database", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		var logMsg DatabaseLogMessage
+		if err := json.NewDecoder(r.Body).Decode(&logMsg); err != nil {
+			http.Error(w, fmt.Sprintf("Failed to decode log: %v", err), http.StatusBadRequest)
+			return
+		}
+		stepLogBuffer.AddDbLog(logMsg)
+		w.WriteHeader(http.StatusOK)
 	})
 
 	// POST /execute — trigger test execution on demand (used in manual executionMode

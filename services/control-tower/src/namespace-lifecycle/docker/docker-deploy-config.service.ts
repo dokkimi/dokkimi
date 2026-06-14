@@ -64,29 +64,18 @@ export class DockerDeployConfigService {
           testRunId: string;
           timeoutSeconds: number;
           executionMode: string;
-          tests: Record<string, unknown>[];
+          tests: any[];
           variables?: Record<string, string>;
         }
       | undefined;
     let expectedNamespaceItemIds: string[] | undefined;
 
     if (ctx.definition.tests?.length) {
-      const strippedTests = ctx.definition.tests.map((test) => ({
-        ...test,
-        steps: (test.steps ?? []).map((step) => {
-          const { assertions: _assertions, ...executionOnly } =
-            step as unknown as Record<string, unknown> & {
-              assertions?: unknown;
-            };
-          return executionOnly;
-        }),
-      }));
-
       testConfig = {
         testRunId: ctx.instanceId,
         timeoutSeconds: ctx.definition.config?.timeoutSeconds || 300,
         executionMode: 'auto',
-        tests: strippedTests,
+        tests: ctx.definition.tests,
         variables: ctx.definition.variables,
       };
 
