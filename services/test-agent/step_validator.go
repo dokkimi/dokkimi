@@ -2,13 +2,13 @@ package main
 
 import (
 	"log"
+	"strings"
 	"time"
 )
 
 const (
-	defaultPollInterval    = 100 * time.Millisecond
-	defaultQuiescencePeriod = 500 * time.Millisecond
-	defaultMaxWait         = 10 * time.Second
+	validationRetryInterval = 100 * time.Millisecond
+	validationMaxWait       = 5 * time.Second
 )
 
 // StepValidator validates assertions for a step using in-memory log buffers.
@@ -25,32 +25,56 @@ func NewStepValidator(logBuffer *StepLogBuffer, varCtx *VariableContext) *StepVa
 	}
 }
 
-// WaitForQuiescence waits until no new logs arrive for the quiescence period.
-func (sv *StepValidator) WaitForQuiescence() {
-	time.Sleep(defaultQuiescencePeriod)
-
-	deadline := time.Now().Add(defaultMaxWait)
-	lastCount := sv.logBuffer.LogCount()
-
-	for time.Now().Before(deadline) {
-		time.Sleep(defaultPollInterval)
-		currentCount := sv.logBuffer.LogCount()
-		if currentCount == lastCount {
-			lastLogTime := sv.logBuffer.LastLogTime()
-			if lastLogTime.IsZero() || time.Since(lastLogTime) >= defaultQuiescencePeriod {
-				return
-			}
-		}
-		lastCount = currentCount
+// ValidateStepWithRetry tries validation immediately. If the result looks like
+// logs haven't arrived yet (retryable), it polls every 100ms and retries until
+// validation passes, a non-retryable failure occurs, or the deadline is hit.
+func (sv *StepValidator) ValidateStepWithRetry(step TestStep, stepExec StepExecution, stepResp map[string]interface{}) ([]AssertionResult, bool) {
+	// UI and wait steps don't depend on async logs — validate once.
+	if step.Action.Type == "ui" || step.Action.Type == "wait" {
+		return sv.validateStep(step, stepExec, stepResp)
 	}
 
-	log.Printf("Quiescence detection timed out after %v", defaultMaxWait)
+	results, passed := sv.validateStep(step, stepExec, stepResp)
+	if passed || !isRetryable(results) {
+		return results, passed
+	}
+
+	deadline := time.Now().Add(validationMaxWait)
+	for time.Now().Before(deadline) {
+		time.Sleep(validationRetryInterval)
+		results, passed = sv.validateStep(step, stepExec, stepResp)
+		if passed || !isRetryable(results) {
+			return results, passed
+		}
+	}
+
+	log.Printf("Validation retry timed out after %v", validationMaxWait)
+	return results, passed
 }
 
-// ValidateStep runs all assertion blocks for a step against the buffered logs.
+// isRetryable returns true if the failure looks like logs haven't arrived yet.
+func isRetryable(results []AssertionResult) bool {
+	for _, r := range results {
+		if !r.Passed {
+			if r.Error == "Step log not found" {
+				return true
+			}
+			// Count assertion failed — more logs may still be in flight.
+			// Logs only grow, so any count failure is potentially retryable.
+			if r.ResultKind == "count" {
+				return true
+			}
+			if r.ResultKind == "extract" && strings.Contains(r.Error, "not found") {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// validateStep runs all assertion blocks for a step against the buffered logs.
 // stepResp is the document returned by the step executor (non-nil for UI steps).
-// Returns per-assertion results and whether the step passed overall.
-func (sv *StepValidator) ValidateStep(step TestStep, stepExec StepExecution, stepResp map[string]interface{}) ([]AssertionResult, bool) {
+func (sv *StepValidator) validateStep(step TestStep, stepExec StepExecution, stepResp map[string]interface{}) ([]AssertionResult, bool) {
 	httpLogs, dbLogs, consoleLogs := sv.logBuffer.Snapshot()
 	var results []AssertionResult
 

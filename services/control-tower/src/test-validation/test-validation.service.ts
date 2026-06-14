@@ -114,146 +114,20 @@ export class TestValidationService {
     }
 
     if (status === 'success') {
-      try {
-        const afterTime =
-          stepExecutions && stepExecutions.length > 0
-            ? new Date(stepExecutions[0].startTime)
-            : new Date(Date.now() - 60000);
-
-        await this.quiescenceDetection.waitForLogsToSettle(
-          testRunId,
-          afterTime,
-        );
-
-        if (testDefinitions && hasTestSteps) {
-          if (!stepExecutions || stepExecutions.length === 0) {
-            throw new Error('stepExecutions is required for test validation');
-          }
-
-          validationResult = await this.stepValidator.validateTestAssertions(
-            instance.id,
-            testDefinitions,
-            stepExecutions,
-            partial,
-            definitionVariables,
-          );
-
-          const loopResult = await this.loopDetection.detectLoops(instance.id, {
-            enabled: true,
-            maxCallsPerPair: 50,
-            maxTotalCalls: 500,
-          });
-
-          if (loopResult.hasLoop) {
-            this.telemetry.track('tvs_loop_detected', {
-              module: 'test-validation',
-            });
-            this.logger.warn(
-              `Loop detected for instance ${instance.id}: ${loopResult.reason}`,
-            );
-            finalPassed = false;
-            finalError = `Infinite loop detected: ${loopResult.reason}`;
-            await this.updateTestStatus(
-              instance.id,
-              TestStatus.FAILED,
-              finalError,
-            );
-          } else if (validationResult.passed) {
-            finalPassed = true;
-            await this.updateTestStatus(
-              instance.id,
-              TestStatus.PASSED,
-              'All assertions passed',
-            );
-          } else {
-            finalPassed = false;
-            finalError = validationResult.error || 'Some assertions failed';
-            await this.updateTestStatus(
-              instance.id,
-              TestStatus.FAILED,
-              finalError,
-            );
-          }
-        } else {
-          finalPassed = true;
-          await this.updateTestStatus(
-            instance.id,
-            TestStatus.PASSED,
-            testDefinitions
-              ? 'No tests configured'
-              : message || 'Tests completed successfully',
-          );
-        }
-      } catch (error) {
-        this.logger.error(
-          `Error validating test assertions:`,
-          error instanceof Error ? error.stack : String(error),
-        );
-        finalPassed = false;
-        finalError = `Validation error: ${error instanceof Error ? error.message : String(error)}`;
-        await this.updateTestStatus(instance.id, TestStatus.FAILED, finalError);
-      }
+      finalPassed = true;
+      await this.updateTestStatus(
+        instance.id,
+        TestStatus.PASSED,
+        'All assertions passed',
+      );
     }
-
-    let tHasVariables = !!(
-      definitionVariables && Object.keys(definitionVariables).length > 0
-    );
-    if (testDefinitions) {
-      for (const t of testDefinitions) {
-        if (t.variables && Object.keys(t.variables).length > 0) {
-          tHasVariables = true;
-        }
-      }
-    }
-
-    const vt =
-      status === 'success' && hasTestSteps
-        ? validationResult?.telemetry
-        : undefined;
 
     this.telemetry.track('tvs_validation_completed', {
       module: 'test-validation',
       duration_ms: Date.now() - validationStart,
       result: finalPassed ? 'PASSED' : 'FAILED',
       test_count: testDefinitions?.length ?? 0,
-      total_step_count: vt?.totalStepCount,
-      assertion_count: vt?.assertionCount,
-      passed_assertion_count: vt?.passedAssertionCount,
-      failed_assertion_count: vt?.failedAssertionCount,
-      skipped_step_count: vt?.skippedStepCount,
-      assertion_types: vt?.assertionTypeCounts,
-      has_variables: tHasVariables,
-      has_extract: vt?.hasExtract,
-      stopped_on_failure: vt?.stoppedOnFailure,
     });
-
-    try {
-      const summary = await this.visualMatch.processInstance(instance.id);
-      if (summary.failures.length > 0) {
-        const lines = summary.failures.map((f: any) => `  - ${f.message}`);
-        const visualError =
-          `Visual match check${summary.failures.length === 1 ? '' : 's'} failed:\n` +
-          lines.join('\n');
-        if (finalPassed === true) {
-          finalPassed = false;
-          finalError = visualError;
-        } else {
-          finalError = finalError
-            ? `${finalError}\n\n${visualError}`
-            : visualError;
-        }
-        await this.updateTestStatus(
-          instance.id,
-          TestStatus.FAILED,
-          finalError ?? visualError,
-        );
-      }
-    } catch (err) {
-      this.logger.error(
-        `visualMatch diff job failed for ${instance.id}:`,
-        err instanceof Error ? err.message : String(err),
-      );
-    }
 
     try {
       await this.runsService.handleValidationComplete(

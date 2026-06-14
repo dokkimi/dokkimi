@@ -260,7 +260,7 @@ func TestStepValidator(t *testing.T) {
 			EndTime:   now.Add(200 * time.Millisecond).Format(time.RFC3339Nano),
 		}
 
-		results, passed := sv.ValidateStep(step, stepExec, nil)
+		results, passed := sv.validateStep(step, stepExec, nil)
 		if !passed {
 			t.Error("expected step to pass")
 		}
@@ -295,7 +295,7 @@ func TestStepValidator(t *testing.T) {
 			EndTime:   now.Add(200 * time.Millisecond).Format(time.RFC3339Nano),
 		}
 
-		results, passed := sv.ValidateStep(step, stepExec, nil)
+		results, passed := sv.validateStep(step, stepExec, nil)
 		if !passed {
 			t.Error("expected step to pass")
 		}

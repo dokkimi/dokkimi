@@ -183,11 +183,9 @@ func (e *TestExecutor) executeStepAt(ctx context.Context, fs flatStep) (StepExec
 		}
 	}
 
-	// Inline validation: quiescence → validate → report → flush
+	// Inline validation: try immediately, retry if logs haven't arrived yet
 	if e.stepValidator != nil && (len(fs.step.Assertions) > 0 || len(fs.step.Extract) > 0) {
-		e.stepValidator.WaitForQuiescence()
-
-		results, passed := e.stepValidator.ValidateStep(fs.step, stepExec, resp)
+		results, passed := e.stepValidator.ValidateStepWithRetry(fs.step, stepExec, resp)
 
 		if e.validationReporter != nil {
 			e.validationReporter.ReportStepResultsAsync(e.instanceID, si, results, passed)
