@@ -124,10 +124,10 @@ func toPixmatchImage(img image.Image) *pixmatch.Image {
 			r, g, bv, a := img.At(x, y).RGBA()
 			idx := ((y-b.Min.Y)*b.Dx() + (x - b.Min.X)) * pm.BPC
 			if idx+3 < len(pm.PixData) {
-				pm.PixData[idx] = r
-				pm.PixData[idx+1] = g
-				pm.PixData[idx+2] = bv
-				pm.PixData[idx+3] = a
+				pm.PixData[idx] = r >> 8
+				pm.PixData[idx+1] = g >> 8
+				pm.PixData[idx+2] = bv >> 8
+				pm.PixData[idx+3] = a >> 8
 			}
 		}
 	}

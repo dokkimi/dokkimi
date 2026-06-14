@@ -70,7 +70,7 @@ export async function baselines(args: string[]): Promise<void> {
       return;
     }
 
-    const menuItems = await buildRunMenuItems(ctUrl, allRuns);
+    let menuItems = await buildRunMenuItems(ctUrl, allRuns);
     enterAltScreen();
     try {
       while (true) {
@@ -90,8 +90,11 @@ export async function baselines(args: string[]): Promise<void> {
           continue;
         }
         const result = await reviewRun(items, ctUrl);
-        printSummary(result);
         process.stdout.write('\x1b[2J\x1b[H');
+        printSummary(result);
+        process.stdout.write('\n\x1b[90mPress any key to go back...\x1b[0m');
+        await waitForAnyKey();
+        menuItems = await buildRunMenuItems(ctUrl, allRuns);
       }
     } finally {
       exitAltScreen();

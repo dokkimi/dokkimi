@@ -187,7 +187,7 @@ export interface Assertion {
 export interface ConsoleLogAssertion {
   level?: string;
   message?: {
-    operator: 'eq' | 'contains' | 'matches';
+    operator: 'eq' | 'contains' | 'containsIgnoreCase' | 'matches';
     value: string;
   };
   count: CountAssertion;

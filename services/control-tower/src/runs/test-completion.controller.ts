@@ -6,9 +6,11 @@ import {
   HttpStatus,
   Logger,
 } from '@nestjs/common';
+import { SkipThrottle } from '@nestjs/throttler';
 import { RunsService } from './runs.service';
 import { TestCompletionDto } from './dto/test-completion.dto';
 
+@SkipThrottle()
 @Controller('test-complete')
 export class TestCompletionController {
   private readonly logger = new Logger(TestCompletionController.name);

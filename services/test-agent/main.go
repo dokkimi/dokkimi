@@ -398,8 +398,15 @@ func main() {
 	<-ctx.Done()
 	rootCancel()
 
+	if gelfReceiver != nil {
+		gelfReceiver.Close()
+	}
+
 	log.Printf("Shutting down — waiting for in-flight execution to finish...")
 	executionWg.Wait()
+
+	log.Printf("Waiting for validation reports to flush...")
+	validationReporter.Wait()
 
 	log.Printf("Stopping HTTP server...")
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)

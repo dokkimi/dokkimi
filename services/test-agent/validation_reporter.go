@@ -7,6 +7,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"sync"
 	"time"
 )
 
@@ -34,6 +35,7 @@ type ValidationReportResult struct {
 type ValidationReporter struct {
 	controlTowerURL string
 	httpClient      *http.Client
+	wg              sync.WaitGroup
 }
 
 // NewValidationReporter creates a new validation reporter.
@@ -101,9 +103,19 @@ func (vr *ValidationReporter) ReportStepResults(instanceID string, stepIndex int
 	}
 }
 
-// ReportStepResultsAsync sends validation results in a background goroutine (fire-and-forget).
+// ReportStepResultsAsync sends validation results in a background goroutine.
+// Call Wait() before shutdown to ensure all reports are delivered.
 func (vr *ValidationReporter) ReportStepResultsAsync(instanceID string, stepIndex int, results []AssertionResult, passed bool) {
-	go vr.ReportStepResults(instanceID, stepIndex, results, passed)
+	vr.wg.Add(1)
+	go func() {
+		defer vr.wg.Done()
+		vr.ReportStepResults(instanceID, stepIndex, results, passed)
+	}()
+}
+
+// Wait blocks until all in-flight async reports have completed.
+func (vr *ValidationReporter) Wait() {
+	vr.wg.Wait()
 }
 
 // FormatStepResult returns a human-readable summary of step validation.

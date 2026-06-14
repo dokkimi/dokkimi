@@ -53,12 +53,9 @@ func EvaluateDocPath(doc interface{}, path string) (interface{}, bool) {
 	}
 
 	value := doc
-	for i, seg := range segments {
+	for _, seg := range segments {
 		if value == nil {
-			if i < len(segments) {
-				return nil, false
-			}
-			break
+			return nil, false
 		}
 
 		if arrayMatch := arrayIndexPattern.FindStringSubmatch(seg); arrayMatch != nil {
