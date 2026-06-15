@@ -1,8 +1,9 @@
 name: Dokkimi Run Tests
 description: >-
   Run Dokkimi integration tests using Docker. Generates a JUnit XML report
-  and posts test results as a PR check. Requires `checks: write` and
-  `contents: read` permissions in the calling workflow.
+  and posts test results as a PR check. Requires `checks: write`,
+  `pull-requests: write`, and `contents: read` permissions in the calling
+  workflow.
 branding:
   icon: check-circle
   color: blue

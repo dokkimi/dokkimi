@@ -9,6 +9,7 @@ on:
 permissions:
   checks: write
   contents: read
+  pull-requests: write
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -183,30 +184,30 @@ jobs:
 
       - name: Run demo-oauth-flow tests
         timeout-minutes: 10
-        run: node apps/cli/dist/bin/dokkimi.js run .dokkimi/demo-oauth-flow --ci --junit /tmp/junit/demo-oauth-flow.xml
+        run: node apps/cli/dist/bin/dokkimi.js run .dokkimi/demo-oauth-flow --ci --junit junit-reports/demo-oauth-flow.xml
 
       - name: Run demo-nextjs tests
         timeout-minutes: 10
-        run: node apps/cli/dist/bin/dokkimi.js run .dokkimi/demo-nextjs --ci --junit /tmp/junit/demo-nextjs.xml
+        run: node apps/cli/dist/bin/dokkimi.js run .dokkimi/demo-nextjs --ci --junit junit-reports/demo-nextjs.xml
 
       - name: Run control-tower tests
         timeout-minutes: 10
-        run: node apps/cli/dist/bin/dokkimi.js run .dokkimi/control-tower --ci --junit /tmp/junit/control-tower.xml
+        run: node apps/cli/dist/bin/dokkimi.js run .dokkimi/control-tower --ci --junit junit-reports/control-tower.xml
 
       - name: Run traffic-tester tests
         timeout-minutes: 10
-        run: node apps/cli/dist/bin/dokkimi.js run .dokkimi/traffic-tester --ci --junit /tmp/junit/traffic-tester.xml
+        run: node apps/cli/dist/bin/dokkimi.js run .dokkimi/traffic-tester --ci --junit junit-reports/traffic-tester.xml
 
       - name: Run demo-spa tests
         timeout-minutes: 10
-        run: node apps/cli/dist/bin/dokkimi.js run .dokkimi/demo-spa --ci --junit /tmp/junit/demo-spa.xml
+        run: node apps/cli/dist/bin/dokkimi.js run .dokkimi/demo-spa --ci --junit junit-reports/demo-spa.xml
 
       - name: Upload JUnit reports
         if: always()
         uses: actions/upload-artifact@v5
         with:
           name: dokkimi-junit-reports
-          path: /tmp/junit/
+          path: junit-reports/
           if-no-files-found: ignore
 
       - name: Test report
@@ -214,7 +215,7 @@ jobs:
         uses: EnricoMi/publish-unit-test-result-action@v2
         with:
           check_name: Dokkimi Test Results
-          files: /tmp/junit/*.xml
+          files: junit-reports/*.xml
 
       - name: Dump failed results
         if: failure()
