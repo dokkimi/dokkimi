@@ -266,9 +266,9 @@ describe('generateSummaryFromXmlDir', () => {
     const md = generateSummaryFromXmlDir(tmpDir);
     expect(md).toContain('<!-- dokkimi-test-results -->');
     expect(md).toContain('| 3 | 2 | 1 | 0 | 15s |');
-    // Group headers with duration
-    expect(md).toContain('#### run-a (10s)');
-    expect(md).toContain('#### run-b (5s)');
+    // Group headers use filename, not suite name
+    expect(md).toContain('#### suite-a (10s)');
+    expect(md).toContain('#### suite-b (5s)');
     // Per-group tables with duration column
     expect(md).toContain('| :white_check_mark: | test-1 | - |');
     expect(md).toContain('| :white_check_mark: | test-2 | - |');
