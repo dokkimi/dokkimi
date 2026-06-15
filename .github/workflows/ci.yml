@@ -216,6 +216,7 @@ jobs:
           name: Dokkimi Test Results
           path: /tmp/junit/*.xml
           reporter: java-junit
+          list-tests: failed
 
       - name: Dump failed results
         if: failure()

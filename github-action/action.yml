@@ -84,6 +84,7 @@ runs:
         name: Dokkimi Test Results
         path: ${{ inputs.junit }}
         reporter: java-junit
+        list-tests: failed
 
     - name: Dump failed results
       if: failure() && inputs.dump-retention-days != '0'
