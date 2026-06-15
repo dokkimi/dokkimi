@@ -47,7 +47,12 @@ describe('writeJUnitXml', () => {
       ctUrl: 'http://localhost:19001',
       runId: 'run-1',
       instances: [
-        { id: 'inst-1', name: 'checkout-flow', status: 'STOPPED', testStatus: 'PASSED' },
+        {
+          id: 'inst-1',
+          name: 'checkout-flow',
+          status: 'STOPPED',
+          testStatus: 'PASSED',
+        },
       ],
       outputPath,
       durationMs: 5000,
@@ -103,7 +108,12 @@ describe('writeJUnitXml', () => {
       ctUrl: 'http://localhost:19001',
       runId: 'run-1',
       instances: [
-        { id: 'inst-1', name: 'user-test', status: 'STOPPED', testStatus: 'FAILED' },
+        {
+          id: 'inst-1',
+          name: 'user-test',
+          status: 'STOPPED',
+          testStatus: 'FAILED',
+        },
       ],
       outputPath,
       durationMs: 3000,
@@ -125,7 +135,12 @@ describe('writeJUnitXml', () => {
       ctUrl: 'http://localhost:19001',
       runId: 'run-1',
       instances: [
-        { id: 'inst-1', name: 'infra-test', status: 'FAILED', errorMessage: 'Container crashed' },
+        {
+          id: 'inst-1',
+          name: 'infra-test',
+          status: 'FAILED',
+          errorMessage: 'Container crashed',
+        },
       ],
       outputPath,
       durationMs: 1000,
@@ -142,7 +157,13 @@ describe('writeJUnitXml', () => {
       ctUrl: 'http://localhost:19001',
       runId: 'run-1',
       instances: [
-        { id: 'skipped-bad', name: 'bad', status: 'SKIPPED', testStatus: 'SKIPPED', errorMessage: 'Invalid definition' },
+        {
+          id: 'skipped-bad',
+          name: 'bad',
+          status: 'SKIPPED',
+          testStatus: 'SKIPPED',
+          errorMessage: 'Invalid definition',
+        },
       ],
       outputPath,
       durationMs: 500,
@@ -160,7 +181,12 @@ describe('writeJUnitXml', () => {
       ctUrl: 'http://localhost:19001',
       runId: 'run-1',
       instances: [
-        { id: 'inst-1', name: 'my-test', status: 'STOPPED', testStatus: 'PASSED' },
+        {
+          id: 'inst-1',
+          name: 'my-test',
+          status: 'STOPPED',
+          testStatus: 'PASSED',
+        },
       ],
       durationMs: 2000,
     });
@@ -178,7 +204,12 @@ describe('writeJUnitXml', () => {
       ctUrl: 'http://localhost:19001',
       runId: 'run-1',
       instances: [
-        { id: 'inst-1', name: 'test <with> "special" chars', status: 'FAILED', errorMessage: 'Expected <200> & got "500"' },
+        {
+          id: 'inst-1',
+          name: 'test <with> "special" chars',
+          status: 'FAILED',
+          errorMessage: 'Expected <200> & got "500"',
+        },
       ],
       outputPath,
       durationMs: 1000,

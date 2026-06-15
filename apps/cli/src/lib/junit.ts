@@ -79,7 +79,9 @@ export async function generateJUnitXml(opts: JUnitOptions): Promise<string> {
     if (assertions.length > 0) {
       for (const a of assertions) {
         const caseName = formatAssertionName(a);
-        lines.push(`    <testcase name="${escapeXml(caseName)}" classname="${escapeXml(inst.name)}" time="0">`);
+        lines.push(
+          `    <testcase name="${escapeXml(caseName)}" classname="${escapeXml(inst.name)}" time="0">`,
+        );
         if (!a.passed && a.assertionType !== 'skip') {
           const message = formatFailureMessage(a);
           lines.push(
@@ -94,9 +96,7 @@ export async function generateJUnitXml(opts: JUnitOptions): Promise<string> {
       );
       if (displayStatus === 'FAILED') {
         const message = inst.errorMessage ?? 'Test failed';
-        lines.push(
-          `      <failure message="${escapeXml(message)}"></failure>`,
-        );
+        lines.push(`      <failure message="${escapeXml(message)}"></failure>`);
       } else if (displayStatus === 'SKIPPED') {
         lines.push('      <skipped/>');
       }

@@ -16,9 +16,7 @@ export async function junit(args: string[]): Promise<void> {
     console.log('By default, outputs to stdout. Use -o to write to a file.');
     console.log('');
     console.log('Options:');
-    console.log(
-      '  -o, --output <file> Write to a file instead of stdout',
-    );
+    console.log('  -o, --output <file> Write to a file instead of stdout');
     console.log(
       '  --run [runId]       Target a specific run by ID (defaults to latest)',
     );
