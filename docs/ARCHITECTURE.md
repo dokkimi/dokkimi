@@ -23,7 +23,7 @@ validation live as feature modules inside it.
 
 | Service                | Port  | Responsibility                                                                                                                                                 |
 | ---------------------- | ----- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Control Tower (CT)** | 19001 | REST API, Docker orchestration, namespace lifecycle, config file management, log ingestion, test-completion + assertion validation, container exit monitoring. |
+| **Control Tower (CT)** | 19001 | REST API, Docker orchestration, namespace lifecycle, config file management, log ingestion, test-completion handling, assertion result storage, container exit monitoring. |
 
 CT's internal feature modules:
 
@@ -33,7 +33,7 @@ CT's internal feature modules:
 | `runs/`                               | Run creation, deployment, status, stop/delete                                          |
 | `log-processing/` (formerly LPS)      | Log ingestion (`POST /logs/*`), writes to DB                                           |
 | `log-query/`                          | Log read path (`GET /logs/*/instance/:id`)                                             |
-| `test-validation/` (formerly TVS)     | Assertion matching, updates test status, calls `RunsService` in-process                |
+| `test-validation/` (formerly TVS)     | Receives and stores assertion results from test-agent, updates test status, calls `RunsService` in-process |
 | `health/`                             | Single aggregated `/health`; readiness updates from sidecars via `POST /health/status` |
 
 ### Go (run inside Docker containers as sidecars)
@@ -41,7 +41,7 @@ CT's internal feature modules:
 | Service         | Responsibility                                                                                                                                                                                                         |
 | --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Interceptor** | HTTP traffic interception, mock responses, log publishing to Control Tower. Two variants: shared (external traffic) and sidecar (service-to-service)                                                                   |
-| **Test Agent**  | Reads test config from bind-mounted config file, executes HTTP requests in sequence, POSTs `/test-complete` to Control Tower                                                                                           |
+| **Test Agent**  | Reads test config from bind-mounted config file, executes test steps (HTTP, DB, UI, wait), validates assertions inline against in-memory logs, reports results to Control Tower, POSTs `/test-complete` when done       |
 | **DB Proxy**    | Wire protocol proxy sidecar for databases. Transparent TCP proxy that parses each database's native wire protocol to extract and log queries without modifying traffic. Variants for PostgreSQL, MySQL, MongoDB, Redis |
 
 ### Applications
@@ -86,12 +86,18 @@ User runs: dokkimi run [target]
 │                                           │
 │  Test Agent:                              │
 │    1. Reads test steps from config file   │
-│    2. Executes HTTP requests in order     │
-│    3. Interceptors capture all traffic    │
-│    4. POSTs /test-complete to CT          │
+│    2. Executes steps (HTTP, DB, UI, wait) │
+│    3. Collects logs in memory from        │
+│       interceptors and GELF receiver      │
+│    4. Validates assertions inline against │
+│       in-memory logs (no CT round-trip)   │
+│    5. Reports assertion results to CT     │
+│       via POST /logs/test-validation      │
+│    6. POSTs /test-complete to CT          │
 │                                           │
-│  Interceptors → POST /logs/* → CT         │
-│  Docker API  → console log streaming → CT │
+│  Interceptors → POST /logs/http → TA + CT │
+│  Docker API  → GELF UDP → Test Agent      │
+│              → console log streaming → CT │
 │  DB Proxy    → POST /logs/database → CT   │
 └───────────────┬───────────────────────────┘
                 │
@@ -104,12 +110,12 @@ User runs: dokkimi run [target]
                 │
                 ▼
 ┌─ Control Tower: test-validation module ───┐
-│ 1. Receives POST /test-complete from      │
+│ 1. Receives assertion results from        │
+│    test-agent via POST /logs/test-        │
+│    validation (stores to database)        │
+│ 2. Receives POST /test-complete from      │
 │    test-agent                             │
-│ 2. Queries HTTP logs from database        │
-│ 3. Evaluates assertions against logs      │
-│ 4. Writes assertion results to database   │
-│ 5. Calls RunsService.handleValidation-    │
+│ 3. Calls RunsService.handleValidation-    │
 │    Complete in-process (no HTTP hop)      │
 └───────────────┬───────────────────────────┘
                 │
@@ -204,8 +210,11 @@ Log ingestion is HTTP-only — interceptors and DB Proxy POST to Control Tower. 
 | Docker API      | Control Tower `/logs/console`  | Log streaming        | Console logs (collected via Docker API)                                                |
 | DB Proxy        | Control Tower `/logs/database` | HTTP POST            | Database logs                                                                          |
 | Sidecars        | Control Tower `/health/status` | HTTP POST            | Readiness updates                                                                      |
+| Interceptors    | Test Agent `/logs/http`        | HTTP POST            | HTTP traffic logs (test-agent buffers in memory for inline validation)                 |
+| Console logs    | Test Agent (GELF UDP :12201)   | GELF UDP             | Console logs forwarded to test-agent for inline assertion validation                   |
+| Test Agent      | Control Tower `/logs/test-validation` | HTTP POST     | Assertion results (validated inline by test-agent, stored by CT)                       |
 | Test Agent      | Control Tower `/test-complete` | HTTP POST            | Test completion notification                                                           |
-| CT modules      | DB                             | Prisma               | Query HTTP logs, write assertion results                                               |
+| CT modules      | DB                             | Prisma               | Store logs and assertion results                                                       |
 | test-validation | RunsService (in-process)       | direct injected call | Signal validation complete → CT updates run status                                     |
 
 ---
@@ -288,6 +297,8 @@ dokkimi/
 
 4. **File-driven test execution** — test steps are written to bind-mounted config files that the test-agent reads. This decouples test configuration from the agent binary.
 
-5. **HTTP POST for log ingestion** — interceptor sidecars and DB Proxy post directly to Control Tower's log-processing module. Console logs are collected via Docker API log streaming.
+5. **Dual-path log ingestion** — interceptor sidecars post HTTP logs to both Control Tower (for storage/inspection) and the test-agent (for inline validation). DB Proxy posts to Control Tower. Console logs are collected via Docker API log streaming to CT and via GELF UDP to the test-agent.
 
 6. **Wire protocol proxies over query-execution endpoints** — DB Proxy variants parse each database's native wire protocol (MongoDB OP_MSG, PostgreSQL messages, MySQL packets, Redis RESP) to transparently intercept and log queries. This means applications connect normally to the proxy port with no driver changes, and the proxy forwards traffic unmodified while extracting query text, results, duration, and errors for logging.
+
+7. **Inline assertion validation in test-agent** — the test-agent validates assertions against in-memory logs (HTTP traffic, console output, DB queries) instead of round-tripping through Control Tower. Interceptors POST logs to both CT (for storage/inspection) and the test-agent (for real-time validation). Console logs arrive via GELF UDP. This eliminates HTTP round-trips per assertion, removes database query latency from the validation path, and enables retry logic (polling for expected traffic) without CT involvement. CT's test-validation module now only stores pre-validated results.
