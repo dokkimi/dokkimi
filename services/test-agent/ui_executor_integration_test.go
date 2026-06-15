@@ -49,7 +49,7 @@ func TestUIExecutor_Integration_FullFlow(t *testing.T) {
 	varCtx.Set("userEmail", "buyer@test.com")
 	varCtx.Set("productSku", "SKU-1234")
 
-	exec := NewUIStepExecutor(browserURL, 1280, 720, urlMap, varCtx, nil, nil)
+	exec := NewUIStepExecutor(browserURL, 1280, 720, urlMap, varCtx, nil, nil, nil)
 
 	// Exercise the full sub-step vocabulary: visit, type, click, waitFor (both
 	// forms), extract (text + attribute + regex), screenshot. Interpolates

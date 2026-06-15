@@ -39,7 +39,7 @@ export async function inspect(args: string[]): Promise<void> {
       return;
     }
 
-    const items = buildRunMenuItems(allRuns);
+    const items = await buildRunMenuItems(ctUrl, allRuns);
     enterAltScreen();
     try {
       while (true) {

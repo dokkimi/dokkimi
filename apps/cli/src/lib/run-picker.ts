@@ -1,6 +1,19 @@
 import { fetchJson } from './cli-utils';
 import { selectMenu, MenuItem } from './menu';
-import type { LatestRunResponse } from './inspect-types';
+import type { LatestRunResponse, InstanceSummary } from './inspect-types';
+
+function formatRunStatus(status: string): string {
+  switch (status) {
+    case 'COMPLETED':
+      return '\x1b[32mPASSED\x1b[0m    ';
+    case 'FAILED':
+      return '\x1b[31mFAILED\x1b[0m    ';
+    case 'CANCELLED':
+      return '\x1b[33mCANCELLED\x1b[0m ';
+    default:
+      return `${status.padEnd(10)}`;
+  }
+}
 
 function statusIcon(status: string): string {
   switch (status) {
@@ -53,9 +66,12 @@ function formatTimestamp(iso: string): string {
   );
 }
 
-export function buildRunMenuItems(
+export async function buildRunMenuItems(
+  ctUrl: string,
   allRuns: LatestRunResponse[],
-): MenuItem<LatestRunResponse>[] {
+): Promise<MenuItem<LatestRunResponse>[]> {
+  const pendingCounts = await fetchPendingCounts(ctUrl, allRuns);
+
   const byProject = new Map<string, LatestRunResponse[]>();
   for (const run of allRuns) {
     const key = run.projectPath ?? '(no project)';
@@ -83,11 +99,50 @@ export function buildRunMenuItems(
       const run = runs[i];
       const icon = statusIcon(run.status);
       const instanceCount = run.instances.length;
-      const label = `  ${icon} ${timestamps[i].padEnd(maxTsLen)}  ${run.status.padEnd(10)}  ${instanceCount} instance${instanceCount !== 1 ? 's' : ''}`;
+      const pending = pendingCounts.get(run.runId) ?? 0;
+      const pendingTag =
+        pending > 0
+          ? `  ·  ${pending} baseline${pending !== 1 ? 's' : ''}`
+          : '';
+      const displayStatus = formatRunStatus(run.status);
+      const label = `  ${icon} ${timestamps[i].padEnd(maxTsLen)}  ${displayStatus}  ${instanceCount} instance${instanceCount !== 1 ? 's' : ''}${pendingTag}`;
       items.push({ label, value: run });
     }
   }
   return items;
+}
+
+async function fetchPendingCounts(
+  ctUrl: string,
+  allRuns: LatestRunResponse[],
+): Promise<Map<string, number>> {
+  interface PendingResponse {
+    pending: { id: string }[];
+  }
+
+  const counts = new Map<string, number>();
+  const allInstances: { runId: string; instance: InstanceSummary }[] = [];
+  for (const run of allRuns) {
+    for (const inst of run.instances) {
+      allInstances.push({ runId: run.runId, instance: inst });
+    }
+  }
+
+  const results = await Promise.all(
+    allInstances.map(({ instance }) =>
+      fetchJson<PendingResponse>(
+        `${ctUrl}/artifacts/instance/${instance.id}/baselines-pending`,
+      ),
+    ),
+  );
+
+  for (let i = 0; i < allInstances.length; i++) {
+    const { runId } = allInstances[i];
+    const pending = results[i]?.pending?.length ?? 0;
+    counts.set(runId, (counts.get(runId) ?? 0) + pending);
+  }
+
+  return counts;
 }
 
 export async function fetchAllRuns(

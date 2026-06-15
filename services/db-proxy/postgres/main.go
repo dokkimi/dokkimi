@@ -35,6 +35,9 @@ func main() {
 
 	// Query logger (reused from shared — sends to Control Tower)
 	queryLogger := shared.NewQueryLogger(cfg.ControlTowerURL, 10*time.Second)
+	if cfg.TestAgentURL != "" {
+		queryLogger.SetTestAgentURL(cfg.TestAgentURL)
+	}
 	defer queryLogger.Stop()
 
 	// Wire protocol proxy — bind the port before starting health checks

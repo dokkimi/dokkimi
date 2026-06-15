@@ -62,6 +62,9 @@ func main() {
 	var logger *Logger
 	if cfg.LogActions {
 		logger = NewLogger(cfg.ControlTowerURL, cfg.LoggingTimeout, nil)
+		if cfg.TestAgentURL != "" {
+			logger.SetTestAgentURL(cfg.TestAgentURL)
+		}
 		defer logger.Stop()
 	}
 

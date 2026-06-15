@@ -5,12 +5,14 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"sync"
 )
 
 var variablePattern = regexp.MustCompile(`\{\{(\w+)\}\}`)
 
 // VariableContext stores and resolves variables during test execution.
 type VariableContext struct {
+	mu        sync.RWMutex
 	variables map[string]string
 }
 
@@ -25,17 +27,23 @@ func NewVariableContext() *VariableContext {
 // pointer when other components (UI executor, logger) hold references to the
 // same context — reassigning the pointer leaves them looking at stale state.
 func (vc *VariableContext) Reset() {
+	vc.mu.Lock()
+	defer vc.mu.Unlock()
 	vc.variables = make(map[string]string)
 }
 
 // Set stores a variable value.
 func (vc *VariableContext) Set(name, value string) {
+	vc.mu.Lock()
+	defer vc.mu.Unlock()
 	vc.variables[name] = value
 }
 
 // Resolve replaces {{variableName}} placeholders in a template string.
 // Returns an error if a referenced variable is not defined.
 func (vc *VariableContext) Resolve(template string) (string, error) {
+	vc.mu.RLock()
+	defer vc.mu.RUnlock()
 	var resolveErr error
 	result := variablePattern.ReplaceAllStringFunc(template, func(match string) string {
 		varName := variablePattern.FindStringSubmatch(match)[1]
@@ -122,6 +130,63 @@ func (vc *VariableContext) ResolveAction(action StepAction) (StepAction, error) 
 }
 
 // resolveValue recursively resolves variables in a value.
+// ResolveAssertionBlocks resolves variable templates in assertion expected values,
+// match criteria, and console assertion message filters.
+func (vc *VariableContext) ResolveAssertionBlocks(blocks []AssertionBlock) []AssertionBlock {
+	resolved := make([]AssertionBlock, len(blocks))
+	for i, block := range blocks {
+		resolved[i] = block
+
+		// Resolve assertion values
+		if len(block.Assertions) > 0 {
+			resolvedAssertions := make([]Assertion, len(block.Assertions))
+			for j, a := range block.Assertions {
+				resolvedAssertions[j] = a
+				if a.Value != nil {
+					if rv, err := vc.resolveValue(a.Value); err == nil {
+						resolvedAssertions[j].Value = rv
+					}
+				}
+			}
+			resolved[i].Assertions = resolvedAssertions
+		}
+
+		// Resolve match criteria
+		if block.Match != nil {
+			m := *block.Match
+			if m.URL != "" {
+				if rv, err := vc.Resolve(m.URL); err == nil {
+					m.URL = rv
+				}
+			}
+			if m.Origin != "" {
+				if rv, err := vc.Resolve(m.Origin); err == nil {
+					m.Origin = rv
+				}
+			}
+			resolved[i].Match = &m
+		}
+
+		// Resolve console assertion message filters
+		if len(block.ConsoleAssertions) > 0 {
+			resolvedCA := make([]ConsoleLogAssertion, len(block.ConsoleAssertions))
+			for j, ca := range block.ConsoleAssertions {
+				resolvedCA[j] = ca
+				if ca.Message != nil && ca.Message.Value != "" {
+					if rv, err := vc.Resolve(ca.Message.Value); err == nil {
+						resolvedCA[j].Message = &MessageFilter{
+							Operator: ca.Message.Operator,
+							Value:    rv,
+						}
+					}
+				}
+			}
+			resolved[i].ConsoleAssertions = resolvedCA
+		}
+	}
+	return resolved
+}
+
 func (vc *VariableContext) resolveValue(value interface{}) (interface{}, error) {
 	switch v := value.(type) {
 	case string:
@@ -196,6 +261,8 @@ func (vc *VariableContext) Extract(rules map[string]ExtractRule, doc map[string]
 
 // Snapshot returns a copy of all current variable values.
 func (vc *VariableContext) Snapshot() map[string]string {
+	vc.mu.RLock()
+	defer vc.mu.RUnlock()
 	snapshot := make(map[string]string, len(vc.variables))
 	for k, v := range vc.variables {
 		snapshot[k] = v

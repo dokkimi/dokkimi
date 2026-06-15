@@ -48,7 +48,7 @@ func TestCompletionNotifier_NotifyCompletion(t *testing.T) {
 
 	notifier := NewCompletionNotifier(server.URL, nil)
 
-	err := notifier.NotifyCompletion("test-run-123", "success", "test message", nil, false)
+	err := notifier.NotifyCompletion("test-run-123", "success", "test message", nil)
 
 	if err != nil {
 		t.Errorf("NotifyCompletion() error = %v", err)
@@ -76,7 +76,7 @@ func TestCompletionNotifier_NotifyCompletion_Failure(t *testing.T) {
 
 	notifier := NewCompletionNotifier(server.URL, nil)
 
-	err := notifier.NotifyCompletion("test-run-123", "failure", "test error", nil, false)
+	err := notifier.NotifyCompletion("test-run-123", "failure", "test error", nil)
 
 	if err == nil {
 		t.Error("Expected error for 500 response, got nil")

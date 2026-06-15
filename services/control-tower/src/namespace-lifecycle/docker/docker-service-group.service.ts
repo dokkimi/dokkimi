@@ -17,6 +17,8 @@ import {
 } from '../../constants/image-tags';
 import { DefinitionItem, BrowserConfig } from '../deployment-context.types';
 import { envArrayToRecord } from './env.utils';
+import { RunStorageService } from '../../storage/run-storage.service';
+import * as fs from 'fs';
 
 @Injectable()
 export class DockerServiceGroupService {
@@ -27,6 +29,7 @@ export class DockerServiceGroupService {
     private readonly dockerConfig: DockerConfigService,
     private readonly caService: DockerCaService,
     private readonly deployConfig: DockerDeployConfigService,
+    private readonly runStorage: RunStorageService,
   ) {}
 
   async createGlobalInterceptor(
@@ -41,6 +44,7 @@ export class DockerServiceGroupService {
       apiKey: 'dokkimi-interceptor-key',
       dnsIP: dockerDnsIP,
       origin: '',
+      testAgentUrl: `http://test-agent-service:${config.services.testAgent.port}`,
     });
 
     await this.dockerClient.runContainer({
@@ -87,19 +91,28 @@ export class DockerServiceGroupService {
     env.CONFIG_SOURCE = 'file';
     env.CONFIG_FILE_PATH = '/etc/dokkimi/config.json';
 
+    const binds = [`${configPaths.configJsonPath}:/etc/dokkimi/config.json:ro`];
+    const baselinesDir = this.runStorage.getBaselinesDir(instanceId);
+    if (fs.existsSync(baselinesDir)) {
+      binds.push(`${baselinesDir}:/etc/dokkimi/baselines:ro`);
+      env.BASELINES_PATH = '/etc/dokkimi/baselines';
+    }
+
     await this.dockerClient.runContainer({
       name: `test-agent-${instanceId}`,
       image: DOKKIMI_IMAGES.testAgent,
       networkName,
       networkAliases: ['test-agent-service'],
       env,
-      binds: [`${configPaths.configJsonPath}:/etc/dokkimi/config.json:ro`],
+      binds,
       exposedPorts: [config.services.testAgent.port],
       labels: {
         'io.dokkimi.instance-id': instanceId,
         'io.dokkimi.role': 'test-agent',
       },
     });
+
+    this.logger.log('Test-agent GELF receiver will listen on UDP 12201');
   }
 
   async createServiceGroup(
@@ -112,6 +125,7 @@ export class DockerServiceGroupService {
     configPaths: InstanceConfigPaths,
     caBundlePaths: CaBundlePaths,
     databaseNames: string[],
+    testAgentIP?: string,
   ): Promise<{ userContainerId: string | null; interceptorName: string }> {
     if (!item.image) {
       this.logger.warn(`Skipping service ${item.name} — no image specified`);
@@ -217,6 +231,18 @@ export class DockerServiceGroupService {
         'io.dokkimi.role': 'service',
         'io.dokkimi.item-name': item.name,
       },
+      ...(testAgentIP
+        ? {
+            logConfig: {
+              Type: 'gelf',
+              Config: {
+                'gelf-address': `udp://${testAgentIP}:12201`,
+                'gelf-compression-type': 'none',
+                tag: item.name,
+              },
+            },
+          }
+        : {}),
     });
 
     const dnsmasqName = `${containerName}-dnsmasq-${instanceId}`;

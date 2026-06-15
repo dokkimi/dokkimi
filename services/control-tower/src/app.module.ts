@@ -11,7 +11,6 @@ import { HealthModule } from './health/health.module';
 import { LogQueryModule } from './log-query/log-query.module';
 import { RunsModule } from './runs/runs.module';
 import { LogProcessingModule } from './log-processing/log-processing.module';
-import { TestValidationModule } from './test-validation/test-validation.module';
 import { ArtifactsModule } from './artifacts/artifacts.module';
 import { BaselinesModule } from './baselines/baselines.module';
 import { StorageModule } from './storage/storage.module';
@@ -57,7 +56,6 @@ import { getConfig, getConcurrencyPrefs } from '@dokkimi/config';
     LogQueryModule,
     RunsModule,
     LogProcessingModule,
-    TestValidationModule,
     ArtifactsModule,
     BaselinesModule,
     StorageModule,

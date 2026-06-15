@@ -224,7 +224,7 @@ async function resolveRun(
       console.error('No run history found. Run `dokkimi run` first.');
       process.exit(1);
     }
-    const items = buildRunMenuItems(allRuns);
+    const items = await buildRunMenuItems(ctUrl, allRuns);
     enterAltScreen();
     try {
       return await pickRun(items, 'Select a run to dump:');
@@ -358,6 +358,7 @@ function hydrateArtifacts(rows: ArtifactRow[], inline: boolean): unknown[] {
       stepIndex: a.stepIndex,
       subStepIndex: a.subStepIndex,
       path: a.uri,
+      ...(a.verdict ? { verdict: a.verdict } : {}),
       createdAt: a.createdAt,
     };
     if (!inline || a.type !== 'html') {

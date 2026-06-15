@@ -77,6 +77,7 @@ func (u *ArtifactUploader) Upload(
 	payload []byte,
 	isFailure bool,
 	ignoreRegionBounds []BoundingBox,
+	verdict string,
 ) (string, error) {
 	if u == nil {
 		return "", fmt.Errorf("artifact uploader is nil (test-agent misconfigured)")
@@ -85,7 +86,7 @@ func (u *ArtifactUploader) Upload(
 		return "", fmt.Errorf("artifact payload is empty")
 	}
 
-	body, contentType, err := u.buildMultipartBody(artifactType, name, pos, payload, isFailure, ignoreRegionBounds)
+	body, contentType, err := u.buildMultipartBody(artifactType, name, pos, payload, isFailure, ignoreRegionBounds, verdict)
 	if err != nil {
 		return "", fmt.Errorf("build multipart body: %w", err)
 	}
@@ -127,6 +128,7 @@ func (u *ArtifactUploader) buildMultipartBody(
 	payload []byte,
 	isFailure bool,
 	ignoreRegionBounds []BoundingBox,
+	verdict string,
 ) (*bytes.Buffer, string, error) {
 	var buf bytes.Buffer
 	w := multipart.NewWriter(&buf)
@@ -151,6 +153,11 @@ func (u *ArtifactUploader) buildMultipartBody(
 	}
 	if isFailure {
 		if err := w.WriteField("isFailure", "true"); err != nil {
+			return nil, "", err
+		}
+	}
+	if verdict != "" {
+		if err := w.WriteField("verdict", verdict); err != nil {
 			return nil, "", err
 		}
 	}

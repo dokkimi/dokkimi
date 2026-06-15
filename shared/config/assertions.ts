@@ -143,6 +143,7 @@ export interface AssertionBlock {
 
 export type AssertionOperator =
   | 'eq'
+  | 'eqIgnoreCase'
   | 'ne'
   | 'gt'
   | 'gte'
@@ -150,6 +151,8 @@ export type AssertionOperator =
   | 'lte'
   | 'contains'
   | 'notContains'
+  | 'containsIgnoreCase'
+  | 'notContainsIgnoreCase'
   | 'matches'
   | 'exists'
   | 'notExists'
@@ -184,7 +187,7 @@ export interface Assertion {
 export interface ConsoleLogAssertion {
   level?: string;
   message?: {
-    operator: 'eq' | 'contains' | 'matches';
+    operator: 'eq' | 'contains' | 'containsIgnoreCase' | 'matches';
     value: string;
   };
   count: CountAssertion;

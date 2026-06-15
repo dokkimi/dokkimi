@@ -77,12 +77,14 @@ func defaultBrowserFactory(browserURL string, viewportWidth, viewportHeight int)
 // across all subsequent calls so that cookies, localStorage, and page state
 // persist across step groups within a test run.
 type UIStepExecutor struct {
-	factory   UIDriverFactory
-	cachedDrv UIDriver
-	urlMap    map[string]URLMapEntry
-	varCtx    *VariableContext
-	logger    *TestExecutionLogger
-	uploader  *ArtifactUploader // nil = no artifact pipeline (tests / non-CT runs); screenshot/failure capture log instead
+	factory        UIDriverFactory
+	cachedDrv      UIDriver
+	urlMap         map[string]URLMapEntry
+	varCtx         *VariableContext
+	logger         *TestExecutionLogger
+	uploader       *ArtifactUploader // nil = no artifact pipeline (tests / non-CT runs); screenshot/failure capture log instead
+	matcher        *VisualMatcher    // nil = no baselines available; screenshot captures upload without verdict
+	visualFailures []string          // collected visual match failure messages
 }
 
 // NewUIStepExecutor constructs an executor against the default chromedp-backed
@@ -94,6 +96,7 @@ func NewUIStepExecutor(
 	varCtx *VariableContext,
 	logger *TestExecutionLogger,
 	uploader *ArtifactUploader,
+	matcher *VisualMatcher,
 ) *UIStepExecutor {
 	return &UIStepExecutor{
 		factory:  defaultBrowserFactory(browserURL, viewportWidth, viewportHeight),
@@ -101,6 +104,7 @@ func NewUIStepExecutor(
 		varCtx:   varCtx,
 		logger:   logger,
 		uploader: uploader,
+		matcher:  matcher,
 	}
 }
 
@@ -109,6 +113,13 @@ func NewUIStepExecutor(
 func (e *UIStepExecutor) WithDriverFactory(f UIDriverFactory) *UIStepExecutor {
 	e.factory = f
 	return e
+}
+
+// VisualFailures returns collected visual match failure messages (verdict
+// "fail" or "no-baseline"). Empty when all visual matches passed or no
+// visual matching was configured.
+func (e *UIStepExecutor) VisualFailures() []string {
+	return e.visualFailures
 }
 
 // Close tears down the shared browser session. Must be called when the test
@@ -341,15 +352,22 @@ func (e *UIStepExecutor) runSubStep(
 				bounds = append(bounds, BoundingBox{Selector: resolved, X: bx, Y: by, Width: bw, Height: bh})
 			}
 		}
-		uri, err := e.uploader.Upload(ctx, ArtifactTypeScreenshot, name, pos, png, false, bounds)
+		result := e.matcher.Match(name, png, sub.Screenshot.Match, bounds)
+		uri, err := e.uploader.Upload(ctx, ArtifactTypeScreenshot, name, pos, png, false, bounds, result.Verdict)
 		if err != nil {
 			return fmt.Errorf("screenshot upload: %w", err)
 		}
-		matchSuffix := ""
-		if sub.Screenshot.Match != nil {
-			matchSuffix = " (visual-match diff runs post-run)"
+		if result.Verdict == "fail" && len(result.DiffPng) > 0 {
+			if _, diffErr := e.uploader.Upload(ctx, ArtifactTypeDiff, name, pos, result.DiffPng, false, nil, ""); diffErr != nil {
+				log.Printf("visualMatch diff upload error: %v", diffErr)
+			}
 		}
-		log.Printf("UI screenshot uploaded: name=%q size=%d bytes uri=%s%s", name, len(png), uri, matchSuffix)
+		if result.Verdict == "fail" {
+			e.visualFailures = append(e.visualFailures, fmt.Sprintf("visual diff exceeded threshold for %q — review diff/%s.png and either fix the regression or `dokkimi baselines approve %s` to accept the new look", name, name, name))
+		} else if result.Verdict == "no-baseline" {
+			e.visualFailures = append(e.visualFailures, fmt.Sprintf("no baseline for %q — run `dokkimi baselines approve %s` (or `--all`) after reviewing the capture", name, name))
+		}
+		log.Printf("UI screenshot uploaded: name=%q size=%d bytes uri=%s verdict=%s", name, len(png), uri, result.Verdict)
 		return nil
 
 	case UISubScroll:
@@ -473,13 +491,13 @@ func (e *UIStepExecutor) captureFailureArtifacts(
 
 	if png, err := driver.Screenshot(90, defaultUISubStepTimeout); err != nil {
 		log.Printf("failure-capture screenshot: %v", err)
-	} else if _, err := e.uploader.Upload(ctx, ArtifactTypeScreenshot, name, pos, png, true, nil); err != nil {
+	} else if _, err := e.uploader.Upload(ctx, ArtifactTypeScreenshot, name, pos, png, true, nil, ""); err != nil {
 		log.Printf("failure-capture screenshot upload: %v", err)
 	}
 
 	if html, err := driver.PageHTML(defaultUISubStepTimeout); err != nil {
 		log.Printf("failure-capture html: %v", err)
-	} else if _, err := e.uploader.Upload(ctx, ArtifactTypeHTML, "", pos, []byte(html), true, nil); err != nil {
+	} else if _, err := e.uploader.Upload(ctx, ArtifactTypeHTML, "", pos, []byte(html), true, nil, ""); err != nil {
 		log.Printf("failure-capture html upload: %v", err)
 	}
 }

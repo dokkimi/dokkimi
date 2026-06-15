@@ -36,6 +36,10 @@ type Config struct {
 	// Default browser viewport dimensions
 	DefaultViewportWidth  int
 	DefaultViewportHeight int
+
+	// BaselinesPath is the directory where approved visual baselines are
+	// bind-mounted. Empty when no baselines exist for this instance.
+	BaselinesPath string
 }
 
 // LoadConfig loads configuration from environment variables
@@ -56,6 +60,9 @@ func LoadConfig() (*Config, error) {
 
 		// Optional: browser sidecar CDP endpoint
 		BrowserURL: os.Getenv("BROWSER_URL"),
+
+		// Optional: bind-mounted baselines directory for visual matching
+		BaselinesPath: os.Getenv("BASELINES_PATH"),
 	}
 
 	cfg.DefaultViewportWidth = 1280

@@ -32,6 +32,9 @@ func main() {
 		shared.Version, cfg.QueryPort, cfg.DatabasePort)
 
 	queryLogger := shared.NewQueryLogger(cfg.ControlTowerURL, 10*time.Second)
+	if cfg.TestAgentURL != "" {
+		queryLogger.SetTestAgentURL(cfg.TestAgentURL)
+	}
 	defer queryLogger.Stop()
 
 	proxy := NewProxy(cfg, queryLogger)

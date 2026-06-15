@@ -5,6 +5,7 @@ import { HttpLogProcessorService } from './processors/http-log-processor.service
 import { ConsoleLogProcessorService } from './processors/console-log-processor.service';
 import { DatabaseLogProcessorService } from './processors/database-log-processor.service';
 import { TestExecutionLogProcessorService } from './processors/test-execution-log-processor.service';
+import { TestValidationLogProcessorService } from './processors/test-validation-log-processor.service';
 import { UiTimelineService } from './ui-timeline.service';
 
 import { NamespaceValidationModule } from './namespace-validation/namespace-validation.module';
@@ -19,6 +20,7 @@ import { PrismaModule } from '../prisma/prisma.module';
     ConsoleLogProcessorService,
     DatabaseLogProcessorService,
     TestExecutionLogProcessorService,
+    TestValidationLogProcessorService,
     UiTimelineService,
   ],
   exports: [UiTimelineService, ConsoleLogProcessorService],

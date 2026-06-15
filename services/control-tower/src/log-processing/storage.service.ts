@@ -4,6 +4,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { HttpLogMessage, ConsoleLogMessage } from '../types/messages';
 import { DatabaseLogMessageDto } from './dto/database-log-message.dto';
 import { TestExecutionLogMessageDto } from './dto/test-execution-log-message.dto';
+import { TestValidationLogMessageDto } from './dto/test-validation-log-message.dto';
 
 @Injectable()
 export class StorageService {
@@ -163,6 +164,39 @@ export class StorageService {
       return testExecutionLog.id;
     } catch (error) {
       this.logger.error(`Error storing test execution log:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Stores inline validation results from the test-agent
+   */
+  async storeTestValidationResults(
+    message: TestValidationLogMessageDto,
+  ): Promise<void> {
+    try {
+      const data = message.assertions.map((a, index) => ({
+        instanceId: message.instanceId,
+        stepIndex: message.stepIndex,
+        assertionIndex: index,
+        assertionType: a.operator ?? a.resultKind ?? 'field',
+        passed: a.passed,
+        expected: (a.expected ?? null) as Prisma.InputJsonValue,
+        actual: (a.actual ?? null) as Prisma.InputJsonValue,
+        error: a.error ?? null,
+        path: a.path ?? null,
+        operator: a.operator ?? null,
+        blockIndex: a.blockIndex ?? null,
+        resultKind: a.resultKind ?? null,
+      }));
+
+      await this.prisma.assertionResult.createMany({ data });
+
+      this.logger.log(
+        `Stored ${data.length} assertion results for instance ${message.instanceId} step ${message.stepIndex}`,
+      );
+    } catch (error) {
+      this.logger.error(`Error storing test validation results:`, error);
       throw error;
     }
   }

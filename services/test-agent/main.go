@@ -73,6 +73,9 @@ func main() {
 		log.Printf("No databaseMap found in ConfigMap, database queries will not be available")
 	}
 
+	// Create step log buffer for inline validation
+	stepLogBuffer := NewStepLogBuffer()
+
 	// Create test executor (pass logger for test execution logging)
 	testExecutor := NewTestExecutor(cfg.InterceptorURL, cfg.RequestTimeout, databaseQueryExecutor, testExecutionLogger)
 
@@ -81,6 +84,7 @@ func main() {
 	// test-agent fails that step loudly with a clear message.
 	if cfg.BrowserURL != "" {
 		artifactUploader := NewArtifactUploader(cfg.ControlTowerURL, instanceId, cfg.RequestTimeout)
+		visualMatcher := NewVisualMatcher(cfg.BaselinesPath)
 		uiExecutor := NewUIStepExecutor(
 			cfg.BrowserURL,
 			cfg.DefaultViewportWidth, cfg.DefaultViewportHeight,
@@ -88,9 +92,36 @@ func main() {
 			testExecutor.VarContext(),
 			testExecutionLogger,
 			artifactUploader,
+			visualMatcher,
 		)
 		testExecutor.SetUIStepExecutor(uiExecutor)
 		log.Printf("UI step executor configured (browser at %s)", cfg.BrowserURL)
+	}
+
+	// Configure inline assertion validation
+	stepValidator := NewStepValidator(stepLogBuffer, testExecutor.VarContext())
+	validationReporter := NewValidationReporter(cfg.ControlTowerURL)
+	testExecutor.SetInlineValidation(stepValidator, validationReporter, instanceId)
+	log.Printf("Inline assertion validation configured")
+
+	// Build service name → instanceItemId map for GELF console log forwarding
+	serviceItemIDs := make(map[string]string)
+	for serviceName, entry := range configMapData.URLMap {
+		if entry.InstanceItemID != "" {
+			name := entry.Name
+			if name == "" {
+				name = serviceName
+			}
+			serviceItemIDs[name] = entry.InstanceItemID
+		}
+	}
+
+	// Start GELF UDP receiver for console logs from service containers
+	gelfReceiver, gelfErr := NewGelfReceiver(stepLogBuffer, cfg.ControlTowerURL, instanceId, serviceItemIDs)
+	if gelfErr != nil {
+		log.Printf("Warning: failed to start GELF receiver: %v (console log assertions will not work)", gelfErr)
+	} else {
+		go gelfReceiver.Run()
 	}
 
 	// Create test-completion notifier (pass logger for notification logging).
@@ -98,8 +129,9 @@ func main() {
 	// Control Tower alongside everything else.
 	completionNotifier := NewCompletionNotifier(cfg.ControlTowerURL+"/test-complete", testExecutionLogger)
 
-	// Mutex to prevent concurrent executions
+	// Mutex and WaitGroup to prevent concurrent executions and drain on shutdown
 	var executionMu sync.Mutex
+	var executionWg sync.WaitGroup
 	executing := false
 
 	// runExecution performs health check (only on first-time calls), loads latest config,
@@ -109,10 +141,6 @@ func main() {
 
 	runExecution := func(req ExecuteRequest) {
 		timeout := time.Duration(testConfig.TimeoutSeconds) * time.Second
-
-		// partial=true for debug step commands (only a subset of steps run)
-		isPartial := req.Mode == "run-step" ||
-			(req.Mode == "all" && (req.StartAtStep != nil || req.StopBefore != nil))
 
 		if !healthChecked {
 			{
@@ -138,7 +166,6 @@ func main() {
 						"failure",
 						failureMessage,
 						nil,
-						false,
 					)
 					if notificationErr != nil {
 						log.Printf("Failed to notify Control Tower: %v", notificationErr)
@@ -188,7 +215,7 @@ func main() {
 		case "run-step":
 			if req.StepIndex == nil {
 				log.Printf("run-step mode requires stepIndex")
-				completionNotifier.NotifyCompletion(req.TestRunID, "failure", "run-step mode requires stepIndex", nil, true)
+				completionNotifier.NotifyCompletion(req.TestRunID, "failure", "run-step mode requires stepIndex", nil)
 				return
 			}
 			log.Printf("Debug: executing step %d", *req.StepIndex)
@@ -214,7 +241,6 @@ func main() {
 				"failure",
 				fmt.Sprintf("Test execution failed: %v", execErr),
 				stepExecutions,
-				isPartial,
 			)
 			if notificationErr != nil {
 				log.Printf("Failed to notify Control Tower: %v", notificationErr)
@@ -223,7 +249,14 @@ func main() {
 		}
 
 		log.Printf("Execution complete, notifying Control Tower...")
-		if notifyErr := completionNotifier.NotifyCompletion(req.TestRunID, "success", "", stepExecutions, isPartial); notifyErr != nil {
+		status := "success"
+		message := ""
+		if vf := testExecutor.VisualFailures(); len(vf) > 0 {
+			status = "failure"
+			message = strings.Join(vf, "\n")
+			log.Printf("Visual match failures detected: %s", message)
+		}
+		if notifyErr := completionNotifier.NotifyCompletion(req.TestRunID, status, message, stepExecutions); notifyErr != nil {
 			log.Printf("Failed to notify Control Tower: %v", notifyErr)
 		}
 	}
@@ -238,6 +271,36 @@ func main() {
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte(`{"status":"healthy"}`))
+	})
+
+	// POST /logs/http — receive HTTP traffic logs from interceptors
+	mux.HandleFunc("/logs/http", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		var logMsg HttpLogMessage
+		if err := json.NewDecoder(r.Body).Decode(&logMsg); err != nil {
+			http.Error(w, fmt.Sprintf("Failed to decode log: %v", err), http.StatusBadRequest)
+			return
+		}
+		stepLogBuffer.AddHttpLog(logMsg)
+		w.WriteHeader(http.StatusOK)
+	})
+
+	// POST /logs/database — receive database query logs from db-proxies
+	mux.HandleFunc("/logs/database", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		var logMsg DatabaseLogMessage
+		if err := json.NewDecoder(r.Body).Decode(&logMsg); err != nil {
+			http.Error(w, fmt.Sprintf("Failed to decode log: %v", err), http.StatusBadRequest)
+			return
+		}
+		stepLogBuffer.AddDbLog(logMsg)
+		w.WriteHeader(http.StatusOK)
 	})
 
 	// POST /execute — trigger test execution on demand (used in manual executionMode
@@ -278,11 +341,13 @@ func main() {
 		w.WriteHeader(http.StatusAccepted)
 		w.Write([]byte(`{"status":"accepted"}`))
 
+		executionWg.Add(1)
 		go func() {
 			defer func() {
 				executionMu.Lock()
 				executing = false
 				executionMu.Unlock()
+				executionWg.Done()
 			}()
 			runExecution(req)
 		}()
@@ -309,6 +374,7 @@ func main() {
 	}
 
 	if executionMode == "auto" {
+		executionWg.Add(1)
 		go func() {
 			executionMu.Lock()
 			executing = true
@@ -318,6 +384,7 @@ func main() {
 				executionMu.Lock()
 				executing = false
 				executionMu.Unlock()
+				executionWg.Done()
 			}()
 
 			runExecution(ExecuteRequest{TestRunID: testConfig.TestRunID, Mode: "all"})
@@ -331,7 +398,17 @@ func main() {
 	<-ctx.Done()
 	rootCancel()
 
-	log.Printf("Shutting down...")
+	if gelfReceiver != nil {
+		gelfReceiver.Close()
+	}
+
+	log.Printf("Shutting down — waiting for in-flight execution to finish...")
+	executionWg.Wait()
+
+	log.Printf("Waiting for validation reports to flush...")
+	validationReporter.Wait()
+
+	log.Printf("Stopping HTTP server...")
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer shutdownCancel()
 

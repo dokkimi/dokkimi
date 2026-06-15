@@ -19,6 +19,10 @@ describe('LogProcessorController', () => {
     process: jest.fn().mockResolvedValue(undefined),
   };
 
+  const mockTestValidationLogProcessor: any = {
+    process: jest.fn().mockResolvedValue(undefined),
+  };
+
   const mockTelemetry: any = {
     track: jest.fn(),
   };
@@ -29,6 +33,7 @@ describe('LogProcessorController', () => {
       mockConsoleLogProcessor,
       mockDatabaseLogProcessor,
       mockTestExecutionLogProcessor,
+      mockTestValidationLogProcessor,
       mockTelemetry,
     );
     jest.clearAllMocks();
@@ -137,6 +142,33 @@ describe('LogProcessorController', () => {
       const result = await controller.receiveTestExecutionLog(message as any);
 
       expect(mockTestExecutionLogProcessor.process).toHaveBeenCalledWith(
+        message,
+        'inst-1',
+      );
+      expect(result).toEqual({ received: true });
+    });
+  });
+
+  describe('receiveTestValidationLog', () => {
+    it('processes test validation log and returns received', async () => {
+      const message = {
+        instanceId: 'inst-1',
+        stepIndex: 0,
+        assertions: [
+          {
+            passed: true,
+            path: 'response.status',
+            operator: 'eq',
+            expected: 200,
+            actual: 200,
+            resultKind: 'field',
+          },
+        ],
+      };
+
+      const result = await controller.receiveTestValidationLog(message as any);
+
+      expect(mockTestValidationLogProcessor.process).toHaveBeenCalledWith(
         message,
         'inst-1',
       );

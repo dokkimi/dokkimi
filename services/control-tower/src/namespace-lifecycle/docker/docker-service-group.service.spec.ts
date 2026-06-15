@@ -111,6 +111,7 @@ beforeEach(() => {
     mockDockerConfig as any,
     mockCaService as any,
     mockDeployConfig as any,
+    { getBaselinesDir: () => '/nonexistent' } as any,
   );
 });
 
