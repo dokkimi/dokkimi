@@ -10,6 +10,7 @@ import { doctor } from '../commands/doctor';
 import { clean } from '../commands/clean';
 import { stop } from '../commands/stop';
 import { dump } from '../commands/dump';
+import { junit } from '../commands/junit';
 import { baselines } from '../commands/baselines';
 import { shutdown } from '../commands/shutdown';
 import { reboot } from '../commands/reboot';
@@ -36,6 +37,7 @@ Commands:
   run [path]            Run definition(s) headless and stream results
   inspect [path]        Inspect traffic logs from the last run
   dump [path]           Output raw JSON data dump for LLM-assisted debugging
+  junit                 Generate a JUnit XML report from a test run
   baselines             Review and approve pending visual baselines
   shutdown              Stop all running Dokkimi services
   reboot                Restart all Dokkimi services
@@ -110,6 +112,9 @@ async function main() {
         break;
       case 'dump':
         await dump(commandArgs);
+        break;
+      case 'junit':
+        await junit(commandArgs);
         break;
       case 'baselines':
         await baselines(commandArgs);

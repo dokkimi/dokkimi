@@ -179,23 +179,39 @@ jobs:
 
       - name: Run demo-oauth-flow tests
         timeout-minutes: 10
-        run: node apps/cli/dist/bin/dokkimi.js run .dokkimi/demo-oauth-flow --ci
+        run: node apps/cli/dist/bin/dokkimi.js run .dokkimi/demo-oauth-flow --ci --junit /tmp/junit/demo-oauth-flow.xml
 
       - name: Run demo-nextjs tests
         timeout-minutes: 10
-        run: node apps/cli/dist/bin/dokkimi.js run .dokkimi/demo-nextjs --ci
+        run: node apps/cli/dist/bin/dokkimi.js run .dokkimi/demo-nextjs --ci --junit /tmp/junit/demo-nextjs.xml
 
       - name: Run control-tower tests
         timeout-minutes: 10
-        run: node apps/cli/dist/bin/dokkimi.js run .dokkimi/control-tower --ci
+        run: node apps/cli/dist/bin/dokkimi.js run .dokkimi/control-tower --ci --junit /tmp/junit/control-tower.xml
 
       - name: Run traffic-tester tests
         timeout-minutes: 10
-        run: node apps/cli/dist/bin/dokkimi.js run .dokkimi/traffic-tester --ci
+        run: node apps/cli/dist/bin/dokkimi.js run .dokkimi/traffic-tester --ci --junit /tmp/junit/traffic-tester.xml
 
       - name: Run demo-spa tests
         timeout-minutes: 10
-        run: node apps/cli/dist/bin/dokkimi.js run .dokkimi/demo-spa --ci
+        run: node apps/cli/dist/bin/dokkimi.js run .dokkimi/demo-spa --ci --junit /tmp/junit/demo-spa.xml
+
+      - name: Upload JUnit reports
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: dokkimi-junit-reports
+          path: /tmp/junit/
+          if-no-files-found: ignore
+
+      - name: Test report
+        if: always()
+        uses: dorny/test-reporter@v1
+        with:
+          name: Dokkimi Test Results
+          path: /tmp/junit/*.xml
+          reporter: java-junit
 
       - name: Dump failed results
         if: failure()
