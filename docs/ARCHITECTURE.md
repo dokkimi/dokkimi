@@ -21,27 +21,27 @@ PostgreSQL is only used when Control Tower is packaged into a Docker image and t
 Backend is a single service — **Control Tower** on port `19001`. Log ingestion and test
 validation live as feature modules inside it.
 
-| Service                | Port  | Responsibility                                                                                                                                                 |
-| ---------------------- | ----- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Service                | Port  | Responsibility                                                                                                                                                             |
+| ---------------------- | ----- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Control Tower (CT)** | 19001 | REST API, Docker orchestration, namespace lifecycle, config file management, log ingestion, test-completion handling, assertion result storage, container exit monitoring. |
 
 CT's internal feature modules:
 
-| Module                                | Responsibility                                                                         |
-| ------------------------------------- | -------------------------------------------------------------------------------------- |
-| `namespace/` + `namespace-lifecycle/` | Docker orchestration (create networks, start/stop containers)                          |
-| `runs/`                               | Run creation, deployment, status, stop/delete                                          |
-| `log-processing/` (formerly LPS)      | Log ingestion (`POST /logs/*`), writes to DB                                           |
-| `log-query/`                          | Log read path (`GET /logs/*/instance/:id`)                                             |
+| Module                                | Responsibility                                                                                             |
+| ------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| `namespace/` + `namespace-lifecycle/` | Docker orchestration (create networks, start/stop containers)                                              |
+| `runs/`                               | Run creation, deployment, status, stop/delete                                                              |
+| `log-processing/` (formerly LPS)      | Log ingestion (`POST /logs/*`), writes to DB                                                               |
+| `log-query/`                          | Log read path (`GET /logs/*/instance/:id`)                                                                 |
 | `test-validation/` (formerly TVS)     | Receives and stores assertion results from test-agent, updates test status, calls `RunsService` in-process |
-| `health/`                             | Single aggregated `/health`; readiness updates from sidecars via `POST /health/status` |
+| `health/`                             | Single aggregated `/health`; readiness updates from sidecars via `POST /health/status`                     |
 
 ### Go (run inside Docker containers as sidecars)
 
 | Service         | Responsibility                                                                                                                                                                                                         |
 | --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Interceptor** | HTTP traffic interception, mock responses, log publishing to Control Tower. Two variants: shared (external traffic) and sidecar (service-to-service)                                                                   |
-| **Test Agent**  | Reads test config from bind-mounted config file, executes test steps (HTTP, DB, UI, wait), validates assertions inline against in-memory logs, reports results to Control Tower, POSTs `/test-complete` when done       |
+| **Test Agent**  | Reads test config from bind-mounted config file, executes test steps (HTTP, DB, UI, wait), validates assertions inline against in-memory logs, reports results to Control Tower, POSTs `/test-complete` when done      |
 | **DB Proxy**    | Wire protocol proxy sidecar for databases. Transparent TCP proxy that parses each database's native wire protocol to extract and log queries without modifying traffic. Variants for PostgreSQL, MySQL, MongoDB, Redis |
 
 ### Applications
@@ -201,21 +201,21 @@ Log ingestion is HTTP-only — interceptors and DB Proxy POST to Control Tower. 
 
 ## Communication Patterns
 
-| From            | To                             | Method               | Purpose                                                                                |
-| --------------- | ------------------------------ | -------------------- | -------------------------------------------------------------------------------------- |
-| CLI             | Control Tower                  | HTTP REST            | Create runs, submit definitions, poll results                                          |
-| Control Tower   | Docker API                     | dockerode            | Create/delete networks, start/stop containers, stream logs                             |
-| Test Agent      | Interceptor                    | HTTP                 | Test step execution — requests route through the interceptor, enabling traffic capture |
-| Interceptor     | Control Tower `/logs/*`        | HTTP POST            | HTTP traffic logs                                                                      |
-| Docker API      | Control Tower `/logs/console`  | Log streaming        | Console logs (collected via Docker API)                                                |
-| DB Proxy        | Control Tower `/logs/database` | HTTP POST            | Database logs                                                                          |
-| Sidecars        | Control Tower `/health/status` | HTTP POST            | Readiness updates                                                                      |
-| Interceptors    | Test Agent `/logs/http`        | HTTP POST            | HTTP traffic logs (test-agent buffers in memory for inline validation)                 |
-| Console logs    | Test Agent (GELF UDP :12201)   | GELF UDP             | Console logs forwarded to test-agent for inline assertion validation                   |
-| Test Agent      | Control Tower `/logs/test-validation` | HTTP POST     | Assertion results (validated inline by test-agent, stored by CT)                       |
-| Test Agent      | Control Tower `/test-complete` | HTTP POST            | Test completion notification                                                           |
-| CT modules      | DB                             | Prisma               | Store logs and assertion results                                                       |
-| test-validation | RunsService (in-process)       | direct injected call | Signal validation complete → CT updates run status                                     |
+| From            | To                                    | Method               | Purpose                                                                                |
+| --------------- | ------------------------------------- | -------------------- | -------------------------------------------------------------------------------------- |
+| CLI             | Control Tower                         | HTTP REST            | Create runs, submit definitions, poll results                                          |
+| Control Tower   | Docker API                            | dockerode            | Create/delete networks, start/stop containers, stream logs                             |
+| Test Agent      | Interceptor                           | HTTP                 | Test step execution — requests route through the interceptor, enabling traffic capture |
+| Interceptor     | Control Tower `/logs/*`               | HTTP POST            | HTTP traffic logs                                                                      |
+| Docker API      | Control Tower `/logs/console`         | Log streaming        | Console logs (collected via Docker API)                                                |
+| DB Proxy        | Control Tower `/logs/database`        | HTTP POST            | Database logs                                                                          |
+| Sidecars        | Control Tower `/health/status`        | HTTP POST            | Readiness updates                                                                      |
+| Interceptors    | Test Agent `/logs/http`               | HTTP POST            | HTTP traffic logs (test-agent buffers in memory for inline validation)                 |
+| Console logs    | Test Agent (GELF UDP :12201)          | GELF UDP             | Console logs forwarded to test-agent for inline assertion validation                   |
+| Test Agent      | Control Tower `/logs/test-validation` | HTTP POST            | Assertion results (validated inline by test-agent, stored by CT)                       |
+| Test Agent      | Control Tower `/test-complete`        | HTTP POST            | Test completion notification                                                           |
+| CT modules      | DB                                    | Prisma               | Store logs and assertion results                                                       |
+| test-validation | RunsService (in-process)              | direct injected call | Signal validation complete → CT updates run status                                     |
 
 ---
 
