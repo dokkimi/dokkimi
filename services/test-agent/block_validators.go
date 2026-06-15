@@ -83,6 +83,7 @@ func ValidateHttpCallBlock(
 	}
 	countResult := ValidateCount(len(matchingLogs), *count)
 	countResult.ResultKind = "count"
+	countResult.Operator = count.Operator
 	results = append(results, countResult)
 	if !countResult.Passed {
 		return results
@@ -201,6 +202,7 @@ func ValidateConsoleLogBlock(
 			parts = append(parts, fmt.Sprintf(`%s "%s"`, ca.Message.Operator, ca.Message.Value))
 		}
 		r.Path = fmt.Sprintf("console(%s)", strings.Join(parts, ", "))
+		r.Operator = ca.Count.Operator
 		r.ResultKind = "count"
 		results = append(results, r)
 	}

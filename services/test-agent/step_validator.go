@@ -72,13 +72,22 @@ func isRetryable(results []AssertionResult) bool {
 }
 
 // isCountRetryable returns true when a count failure could resolve with more logs.
+// Logs only grow, so retrying helps when we need more matches (eq/gte/gt) but
+// never when we need fewer (lt/lte — more logs only make it worse).
 func isCountRetryable(r AssertionResult) bool {
 	actual, aOk := toFloat(r.Actual)
 	expected, eOk := toFloat(r.Expected)
 	if !aOk || !eOk {
 		return false
 	}
-	return actual < expected
+	switch r.Operator {
+	case "gt":
+		return actual <= expected
+	case "eq", "gte":
+		return actual < expected
+	default:
+		return false
+	}
 }
 
 // validateStep runs all assertion blocks for a step against the buffered logs.
