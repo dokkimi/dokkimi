@@ -64,8 +64,7 @@ export async function generateJUnitXml(opts: JUnitOptions): Promise<string> {
     const failedAssertions = assertions.filter(
       (a) => !a.passed && a.assertionType !== 'skip',
     );
-    const isFailed =
-      failedAssertions.length > 0 || displayStatus === 'FAILED';
+    const isFailed = failedAssertions.length > 0 || displayStatus === 'FAILED';
 
     lines.push(
       `    <testcase name="${escapeXml(inst.name)}" classname="${escapeXml(inst.name)}">`,
@@ -137,7 +136,6 @@ export async function generateSummaryMarkdown(
 
   const lines: string[] = [];
 
-  const status = failed > 0 ? 'FAILED' : 'PASSED';
   const icon = failed > 0 ? ':x:' : ':white_check_mark:';
   lines.push(`## ${icon} Dokkimi Test Results`);
   lines.push('');
@@ -151,7 +149,9 @@ export async function generateSummaryMarkdown(
     lines.push('');
     for (const inst of instances) {
       const displayStatus = inst.testStatus ?? inst.status;
-      if (displayStatus !== 'FAILED') continue;
+      if (displayStatus !== 'FAILED') {
+        continue;
+      }
 
       const assertions = assertionsByInstance.get(inst.id) ?? [];
       const failedAssertions = assertions.filter(
