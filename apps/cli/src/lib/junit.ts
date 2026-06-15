@@ -267,7 +267,7 @@ export function generateSummaryFromXmlDir(dirPath: string): string {
   const groups: ParsedTestGroup[] = [];
   for (const file of files) {
     const xml = fs.readFileSync(path.join(resolved, file), 'utf-8');
-    const { testcases, durationSec, suiteName } = parseJUnitXml(xml);
+    const { testcases, durationSec } = parseJUnitXml(xml);
     const name = file.replace(/\.xml$/, '');
     groups.push({ name, testcases, durationSec });
   }
