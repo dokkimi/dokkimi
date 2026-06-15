@@ -38,6 +38,25 @@ inputs:
 runs:
   using: composite
   steps:
+    - name: Post in-progress comment
+      if: github.event_name == 'pull_request' && inputs.report == 'true'
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        PR=${{ github.event.pull_request.number }}
+        RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+        BODY="<!-- dokkimi-test-results -->
+        ### :hourglass_flowing_sand: Dokkimi Test Results
+
+        Tests are running... [View progress](${RUN_URL})"
+        COMMENT_ID=$(gh api "repos/${{ github.repository }}/issues/${PR}/comments" --jq '.[] | select(.body | contains("<!-- dokkimi-test-results -->")) | .id' | tail -1)
+        if [ -n "$COMMENT_ID" ]; then
+          gh api "repos/${{ github.repository }}/issues/comments/${COMMENT_ID}" -X PATCH -f body="$BODY"
+        else
+          echo "$BODY" | gh pr comment "$PR" --body-file -
+        fi
+
     - name: Free disk space
       shell: bash
       run: |
@@ -92,7 +111,10 @@ runs:
         GH_TOKEN: ${{ github.token }}
       run: |
         PR=${{ github.event.pull_request.number }}
-        BODY=$(dokkimi junit --summary --dir "${{ inputs.junit-dir }}")
+        RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+        SUMMARY=$(dokkimi junit --summary --dir "${{ inputs.junit-dir }}")
+        BODY="${SUMMARY}
+        [View full output](${RUN_URL})"
         COMMENT_ID=$(gh api "repos/${{ github.repository }}/issues/${PR}/comments" --jq '.[] | select(.body | contains("<!-- dokkimi-test-results -->")) | .id' | tail -1)
         if [ -n "$COMMENT_ID" ]; then
           gh api "repos/${{ github.repository }}/issues/comments/${COMMENT_ID}" -X PATCH -f body="$BODY"

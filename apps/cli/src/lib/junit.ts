@@ -310,7 +310,32 @@ function buildSummaryMarkdown(groups: ParsedTestGroup[]): string {
   );
   lines.push('');
 
-  lines.push('<details><summary>Details</summary>');
+  if (failed > 0) {
+    lines.push('#### Failed Tests');
+    lines.push('');
+    for (const group of groups) {
+      const failedTcs = group.testcases.filter((t) => t.status === 'FAILED');
+      for (const tc of failedTcs) {
+        lines.push(
+          `<details open><summary>:x: ${group.name} / ${tc.name}</summary>`,
+        );
+        lines.push('');
+        if (tc.failureBody) {
+          lines.push('```');
+          lines.push(tc.failureBody);
+          lines.push('```');
+        } else if (tc.failureMessage) {
+          lines.push('```');
+          lines.push(tc.failureMessage);
+          lines.push('```');
+        }
+        lines.push('</details>');
+        lines.push('');
+      }
+    }
+  }
+
+  lines.push('<details><summary>All tests</summary>');
   lines.push('');
 
   for (const group of groups) {
@@ -325,23 +350,6 @@ function buildSummaryMarkdown(groups: ParsedTestGroup[]): string {
       lines.push(`| ${statusIcon(tc.status)} | ${tc.name} | ${durStr} |`);
     }
     lines.push('');
-
-    const failedTcs = group.testcases.filter((t) => t.status === 'FAILED');
-    for (const tc of failedTcs) {
-      lines.push(`<details><summary>:x: ${tc.name}</summary>`);
-      lines.push('');
-      if (tc.failureBody) {
-        lines.push('```');
-        lines.push(tc.failureBody);
-        lines.push('```');
-      } else if (tc.failureMessage) {
-        lines.push('```');
-        lines.push(tc.failureMessage);
-        lines.push('```');
-      }
-      lines.push('</details>');
-      lines.push('');
-    }
   }
 
   lines.push('</details>');

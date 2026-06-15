@@ -136,6 +136,24 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      - name: Post in-progress comment
+        if: github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          PR=${{ github.event.pull_request.number }}
+          RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          BODY="<!-- dokkimi-test-results -->
+          ### :hourglass_flowing_sand: Dokkimi Test Results
+
+          Tests are running... [View progress](${RUN_URL})"
+          COMMENT_ID=$(gh api "repos/${{ github.repository }}/issues/${PR}/comments" --jq '.[] | select(.body | contains("<!-- dokkimi-test-results -->")) | .id' | tail -1)
+          if [ -n "$COMMENT_ID" ]; then
+            gh api "repos/${{ github.repository }}/issues/comments/${COMMENT_ID}" -X PATCH -f body="$BODY"
+          else
+            echo "$BODY" | gh pr comment "$PR" --body-file -
+          fi
+
       - uses: actions/setup-node@v5
         with:
           node-version: 22
@@ -220,7 +238,10 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           PR=${{ github.event.pull_request.number }}
-          BODY=$(node apps/cli/dist/bin/dokkimi.js junit --summary --dir junit-reports)
+          RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          SUMMARY=$(node apps/cli/dist/bin/dokkimi.js junit --summary --dir junit-reports)
+          BODY="${SUMMARY}
+          [View full output](${RUN_URL})"
           COMMENT_ID=$(gh api "repos/${{ github.repository }}/issues/${PR}/comments" --jq '.[] | select(.body | contains("<!-- dokkimi-test-results -->")) | .id' | tail -1)
           if [ -n "$COMMENT_ID" ]; then
             gh api "repos/${{ github.repository }}/issues/comments/${COMMENT_ID}" -X PATCH -f body="$BODY"
