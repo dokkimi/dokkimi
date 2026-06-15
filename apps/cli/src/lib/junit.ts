@@ -73,7 +73,7 @@ export async function generateJUnitXml(opts: JUnitOptions): Promise<string> {
     const skipCount = displayStatus === 'SKIPPED' ? 1 : 0;
 
     lines.push(
-      `  <testsuite name="${escapeXml(inst.name)}" tests="${testCount}" failures="${failCount}" errors="0" skipped="${skipCount}" time="${durationSec}" timestamp="${timestamp}">`,
+      `  <testsuite name="${escapeXml(inst.name)}" tests="${testCount}" failures="${failCount}" errors="0" skipped="${skipCount}" timestamp="${timestamp}">`,
     );
 
     if (assertions.length > 0) {
