@@ -22,12 +22,15 @@ inputs:
   viewport-height:
     description: Default browser viewport height for UI tests
     default: '720'
-  junit:
-    description: Path to write JUnit XML report
-    default: dokkimi-junit-reports/results.xml
+  junit-dir:
+    description: Directory to accumulate JUnit XML reports
+    default: dokkimi-junit-reports
   dump-retention-days:
     description: Days to retain the failed-run dump artifact (0 to disable)
     default: '1'
+  report:
+    description: Post test summary to job summary and PR comment. Set to false for intermediate runs in multi-project setups.
+    default: 'true'
   dokkimi-version:
     description: Dokkimi CLI version to install
     default: latest
@@ -64,29 +67,32 @@ runs:
         DOKKIMI_HTTP_TIMEOUT: ${{ inputs.timeout }}
         DOKKIMI_DEFAULT_VIEWPORT_WIDTH: ${{ inputs.viewport-width }}
         DOKKIMI_DEFAULT_VIEWPORT_HEIGHT: ${{ inputs.viewport-height }}
-      run: dokkimi run ${{ inputs.tests }} --ci --junit ${{ inputs.junit }}
+      run: |
+        SLUG=$(echo "${{ inputs.tests }}" | sed 's|[^a-zA-Z0-9]|-|g' | sed 's|-\+|-|g' | sed 's|^-\|-$||g')
+        dokkimi run ${{ inputs.tests }} --ci --junit "${{ inputs.junit-dir }}/${SLUG}.xml"
 
-    - name: Upload JUnit report
+    - name: Upload JUnit reports
       if: always()
       uses: actions/upload-artifact@v5
       with:
-        name: dokkimi-junit
-        path: ${{ inputs.junit }}
+        name: dokkimi-junit-reports
+        path: ${{ inputs.junit-dir }}/
         if-no-files-found: ignore
+        overwrite: true
 
     - name: Test report
-      if: always()
+      if: always() && inputs.report == 'true'
       shell: bash
-      run: dokkimi junit --summary --dir "$(dirname ${{ inputs.junit }})" >> "$GITHUB_STEP_SUMMARY"
+      run: dokkimi junit --summary --dir "${{ inputs.junit-dir }}" >> "$GITHUB_STEP_SUMMARY"
 
     - name: Comment on PR
-      if: always() && github.event_name == 'pull_request'
+      if: always() && inputs.report == 'true' && github.event_name == 'pull_request'
       shell: bash
       env:
         GH_TOKEN: ${{ github.token }}
       run: |
         PR=${{ github.event.pull_request.number }}
-        BODY=$(dokkimi junit --summary --dir "$(dirname ${{ inputs.junit }})")
+        BODY=$(dokkimi junit --summary --dir "${{ inputs.junit-dir }}")
         COMMENT_ID=$(gh api "repos/${{ github.repository }}/issues/${PR}/comments" --jq '.[] | select(.body | contains("<!-- dokkimi-test-results -->")) | .id' | tail -1)
         if [ -n "$COMMENT_ID" ]; then
           gh api "repos/${{ github.repository }}/issues/comments/${COMMENT_ID}" -X PATCH -f body="$BODY"

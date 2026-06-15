@@ -267,6 +267,8 @@ export class RunsService implements OnApplicationBootstrap {
         status: inst.status,
         testStatus: inst.testStatus,
         errorMessage: inst.errorMessage,
+        startedAt: inst.startedAt,
+        stoppedAt: inst.stoppedAt,
       })),
     };
   }
@@ -306,6 +308,8 @@ export class RunsService implements OnApplicationBootstrap {
         status: inst.status,
         testStatus: inst.testStatus,
         errorMessage: inst.errorMessage,
+        startedAt: inst.startedAt,
+        stoppedAt: inst.stoppedAt,
       })),
     };
   }

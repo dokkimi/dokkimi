@@ -265,12 +265,33 @@ describe('generateSummaryFromXmlDir', () => {
 
     const md = generateSummaryFromXmlDir(tmpDir);
     expect(md).toContain('<!-- dokkimi-test-results -->');
-    expect(md).toContain('| Tests | Passed | Failed | Skipped | Duration |');
     expect(md).toContain('| 3 | 2 | 1 | 0 | 15s |');
-    expect(md).toContain(':x: test-3');
+    // Group headers with duration
+    expect(md).toContain('#### run-a (10s)');
+    expect(md).toContain('#### run-b (5s)');
+    // Per-group tables with duration column
+    expect(md).toContain('| :white_check_mark: | test-1 | - |');
+    expect(md).toContain('| :white_check_mark: | test-2 | - |');
+    expect(md).toContain('| :x: | test-3 | - |');
+    // Failure details
     expect(md).toContain('expected 200 got 500');
-    expect(md).toContain('test-1');
-    expect(md).toContain('test-2');
+  });
+
+  it('shows per-test duration when time attribute is present', () => {
+    fs.writeFileSync(
+      path.join(tmpDir, 'suite.xml'),
+      `<?xml version="1.0" encoding="UTF-8"?>
+<testsuites tests="2" failures="0" errors="0" skipped="0" time="15.000">
+  <testsuite name="run-x" tests="2" failures="0" errors="0" skipped="0" time="15.000">
+    <testcase name="fast-test" classname="fast-test" time="3.200"></testcase>
+    <testcase name="slow-test" classname="slow-test" time="11.800"></testcase>
+  </testsuite>
+</testsuites>`,
+    );
+
+    const md = generateSummaryFromXmlDir(tmpDir);
+    expect(md).toContain('| :white_check_mark: | fast-test | 3s |');
+    expect(md).toContain('| :white_check_mark: | slow-test | 12s |');
   });
 
   it('returns empty string for missing directory', () => {

@@ -66,8 +66,10 @@ export async function generateJUnitXml(opts: JUnitOptions): Promise<string> {
     );
     const isFailed = failedAssertions.length > 0 || displayStatus === 'FAILED';
 
+    const timeSec = instanceDurationSec(inst);
+    const timeAttr = timeSec !== null ? ` time="${timeSec.toFixed(3)}"` : '';
     lines.push(
-      `    <testcase name="${escapeXml(inst.name)}" classname="${escapeXml(inst.name)}">`,
+      `    <testcase name="${escapeXml(inst.name)}" classname="${escapeXml(inst.name)}"${timeAttr}>`,
     );
 
     if (isFailed) {
@@ -131,10 +133,13 @@ export async function generateSummaryMarkdown(
     );
     const isFailed = failedAssertions.length > 0 || displayStatus === 'FAILED';
 
+    const dur = instanceDurationSec(inst) ?? undefined;
+
     if (isFailed) {
       return {
         name: inst.name,
         status: 'FAILED' as const,
+        durationSec: dur,
         failureMessage:
           failedAssertions.length > 0
             ? `${failedAssertions.length} assertion(s) failed`
@@ -142,19 +147,42 @@ export async function generateSummaryMarkdown(
         failureBody: formatInstanceFailure(inst, failedAssertions),
       };
     } else if (displayStatus === 'SKIPPED') {
-      return { name: inst.name, status: 'SKIPPED' as const };
+      return { name: inst.name, status: 'SKIPPED' as const, durationSec: dur };
     }
-    return { name: inst.name, status: 'PASSED' as const };
+    return { name: inst.name, status: 'PASSED' as const, durationSec: dur };
   });
 
-  return buildSummaryMarkdown(testcases, Math.round(durationMs / 1000));
+  return buildSummaryMarkdown([
+    {
+      name: opts.runId,
+      testcases,
+      durationSec: Math.round(durationMs / 1000),
+    },
+  ]);
+}
+
+function instanceDurationSec(inst: RunStatusInstance): number | null {
+  if (!inst.startedAt || !inst.stoppedAt) {
+    return null;
+  }
+  return (
+    (new Date(inst.stoppedAt).getTime() - new Date(inst.startedAt).getTime()) /
+    1000
+  );
 }
 
 interface ParsedTestCase {
   name: string;
   status: 'PASSED' | 'FAILED' | 'SKIPPED';
+  durationSec?: number;
   failureMessage?: string;
   failureBody?: string;
+}
+
+interface ParsedTestGroup {
+  name: string;
+  testcases: ParsedTestCase[];
+  durationSec: number;
 }
 
 function parseXmlAttr(tag: string, attr: string): string {
@@ -174,6 +202,7 @@ function unescapeXml(str: string): string {
 function parseJUnitXml(xml: string): {
   testcases: ParsedTestCase[];
   durationSec: number;
+  suiteName: string;
 } {
   const testcases: ParsedTestCase[] = [];
 
@@ -182,6 +211,11 @@ function parseJUnitXml(xml: string): {
     ? parseFloat(parseXmlAttr(suitesMatch[0], 'time')) || 0
     : 0;
 
+  const suiteMatch = xml.match(/<testsuite\b(?!s)[^>]*>/);
+  const suiteName = suiteMatch
+    ? unescapeXml(parseXmlAttr(suiteMatch[0], 'name'))
+    : '';
+
   const testcaseRegex =
     /<testcase\s[^>]*>[\s\S]*?<\/testcase>|<testcase\s[^>]*\/>/g;
   let match;
@@ -189,6 +223,9 @@ function parseJUnitXml(xml: string): {
     const block = match[0];
     const nameTag = block.match(/<testcase\s[^>]*/);
     const name = nameTag ? unescapeXml(parseXmlAttr(nameTag[0], 'name')) : '';
+
+    const timeStr = nameTag ? parseXmlAttr(nameTag[0], 'time') : '';
+    const durationTc = timeStr ? parseFloat(timeStr) : undefined;
 
     const failureMatch = block.match(
       /<failure\s+message="([^"]*)">([\s\S]*?)<\/failure>/,
@@ -199,17 +236,18 @@ function parseJUnitXml(xml: string): {
       testcases.push({
         name,
         status: 'FAILED',
+        durationSec: durationTc,
         failureMessage: unescapeXml(failureMatch[1]),
         failureBody: unescapeXml(failureMatch[2]),
       });
     } else if (skippedMatch) {
-      testcases.push({ name, status: 'SKIPPED' });
+      testcases.push({ name, status: 'SKIPPED', durationSec: durationTc });
     } else {
-      testcases.push({ name, status: 'PASSED' });
+      testcases.push({ name, status: 'PASSED', durationSec: durationTc });
     }
   }
 
-  return { testcases, durationSec };
+  return { testcases, durationSec, suiteName };
 }
 
 export function generateSummaryFromXmlDir(dirPath: string): string {
@@ -226,28 +264,38 @@ export function generateSummaryFromXmlDir(dirPath: string): string {
     return '';
   }
 
-  const allTestcases: ParsedTestCase[] = [];
-  let totalDurationSec = 0;
-
+  const groups: ParsedTestGroup[] = [];
   for (const file of files) {
     const xml = fs.readFileSync(path.join(resolved, file), 'utf-8');
-    const { testcases, durationSec } = parseJUnitXml(xml);
-    allTestcases.push(...testcases);
-    totalDurationSec += durationSec;
+    const { testcases, durationSec, suiteName } = parseJUnitXml(xml);
+    const name = suiteName || file.replace(/\.xml$/, '');
+    groups.push({ name, testcases, durationSec });
   }
 
-  return buildSummaryMarkdown(allTestcases, Math.round(totalDurationSec));
+  return buildSummaryMarkdown(groups);
 }
 
 const COMMENT_MARKER = '<!-- dokkimi-test-results -->';
 
-function buildSummaryMarkdown(
-  testcases: ParsedTestCase[],
-  durationSec: number,
-): string {
-  const passed = testcases.filter((t) => t.status === 'PASSED').length;
-  const failed = testcases.filter((t) => t.status === 'FAILED').length;
-  const skipped = testcases.filter((t) => t.status === 'SKIPPED').length;
+function statusIcon(status: ParsedTestCase['status']): string {
+  switch (status) {
+    case 'PASSED':
+      return ':white_check_mark:';
+    case 'FAILED':
+      return ':x:';
+    case 'SKIPPED':
+      return ':fast_forward:';
+  }
+}
+
+function buildSummaryMarkdown(groups: ParsedTestGroup[]): string {
+  const allTestcases = groups.flatMap((g) => g.testcases);
+  const totalDuration = Math.round(
+    groups.reduce((sum, g) => sum + g.durationSec, 0),
+  );
+  const passed = allTestcases.filter((t) => t.status === 'PASSED').length;
+  const failed = allTestcases.filter((t) => t.status === 'FAILED').length;
+  const skipped = allTestcases.filter((t) => t.status === 'SKIPPED').length;
 
   const lines: string[] = [];
 
@@ -258,16 +306,28 @@ function buildSummaryMarkdown(
   lines.push('| Tests | Passed | Failed | Skipped | Duration |');
   lines.push('|-------|--------|--------|---------|----------|');
   lines.push(
-    `| ${testcases.length} | ${passed} | ${failed} | ${skipped} | ${durationSec}s |`,
+    `| ${allTestcases.length} | ${passed} | ${failed} | ${skipped} | ${totalDuration}s |`,
   );
   lines.push('');
 
-  if (failed > 0) {
-    for (const tc of testcases) {
-      if (tc.status !== 'FAILED') {
-        continue;
-      }
+  lines.push('<details><summary>Details</summary>');
+  lines.push('');
 
+  for (const group of groups) {
+    const dur = Math.round(group.durationSec);
+    lines.push(`#### ${group.name} (${dur}s)`);
+    lines.push('');
+    lines.push('| | Test | Duration |');
+    lines.push('|---|------|----------|');
+    for (const tc of group.testcases) {
+      const durStr =
+        tc.durationSec != null ? `${Math.round(tc.durationSec)}s` : '-';
+      lines.push(`| ${statusIcon(tc.status)} | ${tc.name} | ${durStr} |`);
+    }
+    lines.push('');
+
+    const failedTcs = group.testcases.filter((t) => t.status === 'FAILED');
+    for (const tc of failedTcs) {
       lines.push(`<details><summary>:x: ${tc.name}</summary>`);
       lines.push('');
       if (tc.failureBody) {
@@ -284,18 +344,8 @@ function buildSummaryMarkdown(
     }
   }
 
-  if (passed > 0) {
-    lines.push('<details><summary>Passed tests</summary>');
-    lines.push('');
-    for (const tc of testcases) {
-      if (tc.status === 'PASSED') {
-        lines.push(`${tc.name}`);
-      }
-    }
-    lines.push('');
-    lines.push('</details>');
-    lines.push('');
-  }
+  lines.push('</details>');
+  lines.push('');
 
   return lines.join('\n');
 }
