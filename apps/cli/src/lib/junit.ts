@@ -73,7 +73,11 @@ export async function generateJUnitXml(opts: JUnitOptions): Promise<string> {
     );
 
     if (isFailed) {
-      const failureBody = formatInstanceFailure(inst, failedAssertions);
+      const failureBody = await formatInstanceFailure(
+        ctUrl,
+        inst,
+        failedAssertions,
+      );
       const message =
         failedAssertions.length > 0
           ? `${failedAssertions.length} assertion(s) failed`
@@ -125,32 +129,43 @@ export async function generateSummaryMarkdown(
       }),
   );
 
-  const testcases: ParsedTestCase[] = instances.map((inst) => {
-    const displayStatus = inst.testStatus ?? inst.status;
-    const assertions = assertionsByInstance.get(inst.id) ?? [];
-    const failedAssertions = assertions.filter(
-      (a) => !a.passed && a.assertionType !== 'skip',
-    );
-    const isFailed = failedAssertions.length > 0 || displayStatus === 'FAILED';
+  const testcases: ParsedTestCase[] = await Promise.all(
+    instances.map(async (inst) => {
+      const displayStatus = inst.testStatus ?? inst.status;
+      const assertions = assertionsByInstance.get(inst.id) ?? [];
+      const failedAssertions = assertions.filter(
+        (a) => !a.passed && a.assertionType !== 'skip',
+      );
+      const isFailed =
+        failedAssertions.length > 0 || displayStatus === 'FAILED';
 
-    const dur = instanceDurationSec(inst) ?? undefined;
+      const dur = instanceDurationSec(inst) ?? undefined;
 
-    if (isFailed) {
-      return {
-        name: inst.name,
-        status: 'FAILED' as const,
-        durationSec: dur,
-        failureMessage:
-          failedAssertions.length > 0
-            ? `${failedAssertions.length} assertion(s) failed`
-            : (inst.errorMessage ?? 'Test failed'),
-        failureBody: formatInstanceFailure(inst, failedAssertions),
-      };
-    } else if (displayStatus === 'SKIPPED') {
-      return { name: inst.name, status: 'SKIPPED' as const, durationSec: dur };
-    }
-    return { name: inst.name, status: 'PASSED' as const, durationSec: dur };
-  });
+      if (isFailed) {
+        return {
+          name: inst.name,
+          status: 'FAILED' as const,
+          durationSec: dur,
+          failureMessage:
+            failedAssertions.length > 0
+              ? `${failedAssertions.length} assertion(s) failed`
+              : (inst.errorMessage ?? 'Test failed'),
+          failureBody: await formatInstanceFailure(
+            ctUrl,
+            inst,
+            failedAssertions,
+          ),
+        };
+      } else if (displayStatus === 'SKIPPED') {
+        return {
+          name: inst.name,
+          status: 'SKIPPED' as const,
+          durationSec: dur,
+        };
+      }
+      return { name: inst.name, status: 'PASSED' as const, durationSec: dur };
+    }),
+  );
 
   return buildSummaryMarkdown([
     {
@@ -358,13 +373,80 @@ function buildSummaryMarkdown(groups: ParsedTestGroup[]): string {
   return lines.join('\n');
 }
 
-function formatInstanceFailure(
+interface ConsoleLogEntry {
+  level: string;
+  message: string;
+  timestamp: string;
+}
+
+interface TestExecutionLogEntry {
+  eventType: string;
+  message: string;
+  stepIndex: number | null;
+  error: string | null;
+  errorType: string | null;
+  timestamp: string;
+}
+
+interface PaginatedLogs<T> {
+  logs: T[];
+  total: number;
+}
+
+async function formatInstanceFailure(
+  ctUrl: string,
   inst: RunStatusInstance,
   failedAssertions: AssertionResult[],
-): string {
-  if (failedAssertions.length === 0) {
-    return inst.errorMessage ?? 'Test failed';
+): Promise<string> {
+  if (failedAssertions.length > 0) {
+    return formatAssertionFailures(failedAssertions);
   }
+
+  const sections: string[] = [];
+
+  if (inst.errorMessage) {
+    sections.push(inst.errorMessage);
+  }
+
+  try {
+    const [execResult, consoleResult] = await Promise.all([
+      fetchJson<PaginatedLogs<TestExecutionLogEntry>>(
+        `${ctUrl}/logs/test-execution/instance/${inst.id}?limit=50`,
+      ),
+      fetchJson<PaginatedLogs<ConsoleLogEntry>>(
+        `${ctUrl}/logs/console/instance/${inst.id}?limit=50`,
+      ),
+    ]);
+
+    const execLogs = execResult?.logs ?? [];
+    const errorExecLogs = execLogs.filter((l) => l.error);
+    if (errorExecLogs.length > 0) {
+      sections.push(
+        '--- Test Execution Errors ---',
+        ...errorExecLogs.map(
+          (l) =>
+            `[step ${l.stepIndex ?? '?'}] ${l.message}${l.error ? `\n  ${l.error}` : ''}`,
+        ),
+      );
+    }
+
+    const consoleLogs = consoleResult?.logs ?? [];
+    const errorConsoleLogs = consoleLogs.filter(
+      (l) => l.level === 'ERROR' || l.level === 'WARN',
+    );
+    if (errorConsoleLogs.length > 0) {
+      const shown = errorConsoleLogs.slice(-20);
+      sections.push(
+        '--- Console Errors ---',
+        ...shown.map((l) => `[${l.level}] ${l.message}`),
+      );
+    }
+  } catch {}
+
+  return sections.length > 0 ? sections.join('\n') : 'Test failed';
+}
+
+function formatAssertionFailures(failedAssertions: AssertionResult[]): string {
   return failedAssertions
     .map((a) => {
       const parts: string[] = [];
