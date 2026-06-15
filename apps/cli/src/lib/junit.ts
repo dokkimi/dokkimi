@@ -123,50 +123,160 @@ export async function generateSummaryMarkdown(
       }),
   );
 
-  const passed = instances.filter(
-    (i) => (i.testStatus ?? i.status) === 'PASSED',
-  ).length;
-  const failed = instances.filter(
-    (i) => (i.testStatus ?? i.status) === 'FAILED',
-  ).length;
-  const skipped = instances.filter(
-    (i) => (i.testStatus ?? i.status) === 'SKIPPED',
-  ).length;
-  const durationSec = Math.round(durationMs / 1000);
+  const testcases: ParsedTestCase[] = instances.map((inst) => {
+    const displayStatus = inst.testStatus ?? inst.status;
+    const assertions = assertionsByInstance.get(inst.id) ?? [];
+    const failedAssertions = assertions.filter(
+      (a) => !a.passed && a.assertionType !== 'skip',
+    );
+    const isFailed = failedAssertions.length > 0 || displayStatus === 'FAILED';
+
+    if (isFailed) {
+      return {
+        name: inst.name,
+        status: 'FAILED' as const,
+        failureMessage:
+          failedAssertions.length > 0
+            ? `${failedAssertions.length} assertion(s) failed`
+            : (inst.errorMessage ?? 'Test failed'),
+        failureBody: formatInstanceFailure(inst, failedAssertions),
+      };
+    } else if (displayStatus === 'SKIPPED') {
+      return { name: inst.name, status: 'SKIPPED' as const };
+    }
+    return { name: inst.name, status: 'PASSED' as const };
+  });
+
+  return buildSummaryMarkdown(testcases, Math.round(durationMs / 1000));
+}
+
+interface ParsedTestCase {
+  name: string;
+  status: 'PASSED' | 'FAILED' | 'SKIPPED';
+  failureMessage?: string;
+  failureBody?: string;
+}
+
+function parseXmlAttr(tag: string, attr: string): string {
+  const match = tag.match(new RegExp(`${attr}="([^"]*)"`));
+  return match ? match[1] : '';
+}
+
+function unescapeXml(str: string): string {
+  return str
+    .replace(/&apos;/g, "'")
+    .replace(/&quot;/g, '"')
+    .replace(/&gt;/g, '>')
+    .replace(/&lt;/g, '<')
+    .replace(/&amp;/g, '&');
+}
+
+function parseJUnitXml(xml: string): {
+  testcases: ParsedTestCase[];
+  durationSec: number;
+} {
+  const testcases: ParsedTestCase[] = [];
+
+  const suitesMatch = xml.match(/<testsuites[^>]*>/);
+  const durationSec = suitesMatch
+    ? parseFloat(parseXmlAttr(suitesMatch[0], 'time')) || 0
+    : 0;
+
+  const testcaseRegex =
+    /<testcase\s[^>]*>[\s\S]*?<\/testcase>|<testcase\s[^>]*\/>/g;
+  let match;
+  while ((match = testcaseRegex.exec(xml)) !== null) {
+    const block = match[0];
+    const nameTag = block.match(/<testcase\s[^>]*/);
+    const name = nameTag ? unescapeXml(parseXmlAttr(nameTag[0], 'name')) : '';
+
+    const failureMatch = block.match(
+      /<failure\s+message="([^"]*)">([\s\S]*?)<\/failure>/,
+    );
+    const skippedMatch = block.match(/<skipped\s*\/>/);
+
+    if (failureMatch) {
+      testcases.push({
+        name,
+        status: 'FAILED',
+        failureMessage: unescapeXml(failureMatch[1]),
+        failureBody: unescapeXml(failureMatch[2]),
+      });
+    } else if (skippedMatch) {
+      testcases.push({ name, status: 'SKIPPED' });
+    } else {
+      testcases.push({ name, status: 'PASSED' });
+    }
+  }
+
+  return { testcases, durationSec };
+}
+
+export function generateSummaryFromXmlDir(dirPath: string): string {
+  const resolved = path.resolve(dirPath);
+  if (!fs.existsSync(resolved)) {
+    return '';
+  }
+
+  const files = fs
+    .readdirSync(resolved)
+    .filter((f) => f.endsWith('.xml'))
+    .sort();
+  if (files.length === 0) {
+    return '';
+  }
+
+  const allTestcases: ParsedTestCase[] = [];
+  let totalDurationSec = 0;
+
+  for (const file of files) {
+    const xml = fs.readFileSync(path.join(resolved, file), 'utf-8');
+    const { testcases, durationSec } = parseJUnitXml(xml);
+    allTestcases.push(...testcases);
+    totalDurationSec += durationSec;
+  }
+
+  return buildSummaryMarkdown(allTestcases, Math.round(totalDurationSec));
+}
+
+const COMMENT_MARKER = '<!-- dokkimi-test-results -->';
+
+function buildSummaryMarkdown(
+  testcases: ParsedTestCase[],
+  durationSec: number,
+): string {
+  const passed = testcases.filter((t) => t.status === 'PASSED').length;
+  const failed = testcases.filter((t) => t.status === 'FAILED').length;
+  const skipped = testcases.filter((t) => t.status === 'SKIPPED').length;
 
   const lines: string[] = [];
 
+  lines.push(COMMENT_MARKER);
   const icon = failed > 0 ? ':x:' : ':white_check_mark:';
-  lines.push(`## ${icon} Dokkimi Test Results`);
+  lines.push(`### ${icon} Dokkimi Test Results`);
   lines.push('');
+  lines.push('| Tests | Passed | Failed | Skipped | Duration |');
+  lines.push('|-------|--------|--------|---------|----------|');
   lines.push(
-    `**${instances.length}** tests | **${passed}** passed | **${failed}** failed | **${skipped}** skipped | **${durationSec}s**`,
+    `| ${testcases.length} | ${passed} | ${failed} | ${skipped} | ${durationSec}s |`,
   );
   lines.push('');
 
   if (failed > 0) {
-    lines.push('### Failed Tests');
-    lines.push('');
-    for (const inst of instances) {
-      const displayStatus = inst.testStatus ?? inst.status;
-      if (displayStatus !== 'FAILED') {
+    for (const tc of testcases) {
+      if (tc.status !== 'FAILED') {
         continue;
       }
 
-      const assertions = assertionsByInstance.get(inst.id) ?? [];
-      const failedAssertions = assertions.filter(
-        (a) => !a.passed && a.assertionType !== 'skip',
-      );
-
-      lines.push(`<details><summary>:x: ${inst.name}</summary>`);
+      lines.push(`<details><summary>:x: ${tc.name}</summary>`);
       lines.push('');
-      if (failedAssertions.length > 0) {
+      if (tc.failureBody) {
         lines.push('```');
-        lines.push(formatInstanceFailure(inst, failedAssertions));
+        lines.push(tc.failureBody);
         lines.push('```');
-      } else if (inst.errorMessage) {
+      } else if (tc.failureMessage) {
         lines.push('```');
-        lines.push(inst.errorMessage);
+        lines.push(tc.failureMessage);
         lines.push('```');
       }
       lines.push('</details>');
@@ -177,10 +287,9 @@ export async function generateSummaryMarkdown(
   if (passed > 0) {
     lines.push('<details><summary>Passed tests</summary>');
     lines.push('');
-    for (const inst of instances) {
-      const displayStatus = inst.testStatus ?? inst.status;
-      if (displayStatus === 'PASSED') {
-        lines.push(`:white_check_mark: ${inst.name}`);
+    for (const tc of testcases) {
+      if (tc.status === 'PASSED') {
+        lines.push(`${tc.name}`);
       }
     }
     lines.push('');

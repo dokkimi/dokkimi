@@ -6,7 +6,11 @@ jest.mock('./cli-utils', () => ({
   fetchJson: jest.fn(),
 }));
 
-import { writeJUnitXml, generateJUnitXml } from './junit';
+import {
+  writeJUnitXml,
+  generateJUnitXml,
+  generateSummaryFromXmlDir,
+} from './junit';
 import { fetchJson } from './cli-utils';
 
 const mockFetchJson = fetchJson as jest.MockedFunction<typeof fetchJson>;
@@ -222,5 +226,58 @@ describe('writeJUnitXml', () => {
     expect(xml).toContain('&quot;special&quot;');
     expect(xml).toContain('&lt;200&gt;');
     expect(xml).toContain('&amp;');
+  });
+});
+
+describe('generateSummaryFromXmlDir', () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'junit-summary-'));
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it('aggregates multiple XML files into one summary', () => {
+    fs.writeFileSync(
+      path.join(tmpDir, 'suite-a.xml'),
+      `<?xml version="1.0" encoding="UTF-8"?>
+<testsuites tests="2" failures="0" errors="0" skipped="0" time="10.000">
+  <testsuite name="run-a" tests="2" failures="0" errors="0" skipped="0" time="10.000">
+    <testcase name="test-1" classname="test-1"></testcase>
+    <testcase name="test-2" classname="test-2"></testcase>
+  </testsuite>
+</testsuites>`,
+    );
+    fs.writeFileSync(
+      path.join(tmpDir, 'suite-b.xml'),
+      `<?xml version="1.0" encoding="UTF-8"?>
+<testsuites tests="1" failures="1" errors="0" skipped="0" time="5.000">
+  <testsuite name="run-b" tests="1" failures="1" errors="0" skipped="0" time="5.000">
+    <testcase name="test-3" classname="test-3">
+      <failure message="assertion failed">expected 200 got 500</failure>
+    </testcase>
+  </testsuite>
+</testsuites>`,
+    );
+
+    const md = generateSummaryFromXmlDir(tmpDir);
+    expect(md).toContain('<!-- dokkimi-test-results -->');
+    expect(md).toContain('| Tests | Passed | Failed | Skipped | Duration |');
+    expect(md).toContain('| 3 | 2 | 1 | 0 | 15s |');
+    expect(md).toContain(':x: test-3');
+    expect(md).toContain('expected 200 got 500');
+    expect(md).toContain('test-1');
+    expect(md).toContain('test-2');
+  });
+
+  it('returns empty string for missing directory', () => {
+    expect(generateSummaryFromXmlDir('/nonexistent')).toBe('');
+  });
+
+  it('returns empty string for directory with no XML files', () => {
+    expect(generateSummaryFromXmlDir(tmpDir)).toBe('');
   });
 });

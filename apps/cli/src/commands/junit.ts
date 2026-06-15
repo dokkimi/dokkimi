@@ -4,6 +4,7 @@ import { loadConfig, buildServiceUrl } from '@dokkimi/config';
 import { trackEvent } from '@dokkimi/telemetry';
 import {
   generateJUnitXml,
+  generateSummaryFromXmlDir,
   generateSummaryMarkdown,
   writeJUnitXml,
 } from '../lib/junit';
@@ -13,7 +14,7 @@ import { getProjectPath, latestRunUrl } from '../lib/project-path';
 export async function junit(args: string[]): Promise<void> {
   if (args.includes('--help') || args.includes('-h')) {
     console.log(
-      'Usage: dokkimi junit [-o <file>] [--summary] [--run [runId]] [--failed]',
+      'Usage: dokkimi junit [-o <file>] [--summary] [--dir <path>] [--run [runId]] [--failed]',
     );
     console.log('');
     console.log('Generate a JUnit XML report from a test run.');
@@ -26,6 +27,9 @@ export async function junit(args: string[]): Promise<void> {
       '  --summary           Output a markdown summary instead of XML',
     );
     console.log(
+      '  --dir <path>        Read XML files from a directory (use with --summary)',
+    );
+    console.log(
       '  --run [runId]       Target a specific run by ID (defaults to latest)',
     );
     console.log('  --failed            Only include instances that failed');
@@ -34,8 +38,27 @@ export async function junit(args: string[]): Promise<void> {
 
   const explicitOutput = parseOutputFlag(args);
   const summaryMode = parseBoolFlag(args, '--summary');
+  const dirFlag = parseDirFlag(args);
   const failedOnly = parseBoolFlag(args, '--failed');
   const runFlag = parseRunFlag(args);
+
+  if (summaryMode && dirFlag) {
+    const md = generateSummaryFromXmlDir(dirFlag);
+    if (!md) {
+      console.error('No XML files found in the specified directory.');
+      process.exit(1);
+    }
+    process.stdout.write(md);
+    trackEvent('cli_junit_result', {
+      instance_count: 0,
+      failed_only: failedOnly,
+      output_to_file: false,
+      summary_mode: true,
+      from_dir: true,
+    });
+    return;
+  }
+
   const config = loadConfig();
   const ctUrl = buildServiceUrl(config.services.controlTower);
 
@@ -103,6 +126,21 @@ function parseOutputFlag(args: string[]): string | null {
       const value = args[i + 1];
       if (!value || value.startsWith('-')) {
         console.error('--output requires a file path');
+        process.exit(1);
+      }
+      args.splice(i, 2);
+      return value;
+    }
+  }
+  return null;
+}
+
+function parseDirFlag(args: string[]): string | null {
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === '--dir') {
+      const value = args[i + 1];
+      if (!value || value.startsWith('-')) {
+        console.error('--dir requires a directory path');
         process.exit(1);
       }
       args.splice(i, 2);

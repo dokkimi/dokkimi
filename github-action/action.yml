@@ -24,7 +24,7 @@ inputs:
     default: '720'
   junit:
     description: Path to write JUnit XML report
-    default: /tmp/dokkimi-junit.xml
+    default: dokkimi-junit-reports/results.xml
   dump-retention-days:
     description: Days to retain the failed-run dump artifact (0 to disable)
     default: '1'
@@ -77,7 +77,22 @@ runs:
     - name: Test report
       if: always()
       shell: bash
-      run: dokkimi junit --summary >> "$GITHUB_STEP_SUMMARY"
+      run: dokkimi junit --summary --dir "$(dirname ${{ inputs.junit }})" >> "$GITHUB_STEP_SUMMARY"
+
+    - name: Comment on PR
+      if: always() && github.event_name == 'pull_request'
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        PR=${{ github.event.pull_request.number }}
+        BODY=$(dokkimi junit --summary --dir "$(dirname ${{ inputs.junit }})")
+        COMMENT_ID=$(gh api "repos/${{ github.repository }}/issues/${PR}/comments" --jq '.[] | select(.body | contains("<!-- dokkimi-test-results -->")) | .id' | tail -1)
+        if [ -n "$COMMENT_ID" ]; then
+          gh api "repos/${{ github.repository }}/issues/comments/${COMMENT_ID}" -X PATCH -f body="$BODY"
+        else
+          echo "$BODY" | gh pr comment "$PR" --body-file -
+        fi
 
     - name: Dump failed results
       if: failure() && inputs.dump-retention-days != '0'

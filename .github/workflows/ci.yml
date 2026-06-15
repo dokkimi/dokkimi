@@ -8,6 +8,7 @@ on:
 
 permissions:
   contents: read
+  pull-requests: write
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -210,7 +211,22 @@ jobs:
 
       - name: Test report
         if: always()
-        run: node apps/cli/dist/bin/dokkimi.js junit --summary >> "$GITHUB_STEP_SUMMARY"
+        run: |
+          node apps/cli/dist/bin/dokkimi.js junit --summary --dir junit-reports >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Comment on PR
+        if: always() && github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          PR=${{ github.event.pull_request.number }}
+          BODY=$(node apps/cli/dist/bin/dokkimi.js junit --summary --dir junit-reports)
+          COMMENT_ID=$(gh api "repos/${{ github.repository }}/issues/${PR}/comments" --jq '.[] | select(.body | contains("<!-- dokkimi-test-results -->")) | .id' | tail -1)
+          if [ -n "$COMMENT_ID" ]; then
+            gh api "repos/${{ github.repository }}/issues/comments/${COMMENT_ID}" -X PATCH -f body="$BODY"
+          else
+            echo "$BODY" | gh pr comment "$PR" --body-file -
+          fi
 
       - name: Dump failed results
         if: failure()
