@@ -211,12 +211,10 @@ jobs:
 
       - name: Test report
         if: always()
-        uses: dorny/test-reporter@v1
+        uses: EnricoMi/publish-unit-test-result-action@v2
         with:
-          name: Dokkimi Test Results
-          path: /tmp/junit/*.xml
-          reporter: java-junit
-          list-tests: failed
+          check_name: Dokkimi Test Results
+          files: /tmp/junit/*.xml
 
       - name: Dump failed results
         if: failure()

@@ -79,12 +79,10 @@ runs:
 
     - name: Test report
       if: always()
-      uses: dorny/test-reporter@v1
+      uses: EnricoMi/publish-unit-test-result-action@v2
       with:
-        name: Dokkimi Test Results
-        path: ${{ inputs.junit }}
-        reporter: java-junit
-        list-tests: failed
+        check_name: Dokkimi Test Results
+        files: ${{ inputs.junit }}
 
     - name: Dump failed results
       if: failure() && inputs.dump-retention-days != '0'
