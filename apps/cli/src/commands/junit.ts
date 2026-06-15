@@ -1,22 +1,30 @@
-import * as fs from 'fs';
 import * as path from 'path';
 import { fetchJson } from '../lib/cli-utils';
 import { loadConfig, buildServiceUrl } from '@dokkimi/config';
 import { trackEvent } from '@dokkimi/telemetry';
-import { generateJUnitXml, writeJUnitXml } from '../lib/junit';
+import {
+  generateJUnitXml,
+  generateSummaryMarkdown,
+  writeJUnitXml,
+} from '../lib/junit';
 import type { LatestRunResponse } from '../lib/inspect-types';
 import { getProjectPath, latestRunUrl } from '../lib/project-path';
 
 export async function junit(args: string[]): Promise<void> {
   if (args.includes('--help') || args.includes('-h')) {
-    console.log('Usage: dokkimi junit [-o <file>] [--run [runId]] [--failed]');
+    console.log(
+      'Usage: dokkimi junit [-o <file>] [--summary] [--run [runId]] [--failed]',
+    );
     console.log('');
     console.log('Generate a JUnit XML report from a test run.');
     console.log('');
-    console.log('By default, outputs to stdout. Use -o to write to a file.');
+    console.log('By default, outputs JUnit XML to stdout.');
     console.log('');
     console.log('Options:');
-    console.log('  -o, --output <file> Write to a file instead of stdout');
+    console.log('  -o, --output <file> Write XML to a file instead of stdout');
+    console.log(
+      '  --summary           Output a markdown summary instead of XML',
+    );
     console.log(
       '  --run [runId]       Target a specific run by ID (defaults to latest)',
     );
@@ -25,6 +33,7 @@ export async function junit(args: string[]): Promise<void> {
   }
 
   const explicitOutput = parseOutputFlag(args);
+  const summaryMode = parseBoolFlag(args, '--summary');
   const failedOnly = parseBoolFlag(args, '--failed');
   const runFlag = parseRunFlag(args);
   const config = loadConfig();
@@ -60,7 +69,10 @@ export async function junit(args: string[]): Promise<void> {
     durationMs,
   };
 
-  if (explicitOutput) {
+  if (summaryMode) {
+    const md = await generateSummaryMarkdown(junitOpts);
+    process.stdout.write(md);
+  } else if (explicitOutput) {
     await writeJUnitXml({ ...junitOpts, outputPath: explicitOutput });
     console.error(`JUnit XML written to ${path.resolve(explicitOutput)}`);
   } else {
@@ -72,6 +84,7 @@ export async function junit(args: string[]): Promise<void> {
     instance_count: instances.length,
     failed_only: failedOnly,
     output_to_file: !!explicitOutput,
+    summary_mode: summaryMode,
   });
 }
 

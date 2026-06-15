@@ -23,7 +23,7 @@ describe('writeJUnitXml', () => {
     fs.rmSync(tmpDir, { recursive: true, force: true });
   });
 
-  it('writes valid XML for a passing run', async () => {
+  it('writes one testcase per instance for a passing run', async () => {
     mockFetchJson.mockResolvedValue([
       {
         id: 'a1',
@@ -60,16 +60,16 @@ describe('writeJUnitXml', () => {
 
     const xml = fs.readFileSync(outputPath, 'utf-8');
     expect(xml).toContain('<?xml version="1.0"');
-    expect(xml).toContain('tests="1"');
-    expect(xml).toContain('failures="0"');
-    expect(xml).toContain('errors="0"');
+    expect(xml).toContain('<testsuites tests="1" failures="0"');
+    expect(xml).toContain('<testsuite name="run-1" tests="1" failures="0"');
     expect(xml).toContain('name="checkout-flow"');
     expect(xml).toContain('classname="checkout-flow"');
-    expect(xml).toContain('timestamp=');
     expect(xml).not.toContain('<failure');
+    // One testcase, not one per assertion
+    expect(xml.match(/<testcase /g)?.length).toBe(1);
   });
 
-  it('writes failure details from assertions', async () => {
+  it('writes failure details from assertions into a single testcase', async () => {
     mockFetchJson.mockResolvedValue([
       {
         id: 'a1',
@@ -122,9 +122,11 @@ describe('writeJUnitXml', () => {
     const xml = fs.readFileSync(outputPath, 'utf-8');
     expect(xml).toContain('failures="1"');
     expect(xml).toContain('<failure');
+    expect(xml).toContain('1 assertion(s) failed');
     expect(xml).toContain('$.name');
     expect(xml).toContain('Alice');
     expect(xml).toContain('Bob');
+    expect(xml.match(/<testcase /g)?.length).toBe(1);
   });
 
   it('handles instances with no assertions', async () => {

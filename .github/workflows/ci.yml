@@ -7,9 +7,7 @@ on:
     branches: [main]
 
 permissions:
-  checks: write
   contents: read
-  pull-requests: write
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -212,10 +210,7 @@ jobs:
 
       - name: Test report
         if: always()
-        uses: EnricoMi/publish-unit-test-result-action@v2
-        with:
-          check_name: Dokkimi Test Results
-          files: junit-reports/*.xml
+        run: node apps/cli/dist/bin/dokkimi.js junit --summary >> "$GITHUB_STEP_SUMMARY"
 
       - name: Dump failed results
         if: failure()

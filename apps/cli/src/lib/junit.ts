@@ -49,11 +49,13 @@ export async function generateJUnitXml(opts: JUnitOptions): Promise<string> {
     (i) => (i.testStatus ?? i.status) === 'SKIPPED',
   ).length;
   const durationSec = (durationMs / 1000).toFixed(3);
-
   const lines: string[] = [];
   lines.push('<?xml version="1.0" encoding="UTF-8"?>');
   lines.push(
     `<testsuites tests="${totalTests}" failures="${failures}" errors="0" skipped="${skipped}" time="${durationSec}">`,
+  );
+  lines.push(
+    `  <testsuite name="${escapeXml(opts.runId)}" tests="${totalTests}" failures="${failures}" errors="0" skipped="${skipped}" time="${durationSec}" timestamp="${timestamp}">`,
   );
 
   for (const inst of instances) {
@@ -62,50 +64,30 @@ export async function generateJUnitXml(opts: JUnitOptions): Promise<string> {
     const failedAssertions = assertions.filter(
       (a) => !a.passed && a.assertionType !== 'skip',
     );
-
-    const testCount = assertions.length > 0 ? assertions.length : 1;
-    const failCount =
-      failedAssertions.length > 0
-        ? failedAssertions.length
-        : displayStatus === 'FAILED'
-          ? 1
-          : 0;
-    const skipCount = displayStatus === 'SKIPPED' ? 1 : 0;
+    const isFailed =
+      failedAssertions.length > 0 || displayStatus === 'FAILED';
 
     lines.push(
-      `  <testsuite name="${escapeXml(inst.name)}" tests="${testCount}" failures="${failCount}" errors="0" skipped="${skipCount}" timestamp="${timestamp}">`,
+      `    <testcase name="${escapeXml(inst.name)}" classname="${escapeXml(inst.name)}">`,
     );
 
-    if (assertions.length > 0) {
-      for (const a of assertions) {
-        const caseName = formatAssertionName(a);
-        lines.push(
-          `    <testcase name="${escapeXml(caseName)}" classname="${escapeXml(inst.name)}" time="0">`,
-        );
-        if (!a.passed && a.assertionType !== 'skip') {
-          const message = formatFailureMessage(a);
-          lines.push(
-            `      <failure message="${escapeXml(message)}">${escapeXml(formatFailureBody(a))}</failure>`,
-          );
-        }
-        lines.push('    </testcase>');
-      }
-    } else {
+    if (isFailed) {
+      const failureBody = formatInstanceFailure(inst, failedAssertions);
+      const message =
+        failedAssertions.length > 0
+          ? `${failedAssertions.length} assertion(s) failed`
+          : (inst.errorMessage ?? 'Test failed');
       lines.push(
-        `    <testcase name="${escapeXml(inst.name)}" classname="${escapeXml(inst.name)}" time="0">`,
+        `      <failure message="${escapeXml(message)}">${escapeXml(failureBody)}</failure>`,
       );
-      if (displayStatus === 'FAILED') {
-        const message = inst.errorMessage ?? 'Test failed';
-        lines.push(`      <failure message="${escapeXml(message)}"></failure>`);
-      } else if (displayStatus === 'SKIPPED') {
-        lines.push('      <skipped/>');
-      }
-      lines.push('    </testcase>');
+    } else if (displayStatus === 'SKIPPED') {
+      lines.push('      <skipped/>');
     }
 
-    lines.push('  </testsuite>');
+    lines.push('    </testcase>');
   }
 
+  lines.push('  </testsuite>');
   lines.push('</testsuites>');
   lines.push('');
 
@@ -121,39 +103,119 @@ export async function writeJUnitXml(
   fs.writeFileSync(resolved, xml, 'utf-8');
 }
 
-function formatAssertionName(a: AssertionResult): string {
-  const parts = [a.assertionType];
-  if (a.path) {
-    parts.push(`at ${a.path}`);
-  }
-  if (a.operator && a.operator !== 'equals') {
-    parts.push(`(${a.operator})`);
-  }
-  return parts.join(' ');
-}
+export async function generateSummaryMarkdown(
+  opts: JUnitOptions,
+): Promise<string> {
+  const { ctUrl, instances, durationMs } = opts;
 
-function formatFailureMessage(a: AssertionResult): string {
-  if (a.error) {
-    return a.error;
-  }
-  const op = a.operator ?? 'equals';
-  return `Expected ${formatValue(a.expected)} ${op} ${formatValue(a.actual)}`;
-}
+  const assertionsByInstance = new Map<string, AssertionResult[]>();
+  await Promise.all(
+    instances
+      .filter((inst) => !inst.id.startsWith('skipped-'))
+      .map(async (inst) => {
+        try {
+          const results = await fetchJson<AssertionResult[]>(
+            `${ctUrl}/logs/assertion-results/instance/${inst.id}`,
+          );
+          if (results && results.length > 0) {
+            assertionsByInstance.set(inst.id, results);
+          }
+        } catch {}
+      }),
+  );
 
-function formatFailureBody(a: AssertionResult): string {
+  const passed = instances.filter(
+    (i) => (i.testStatus ?? i.status) === 'PASSED',
+  ).length;
+  const failed = instances.filter(
+    (i) => (i.testStatus ?? i.status) === 'FAILED',
+  ).length;
+  const skipped = instances.filter(
+    (i) => (i.testStatus ?? i.status) === 'SKIPPED',
+  ).length;
+  const durationSec = Math.round(durationMs / 1000);
+
   const lines: string[] = [];
-  if (a.error) {
-    lines.push(a.error);
+
+  const status = failed > 0 ? 'FAILED' : 'PASSED';
+  const icon = failed > 0 ? ':x:' : ':white_check_mark:';
+  lines.push(`## ${icon} Dokkimi Test Results`);
+  lines.push('');
+  lines.push(
+    `**${instances.length}** tests | **${passed}** passed | **${failed}** failed | **${skipped}** skipped | **${durationSec}s**`,
+  );
+  lines.push('');
+
+  if (failed > 0) {
+    lines.push('### Failed Tests');
+    lines.push('');
+    for (const inst of instances) {
+      const displayStatus = inst.testStatus ?? inst.status;
+      if (displayStatus !== 'FAILED') continue;
+
+      const assertions = assertionsByInstance.get(inst.id) ?? [];
+      const failedAssertions = assertions.filter(
+        (a) => !a.passed && a.assertionType !== 'skip',
+      );
+
+      lines.push(`<details><summary>:x: ${inst.name}</summary>`);
+      lines.push('');
+      if (failedAssertions.length > 0) {
+        lines.push('```');
+        lines.push(formatInstanceFailure(inst, failedAssertions));
+        lines.push('```');
+      } else if (inst.errorMessage) {
+        lines.push('```');
+        lines.push(inst.errorMessage);
+        lines.push('```');
+      }
+      lines.push('</details>');
+      lines.push('');
+    }
   }
-  lines.push(`expected: ${formatValue(a.expected)}`);
-  lines.push(`actual:   ${formatValue(a.actual)}`);
-  if (a.path) {
-    lines.push(`path:     ${a.path}`);
+
+  if (passed > 0) {
+    lines.push('<details><summary>Passed tests</summary>');
+    lines.push('');
+    for (const inst of instances) {
+      const displayStatus = inst.testStatus ?? inst.status;
+      if (displayStatus === 'PASSED') {
+        lines.push(`:white_check_mark: ${inst.name}`);
+      }
+    }
+    lines.push('');
+    lines.push('</details>');
+    lines.push('');
   }
-  if (a.operator) {
-    lines.push(`operator: ${a.operator}`);
-  }
+
   return lines.join('\n');
+}
+
+function formatInstanceFailure(
+  inst: RunStatusInstance,
+  failedAssertions: AssertionResult[],
+): string {
+  if (failedAssertions.length === 0) {
+    return inst.errorMessage ?? 'Test failed';
+  }
+  return failedAssertions
+    .map((a) => {
+      const parts: string[] = [];
+      const name = [a.assertionType, a.path && `at ${a.path}`]
+        .filter(Boolean)
+        .join(' ');
+      parts.push(name);
+      if (a.error) {
+        parts.push(`  ${a.error}`);
+      } else {
+        const op = a.operator ?? 'equals';
+        parts.push(`  expected: ${formatValue(a.expected)}`);
+        parts.push(`  actual:   ${formatValue(a.actual)}`);
+        parts.push(`  operator: ${op}`);
+      }
+      return parts.join('\n');
+    })
+    .join('\n\n');
 }
 
 function formatValue(val: unknown): string {

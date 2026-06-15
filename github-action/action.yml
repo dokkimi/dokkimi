@@ -1,9 +1,5 @@
 name: Dokkimi Run Tests
-description: >-
-  Run Dokkimi integration tests using Docker. Generates a JUnit XML report
-  and posts test results as a PR check. Requires `checks: write`,
-  `pull-requests: write`, and `contents: read` permissions in the calling
-  workflow.
+description: Run Dokkimi integration tests using Docker. Generates a JUnit XML report and posts a test summary to the GitHub Actions job summary.
 branding:
   icon: check-circle
   color: blue
@@ -80,10 +76,8 @@ runs:
 
     - name: Test report
       if: always()
-      uses: EnricoMi/publish-unit-test-result-action@v2
-      with:
-        check_name: Dokkimi Test Results
-        files: ${{ inputs.junit }}
+      shell: bash
+      run: dokkimi junit --summary >> "$GITHUB_STEP_SUMMARY"
 
     - name: Dump failed results
       if: failure() && inputs.dump-retention-days != '0'
