@@ -21,6 +21,8 @@ export interface RunStatusInstance {
   status: string;
   testStatus?: string;
   errorMessage?: string;
+  startedAt?: string;
+  stoppedAt?: string;
 }
 
 export interface RunStatusResponse {

@@ -6,6 +6,10 @@ on:
   pull_request:
     branches: [main]
 
+permissions:
+  contents: read
+  pull-requests: write
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -132,6 +136,24 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      - name: Post in-progress comment
+        if: github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          PR=${{ github.event.pull_request.number }}
+          RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          BODY="<!-- dokkimi-test-results -->
+          ### :hourglass_flowing_sand: Dokkimi Test Results
+
+          Tests are running... [View progress](${RUN_URL})"
+          COMMENT_ID=$(gh api "repos/${{ github.repository }}/issues/${PR}/comments" --jq '.[] | select(.body | contains("<!-- dokkimi-test-results -->")) | .id' | tail -1)
+          if [ -n "$COMMENT_ID" ]; then
+            gh api "repos/${{ github.repository }}/issues/comments/${COMMENT_ID}" -X PATCH -f body="$BODY"
+          else
+            echo "$BODY" | gh pr comment "$PR" --body-file -
+          fi
+
       - uses: actions/setup-node@v5
         with:
           node-version: 22
@@ -179,23 +201,52 @@ jobs:
 
       - name: Run demo-oauth-flow tests
         timeout-minutes: 10
-        run: node apps/cli/dist/bin/dokkimi.js run .dokkimi/demo-oauth-flow --ci
+        run: node apps/cli/dist/bin/dokkimi.js run .dokkimi/demo-oauth-flow --ci --junit junit-reports/demo-oauth-flow.xml
 
       - name: Run demo-nextjs tests
         timeout-minutes: 10
-        run: node apps/cli/dist/bin/dokkimi.js run .dokkimi/demo-nextjs --ci
+        run: node apps/cli/dist/bin/dokkimi.js run .dokkimi/demo-nextjs --ci --junit junit-reports/demo-nextjs.xml
 
       - name: Run control-tower tests
         timeout-minutes: 10
-        run: node apps/cli/dist/bin/dokkimi.js run .dokkimi/control-tower --ci
+        run: node apps/cli/dist/bin/dokkimi.js run .dokkimi/control-tower --ci --junit junit-reports/control-tower.xml
 
       - name: Run traffic-tester tests
         timeout-minutes: 10
-        run: node apps/cli/dist/bin/dokkimi.js run .dokkimi/traffic-tester --ci
+        run: node apps/cli/dist/bin/dokkimi.js run .dokkimi/traffic-tester --ci --junit junit-reports/traffic-tester.xml
 
       - name: Run demo-spa tests
         timeout-minutes: 10
-        run: node apps/cli/dist/bin/dokkimi.js run .dokkimi/demo-spa --ci
+        run: node apps/cli/dist/bin/dokkimi.js run .dokkimi/demo-spa --ci --junit junit-reports/demo-spa.xml
+
+      - name: Upload JUnit reports
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: dokkimi-junit-reports
+          path: junit-reports/
+          if-no-files-found: ignore
+
+      - name: Test report
+        if: always()
+        run: |
+          node apps/cli/dist/bin/dokkimi.js junit --summary --dir junit-reports >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Comment on PR
+        if: always() && github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          PR=${{ github.event.pull_request.number }}
+          RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          SUMMARY=$(node apps/cli/dist/bin/dokkimi.js junit --summary --dir junit-reports)
+          BODY=$(printf '%s\n\n[View full output](%s)' "$SUMMARY" "$RUN_URL")
+          COMMENT_ID=$(gh api "repos/${{ github.repository }}/issues/${PR}/comments" --jq '.[] | select(.body | contains("<!-- dokkimi-test-results -->")) | .id' | tail -1)
+          if [ -n "$COMMENT_ID" ]; then
+            gh api "repos/${{ github.repository }}/issues/comments/${COMMENT_ID}" -X PATCH -f body="$BODY"
+          else
+            echo "$BODY" | gh pr comment "$PR" --body-file -
+          fi
 
       - name: Dump failed results
         if: failure()

@@ -31,6 +31,7 @@ import {
 } from './run-helpers';
 import type { LatestRunResponse } from '../lib/inspect-types';
 import { getProjectPath, latestRunUrl } from '../lib/project-path';
+import { writeJUnitXml } from '../lib/junit';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -91,6 +92,9 @@ export async function run(args: string[]): Promise<void> {
     console.log(
       '  --timeout=SECONDS    Fail after SECONDS if not complete (default: 600 in CI)',
     );
+    console.log(
+      '  --junit <path>       Write JUnit XML report to <path> after run completes',
+    );
     console.log('');
     console.log('Keyboard shortcuts:');
     console.log('  r              Re-run definitions');
@@ -111,6 +115,7 @@ export async function run(args: string[]): Promise<void> {
     : ciMode
       ? 10 * 60 * 1000
       : undefined;
+  const junitPath = parseJUnitFlag(args);
   const target = args.find(
     (a) => !a.startsWith('-') && !a.startsWith('--timeout'),
   );
@@ -136,6 +141,7 @@ export async function run(args: string[]): Promise<void> {
   let hasPendingBaselines = false;
   let inFlight: Promise<void> = Promise.resolve();
   let isExiting = false;
+  let runStartTime = Date.now();
 
   // ---------------------------------------------------------------------------
   // Cleanup — stop namespaces, preserve data for analysis
@@ -159,6 +165,15 @@ export async function run(args: string[]): Promise<void> {
     }
     if (process.stdin.isTTY) {
       process.stdin.setRawMode(false);
+    }
+    if (junitPath && lastResult?.runId) {
+      await writeJUnitXml({
+        ctUrl,
+        runId: lastResult.runId,
+        instances: lastResult.instances,
+        outputPath: junitPath,
+        durationMs: Date.now() - runStartTime,
+      }).catch(() => {});
     }
     console.log('');
     process.exit(lastResult?.passed === false ? 1 : 0);
@@ -228,6 +243,7 @@ export async function run(args: string[]): Promise<void> {
     }
 
     const runStart = Date.now();
+    runStartTime = runStart;
     const trigger =
       triggerSource ?? (triggerCount === 0 ? 'initial' : 'manual_rerun');
     triggerCount++;
@@ -471,10 +487,20 @@ export async function run(args: string[]): Promise<void> {
 
   // CI mode: exit immediately with appropriate code
   if (ciMode) {
-    if ((lastResult as RunOnceResult | null)?.runId) {
+    const result = lastResult as RunOnceResult | null;
+    if (junitPath && result?.runId) {
+      await writeJUnitXml({
+        ctUrl,
+        runId: result.runId,
+        instances: result.instances,
+        outputPath: junitPath,
+        durationMs: Date.now() - runStartTime,
+      }).catch(() => {});
+    }
+    if (result?.runId) {
       await fetchAction(`${ctUrl}/runs/stop`, 'POST');
     }
-    process.exit((lastResult as RunOnceResult | null)?.passed ? 0 : 1);
+    process.exit(result?.passed ? 0 : 1);
   }
 
   // Nothing to run and not watching for changes: exit immediately
@@ -484,10 +510,20 @@ export async function run(args: string[]): Promise<void> {
 
   // Non-TTY without watch: exit immediately with appropriate code
   if (!process.stdout.isTTY && !watchMode) {
-    if ((lastResult as RunOnceResult | null)?.runId) {
+    const result = lastResult as RunOnceResult | null;
+    if (junitPath && result?.runId) {
+      await writeJUnitXml({
+        ctUrl,
+        runId: result.runId,
+        instances: result.instances,
+        outputPath: junitPath,
+        durationMs: Date.now() - runStartTime,
+      }).catch(() => {});
+    }
+    if (result?.runId) {
       await fetchAction(`${ctUrl}/runs/stop`, 'POST');
     }
-    process.exit((lastResult as RunOnceResult | null)?.passed ? 0 : 1);
+    process.exit(result?.passed ? 0 : 1);
   }
 
   // TTY / watch: keyboard listener (and optionally watcher) keeps process alive
@@ -680,6 +716,20 @@ async function executeRun(
 // ---------------------------------------------------------------------------
 // Read failed definition names from the last run via CT
 // ---------------------------------------------------------------------------
+
+function parseJUnitFlag(args: string[]): string | null {
+  const idx = args.indexOf('--junit');
+  if (idx === -1) {
+    return null;
+  }
+  const value = args[idx + 1];
+  if (!value || value.startsWith('-')) {
+    console.error('--junit requires a file path');
+    process.exit(1);
+  }
+  args.splice(idx, 2);
+  return value;
+}
 
 async function readFailedNames(ctUrl: string): Promise<string[]> {
   try {
