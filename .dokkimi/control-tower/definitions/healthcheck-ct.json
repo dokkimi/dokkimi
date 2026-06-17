@@ -79,10 +79,7 @@
                 {
                   "path": "$.response.status",
                   "operator": "in",
-                  "value": [
-                    200,
-                    201
-                  ]
+                  "value": [200, 201]
                 }
               ]
             }

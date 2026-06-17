@@ -252,7 +252,7 @@ tests:
           database: redis-db
           query: GET extracted-key
         extract:
-          extractedVal: "$.response.data[0].value"
+          extractedVal: '$.response.data[0].value'
         assertions:
           - assertions:
               - path: $.response.success

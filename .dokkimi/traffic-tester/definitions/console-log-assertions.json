@@ -193,17 +193,13 @@
                   "url": "/log-handler",
                   "method": "POST",
                   "data": {
-                    "preRequestLogs": [
-                      "HANDLER-B: Received dispatch"
-                    ],
+                    "preRequestLogs": ["HANDLER-B: Received dispatch"],
                     "response": {
                       "value": {
                         "handler": "b"
                       }
                     },
-                    "postRequestLogs": [
-                      "HANDLER-B: Completed"
-                    ]
+                    "postRequestLogs": ["HANDLER-B: Completed"]
                   }
                 },
                 {
@@ -211,23 +207,17 @@
                   "url": "/log-handler",
                   "method": "POST",
                   "data": {
-                    "preRequestLogs": [
-                      "HANDLER-C: Received dispatch"
-                    ],
+                    "preRequestLogs": ["HANDLER-C: Received dispatch"],
                     "response": {
                       "value": {
                         "handler": "c"
                       }
                     },
-                    "postRequestLogs": [
-                      "HANDLER-C: Completed"
-                    ]
+                    "postRequestLogs": ["HANDLER-C: Completed"]
                   }
                 }
               ],
-              "postRequestLogs": [
-                "ORCHESTRATOR: All dispatches completed"
-              ]
+              "postRequestLogs": ["ORCHESTRATOR: All dispatches completed"]
             }
           },
           "assertions": [

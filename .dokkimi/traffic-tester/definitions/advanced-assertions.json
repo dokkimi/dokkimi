@@ -149,11 +149,7 @@
             "body": {
               "response": {
                 "value": {
-                  "tags": [
-                    "production",
-                    "critical",
-                    "v2"
-                  ],
+                  "tags": ["production", "critical", "v2"],
                   "priority": "high",
                   "region": "us-east-1"
                 }
@@ -171,29 +167,17 @@
                 {
                   "path": "$.response.body.priority",
                   "operator": "in",
-                  "value": [
-                    "low",
-                    "medium",
-                    "high",
-                    "critical"
-                  ]
+                  "value": ["low", "medium", "high", "critical"]
                 },
                 {
                   "path": "$.response.body.priority",
                   "operator": "notIn",
-                  "value": [
-                    "none",
-                    "unknown"
-                  ]
+                  "value": ["none", "unknown"]
                 },
                 {
                   "path": "$.response.body.region",
                   "operator": "in",
-                  "value": [
-                    "us-east-1",
-                    "us-west-2",
-                    "eu-west-1"
-                  ]
+                  "value": ["us-east-1", "us-west-2", "eu-west-1"]
                 },
                 {
                   "path": "$.response.body.tags",
@@ -332,11 +316,7 @@
                   "stringField": "hello",
                   "numberField": 42,
                   "boolField": true,
-                  "arrayField": [
-                    1,
-                    2,
-                    3
-                  ],
+                  "arrayField": [1, 2, 3],
                   "objectField": {
                     "nested": true
                   },

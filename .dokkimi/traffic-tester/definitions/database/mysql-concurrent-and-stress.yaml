@@ -108,7 +108,7 @@ tests:
           database: mysql-db
           query: "SELECT id, name, price, stock FROM products WHERE name = 'Gizmo'"
         extract:
-          gizmoId: "$.response.data[0].id"
+          gizmoId: '$.response.data[0].id'
         assertions:
           - assertions:
               - path: $.response.success

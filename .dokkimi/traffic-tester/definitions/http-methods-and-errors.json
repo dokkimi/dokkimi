@@ -329,11 +329,7 @@
                 {
                   "path": "$.response.body.details[0].field",
                   "operator": "in",
-                  "value": [
-                    "email",
-                    "age",
-                    "name"
-                  ]
+                  "value": ["email", "age", "name"]
                 },
                 {
                   "path": "$.response.body.details[1].field",
@@ -360,9 +356,7 @@
               "Content-Type": "application/json"
             },
             "body": {
-              "preRequestLogs": [
-                "ERROR: Something went wrong in service-a"
-              ],
+              "preRequestLogs": ["ERROR: Something went wrong in service-a"],
               "response": {
                 "status": 500,
                 "value": {

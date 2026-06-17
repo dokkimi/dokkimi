@@ -57,10 +57,7 @@
     {
       "name": "Test-level $ref with multi-file merge",
       "variables": {
-        "$ref": [
-          "../shared/db-vars.json",
-          "../shared/test-users.json"
-        ],
+        "$ref": ["../shared/db-vars.json", "../shared/test-users.json"],
         "testRunLabel": "multi-ref-test"
       },
       "steps": [

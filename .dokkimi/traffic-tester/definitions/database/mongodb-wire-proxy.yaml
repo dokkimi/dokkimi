@@ -214,7 +214,7 @@ tests:
           database: mongo-db
           query: '{"operation":"find","collection":"orders","filter":{"orderId":"ORD-001"}}'
         extract:
-          orderCustomer: "$.response.data[0].customer"
+          orderCustomer: '$.response.data[0].customer'
         assertions:
           - assertions:
               - path: $.response.success

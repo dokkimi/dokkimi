@@ -231,9 +231,7 @@ mongod --port ${internalPort} --shutdown
 exec mongod --port ${internalPort} --bind_ip_all`;
   }
 
-  private getDbTmpfs(
-    databaseType: string,
-  ): Record<string, string> | undefined {
+  private getDbTmpfs(databaseType: string): Record<string, string> | undefined {
     const dbType = databaseType.toLowerCase();
     switch (dbType) {
       case 'mysql':

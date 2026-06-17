@@ -74,7 +74,7 @@ tests:
           database: postgres-db
           query: "INSERT INTO users (email, name) VALUES ('eve@example.com', 'Eve') RETURNING id, email, name"
         extract:
-          eveId: "$.response.data[0].id"
+          eveId: '$.response.data[0].id'
         assertions:
           - assertions:
               - path: $.response.success

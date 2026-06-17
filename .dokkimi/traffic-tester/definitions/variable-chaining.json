@@ -332,9 +332,7 @@
                   }
                 }
               ],
-              "postRequestLogs": [
-                "CHAIN: Complete for user {{bobName}}"
-              ]
+              "postRequestLogs": ["CHAIN: Complete for user {{bobName}}"]
             }
           },
           "extract": {

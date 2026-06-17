@@ -92,7 +92,7 @@ tests:
           database: postgres-db
           query: "INSERT INTO users (email, name) VALUES ('hank@example.com', 'Hank') RETURNING id"
         extract:
-          hankId: "$.response.data[0].id"
+          hankId: '$.response.data[0].id'
         assertions:
           - assertions:
               - path: $.response.success
