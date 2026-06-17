@@ -241,9 +241,12 @@ func (e *TestExecutor) ExecuteTests(ctx context.Context, testConfig *TestConfig,
 			break
 		}
 
-		// Seed test-level variables when entering a new test's steps.
+		// Reset and re-seed variables when entering a new test's steps.
+		// Without the reset, extracted variables from prior tests leak
+		// into subsequent tests — creating hidden cross-test dependencies.
 		if fs.testIndex != lastTestIndex {
 			lastTestIndex = fs.testIndex
+			e.varCtx.Reset()
 			if testConfig.Variables != nil {
 				for name, value := range testConfig.Variables {
 					e.varCtx.Set(name, value)
