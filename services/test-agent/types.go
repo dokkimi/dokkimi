@@ -24,10 +24,10 @@ type HealthStatusDetails struct {
 
 // TestConfig represents the top-level test configuration from ConfigMap
 type TestConfig struct {
-	TestRunID      string            `json:"testRunId"`
-	TimeoutSeconds int               `json:"timeoutSeconds"`
-	ExecutionMode  string            `json:"executionMode"` // "auto" | "manual" (default: "auto")
-	Tests          []TestDefinition           `json:"tests"`
+	TestRunID      string                 `json:"testRunId"`
+	TimeoutSeconds int                    `json:"timeoutSeconds"`
+	ExecutionMode  string                 `json:"executionMode"` // "auto" | "manual" (default: "auto")
+	Tests          []TestDefinition       `json:"tests"`
 	Variables      map[string]interface{} `json:"variables,omitempty"`
 }
 
@@ -47,7 +47,7 @@ type TestDefinition struct {
 	TimeoutSeconds int                    `json:"timeoutSeconds,omitempty"`
 	StopOnFailure  *bool                  `json:"stopOnFailure,omitempty"` // pointer to distinguish unset from false
 	Variables      map[string]interface{} `json:"variables,omitempty"`
-	Steps          []TestStep        `json:"steps"`
+	Steps          []TestStep             `json:"steps"`
 }
 
 // TestStep represents a single step: action + extract + assertions
