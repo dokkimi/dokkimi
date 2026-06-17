@@ -19,6 +19,60 @@ import {
 } from './validate-helpers';
 
 // ---------------------------------------------------------------------------
+// Path format validation
+// ---------------------------------------------------------------------------
+
+const DEPRECATED_PATH_PATTERNS: [RegExp, string][] = [
+  [/^\$\.body\./, 'Did you mean "$.response.body."?'],
+  [/^\$\.headers\./, 'Did you mean "$.response.headers."?'],
+  [/^\$\.statusCode$/, 'Did you mean "$.response.status"?'],
+  [/^\$\.extracted\./, 'Did you mean "$.variables."?'],
+];
+
+const OLD_PATH_SUGGESTIONS: [RegExp, string][] = [
+  [/^response\.body\./, 'Did you mean "$.response.body."?'],
+  [/^response\.status/, 'Did you mean "$.response.status"?'],
+  [/^response\.headers?\./, 'Did you mean "$.response.headers."?'],
+  [/^request\./, 'Did you mean "$.request."?'],
+  [/^responseTime$/, 'Did you mean "$.responseTime"?'],
+  [/^data\[/, 'Did you mean "$.response.data["?'],
+  [/^success$/, 'Did you mean "$.response.success"?'],
+  [/^rowsAffected$/, 'Did you mean "$.response.rowsAffected"?'],
+  [/^error$/, 'Did you mean "$.response.error"?'],
+  [/^duration$/, 'Did you mean "$.responseTime"?'],
+];
+
+function validatePathFormat(
+  pathValue: string,
+  ctx: string,
+  r: ValidationResult,
+): void {
+  if (pathValue.startsWith('{{')) {
+    return;
+  }
+
+  for (const [pattern, msg] of DEPRECATED_PATH_PATTERNS) {
+    if (pattern.test(pathValue)) {
+      err(r, `${ctx}: path "${pathValue}" uses a deprecated format. ${msg}`);
+      return;
+    }
+  }
+
+  if (pathValue.startsWith('$.')) {
+    return;
+  }
+
+  let suggestion = '';
+  for (const [pattern, msg] of OLD_PATH_SUGGESTIONS) {
+    if (pattern.test(pathValue)) {
+      suggestion = ` ${msg}`;
+      break;
+    }
+  }
+  err(r, `${ctx}: path "${pathValue}" must start with "$.".${suggestion}`);
+}
+
+// ---------------------------------------------------------------------------
 // Count assertion
 // ---------------------------------------------------------------------------
 
@@ -125,7 +179,7 @@ export function validateExtractRules(
     extract as Record<string, unknown>,
   )) {
     if (typeof value === 'string') {
-      // Simple JSONPath — valid
+      validatePathFormat(value, `${ctx}.extract["${key}"]`, r);
     } else if (value && typeof value === 'object' && !Array.isArray(value)) {
       const rule = value as Record<string, unknown>;
       const validKeys = new Set(['path', 'pattern', 'group']);
@@ -136,6 +190,8 @@ export function validateExtractRules(
       }
       if (typeof rule.path !== 'string' || !rule.path) {
         err(r, `${ctx}.extract["${key}"]: "path" must be a non-empty string`);
+      } else {
+        validatePathFormat(rule.path, `${ctx}.extract["${key}"]`, r);
       }
       if (typeof rule.pattern !== 'string' || !rule.pattern) {
         err(
@@ -234,6 +290,9 @@ export function validateAssertionBlock(
             `${ctx}.assertions[${i}]`,
             r,
           );
+          if (typeof a.path === 'string') {
+            validatePathFormat(a.path, `${ctx}.assertions[${i}]`, r);
+          }
           if (
             a.operator !== undefined &&
             !VALID_ASSERTION_OPERATORS.includes(

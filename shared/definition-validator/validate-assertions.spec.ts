@@ -11,14 +11,62 @@ import { makeResult } from './test-helpers';
 // ---------------------------------------------------------------------------
 
 describe('validateExtractRules', () => {
-  it('accepts simple string paths', () => {
+  it('accepts simple string paths with $. prefix', () => {
     const r = makeResult();
     validateExtractRules(
-      { userId: '$.body.id', token: '$.headers.auth' },
+      { userId: '$.response.body.id', token: '$.response.headers.auth' },
       'ctx',
       r,
     );
     expect(r.errors).toHaveLength(0);
+  });
+
+  it('accepts paths starting with {{ (variable interpolation)', () => {
+    const r = makeResult();
+    validateExtractRules({ key: '{{dynamicPath}}' }, 'ctx', r);
+    expect(r.errors).toHaveLength(0);
+  });
+
+  it('errors on extract path without $. prefix', () => {
+    const r = makeResult();
+    validateExtractRules({ userId: 'body.id' }, 'ctx', r);
+    expect(r.errors.some((e) => e.includes('must start with "$."'))).toBe(true);
+  });
+
+  it('errors on deprecated $.body. path and suggests correction', () => {
+    const r = makeResult();
+    validateExtractRules({ userId: '$.body.id' }, 'ctx', r);
+    expect(
+      r.errors.some(
+        (e) =>
+          e.includes('deprecated format') &&
+          e.includes('Did you mean "$.response.body."'),
+      ),
+    ).toBe(true);
+  });
+
+  it('errors on deprecated $.statusCode path and suggests correction', () => {
+    const r = makeResult();
+    validateExtractRules({ code: '$.statusCode' }, 'ctx', r);
+    expect(
+      r.errors.some(
+        (e) =>
+          e.includes('deprecated format') &&
+          e.includes('Did you mean "$.response.status"'),
+      ),
+    ).toBe(true);
+  });
+
+  it('errors on deprecated $.extracted. path and suggests correction', () => {
+    const r = makeResult();
+    validateExtractRules({ val: '$.extracted.userId' }, 'ctx', r);
+    expect(
+      r.errors.some(
+        (e) =>
+          e.includes('deprecated format') &&
+          e.includes('Did you mean "$.variables."'),
+      ),
+    ).toBe(true);
   });
 
   it('errors when extract is not an object', () => {
@@ -48,7 +96,11 @@ describe('validateExtractRules', () => {
       const r = makeResult();
       validateExtractRules(
         {
-          orderId: { path: '$.body.message', pattern: 'id=(\\d+)', group: 1 },
+          orderId: {
+            path: '$.response.body.message',
+            pattern: 'id=(\\d+)',
+            group: 1,
+          },
         },
         'ctx',
         r,
@@ -60,7 +112,7 @@ describe('validateExtractRules', () => {
       const r = makeResult();
       validateExtractRules(
         {
-          orderId: { path: '$.body.message', pattern: 'id=(\\d+)' },
+          orderId: { path: '$.response.body.message', pattern: 'id=(\\d+)' },
         },
         'ctx',
         r,
@@ -72,7 +124,11 @@ describe('validateExtractRules', () => {
       const r = makeResult();
       validateExtractRules(
         {
-          ts: { path: '$.body.log', pattern: '\\d{4}-\\d{2}-\\d{2}', group: 0 },
+          ts: {
+            path: '$.response.body.log',
+            pattern: '\\d{4}-\\d{2}-\\d{2}',
+            group: 0,
+          },
         },
         'ctx',
         r,
@@ -112,7 +168,7 @@ describe('validateExtractRules', () => {
       const r = makeResult();
       validateExtractRules(
         {
-          x: { path: '$.body.id' },
+          x: { path: '$.response.body.id' },
         },
         'ctx',
         r,
@@ -128,7 +184,7 @@ describe('validateExtractRules', () => {
       const r = makeResult();
       validateExtractRules(
         {
-          x: { path: '$.body.id', pattern: '[invalid' },
+          x: { path: '$.response.body.id', pattern: '[invalid' },
         },
         'ctx',
         r,
@@ -142,7 +198,7 @@ describe('validateExtractRules', () => {
       const r = makeResult();
       validateExtractRules(
         {
-          x: { path: '$.body.id', pattern: '(\\d+)', group: -1 },
+          x: { path: '$.response.body.id', pattern: '(\\d+)', group: -1 },
         },
         'ctx',
         r,
@@ -158,7 +214,7 @@ describe('validateExtractRules', () => {
       const r = makeResult();
       validateExtractRules(
         {
-          x: { path: '$.body.id', pattern: '(\\d+)', group: 1.5 },
+          x: { path: '$.response.body.id', pattern: '(\\d+)', group: 1.5 },
         },
         'ctx',
         r,
@@ -170,11 +226,25 @@ describe('validateExtractRules', () => {
       ).toBe(true);
     });
 
+    it('errors on regex rule path without $. prefix', () => {
+      const r = makeResult();
+      validateExtractRules(
+        {
+          x: { path: 'body.message', pattern: 'id=(\\d+)', group: 1 },
+        },
+        'ctx',
+        r,
+      );
+      expect(r.errors.some((e) => e.includes('must start with "$."'))).toBe(
+        true,
+      );
+    });
+
     it('warns on unknown keys in regex rule', () => {
       const r = makeResult();
       validateExtractRules(
         {
-          x: { path: '$.body.id', pattern: '(\\d+)', bogus: true },
+          x: { path: '$.response.body.id', pattern: '(\\d+)', bogus: true },
         },
         'ctx',
         r,
@@ -189,8 +259,8 @@ describe('validateExtractRules', () => {
     const r = makeResult();
     validateExtractRules(
       {
-        simple: '$.body.id',
-        regex: { path: '$.body.msg', pattern: 'id=(\\d+)', group: 1 },
+        simple: '$.response.body.id',
+        regex: { path: '$.response.body.msg', pattern: 'id=(\\d+)', group: 1 },
       },
       'ctx',
       r,
@@ -377,7 +447,7 @@ describe('validateAssertionBlock', () => {
     const r = makeResult();
     validateAssertionBlock(
       {
-        assertions: [{ path: 'response.status', operator: 'eq', value: 200 }],
+        assertions: [{ path: '$.response.status', operator: 'eq', value: 200 }],
       },
       'ctx',
       r,
@@ -406,7 +476,7 @@ describe('validateAssertionBlock', () => {
     validateAssertionBlock(
       {
         match: { origin: 'svc-a', method: 'POST', url: 'svc-b/api' },
-        assertions: [{ path: 'response.status', operator: 'eq', value: 200 }],
+        assertions: [{ path: '$.response.status', operator: 'eq', value: 200 }],
       },
       'ctx',
       r,
@@ -443,7 +513,7 @@ describe('validateAssertionBlock', () => {
     const r = makeResult();
     validateAssertionBlock(
       {
-        extract: { id: '$.body.id' },
+        extract: { id: '$.response.body.id' },
       },
       'ctx',
       r,
@@ -464,7 +534,7 @@ describe('validateAssertionBlock', () => {
     validateAssertionBlock(
       {
         assertions: [
-          { path: 'response.status', operator: 'bogus', value: 200 },
+          { path: '$.response.status', operator: 'bogus', value: 200 },
         ],
       },
       'ctx',
@@ -514,5 +584,111 @@ describe('validateAssertionBlock', () => {
     expect(r.warnings.some((w) => w.includes('unknown property "bogus"'))).toBe(
       true,
     );
+  });
+
+  describe('path format validation', () => {
+    it('errors on assertion path without $. prefix', () => {
+      const r = makeResult();
+      validateAssertionBlock(
+        {
+          assertions: [{ path: 'response.status', operator: 'eq', value: 200 }],
+        },
+        'ctx',
+        r,
+      );
+      expect(r.errors.some((e) => e.includes('must start with "$."'))).toBe(
+        true,
+      );
+    });
+
+    it('suggests correction for old response.body path', () => {
+      const r = makeResult();
+      validateAssertionBlock(
+        {
+          assertions: [
+            { path: 'response.body.name', operator: 'eq', value: 'Alice' },
+          ],
+        },
+        'ctx',
+        r,
+      );
+      expect(
+        r.errors.some((e) => e.includes('Did you mean "$.response.body."')),
+      ).toBe(true);
+    });
+
+    it('suggests correction for old bare DB paths', () => {
+      const r = makeResult();
+      validateAssertionBlock(
+        {
+          assertions: [{ path: 'success', operator: 'eq', value: true }],
+        },
+        'ctx',
+        r,
+      );
+      expect(
+        r.errors.some((e) => e.includes('Did you mean "$.response.success"')),
+      ).toBe(true);
+    });
+
+    it('suggests correction for old data[] path', () => {
+      const r = makeResult();
+      validateAssertionBlock(
+        {
+          assertions: [
+            { path: 'data[0].email', operator: 'eq', value: 'a@b.com' },
+          ],
+        },
+        'ctx',
+        r,
+      );
+      expect(
+        r.errors.some((e) => e.includes('Did you mean "$.response.data["')),
+      ).toBe(true);
+    });
+
+    it('suggests correction for old responseTime path', () => {
+      const r = makeResult();
+      validateAssertionBlock(
+        {
+          assertions: [{ path: 'responseTime', operator: 'lt', value: 500 }],
+        },
+        'ctx',
+        r,
+      );
+      expect(
+        r.errors.some((e) => e.includes('Did you mean "$.responseTime"')),
+      ).toBe(true);
+    });
+
+    it('suggests correction for old request. path', () => {
+      const r = makeResult();
+      validateAssertionBlock(
+        {
+          assertions: [
+            { path: 'request.method', operator: 'eq', value: 'POST' },
+          ],
+        },
+        'ctx',
+        r,
+      );
+      expect(
+        r.errors.some((e) => e.includes('Did you mean "$.request."')),
+      ).toBe(true);
+    });
+
+    it('accepts paths starting with {{ (variable interpolation)', () => {
+      const r = makeResult();
+      validateAssertionBlock(
+        {
+          assertions: [
+            { path: '{{dynamicPath}}', operator: 'eq', value: 'test' },
+          ],
+        },
+        'ctx',
+        r,
+      );
+      expect(r.errors).toHaveLength(0);
+    });
   });
 });

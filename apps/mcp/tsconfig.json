@@ -5,7 +5,7 @@
     "moduleResolution": "bundler",
     "target": "ES2022",
     "noEmit": true,
-    "types": ["node"]
+    "types": ["node", "jest"]
   },
   "include": ["src/**/*.ts"],
   "exclude": ["node_modules", "dist"]

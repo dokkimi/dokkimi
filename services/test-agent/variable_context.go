@@ -80,63 +80,10 @@ func (vc *VariableContext) ResolveTyped(template string) (interface{}, error) {
 // resolveVarPath looks up a dotted/bracketed path in the variable map.
 // Must be called with vc.mu held (at least RLock).
 func (vc *VariableContext) resolveVarPath(varPath string) (interface{}, error) {
-	segments := parsePathSegments(varPath)
-	if len(segments) == 0 {
+	value, ok := EvaluateDocPath(vc.variables, varPath)
+	if !ok {
 		return nil, fmt.Errorf("variable '%s' is not defined", varPath)
 	}
-
-	rootName := segments[0]
-	value, ok := vc.variables[rootName]
-	if !ok {
-		return nil, fmt.Errorf("variable '%s' is not defined", rootName)
-	}
-
-	for _, seg := range segments[1:] {
-		if value == nil {
-			return nil, fmt.Errorf("variable path '%s' not found: encountered null", varPath)
-		}
-		if arrayMatch := arrayIndexPattern.FindStringSubmatch(seg); arrayMatch != nil {
-			arr, ok := toSlice(value)
-			if !ok {
-				return nil, fmt.Errorf("variable path '%s' not found: expected array at '%s'", varPath, seg)
-			}
-			var index int
-			fmt.Sscanf(arrayMatch[1], "%d", &index)
-			if index < 0 || index >= len(arr) {
-				return nil, fmt.Errorf("variable path '%s' not found: index %d out of bounds", varPath, index)
-			}
-			value = arr[index]
-		} else if seg == "length" {
-			switch v := value.(type) {
-			case []interface{}:
-				value = float64(len(v))
-			case string:
-				value = float64(len([]rune(v)))
-			default:
-				return nil, fmt.Errorf("variable path '%s' not found: .length not supported on %T", varPath, value)
-			}
-		} else {
-			obj, ok := toMap(value)
-			if !ok {
-				return nil, fmt.Errorf("variable path '%s' not found: expected object at '%s'", varPath, seg)
-			}
-			value, ok = obj[seg]
-			if !ok {
-				lowerSeg := strings.ToLower(seg)
-				for k, v := range obj {
-					if strings.ToLower(k) == lowerSeg {
-						value = v
-						ok = true
-						break
-					}
-				}
-				if !ok {
-					return nil, fmt.Errorf("variable path '%s' not found: key '%s' does not exist", varPath, seg)
-				}
-			}
-		}
-	}
-
 	return value, nil
 }
 

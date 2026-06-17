@@ -91,15 +91,25 @@ describe('validateTests', () => {
       );
     });
 
-    it('errors on non-string variable value', () => {
+    it('accepts non-string variable values (numbers, arrays, objects)', () => {
       const r = makeResult();
       validateTests(
-        [{ name: 'test', variables: { key: 123 } }],
+        [
+          {
+            name: 'test',
+            variables: {
+              num: 42,
+              arr: [1, 2, 3],
+              obj: { nested: true },
+              flag: true,
+            },
+          },
+        ],
         r,
         defFile,
         mockFs,
       );
-      expect(r.errors.some((e) => e.includes('must be a string'))).toBe(true);
+      expect(r.errors).toHaveLength(0);
     });
   });
 
@@ -581,7 +591,7 @@ describe('validateStep', () => {
       validateStep(
         {
           action: { type: 'wait', durationMs: 100 },
-          extract: { userId: '$.body.id' },
+          extract: { userId: '$.response.body.id' },
         },
         'ctx',
         r,
@@ -633,7 +643,7 @@ describe('validateStep', () => {
           assertions: [
             {
               assertions: [
-                { path: 'response.status', operator: 'eq', value: 200 },
+                { path: '$.response.status', operator: 'eq', value: 200 },
               ],
             },
           ],
@@ -652,7 +662,7 @@ describe('validateStep', () => {
           assertions: [
             {
               assertions: [
-                { path: 'response.status', operator: 'bogus', value: 200 },
+                { path: '$.response.status', operator: 'bogus', value: 200 },
               ],
             },
           ],
@@ -674,7 +684,7 @@ describe('validateStep', () => {
             {
               match: { origin: 'svc-a', method: 'POST', url: 'svc-b/api' },
               assertions: [
-                { path: 'response.status', operator: 'eq', value: 200 },
+                { path: '$.response.status', operator: 'eq', value: 200 },
               ],
             },
           ],
@@ -778,7 +788,7 @@ describe('validateStep', () => {
           action: { type: 'httpRequest', method: 'GET', url: '/api' },
           assertions: [
             {
-              extract: { id: '$.body.id' },
+              extract: { id: '$.response.body.id' },
             },
           ],
         },
@@ -1099,19 +1109,22 @@ describe('resolveVariablesRef', () => {
     expect(r.errors.some((e) => e.includes('could not be parsed'))).toBe(true);
   });
 
-  it('errors when $ref file has non-string values', () => {
+  it('accepts $ref file with non-string values', () => {
     const fs = makeMockFs({
-      '/shared/bad-vars.json': JSON.stringify({ key: 123 }),
+      '/shared/typed-vars.json': JSON.stringify({
+        count: 42,
+        tags: ['a', 'b'],
+      }),
     });
     const r = makeResult();
     const result = resolveVariablesRef(
-      { $ref: '../shared/bad-vars.json' },
+      { $ref: '../shared/typed-vars.json' },
       '/defs/test.json',
       r,
       fs,
     );
-    expect(result).toBeNull();
-    expect(r.errors.some((e) => e.includes('must be a string'))).toBe(true);
+    expect(result).toEqual({ count: 42, tags: ['a', 'b'] });
+    expect(r.errors).toHaveLength(0);
   });
 
   it('errors when $ref file has non-alphanumeric keys', () => {

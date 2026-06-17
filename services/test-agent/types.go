@@ -27,8 +27,8 @@ type TestConfig struct {
 	TestRunID      string            `json:"testRunId"`
 	TimeoutSeconds int               `json:"timeoutSeconds"`
 	ExecutionMode  string            `json:"executionMode"` // "auto" | "manual" (default: "auto")
-	Tests          []TestDefinition  `json:"tests"`
-	Variables      map[string]string `json:"variables,omitempty"`
+	Tests          []TestDefinition           `json:"tests"`
+	Variables      map[string]interface{} `json:"variables,omitempty"`
 }
 
 // ExecuteRequest is the body for POST /execute
@@ -42,11 +42,11 @@ type ExecuteRequest struct {
 
 // TestDefinition represents a named test with sequential steps
 type TestDefinition struct {
-	Name           string            `json:"name"`
-	Description    string            `json:"description,omitempty"`
-	TimeoutSeconds int               `json:"timeoutSeconds,omitempty"`
-	StopOnFailure  *bool             `json:"stopOnFailure,omitempty"` // pointer to distinguish unset from false
-	Variables      map[string]string `json:"variables,omitempty"`
+	Name           string                 `json:"name"`
+	Description    string                 `json:"description,omitempty"`
+	TimeoutSeconds int                    `json:"timeoutSeconds,omitempty"`
+	StopOnFailure  *bool                  `json:"stopOnFailure,omitempty"` // pointer to distinguish unset from false
+	Variables      map[string]interface{} `json:"variables,omitempty"`
 	Steps          []TestStep        `json:"steps"`
 }
 

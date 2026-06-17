@@ -52,7 +52,7 @@ func TestTestExecutor_ExecuteStep(t *testing.T) {
 		{
 			name: "successful POST request",
 			step: TestStep{
-				Action: StepAction{Type: "httpRequest", Method: "POST", URL: "test-service/api/users", Body: map[string]string{"name": "test"}},
+				Action: StepAction{Type: "httpRequest", Method: "POST", URL: "test-service/api/users", Body: map[string]interface{}{"name": "test"}},
 			},
 			wantError: false,
 		},
@@ -155,14 +155,14 @@ func TestTestExecutor_FlattenSteps_DefinitionLevelVariables(t *testing.T) {
 	testConfig := &TestConfig{
 		TestRunID:      "test-123",
 		TimeoutSeconds: 30,
-		Variables: map[string]string{
+		Variables: map[string]interface{}{
 			"defVar":    "from-definition",
 			"sharedVar": "from-definition",
 		},
 		Tests: []TestDefinition{
 			{
 				Name: "Test 1",
-				Variables: map[string]string{
+				Variables: map[string]interface{}{
 					"testVar":   "from-test",
 					"sharedVar": "from-test", // should override definition-level
 				},
@@ -209,7 +209,7 @@ func TestTestExecutor_FlattenSteps_NoDefinitionVariables(t *testing.T) {
 		Tests: []TestDefinition{
 			{
 				Name: "Test 1",
-				Variables: map[string]string{
+				Variables: map[string]interface{}{
 					"testVar": "value",
 				},
 				Steps: []TestStep{
@@ -239,7 +239,7 @@ func TestTestExecutor_FlattenSteps_MultiTestVariableIsolation(t *testing.T) {
 	testConfig := &TestConfig{
 		TestRunID:      "test-123",
 		TimeoutSeconds: 30,
-		Variables: map[string]string{
+		Variables: map[string]interface{}{
 			"connStr": "default-conn",
 		},
 		Tests: []TestDefinition{
@@ -251,7 +251,7 @@ func TestTestExecutor_FlattenSteps_MultiTestVariableIsolation(t *testing.T) {
 			},
 			{
 				Name: "Test 2 — overrides connStr",
-				Variables: map[string]string{
+				Variables: map[string]interface{}{
 					"connStr": "custom-conn",
 				},
 				Steps: []TestStep{

@@ -121,7 +121,7 @@ type flatStep struct {
 	testIndex     int // 0-based index of the parent test (suite)
 	stepIndex     int // 0-based index of the step within the parent test
 	step          TestStep
-	testVariables map[string]string // test-level variables to seed when this test starts
+	testVariables map[string]interface{} // test-level variables to seed when this test starts
 }
 
 // label returns a 1-based "Step X.Y" string matching the CLI display.

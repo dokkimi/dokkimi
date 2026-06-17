@@ -79,7 +79,7 @@ tests:
             email: '{{testEmail}}'
         assertions:
           - assertions:
-              - path: response.status
+              - path: $.response.status
                 operator: eq
                 value: 201
 ```

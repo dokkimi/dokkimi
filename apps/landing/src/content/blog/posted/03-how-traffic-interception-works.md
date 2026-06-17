@@ -74,7 +74,7 @@ After all steps in a test complete, the assertion engine queries the captured tr
     method: POST
     url: payment-service/v1/charges
   assertions:
-    - path: request.body.amount
+    - path: $.request.body.amount
       operator: eq
       value: 1998
 ```

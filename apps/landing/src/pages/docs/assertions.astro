@@ -13,11 +13,11 @@ import CodeBlock from '../../components/CodeBlock.astro';
   <p>Asserts on the step's own response (HTTP response or DB query result). A self block has no <code>match</code> or <code>service</code> field.</p>
   <CodeBlock code={`{
   "assertions": [
-    { "path": "response.status", "operator": "eq", "value": 201 },
-    { "path": "response.body.id", "operator": "exists" },
-    { "path": "response.body.name", "operator": "eq", "value": "{{userName}}" },
-    { "path": "response.header.content-type", "operator": "contains", "value": "application/json" },
-    { "path": "responseTime", "operator": "lt", "value": 500 }
+    { "path": "$.response.status", "operator": "eq", "value": 201 },
+    { "path": "$.response.body.id", "operator": "exists" },
+    { "path": "$.response.body.name", "operator": "eq", "value": "{{userName}}" },
+    { "path": "$.response.headers.content-type", "operator": "contains", "value": "application/json" },
+    { "path": "$.responseTime", "operator": "lt", "value": 500 }
   ]
 }`} lang="json" />
 
@@ -32,9 +32,9 @@ import CodeBlock from '../../components/CodeBlock.astro';
   "count": { "operator": "eq", "value": 1 },
   "assertionScope": "all",
   "assertions": [
-    { "path": "request.body.email", "operator": "eq", "value": "{{email}}" },
-    { "path": "response.status", "operator": "eq", "value": 201 },
-    { "path": "response.body.id", "operator": "exists" }
+    { "path": "$.request.body.email", "operator": "eq", "value": "{{email}}" },
+    { "path": "$.response.status", "operator": "eq", "value": 201 },
+    { "path": "$.response.body.id", "operator": "exists" }
   ]
 }`} lang="json" />
 
@@ -104,6 +104,7 @@ import CodeBlock from '../../components/CodeBlock.astro';
   </table>
 
   <h2>Assertion paths</h2>
+  <p>All assertion and extract paths use the unified root context. Paths must start with <code>$.</code> followed by the document root field.</p>
 
   <h3>HTTP responses (self block or HTTP call block)</h3>
   <table>
@@ -111,17 +112,17 @@ import CodeBlock from '../../components/CodeBlock.astro';
       <tr><th>Path</th><th>Description</th></tr>
     </thead>
     <tbody>
-      <tr><td><code>response.status</code></td><td>HTTP status code (integer)</td></tr>
-      <tr><td><code>response.body</code></td><td>Entire response body</td></tr>
-      <tr><td><code>response.body.field</code></td><td>Top-level field in response body</td></tr>
-      <tr><td><code>response.body.nested.field</code></td><td>Nested field (dot notation)</td></tr>
-      <tr><td><code>response.body[0].field</code></td><td>Array element access</td></tr>
-      <tr><td><code>response.header.header-name</code></td><td>Response header (case-insensitive)</td></tr>
-      <tr><td><code>request.method</code></td><td>HTTP method of the request</td></tr>
-      <tr><td><code>request.body</code></td><td>Entire request body</td></tr>
-      <tr><td><code>request.body.field</code></td><td>Field in request body</td></tr>
-      <tr><td><code>request.header.header-name</code></td><td>Request header (case-insensitive)</td></tr>
-      <tr><td><code>responseTime</code></td><td>Response time in milliseconds</td></tr>
+      <tr><td><code>$.response.status</code></td><td>HTTP status code (integer)</td></tr>
+      <tr><td><code>$.response.body</code></td><td>Entire response body</td></tr>
+      <tr><td><code>$.response.body.field</code></td><td>Top-level field in response body</td></tr>
+      <tr><td><code>$.response.body.nested.field</code></td><td>Nested field (dot notation)</td></tr>
+      <tr><td><code>$.response.body[0].field</code></td><td>Array element access</td></tr>
+      <tr><td><code>$.response.headers.header-name</code></td><td>Response header (case-insensitive)</td></tr>
+      <tr><td><code>$.request.method</code></td><td>HTTP method of the request</td></tr>
+      <tr><td><code>$.request.body</code></td><td>Entire request body</td></tr>
+      <tr><td><code>$.request.body.field</code></td><td>Field in request body</td></tr>
+      <tr><td><code>$.request.headers.header-name</code></td><td>Request header (case-insensitive)</td></tr>
+      <tr><td><code>$.responseTime</code></td><td>Response time in milliseconds</td></tr>
     </tbody>
   </table>
 
@@ -131,11 +132,11 @@ import CodeBlock from '../../components/CodeBlock.astro';
       <tr><th>Path</th><th>Description</th></tr>
     </thead>
     <tbody>
-      <tr><td><code>success</code></td><td>Boolean — did the query succeed?</td></tr>
-      <tr><td><code>data</code></td><td>Array of result rows</td></tr>
-      <tr><td><code>data[0].column</code></td><td>Specific column from a result row</td></tr>
-      <tr><td><code>rowsAffected</code></td><td>Number of affected rows (integer)</td></tr>
-      <tr><td><code>error</code></td><td>Error message if query failed</td></tr>
+      <tr><td><code>$.response.success</code></td><td>Boolean — did the query succeed?</td></tr>
+      <tr><td><code>$.response.data</code></td><td>Array of result rows</td></tr>
+      <tr><td><code>$.response.data[0].column</code></td><td>Specific column from a result row</td></tr>
+      <tr><td><code>$.response.rowsAffected</code></td><td>Number of affected rows (integer)</td></tr>
+      <tr><td><code>$.response.error</code></td><td>Error message if query failed</td></tr>
     </tbody>
   </table>
 
@@ -145,14 +146,17 @@ import CodeBlock from '../../components/CodeBlock.astro';
       <tr><th>Operator</th><th>Value required?</th><th>Value type</th><th>Description</th></tr>
     </thead>
     <tbody>
-      <tr><td><code>eq</code></td><td>Yes</td><td>any</td><td>Exact equality (case-insensitive for strings)</td></tr>
-      <tr><td><code>ne</code></td><td>Yes</td><td>any</td><td>Not equal</td></tr>
+      <tr><td><code>eq</code></td><td>Yes</td><td>any</td><td>Equality with coercion: numeric (<code>1</code> == <code>"1"</code>) and boolean (<code>true</code> == <code>"TRUE"</code>); case-sensitive for non-boolean strings</td></tr>
+      <tr><td><code>eqIgnoreCase</code></td><td>Yes</td><td>any</td><td>Equality, case-insensitive for strings</td></tr>
+      <tr><td><code>ne</code></td><td>Yes</td><td>any</td><td>Not equal (inverse of <code>eq</code>)</td></tr>
       <tr><td><code>gt</code></td><td>Yes</td><td>number</td><td>Greater than</td></tr>
       <tr><td><code>gte</code></td><td>Yes</td><td>number</td><td>Greater than or equal</td></tr>
       <tr><td><code>lt</code></td><td>Yes</td><td>number</td><td>Less than</td></tr>
       <tr><td><code>lte</code></td><td>Yes</td><td>number</td><td>Less than or equal</td></tr>
-      <tr><td><code>contains</code></td><td>Yes</td><td>string</td><td>Substring match (case-insensitive)</td></tr>
-      <tr><td><code>notContains</code></td><td>Yes</td><td>string</td><td>Substring does NOT match</td></tr>
+      <tr><td><code>contains</code></td><td>Yes</td><td>string</td><td>Substring match (case-sensitive)</td></tr>
+      <tr><td><code>notContains</code></td><td>Yes</td><td>string</td><td>Substring does NOT match (case-sensitive)</td></tr>
+      <tr><td><code>containsIgnoreCase</code></td><td>Yes</td><td>string</td><td>Substring match (case-insensitive)</td></tr>
+      <tr><td><code>notContainsIgnoreCase</code></td><td>Yes</td><td>string</td><td>Substring does NOT match (case-insensitive)</td></tr>
       <tr><td><code>matches</code></td><td>Yes</td><td>string (regex)</td><td>Regular expression match</td></tr>
       <tr><td><code>exists</code></td><td>No</td><td>—</td><td>Value exists (defined and not null)</td></tr>
       <tr><td><code>notExists</code></td><td>No</td><td>—</td><td>Value does not exist</td></tr>
@@ -166,6 +170,60 @@ import CodeBlock from '../../components/CodeBlock.astro';
       <tr><td><code>arrayNotContains</code></td><td>Yes</td><td>any</td><td>Array does NOT contain the given element</td></tr>
     </tbody>
   </table>
+
+  <h2>Type coercion and edge cases</h2>
+  <p>The <code>eq</code> and <code>ne</code> operators use loose comparison with automatic type coercion. Understanding these rules helps avoid surprising results, especially with typed variables.</p>
+
+  <h3>How <code>eq</code> compares values</h3>
+  <p><code>eq</code> checks three things in order:</p>
+  <ol>
+    <li><strong>Exact match</strong> — identical type and value (e.g. <code>42 == 42</code>, <code>"hello" == "hello"</code>)</li>
+    <li><strong>Boolean coercion</strong> — if both sides can be interpreted as booleans, compare as booleans. The string <code>"true"</code> (any casing) coerces to <code>true</code>, <code>"false"</code> to <code>false</code></li>
+    <li><strong>Numeric coercion</strong> — if both sides can be parsed as numbers, compare as numbers. The string <code>"42"</code> coerces to <code>42</code>, <code>"1.5"</code> to <code>1.5</code></li>
+  </ol>
+  <p><code>ne</code> is the inverse of <code>eq</code> — it uses the same coercion rules.</p>
+
+  <h3>What passes</h3>
+  <table>
+    <thead>
+      <tr><th>Actual</th><th>Expected</th><th>Result</th><th>Why</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>42</code></td><td><code>"42"</code></td><td>pass</td><td>Both parse as <code>float64(42)</code></td></tr>
+      <tr><td><code>"1.0"</code></td><td><code>1</code></td><td>pass</td><td>Both parse as <code>float64(1)</code></td></tr>
+      <tr><td><code>true</code></td><td><code>"true"</code></td><td>pass</td><td>Both coerce to boolean <code>true</code></td></tr>
+      <tr><td><code>"FALSE"</code></td><td><code>false</code></td><td>pass</td><td>Case-insensitive boolean coercion</td></tr>
+      <tr><td><code>[1, 2]</code></td><td><code>[1, 2]</code></td><td>pass</td><td>Deep equality</td></tr>
+    </tbody>
+  </table>
+
+  <h3>What fails (and may surprise you)</h3>
+  <table>
+    <thead>
+      <tr><th>Actual</th><th>Expected</th><th>Result</th><th>Why</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>"Hello"</code></td><td><code>"hello"</code></td><td>fail</td><td><code>eq</code> is case-sensitive for strings. Use <code>eqIgnoreCase</code></td></tr>
+      <tr><td><code>"  42  "</code></td><td><code>42</code></td><td>fail</td><td>Leading/trailing whitespace prevents numeric parsing</td></tr>
+      <tr><td><code>null</code></td><td><code>""</code></td><td>fail</td><td><code>null</code> is not coerced to empty string. Use <code>exists</code>/<code>notExists</code> for null checks</td></tr>
+      <tr><td><code>"0"</code></td><td><code>false</code></td><td>fail</td><td>Numbers are not coerced to booleans — only <code>"true"</code>/<code>"false"</code> strings match booleans</td></tr>
+      <tr><td><code>0</code></td><td><code>false</code></td><td>fail</td><td>Same reason — no number-to-boolean bridge</td></tr>
+    </tbody>
+  </table>
+
+  <div class="callout">
+    <p><strong><code>ne</code> inherits coercion.</strong> Because <code>ne</code> is <code>!eq</code>, coercion works in reverse: <code>"42" ne 42</code> <em>fails</em> (they're considered equal). If you need to distinguish the string <code>"42"</code> from the number <code>42</code>, use the <code>type</code> operator instead.</p>
+  </div>
+
+  <h3>Numeric operators (<code>gt</code>, <code>gte</code>, <code>lt</code>, <code>lte</code>)</h3>
+  <p>These always coerce both sides to numbers. If either side can't be parsed as a number, the assertion <strong>errors</strong> (not just fails). Numeric strings like <code>"200"</code> are coerced, but <code>"fast"</code> or <code>true</code> will error.</p>
+
+  <h3>String operators (<code>contains</code>, <code>matches</code>)</h3>
+  <p>Both sides are converted to their string representation before comparison. This means non-string values are stringified: numbers become <code>"42"</code>, booleans become <code>"true"</code>/<code>"false"</code>, objects become their Go <code>fmt.Sprintf("%v")</code> representation (which may not match JSON). For reliable results, use string operators on string values.</p>
+
+  <div class="callout">
+    <p><strong>Tip:</strong> If you're unsure about a value's type, use the <code>type</code> operator to assert it explicitly before comparing: <code>&#123; "path": "$.response.body.count", "operator": "type", "value": "number" &#125;</code></p>
+  </div>
 
   <div class="nav-links">
     <a href="/docs/variables">← Variables</a>

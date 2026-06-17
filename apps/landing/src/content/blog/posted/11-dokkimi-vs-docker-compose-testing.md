@@ -35,9 +35,9 @@ Dokkimi's interceptor sidecar captures every HTTP call between services automati
     "url": "payment-service/api/charges"
   },
   "assertions": [
-    { "path": "request.body.amount_cents", "operator": "eq", "value": 1998 },
-    { "path": "request.body.currency", "operator": "eq", "value": "usd" },
-    { "path": "response.status", "operator": "eq", "value": 201 }
+    { "path": "$.request.body.amount_cents", "operator": "eq", "value": 1998 },
+    { "path": "$.request.body.currency", "operator": "eq", "value": "usd" },
+    { "path": "$.response.status", "operator": "eq", "value": 201 }
   ]
 }
 ```

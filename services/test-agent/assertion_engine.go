@@ -152,9 +152,29 @@ func looseEqual(a, b interface{}) bool {
 	if reflect.DeepEqual(a, b) {
 		return true
 	}
+	ab, aOk := toBool(a)
+	bb, bOk := toBool(b)
+	if aOk && bOk {
+		return ab == bb
+	}
 	af, aOk := toFloat(a)
 	bf, bOk := toFloat(b)
 	return aOk && bOk && af == bf
+}
+
+func toBool(v interface{}) (bool, bool) {
+	switch b := v.(type) {
+	case bool:
+		return b, true
+	case string:
+		switch strings.ToLower(b) {
+		case "true":
+			return true, true
+		case "false":
+			return false, true
+		}
+	}
+	return false, false
 }
 
 func ciEquals(a, b interface{}) bool {

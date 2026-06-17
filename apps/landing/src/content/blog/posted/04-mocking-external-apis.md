@@ -47,10 +47,10 @@ assertions:
       method: POST
       url: api.stripe.com/v1/charges
     assertions:
-      - path: request.body.amount
+      - path: $.request.body.amount
         operator: eq
         value: 1998
-      - path: request.body.currency
+      - path: $.request.body.currency
         operator: eq
         value: 'usd'
 ```

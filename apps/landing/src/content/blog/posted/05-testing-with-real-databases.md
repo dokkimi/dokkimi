@@ -88,10 +88,10 @@ tests:
           url: api-gateway/api/orders/1
         assertions:
           - assertions:
-              - path: response.status
+              - path: $.response.status
                 operator: eq
                 value: 200
-              - path: response.body.customer_email
+              - path: $.response.body.customer_email
                 operator: eq
                 value: 'existing@example.com'
 ```

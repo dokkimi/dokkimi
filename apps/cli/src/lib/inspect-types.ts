@@ -75,7 +75,7 @@ export interface DefinitionSnapshot {
 
 export interface TestSuite {
   name?: string;
-  variables?: Record<string, string>;
+  variables?: Record<string, unknown>;
   steps: TestStep[];
 }
 

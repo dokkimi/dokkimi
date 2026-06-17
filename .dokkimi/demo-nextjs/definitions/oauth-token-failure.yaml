@@ -102,4 +102,4 @@ tests:
                 value: /login
               - path: $.variables.dashboardCardExists
                 operator: eq
-                value: 'false'
+                value: false

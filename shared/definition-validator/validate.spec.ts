@@ -278,15 +278,15 @@ describe('validateDefinition', () => {
       );
     });
 
-    it('errors on non-string variable value', () => {
+    it('accepts non-string variable values', () => {
       const r = makeResult();
       validateDefinition(
-        { name: 'def', items: [], variables: { key: 123 } },
+        { name: 'def', items: [], variables: { key: 123, arr: [1, 2] } },
         '/f.json',
         r,
         fs,
       );
-      expect(r.errors.some((e) => e.includes('must be a string'))).toBe(true);
+      expect(r.errors).toHaveLength(0);
     });
   });
 });

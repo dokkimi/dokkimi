@@ -276,12 +276,16 @@ func AssembleRootContext(
 	varCtx *VariableContext,
 	stepResp map[string]interface{},
 ) map[string]interface{} {
+	traffic, httpTimeline := assembleTrafficList(httpLogs, stepExec)
+	consoleLogList, consoleTimeline := assembleConsoleLogList(consoleLogs, stepExec)
+	dbLogList, dbTimeline := assembleDbLogList(dbLogs, stepExec)
+
 	rootCtx := map[string]interface{}{
 		"variables":   varCtx.Snapshot(),
-		"traffic":     assembleTrafficList(httpLogs, stepExec),
-		"consoleLogs": assembleConsoleLogList(consoleLogs, stepExec),
-		"dbLogs":      assembleDbLogList(dbLogs, stepExec),
-		"timeline":    assembleTimeline(httpLogs, dbLogs, consoleLogs, stepExec),
+		"traffic":     traffic,
+		"consoleLogs": consoleLogList,
+		"dbLogs":      dbLogList,
+		"timeline":    mergeTimeline(httpTimeline, consoleTimeline, dbTimeline),
 	}
 
 	switch step.Action.Type {
@@ -333,9 +337,10 @@ func AssembleRootContext(
 	return rootCtx
 }
 
-func assembleTrafficList(httpLogs []HttpLogMessage, stepExec StepExecution) []interface{} {
+func assembleTrafficList(httpLogs []HttpLogMessage, stepExec StepExecution) ([]interface{}, []timelineEntry) {
 	startTime, endTime := stepTimeWindow(stepExec)
 	var traffic []interface{}
+	var timeline []timelineEntry
 	for i := range httpLogs {
 		l := &httpLogs[i]
 		ts := l.Timestamp
@@ -373,37 +378,62 @@ func assembleTrafficList(httpLogs []HttpLogMessage, stepExec StepExecution) []in
 			},
 		}
 		traffic = append(traffic, entry)
+		timeline = append(timeline, timelineEntry{
+			timestamp: logTime,
+			entry: map[string]interface{}{
+				"type":      "httpTraffic",
+				"timestamp": ts,
+				"from":      from,
+				"to":        to,
+				"method":    l.Method,
+				"url":       l.URL,
+				"status":    ptrIntToFloat(l.StatusCode),
+			},
+		})
 	}
 	if traffic == nil {
-		return []interface{}{}
+		traffic = []interface{}{}
 	}
-	return traffic
+	return traffic, timeline
 }
 
-func assembleConsoleLogList(consoleLogs []ConsoleLogMessage, stepExec StepExecution) []interface{} {
+func assembleConsoleLogList(consoleLogs []ConsoleLogMessage, stepExec StepExecution) ([]interface{}, []timelineEntry) {
 	startTime, endTime := stepTimeWindow(stepExec)
 	var result []interface{}
+	var timeline []timelineEntry
 	for _, l := range consoleLogs {
 		logTime := time.Unix(int64(l.Timestamp), int64((l.Timestamp-float64(int64(l.Timestamp)))*1e9))
 		if logTime.Before(startTime) || logTime.After(endTime) {
 			continue
 		}
-		result = append(result, map[string]interface{}{
+		entry := map[string]interface{}{
 			"timestamp": l.Timestamp,
 			"service":   l.Service,
 			"level":     l.Level,
 			"message":   l.Message,
+		}
+		result = append(result, entry)
+		timeline = append(timeline, timelineEntry{
+			timestamp: logTime,
+			entry: map[string]interface{}{
+				"type":      "consoleLog",
+				"timestamp": l.Timestamp,
+				"service":   l.Service,
+				"level":     l.Level,
+				"message":   l.Message,
+			},
 		})
 	}
 	if result == nil {
-		return []interface{}{}
+		result = []interface{}{}
 	}
-	return result
+	return result, timeline
 }
 
-func assembleDbLogList(dbLogs []DatabaseLogMessage, stepExec StepExecution) []interface{} {
+func assembleDbLogList(dbLogs []DatabaseLogMessage, stepExec StepExecution) ([]interface{}, []timelineEntry) {
 	startTime, endTime := stepTimeWindow(stepExec)
 	var result []interface{}
+	var timeline []timelineEntry
 	for _, l := range dbLogs {
 		logTime := parseLogTimestamp(l.Timestamp)
 		if logTime.Before(startTime) || logTime.After(endTime) {
@@ -425,64 +455,7 @@ func assembleDbLogList(dbLogs []DatabaseLogMessage, stepExec StepExecution) []in
 			},
 		}
 		result = append(result, entry)
-	}
-	if result == nil {
-		return []interface{}{}
-	}
-	return result
-}
-
-type timelineEntry struct {
-	timestamp time.Time
-	entry     map[string]interface{}
-}
-
-func assembleTimeline(
-	httpLogs []HttpLogMessage,
-	dbLogs []DatabaseLogMessage,
-	consoleLogs []ConsoleLogMessage,
-	stepExec StepExecution,
-) []interface{} {
-	startTime, endTime := stepTimeWindow(stepExec)
-	var entries []timelineEntry
-
-	for i := range httpLogs {
-		l := &httpLogs[i]
-		ts := l.Timestamp
-		if l.RequestSentAt != nil {
-			ts = *l.RequestSentAt
-		}
-		logTime := parseLogTimestamp(ts)
-		if logTime.Before(startTime) || logTime.After(endTime) {
-			continue
-		}
-		var from, to interface{}
-		if l.Origin != nil {
-			from = *l.Origin
-		}
-		if l.Target != nil {
-			to = *l.Target
-		}
-		entries = append(entries, timelineEntry{
-			timestamp: logTime,
-			entry: map[string]interface{}{
-				"type":      "httpTraffic",
-				"timestamp": ts,
-				"from":      from,
-				"to":        to,
-				"method":    l.Method,
-				"url":       l.URL,
-				"status":    ptrIntToFloat(l.StatusCode),
-			},
-		})
-	}
-
-	for _, l := range dbLogs {
-		logTime := parseLogTimestamp(l.Timestamp)
-		if logTime.Before(startTime) || logTime.After(endTime) {
-			continue
-		}
-		entries = append(entries, timelineEntry{
+		timeline = append(timeline, timelineEntry{
 			timestamp: logTime,
 			entry: map[string]interface{}{
 				"type":      "dbQuery",
@@ -493,22 +466,21 @@ func assembleTimeline(
 			},
 		})
 	}
+	if result == nil {
+		result = []interface{}{}
+	}
+	return result, timeline
+}
 
-	for _, l := range consoleLogs {
-		logTime := time.Unix(int64(l.Timestamp), int64((l.Timestamp-float64(int64(l.Timestamp)))*1e9))
-		if logTime.Before(startTime) || logTime.After(endTime) {
-			continue
-		}
-		entries = append(entries, timelineEntry{
-			timestamp: logTime,
-			entry: map[string]interface{}{
-				"type":      "consoleLog",
-				"timestamp": l.Timestamp,
-				"service":   l.Service,
-				"level":     l.Level,
-				"message":   l.Message,
-			},
-		})
+type timelineEntry struct {
+	timestamp time.Time
+	entry     map[string]interface{}
+}
+
+func mergeTimeline(slices ...[]timelineEntry) []interface{} {
+	var entries []timelineEntry
+	for _, s := range slices {
+		entries = append(entries, s...)
 	}
 
 	sort.Slice(entries, func(i, j int) bool {

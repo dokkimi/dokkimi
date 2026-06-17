@@ -231,8 +231,23 @@ func TestExtract_Count(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if got != "7" {
-		t.Errorf("want %q, got %q", "7", got)
+	if got != 7 {
+		t.Errorf("want 7 (int), got %v (%T)", got, got)
+	}
+}
+
+func TestExtract_CountWithRegex(t *testing.T) {
+	b := &fakeBrowser{counts: map[string]int{"li.item": 42}}
+	group := 1
+	got, err := NewUIExtractor(b, 0).Extract(UIExtractSource{
+		From: UIExtractFromCount, Selector: "li.item",
+		Pattern: `(\d)`, Group: &group,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got != "4" {
+		t.Errorf("want %q (string via regex), got %v (%T)", "4", got, got)
 	}
 }
 
@@ -244,8 +259,8 @@ func TestExtract_ExistsTrue(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if got != "true" {
-		t.Errorf("want %q, got %q", "true", got)
+	if got != true {
+		t.Errorf("want true (bool), got %v (%T)", got, got)
 	}
 }
 
@@ -257,8 +272,8 @@ func TestExtract_ExistsFalse(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if got != "false" {
-		t.Errorf("want %q, got %q", "false", got)
+	if got != false {
+		t.Errorf("want false (bool), got %v (%T)", got, got)
 	}
 }
 

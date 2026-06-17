@@ -186,6 +186,34 @@ func TestCompareValues(t *testing.T) {
 		}
 	})
 
+	t.Run("eq coerces string true to bool true", func(t *testing.T) {
+		r := CompareValues("eq", "true", true)
+		if !r.Passed {
+			t.Error("expected pass for string 'true' vs bool true")
+		}
+	})
+
+	t.Run("eq coerces string false to bool false", func(t *testing.T) {
+		r := CompareValues("eq", false, "false")
+		if !r.Passed {
+			t.Error("expected pass for bool false vs string 'false'")
+		}
+	})
+
+	t.Run("eq coerces string TRUE (case-insensitive) to bool true", func(t *testing.T) {
+		r := CompareValues("eq", "TRUE", true)
+		if !r.Passed {
+			t.Error("expected pass for string 'TRUE' vs bool true")
+		}
+	})
+
+	t.Run("eq fails for string true vs bool false", func(t *testing.T) {
+		r := CompareValues("eq", "true", false)
+		if r.Passed {
+			t.Error("expected fail for string 'true' vs bool false")
+		}
+	})
+
 	t.Run("eqIgnoreCase passes for case-mismatched strings", func(t *testing.T) {
 		r := CompareValues("eqIgnoreCase", "Hello", "hello")
 		if !r.Passed {

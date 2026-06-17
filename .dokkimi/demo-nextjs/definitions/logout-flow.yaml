@@ -84,7 +84,7 @@ tests:
                 value: /login
               - path: $.variables.loginButtonExists
                 operator: eq
-                value: 'true'
+                value: true
               - path: $.variables.dashboardCardExists
                 operator: eq
-                value: 'false'
+                value: false

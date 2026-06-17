@@ -65,7 +65,7 @@ export class DockerDeployConfigService {
           timeoutSeconds: number;
           executionMode: string;
           tests: any[];
-          variables?: Record<string, string>;
+          variables?: Record<string, unknown>;
         }
       | undefined;
     let expectedNamespaceItemIds: string[] | undefined;

@@ -73,7 +73,7 @@ Console log assertions are most powerful when combined with HTTP assertions. Her
       amount: 1998
   assertions:
     - assertions:
-        - path: response.status
+        - path: $.response.status
           operator: eq
           value: 200
 
@@ -82,7 +82,7 @@ Console log assertions are most powerful when combined with HTTP assertions. Her
         method: POST
         url: mock-stripe/v1/charges
       assertions:
-        - path: request.body.amount
+        - path: $.request.body.amount
           operator: eq
           value: 1998
 

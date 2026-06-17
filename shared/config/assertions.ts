@@ -46,7 +46,7 @@ export interface TestDefinition {
   description?: string;
   timeoutSeconds?: number;
   stopOnFailure?: boolean;
-  variables?: Record<string, string>;
+  variables?: Record<string, unknown>;
   steps: TestStep[];
 }
 

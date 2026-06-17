@@ -30,7 +30,7 @@ export function resolveVariablesRef(
   r: ValidationResult,
   fs: FileSystem,
   _visited?: Set<string>,
-): Record<string, string> | null {
+): Record<string, unknown> | null {
   const visited = _visited ?? new Set([path.resolve(sourceFilePath)]);
 
   if (visited.size > MAX_REF_DEPTH) {
@@ -45,9 +45,9 @@ export function resolveVariablesRef(
 
   // If no $ref, just pass through (will be validated by caller)
   if (refValue === undefined) {
-    const result: Record<string, string> = {};
+    const result: Record<string, unknown> = {};
     for (const [key, value] of Object.entries(inlineKeys)) {
-      result[key] = value as string;
+      result[key] = value;
     }
     return result;
   }
@@ -64,7 +64,7 @@ export function resolveVariablesRef(
   }
 
   // Resolve and merge left-to-right
-  const merged: Record<string, string> = {};
+  const merged: Record<string, unknown> = {};
   let hasError = false;
 
   for (const ref of refs) {
@@ -116,14 +116,6 @@ export function resolveVariablesRef(
       }
 
       for (const [key, value] of Object.entries(obj)) {
-        if (typeof value !== 'string') {
-          err(
-            r,
-            `variables.$ref "${ref}": value for "${key}" must be a string, got ${typeof value}`,
-          );
-          hasError = true;
-          continue;
-        }
         if (!/^\w+$/.test(key)) {
           err(
             r,
@@ -146,7 +138,7 @@ export function resolveVariablesRef(
 
   // Inline keys override refs
   for (const [key, value] of Object.entries(inlineKeys)) {
-    merged[key] = value as string;
+    merged[key] = value;
   }
 
   return merged;
@@ -185,11 +177,8 @@ export function validateVariablesField(
         `${ctx}.variables: key "${key}" must be alphanumeric (letters, digits, underscores)`,
       );
     }
-    if (typeof value !== 'string') {
-      err(
-        r,
-        `${ctx}.variables: value for "${key}" must be a string, got ${typeof value}`,
-      );
+    if (value === undefined) {
+      err(r, `${ctx}.variables: value for "${key}" must not be undefined`);
     }
   }
 }
