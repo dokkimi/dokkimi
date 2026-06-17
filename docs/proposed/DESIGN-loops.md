@@ -18,13 +18,13 @@ A loop modifier is an optional field on an existing definition object. When pres
 
 The same three modifiers work at every level of the hierarchy:
 
-| Level | What gets repeated |
-|-------|-------------------|
-| **Test** | All steps in the test |
-| **Step** | The action + extract + assertions |
-| **Action** | Just the action (extract + assertions run once after all iterations) |
-| **Assertion block** | The assertions per array element |
-| **UI sub-step** | The UI interaction(s) |
+| Level               | What gets repeated                                                   |
+| ------------------- | -------------------------------------------------------------------- |
+| **Test**            | All steps in the test                                                |
+| **Step**            | The action + extract + assertions                                    |
+| **Action**          | Just the action (extract + assertions run once after all iterations) |
+| **Assertion block** | The assertions per array element                                     |
+| **UI sub-step**     | The UI interaction(s)                                                |
 
 The modifiers are mutually exclusive — a given object can have at most one of `forEach`, `for`, or `repeat`.
 
@@ -36,21 +36,22 @@ The modifiers are mutually exclusive — a given object can have at most one of 
 
 Iterate over an array, running the attached object once per item.
 
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `items` | array \| string | Yes | Inline array, `"{{varName}}"` referencing an extracted array, or a `$` path (assertion level only — resolves against the root context, e.g., `"$.response.body"`, `"$.request.body.users"`, `"$.response.data"`) |
-| `as` | string | Yes | Variable name for the current item and loop namespace |
-| `delayMs` | integer | No | Pause between iterations (default 0) |
+| Field     | Type            | Required | Description                                                                                                                                                                                                      |
+| --------- | --------------- | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `items`   | array \| string | Yes      | Inline array, `"{{varName}}"` referencing an extracted array, or a `$` path (assertion level only — resolves against the root context, e.g., `"$.response.body"`, `"$.request.body.users"`, `"$.response.data"`) |
+| `as`      | string          | Yes      | Variable name for the current item and loop namespace                                                                                                                                                            |
+| `delayMs` | integer         | No       | Pause between iterations (default 0)                                                                                                                                                                             |
 
 **Variables set per iteration:**
 
-| Variable | Type | Description |
-|----------|------|-------------|
-| `{{<as>}}` | any | The current item |
+| Variable           | Type    | Description               |
+| ------------------ | ------- | ------------------------- |
+| `{{<as>}}`         | any     | The current item          |
 | `{{<as>.__index}}` | integer | 0-based iteration counter |
-| `{{<as>.__items}}` | array | The full items array |
+| `{{<as>.__items}}` | array   | The full items array      |
 
 **Semantics:**
+
 - If `items` is a string (`"{{varName}}"`), the variable must resolve to an array at loop entry.
 - If `items` resolves to an empty array, the loop body is skipped entirely (zero iterations, no error).
 
@@ -60,22 +61,23 @@ Iterate over an array, running the attached object once per item.
 
 Iterate from one number to another with a configurable step.
 
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `from` | integer | Yes | Start value (inclusive) |
-| `to` | integer | Yes | End value (inclusive) |
-| `step` | integer | No | Increment per iteration (default 1). Can be negative for descending ranges. Must not be 0. |
-| `as` | string | Yes | Variable name for the current range value and loop namespace |
-| `delayMs` | integer | No | Pause between iterations (default 0) |
+| Field     | Type    | Required | Description                                                                                |
+| --------- | ------- | -------- | ------------------------------------------------------------------------------------------ |
+| `from`    | integer | Yes      | Start value (inclusive)                                                                    |
+| `to`      | integer | Yes      | End value (inclusive)                                                                      |
+| `step`    | integer | No       | Increment per iteration (default 1). Can be negative for descending ranges. Must not be 0. |
+| `as`      | string  | Yes      | Variable name for the current range value and loop namespace                               |
+| `delayMs` | integer | No       | Pause between iterations (default 0)                                                       |
 
 **Variables set per iteration:**
 
-| Variable | Type | Description |
-|----------|------|-------------|
-| `{{<as>}}` | integer | Current value in the range (from, from+step, from+2*step, ...) |
-| `{{<as>.__index}}` | integer | 0-based iteration counter (0, 1, 2, ...) |
+| Variable           | Type    | Description                                                     |
+| ------------------ | ------- | --------------------------------------------------------------- |
+| `{{<as>}}`         | integer | Current value in the range (from, from+step, from+2\*step, ...) |
+| `{{<as>.__index}}` | integer | 0-based iteration counter (0, 1, 2, ...)                        |
 
 **Validation rules:**
+
 - If `step` is positive (or omitted), `from` must be <= `to`.
 - If `step` is negative, `from` must be > `to`.
 - `step: 0` is an error.
@@ -87,20 +89,21 @@ Iterate from one number to another with a configurable step.
 
 Repeat up to `count` times, optionally stopping early when a condition is met.
 
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `count` | integer | Yes | Max iterations (safety cap) |
-| `as` | string | Yes | Variable name for the current iteration counter and loop namespace |
-| `delayMs` | integer | No | Pause between iterations (default 0) |
-| `until` | assertion[] | No | Stop early when all assertions pass |
+| Field     | Type        | Required | Description                                                        |
+| --------- | ----------- | -------- | ------------------------------------------------------------------ |
+| `count`   | integer     | Yes      | Max iterations (safety cap)                                        |
+| `as`      | string      | Yes      | Variable name for the current iteration counter and loop namespace |
+| `delayMs` | integer     | No       | Pause between iterations (default 0)                               |
+| `until`   | assertion[] | No       | Stop early when all assertions pass                                |
 
 **Variables set per iteration:**
 
-| Variable | Type | Description |
-|----------|------|-------------|
+| Variable   | Type    | Description               |
+| ---------- | ------- | ------------------------- |
 | `{{<as>}}` | integer | 0-based iteration counter |
 
 **Semantics:**
+
 - Without `until`: runs exactly `count` times.
 - With `until`: runs up to `count` times. The `until` check runs after each iteration completes, so the loop always executes at least once. `until` is evaluated independently of `stopOnFailure` — it controls loop termination, not pass/fail. If an iteration's assertions fail but `until` passes, the loop stops (the `until` condition was met). If `stopOnFailure` is `false`, assertion failures are collected but don't prevent `until` evaluation.
 - `until` is an array of assertions using the same individual assertion shape (`path`, `operator`, `value`). All must pass for the loop to stop.
@@ -112,17 +115,17 @@ Repeat up to `count` times, optionally stopping early when a condition is met.
 
 The `until` assertions evaluate against different documents depending on what the loop is attached to:
 
-| Loop level | `until` evaluates against |
-|------------|--------------------------|
-| **Action** (`httpRequest`) | The root context (`$.response.status`, `$.response.body.*`, etc.) |
-| **Action** (`dbQuery`) | The root context (`$.response.success`, `$.response.data[*].*`, etc.) |
-| **Step** with an `httpRequest` action | The root context (`$.response.status`, `$.response.body.*`, etc.) |
-| **Step** with a `dbQuery` action | The root context (`$.response.success`, `$.response.data[*].*`, etc.) |
-| **Step** with a `ui` action | Variable interpolation in `path` and `value` — e.g., `"path": "{{hasMore}}", "operator": "eq", "value": false` |
-| **UI sub-step group** | Same as above — use `{{varName}}` to reference extracted variables |
-| **Step** with a `parallel` action | Not applicable — `until` has no single response to evaluate. Use `repeat` without `until` for simple count-based repetition of parallel actions. |
-| **Step** with a `wait` action | Not applicable — `wait` produces no response. Use `repeat` without `until`. |
-| **Test** | The last step's response document from the most recent iteration |
+| Loop level                            | `until` evaluates against                                                                                                                        |
+| ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Action** (`httpRequest`)            | The root context (`$.response.status`, `$.response.body.*`, etc.)                                                                                |
+| **Action** (`dbQuery`)                | The root context (`$.response.success`, `$.response.data[*].*`, etc.)                                                                            |
+| **Step** with an `httpRequest` action | The root context (`$.response.status`, `$.response.body.*`, etc.)                                                                                |
+| **Step** with a `dbQuery` action      | The root context (`$.response.success`, `$.response.data[*].*`, etc.)                                                                            |
+| **Step** with a `ui` action           | Variable interpolation in `path` and `value` — e.g., `"path": "{{hasMore}}", "operator": "eq", "value": false`                                   |
+| **UI sub-step group**                 | Same as above — use `{{varName}}` to reference extracted variables                                                                               |
+| **Step** with a `parallel` action     | Not applicable — `until` has no single response to evaluate. Use `repeat` without `until` for simple count-based repetition of parallel actions. |
+| **Step** with a `wait` action         | Not applicable — `wait` produces no response. Use `repeat` without `until`.                                                                      |
+| **Test**                              | The last step's response document from the most recent iteration                                                                                 |
 
 ---
 
@@ -176,26 +179,26 @@ Extract currently supports two forms: a simple path string (`"varName": "$.respo
 
 **With `path`** — transform an object from the response in one shot:
 
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `path` | string | Yes | Path to the source value (must resolve to an object) |
-| `transform` | enum | Yes | `"keys"`, `"values"`, or `"entries"` |
+| Field       | Type   | Required | Description                                          |
+| ----------- | ------ | -------- | ---------------------------------------------------- |
+| `path`      | string | Yes      | Path to the source value (must resolve to an object) |
+| `transform` | enum   | Yes      | `"keys"`, `"values"`, or `"entries"`                 |
 
 **With `from`** — transform a variable that already exists in the context:
 
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `from` | string | Yes | Variable reference (e.g., `"{{users}}"`) that resolves to an object |
-| `transform` | enum | Yes | `"keys"`, `"values"`, or `"entries"` |
+| Field       | Type   | Required | Description                                                         |
+| ----------- | ------ | -------- | ------------------------------------------------------------------- |
+| `from`      | string | Yes      | Variable reference (e.g., `"{{users}}"`) that resolves to an object |
+| `transform` | enum   | Yes      | `"keys"`, `"values"`, or `"entries"`                                |
 
 `transform` is mutually exclusive with `pattern`. `from` is mutually exclusive with `path`.
 
 **What each transform produces:**
 
-| Transform | Input | Output |
-|-----------|-------|--------|
-| `"keys"` | `{ "a": 1, "b": 2 }` | `["a", "b"]` |
-| `"values"` | `{ "a": 1, "b": 2 }` | `[1, 2]` |
+| Transform   | Input                | Output                                                     |
+| ----------- | -------------------- | ---------------------------------------------------------- |
+| `"keys"`    | `{ "a": 1, "b": 2 }` | `["a", "b"]`                                               |
+| `"values"`  | `{ "a": 1, "b": 2 }` | `[1, 2]`                                                   |
 | `"entries"` | `{ "a": 1, "b": 2 }` | `[{ "key": "a", "value": 1 }, { "key": "b", "value": 2 }]` |
 
 If the source resolves to a non-object (array, string, number, null), it is a validation error.
@@ -316,10 +319,10 @@ All three modifiers expose a result document for step-level assertions:
 }
 ```
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `iterations` | integer | How many times the loop actually ran |
-| `completed` | boolean | `repeat` with `until`: did the condition pass? All other cases: `true` (unless terminated by error). |
+| Field        | Type    | Description                                                                                          |
+| ------------ | ------- | ---------------------------------------------------------------------------------------------------- |
+| `iterations` | integer | How many times the loop actually ran                                                                 |
+| `completed`  | boolean | `repeat` with `until`: did the condition pass? All other cases: `true` (unless terminated by error). |
 
 This lets you catch cases like a poll that exhausted its retries:
 
@@ -341,9 +344,7 @@ This lets you catch cases like a poll that exhausted its retries:
   },
   "assertions": [
     {
-      "assertions": [
-        { "path": "$.completed", "operator": "eq", "value": true }
-      ]
+      "assertions": [{ "path": "$.completed", "operator": "eq", "value": true }]
     }
   ]
 }
@@ -374,7 +375,11 @@ A `forEach` on a test repeats all the test's steps for each item.
             "as": "attempt",
             "delayMs": 1000,
             "until": [
-              { "path": "$.response.body.status", "operator": "ne", "value": "pending" }
+              {
+                "path": "$.response.body.status",
+                "operator": "ne",
+                "value": "pending"
+              }
             ]
           },
           "action": {
@@ -393,7 +398,11 @@ A `forEach` on a test repeats all the test's steps for each item.
           "assertions": [
             {
               "assertions": [
-                { "path": "$.response.body.status", "operator": "eq", "value": "{{order.expected_status}}" }
+                {
+                  "path": "$.response.body.status",
+                  "operator": "eq",
+                  "value": "{{order.expected_status}}"
+                }
               ]
             }
           ]
@@ -568,7 +577,11 @@ Here `extract` runs once after all notifications are sent, pulling from the last
     {
       "assertions": [
         { "path": "$.response.status", "operator": "eq", "value": 400 },
-        { "path": "$.response.body.error", "operator": "contains", "value": "{{input.expectedError}}" }
+        {
+          "path": "$.response.body.error",
+          "operator": "contains",
+          "value": "{{input.expectedError}}"
+        }
       ]
     }
   ]
@@ -651,7 +664,11 @@ Here `extract` runs once after all notifications are sent, pulling from the last
     "as": "attempt",
     "delayMs": 1000,
     "until": [
-      { "path": "$.response.body.status", "operator": "eq", "value": "completed" }
+      {
+        "path": "$.response.body.status",
+        "operator": "eq",
+        "value": "completed"
+      }
     ]
   },
   "action": {
@@ -664,9 +681,7 @@ Here `extract` runs once after all notifications are sent, pulling from the last
   },
   "assertions": [
     {
-      "assertions": [
-        { "path": "$.completed", "operator": "eq", "value": true }
-      ]
+      "assertions": [{ "path": "$.completed", "operator": "eq", "value": true }]
     }
   ]
 }
@@ -724,7 +739,11 @@ Here `extract` runs once after all notifications are sent, pulling from the last
         "as": "user"
       },
       "assertions": [
-        { "path": "{{user.email}}", "operator": "matches", "value": "^.+@.+\\..+$" },
+        {
+          "path": "{{user.email}}",
+          "operator": "matches",
+          "value": "^.+@.+\\..+$"
+        },
         { "path": "{{user.active}}", "operator": "eq", "value": true },
         { "path": "{{user.id}}", "operator": "type", "value": "number" }
       ]
@@ -742,7 +761,11 @@ The same example using a variable reference (if the array was extracted in a pri
     "as": "user"
   },
   "assertions": [
-    { "path": "{{user.email}}", "operator": "matches", "value": "^.+@.+\\..+$" },
+    {
+      "path": "{{user.email}}",
+      "operator": "matches",
+      "value": "^.+@.+\\..+$"
+    },
     { "path": "{{user.active}}", "operator": "eq", "value": true }
   ]
 }
@@ -813,9 +836,7 @@ Note: this puts `forEach` at the step level, which repeats the entire UI action 
           "count": 20,
           "as": "scroll",
           "delayMs": 500,
-          "until": [
-            { "path": "{{hasMore}}", "operator": "eq", "value": false }
-          ]
+          "until": [{ "path": "{{hasMore}}", "operator": "eq", "value": false }]
         },
         "steps": [
           { "click": "[data-testid='load-more']" },
@@ -914,8 +935,16 @@ Here is the "Parallel DB queries with variable extraction then sequential verifi
         "url": "service-a/cache-users",
         "body": {
           "queries": [
-            { "databaseType": "redis", "connectionString": "{{redisConnStr}}", "command": "SET user:alice:id {{aliceId}}" },
-            { "databaseType": "redis", "connectionString": "{{redisConnStr}}", "command": "SET user:bob:id {{bobId}}" }
+            {
+              "databaseType": "redis",
+              "connectionString": "{{redisConnStr}}",
+              "command": "SET user:alice:id {{aliceId}}"
+            },
+            {
+              "databaseType": "redis",
+              "connectionString": "{{redisConnStr}}",
+              "command": "SET user:bob:id {{bobId}}"
+            }
           ]
         }
       }
@@ -928,14 +957,22 @@ Here is the "Parallel DB queries with variable extraction then sequential verifi
         "url": "service-a/read-cache",
         "body": {
           "queries": [
-            { "databaseType": "redis", "connectionString": "{{redisConnStr}}", "command": "GET user:alice:id" }
+            {
+              "databaseType": "redis",
+              "connectionString": "{{redisConnStr}}",
+              "command": "GET user:alice:id"
+            }
           ]
         }
       },
       "assertions": [
         {
           "assertions": [
-            { "path": "response.body.queryResults[0][0].result", "operator": "eq", "value": "{{aliceId}}" }
+            {
+              "path": "response.body.queryResults[0][0].result",
+              "operator": "eq",
+              "value": "{{aliceId}}"
+            }
           ]
         }
       ]
@@ -948,14 +985,22 @@ Here is the "Parallel DB queries with variable extraction then sequential verifi
         "url": "service-a/read-cache",
         "body": {
           "queries": [
-            { "databaseType": "redis", "connectionString": "{{redisConnStr}}", "command": "GET user:bob:id" }
+            {
+              "databaseType": "redis",
+              "connectionString": "{{redisConnStr}}",
+              "command": "GET user:bob:id"
+            }
           ]
         }
       },
       "assertions": [
         {
           "assertions": [
-            { "path": "response.body.queryResults[0][0].result", "operator": "eq", "value": "{{bobId}}" }
+            {
+              "path": "response.body.queryResults[0][0].result",
+              "operator": "eq",
+              "value": "{{bobId}}"
+            }
           ]
         }
       ]
@@ -1001,7 +1046,11 @@ Here is the "Parallel DB queries with variable extraction then sequential verifi
         "url": "service-a/cache-users",
         "body": {
           "queries": [
-            { "databaseType": "redis", "connectionString": "{{redisConnStr}}", "command": "SET user:{{name}}:id {{userId}}" }
+            {
+              "databaseType": "redis",
+              "connectionString": "{{redisConnStr}}",
+              "command": "SET user:{{name}}:id {{userId}}"
+            }
           ]
         }
       }
@@ -1018,14 +1067,22 @@ Here is the "Parallel DB queries with variable extraction then sequential verifi
         "url": "service-a/read-cache",
         "body": {
           "queries": [
-            { "databaseType": "redis", "connectionString": "{{redisConnStr}}", "command": "GET user:{{name}}:id" }
+            {
+              "databaseType": "redis",
+              "connectionString": "{{redisConnStr}}",
+              "command": "GET user:{{name}}:id"
+            }
           ]
         }
       },
       "assertions": [
         {
           "assertions": [
-            { "path": "$.response.body.queryResults[0][0].result", "operator": "eq", "value": "{{userId}}" }
+            {
+              "path": "$.response.body.queryResults[0][0].result",
+              "operator": "eq",
+              "value": "{{userId}}"
+            }
           ]
         }
       ]
@@ -1064,7 +1121,11 @@ Note: this example highlights the last-write-wins tradeoff. `userId` is overwrit
         "url": "service-a/cache-users",
         "body": {
           "queries": [
-            { "databaseType": "redis", "connectionString": "{{redisConnStr}}", "command": "SET user:{{user}}:id {{userId}}" }
+            {
+              "databaseType": "redis",
+              "connectionString": "{{redisConnStr}}",
+              "command": "SET user:{{user}}:id {{userId}}"
+            }
           ]
         }
       }
@@ -1077,14 +1138,22 @@ Note: this example highlights the last-write-wins tradeoff. `userId` is overwrit
         "url": "service-a/read-cache",
         "body": {
           "queries": [
-            { "databaseType": "redis", "connectionString": "{{redisConnStr}}", "command": "GET user:{{user}}:id" }
+            {
+              "databaseType": "redis",
+              "connectionString": "{{redisConnStr}}",
+              "command": "GET user:{{user}}:id"
+            }
           ]
         }
       },
       "assertions": [
         {
           "assertions": [
-            { "path": "$.response.body.queryResults[0][0].result", "operator": "eq", "value": "{{userId}}" }
+            {
+              "path": "$.response.body.queryResults[0][0].result",
+              "operator": "eq",
+              "value": "{{userId}}"
+            }
           ]
         }
       ]
@@ -1120,14 +1189,14 @@ Flat map before loops: { orderId: "abc", pgConnStr: "..." }
 
 forEach (as: "order"):
   iteration 0: { ..., order: {id: 1}, order.__index: 0, order.__items: [...] }
-  
+
   repeat (as: "attempt"):
     iteration 0: { ..., attempt: 0 }
     iteration 1: { ..., attempt: 1 }
     extract:     { ..., status: "done" }
-  
+
   After inner loop: order is still {id: 1}, attempt is 1, status is "done"
-  
+
   iteration 1: { ..., order: {id: 2}, order.__index: 1 }
   ...
 
@@ -1144,10 +1213,10 @@ After outer loop: order is {id: 2}, order.__index is 1, attempt is 1, status is 
 
 Three modifiers, one concept, every level:
 
-| Modifier | Drives Iteration | Key Fields |
-|----------|-----------------|------------|
-| `forEach` | Data array | `items`, `as` (required), `delayMs` |
-| `for` | Numeric range | `from`, `to`, `step`, `as` (required), `delayMs` |
-| `repeat` | Count + optional condition | `count`, `as` (required), `delayMs`, `until` |
+| Modifier  | Drives Iteration           | Key Fields                                       |
+| --------- | -------------------------- | ------------------------------------------------ |
+| `forEach` | Data array                 | `items`, `as` (required), `delayMs`              |
+| `for`     | Numeric range              | `from`, `to`, `step`, `as` (required), `delayMs` |
+| `repeat`  | Count + optional condition | `count`, `as` (required), `delayMs`, `until`     |
 
 All variables are namespaced under the required `as` field. `{{<as>}}` is the current value (item, range value, or 0-based counter). `{{<as>.__index}}` is the 0-based iteration counter. `forEach` additionally exposes `{{<as>.__items}}` (the full array). All three support `delayMs`. They attach as optional fields on tests, steps, actions, assertion blocks, or UI sub-steps. The variable context is a flat map — no scoping stack, no cleanup. Naming is the user's responsibility.
