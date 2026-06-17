@@ -172,10 +172,17 @@ func TestCompareValues(t *testing.T) {
 		}
 	})
 
-	t.Run("eq non-string types use strict equality", func(t *testing.T) {
+	t.Run("eq coerces numeric strings for cross-type comparison", func(t *testing.T) {
 		r := CompareValues("eq", float64(1), "1")
+		if !r.Passed {
+			t.Error("expected pass for numeric string vs float64")
+		}
+	})
+
+	t.Run("eq fails for genuinely different types", func(t *testing.T) {
+		r := CompareValues("eq", float64(1), "one")
 		if r.Passed {
-			t.Error("expected fail for mismatched types")
+			t.Error("expected fail for non-numeric string vs float64")
 		}
 	})
 
@@ -736,34 +743,34 @@ func TestResolveExtractRule(t *testing.T) {
 		},
 	}
 
-	t.Run("extracts by simple string path", func(t *testing.T) {
+	t.Run("extracts typed numeric value", func(t *testing.T) {
 		result, err := ResolveExtractRule(doc, "statusCode", ExtractRule{Path: "response.status"})
 		if err != nil {
 			t.Fatal(err)
 		}
-		if result != "200" {
-			t.Errorf("expected '200', got '%s'", result)
+		if result != float64(200) {
+			t.Errorf("expected 200, got %v", result)
 		}
 	})
 
-	t.Run("extracts string value without JSON.stringify wrapping", func(t *testing.T) {
+	t.Run("extracts string value preserving type", func(t *testing.T) {
 		d := map[string]interface{}{"name": "Alice"}
 		result, err := ResolveExtractRule(d, "username", ExtractRule{Path: "name"})
 		if err != nil {
 			t.Fatal(err)
 		}
 		if result != "Alice" {
-			t.Errorf("expected 'Alice', got '%s'", result)
+			t.Errorf("expected 'Alice', got '%v'", result)
 		}
 	})
 
-	t.Run("extracts non-string value as JSON", func(t *testing.T) {
+	t.Run("extracts numeric value preserving type", func(t *testing.T) {
 		result, err := ResolveExtractRule(doc, "bodyId", ExtractRule{Path: "response.body.id"})
 		if err != nil {
 			t.Fatal(err)
 		}
-		if result != "123" {
-			t.Errorf("expected '123', got '%s'", result)
+		if result != float64(123) {
+			t.Errorf("expected 123, got %v", result)
 		}
 	})
 
@@ -833,7 +840,7 @@ func TestResolveExtractRule(t *testing.T) {
 		}
 	})
 
-	t.Run("extracts object value as JSON string", func(t *testing.T) {
+	t.Run("extracts object value preserving type", func(t *testing.T) {
 		d := map[string]interface{}{
 			"data": map[string]interface{}{
 				"nested": map[string]interface{}{"a": float64(1)},
@@ -843,8 +850,12 @@ func TestResolveExtractRule(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if result != `{"a":1}` {
-			t.Errorf("expected '{\"a\":1}', got '%s'", result)
+		obj, ok := result.(map[string]interface{})
+		if !ok {
+			t.Fatalf("expected map, got %T", result)
+		}
+		if obj["a"] != float64(1) {
+			t.Errorf("expected {a:1}, got %v", result)
 		}
 	})
 }

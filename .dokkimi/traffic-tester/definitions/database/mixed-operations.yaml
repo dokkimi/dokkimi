@@ -35,10 +35,10 @@ tests:
                 command: SET parallel-test "works"
         assertions:
           - assertions:
-              - path: response.status
+              - path: $.response.status
                 operator: eq
                 value: 200
-              - path: response.body.queryResults
+              - path: $.response.body.queryResults
                 operator: length
                 value: 3
   - name: Mixed HTTP call and database queries with logging
@@ -75,16 +75,16 @@ tests:
               - 'MIXED: Operation complete'
         assertions:
           - assertions:
-              - path: response.status
+              - path: $.response.status
                 operator: eq
                 value: 200
-              - path: response.body.results
+              - path: $.response.body.results
                 operator: length
                 value: 1
-              - path: response.body.results[0].pong
+              - path: $.response.body.results[0].pong
                 operator: eq
                 value: true
-              - path: response.body.queryResults
+              - path: $.response.body.queryResults
                 operator: length
                 value: 2
           - match:

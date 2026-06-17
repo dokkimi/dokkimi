@@ -226,6 +226,33 @@ func TestValidateConsoleLogBlock(t *testing.T) {
 	})
 }
 
+func TestValidateSelfBlock_nonResponsePathsEvaluateWithEmptyResponse(t *testing.T) {
+	doc := map[string]interface{}{
+		"response":  map[string]interface{}{},
+		"variables": map[string]interface{}{"count": float64(5)},
+		"traffic":   []interface{}{},
+	}
+	block := AssertionBlock{
+		Assertions: []Assertion{
+			{Path: "response.status", Operator: "eq", Value: float64(200)},
+			{Path: "variables.count", Operator: "eq", Value: float64(5)},
+		},
+	}
+	results := ValidateSelfBlock(block, doc)
+	if len(results) != 2 {
+		t.Fatalf("expected 2 results, got %d", len(results))
+	}
+	if results[0].Passed {
+		t.Error("response.status should fail with 'Step log not found'")
+	}
+	if results[0].Error != "Step log not found" {
+		t.Errorf("expected 'Step log not found', got %s", results[0].Error)
+	}
+	if !results[1].Passed {
+		t.Error("variables.count should pass even with empty response")
+	}
+}
+
 func TestValidateSelfBlock_skipsDisabledOnEmptyDoc(t *testing.T) {
 	block := AssertionBlock{
 		Assertions: []Assertion{
@@ -515,7 +542,7 @@ func TestStepValidator(t *testing.T) {
 
 		step := TestStep{
 			Action:  StepAction{Type: "httpRequest", Method: "GET", URL: "/users"},
-			Extract: map[string]ExtractRule{"userId": {Path: "body.id"}},
+			Extract: map[string]ExtractRule{"userId": {Path: "$.response.body.id"}},
 		}
 		stepExec := StepExecution{
 			StartTime: now.Add(-200 * time.Millisecond).Format(time.RFC3339Nano),
@@ -531,8 +558,8 @@ func TestStepValidator(t *testing.T) {
 		}
 
 		val, ok := varCtx.variables["userId"]
-		if !ok || val != "42" {
-			t.Errorf("expected userId=42, got %s", val)
+		if !ok || val != float64(42) {
+			t.Errorf("expected userId=42, got %v", val)
 		}
 	})
 }

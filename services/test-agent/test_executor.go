@@ -600,7 +600,7 @@ func (e *TestExecutor) executeDbQueryStep(ctx context.Context, action StepAction
 		}
 
 		result, err = e.databaseQueryExecutor.ExecuteQuery(ctx, dbInfo.Type, action.Database, action.Query, action.Params)
-		if err == nil {
+		if err == nil || result != nil {
 			break
 		}
 		log.Printf("dbQuery failed (attempt %d/%d): %v", attempt+1, maxRetries+1, err)

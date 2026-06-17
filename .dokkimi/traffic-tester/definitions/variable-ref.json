@@ -39,12 +39,12 @@
             {
               "assertions": [
                 {
-                  "path": "success",
+                  "path": "$.response.success",
                   "operator": "eq",
                   "value": true
                 },
                 {
-                  "path": "data[0].name",
+                  "path": "$.response.data[0].name",
                   "operator": "eq",
                   "value": "{{expectedName}}"
                 }
@@ -57,7 +57,10 @@
     {
       "name": "Test-level $ref with multi-file merge",
       "variables": {
-        "$ref": ["../shared/db-vars.json", "../shared/test-users.json"],
+        "$ref": [
+          "../shared/db-vars.json",
+          "../shared/test-users.json"
+        ],
         "testRunLabel": "multi-ref-test"
       },
       "steps": [
@@ -72,7 +75,7 @@
             {
               "assertions": [
                 {
-                  "path": "success",
+                  "path": "$.response.success",
                   "operator": "eq",
                   "value": true
                 }
@@ -112,7 +115,7 @@
             {
               "assertions": [
                 {
-                  "path": "response.status",
+                  "path": "$.response.status",
                   "operator": "eq",
                   "value": 200
                 }

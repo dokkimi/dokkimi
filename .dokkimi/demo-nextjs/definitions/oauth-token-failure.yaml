@@ -51,10 +51,10 @@ tests:
                   part: search
         assertions:
           - assertions:
-              - path: $.extracted.errorPath
+              - path: $.variables.errorPath
                 operator: eq
                 value: /login
-              - path: $.extracted.errorQuery
+              - path: $.variables.errorQuery
                 operator: contains
                 value: error=oauth_failed
           - match:
@@ -71,7 +71,7 @@ tests:
               operator: eq
               value: 1
             assertions:
-              - path: response.status
+              - path: $.response.status
                 operator: eq
                 value: 401
           - match:
@@ -97,9 +97,9 @@ tests:
                   selector: "[data-testid='dashboard-page']"
         assertions:
           - assertions:
-              - path: $.extracted.finalPath
+              - path: $.variables.finalPath
                 operator: eq
                 value: /login
-              - path: $.extracted.dashboardCardExists
+              - path: $.variables.dashboardCardExists
                 operator: eq
                 value: 'false'

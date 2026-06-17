@@ -37,25 +37,25 @@
             "query": "SELECT * FROM users WHERE name = '{{expectedName}}' LIMIT 1"
           },
           "extract": {
-            "userId": "$.data[0].id",
-            "userEmail": "$.data[0].email",
-            "userName": "$.data[0].name"
+            "userId": "$.response.data[0].id",
+            "userEmail": "$.response.data[0].email",
+            "userName": "$.response.data[0].name"
           },
           "assertions": [
             {
               "assertions": [
                 {
-                  "path": "success",
+                  "path": "$.response.success",
                   "operator": "eq",
                   "value": true
                 },
                 {
-                  "path": "data[0].name",
+                  "path": "$.response.data[0].name",
                   "operator": "eq",
                   "value": "{{expectedName}}"
                 },
                 {
-                  "path": "data[0].email",
+                  "path": "$.response.data[0].email",
                   "operator": "exists"
                 }
               ]
@@ -95,22 +95,22 @@
             {
               "assertions": [
                 {
-                  "path": "response.status",
+                  "path": "$.response.status",
                   "operator": "eq",
                   "value": 200
                 },
                 {
-                  "path": "response.body.results[0].received",
+                  "path": "$.response.body.results[0].received",
                   "operator": "eq",
                   "value": true
                 },
                 {
-                  "path": "response.body.results[0].userName",
+                  "path": "$.response.body.results[0].userName",
                   "operator": "eq",
                   "value": "{{expectedName}}"
                 },
                 {
-                  "path": "response.body.results[0].userEmail",
+                  "path": "$.response.body.results[0].userEmail",
                   "operator": "eq",
                   "value": "{{userEmail}}"
                 }
@@ -128,12 +128,12 @@
               },
               "assertions": [
                 {
-                  "path": "request.body.response.value.userName",
+                  "path": "$.request.body.response.value.userName",
                   "operator": "eq",
                   "value": "{{expectedName}}"
                 },
                 {
-                  "path": "response.status",
+                  "path": "$.response.status",
                   "operator": "eq",
                   "value": 200
                 }
@@ -172,18 +172,18 @@
             }
           },
           "extract": {
-            "insertedId": "$.body.queryResults[0][0].result[0].id"
+            "insertedId": "$.response.body.queryResults[0][0].result[0].id"
           },
           "assertions": [
             {
               "assertions": [
                 {
-                  "path": "response.status",
+                  "path": "$.response.status",
                   "operator": "eq",
                   "value": 200
                 },
                 {
-                  "path": "response.body.queryResults[0][0].result[0].name",
+                  "path": "$.response.body.queryResults[0][0].result[0].name",
                   "operator": "eq",
                   "value": "{{newUserName}}"
                 }
@@ -214,12 +214,12 @@
             {
               "assertions": [
                 {
-                  "path": "response.status",
+                  "path": "$.response.status",
                   "operator": "eq",
                   "value": 200
                 },
                 {
-                  "path": "response.body.queryResults[0][0].result",
+                  "path": "$.response.body.queryResults[0][0].result",
                   "operator": "eq",
                   "value": "OK"
                 }
@@ -274,19 +274,19 @@
             "query": "SELECT * FROM users WHERE email = '{{lookupEmail}}'"
           },
           "extract": {
-            "bobId": "$.data[0].id",
-            "bobName": "$.data[0].name"
+            "bobId": "$.response.data[0].id",
+            "bobName": "$.response.data[0].name"
           },
           "assertions": [
             {
               "assertions": [
                 {
-                  "path": "success",
+                  "path": "$.response.success",
                   "operator": "eq",
                   "value": true
                 },
                 {
-                  "path": "data[0].email",
+                  "path": "$.response.data[0].email",
                   "operator": "eq",
                   "value": "{{lookupEmail}}"
                 }
@@ -332,32 +332,34 @@
                   }
                 }
               ],
-              "postRequestLogs": ["CHAIN: Complete for user {{bobName}}"]
+              "postRequestLogs": [
+                "CHAIN: Complete for user {{bobName}}"
+              ]
             }
           },
           "extract": {
-            "finalName": "$.body.results[0].results[0].finalUserName"
+            "finalName": "$.response.body.results[0].results[0].finalUserName"
           },
           "assertions": [
             {
               "assertions": [
                 {
-                  "path": "response.status",
+                  "path": "$.response.status",
                   "operator": "eq",
                   "value": 200
                 },
                 {
-                  "path": "response.body.results[0].results[0].finalUserId",
+                  "path": "$.response.body.results[0].results[0].finalUserId",
                   "operator": "eq",
                   "value": "{{bobId}}"
                 },
                 {
-                  "path": "response.body.results[0].results[0].finalUserName",
+                  "path": "$.response.body.results[0].results[0].finalUserName",
                   "operator": "eq",
                   "value": "{{bobName}}"
                 },
                 {
-                  "path": "response.body.results[0].results[0].processedBy",
+                  "path": "$.response.body.results[0].results[0].processedBy",
                   "operator": "eq",
                   "value": "service-c"
                 }
@@ -386,7 +388,7 @@
               },
               "assertions": [
                 {
-                  "path": "response.body.finalUserName",
+                  "path": "$.response.body.finalUserName",
                   "operator": "eq",
                   "value": "{{bobName}}"
                 }
@@ -430,17 +432,17 @@
             {
               "assertions": [
                 {
-                  "path": "success",
+                  "path": "$.response.success",
                   "operator": "eq",
                   "value": true
                 },
                 {
-                  "path": "data[0].email",
+                  "path": "$.response.data[0].email",
                   "operator": "eq",
                   "value": "{{lookupEmail}}"
                 },
                 {
-                  "path": "data[0].name",
+                  "path": "$.response.data[0].name",
                   "operator": "eq",
                   "value": "{{bobName}}"
                 }

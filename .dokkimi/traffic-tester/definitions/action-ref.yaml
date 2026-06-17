@@ -18,10 +18,10 @@ tests:
           $ref: ../shared/health-check-action.yaml
         assertions:
           - assertions:
-              - path: response.status
+              - path: $.response.status
                 operator: eq
                 value: 200
-              - path: response.body
+              - path: $.response.body
                 operator: eq
                 value: OK
 
@@ -32,16 +32,16 @@ tests:
           $ref: ../shared/list-users-action.yaml
         assertions:
           - assertions:
-              - path: success
+              - path: $.response.success
                 operator: eq
                 value: true
-              - path: data
+              - path: $.response.data
                 operator: length
                 value: 2
-              - path: data[0].name
+              - path: $.response.data[0].name
                 operator: eq
                 value: Alice
-              - path: data[1].name
+              - path: $.response.data[1].name
                 operator: eq
                 value: Bob
 
@@ -55,6 +55,6 @@ tests:
           url: service-a/health
         assertions:
           - assertions:
-              - path: response.status
+              - path: $.response.status
                 operator: eq
                 value: 200

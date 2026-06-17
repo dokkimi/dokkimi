@@ -25,10 +25,10 @@ tests:
           query: 'SELECT COUNT(*)::int AS cnt FROM users'
         assertions:
           - assertions:
-              - path: success
+              - path: $.response.success
                 operator: eq
                 value: true
-              - path: data[0].cnt
+              - path: $.response.data[0].cnt
                 operator: gte
                 value: 1
       - name: Count orders in orders-db
@@ -38,10 +38,10 @@ tests:
           query: 'SELECT COUNT(*)::int AS cnt FROM orders'
         assertions:
           - assertions:
-              - path: success
+              - path: $.response.success
                 operator: eq
                 value: true
-              - path: data[0].cnt
+              - path: $.response.data[0].cnt
                 operator: gte
                 value: 1
   - name: users table does not exist in orders-db
@@ -53,10 +53,10 @@ tests:
           query: 'SELECT * FROM users'
         assertions:
           - assertions:
-              - path: success
+              - path: $.response.success
                 operator: eq
                 value: false
-              - path: error
+              - path: $.response.error
                 operator: contains
                 value: users
 
@@ -69,10 +69,10 @@ tests:
           query: 'SELECT * FROM orders'
         assertions:
           - assertions:
-              - path: success
+              - path: $.response.success
                 operator: eq
                 value: false
-              - path: error
+              - path: $.response.error
                 operator: contains
                 value: orders
 
@@ -85,10 +85,10 @@ tests:
           query: "INSERT INTO users (email, name) VALUES ('dave@example.com', 'Dave') RETURNING id, name"
         assertions:
           - assertions:
-              - path: success
+              - path: $.response.success
                 operator: eq
                 value: true
-              - path: data[0].name
+              - path: $.response.data[0].name
                 operator: eq
                 value: Dave
       - name: Insert into orders-db
@@ -98,10 +98,10 @@ tests:
           query: "INSERT INTO orders (customer_name, total_cents, status) VALUES ('Dave', 3500, 'pending') RETURNING id, customer_name"
         assertions:
           - assertions:
-              - path: success
+              - path: $.response.success
                 operator: eq
                 value: true
-              - path: data[0].customer_name
+              - path: $.response.data[0].customer_name
                 operator: eq
                 value: Dave
   - name: Read back from both instances after writes
@@ -113,13 +113,13 @@ tests:
           query: "SELECT name, email FROM users WHERE email = 'dave@example.com'"
         assertions:
           - assertions:
-              - path: data
+              - path: $.response.data
                 operator: length
                 value: 1
-              - path: data[0].name
+              - path: $.response.data[0].name
                 operator: eq
                 value: Dave
-              - path: data[0].email
+              - path: $.response.data[0].email
                 operator: eq
                 value: dave@example.com
       - name: Read Dave's order from orders-db
@@ -129,13 +129,13 @@ tests:
           query: "SELECT customer_name, total_cents, status FROM orders WHERE customer_name = 'Dave'"
         assertions:
           - assertions:
-              - path: data
+              - path: $.response.data
                 operator: length
                 value: 1
-              - path: data[0].total_cents
+              - path: $.response.data[0].total_cents
                 operator: eq
                 value: 3500
-              - path: data[0].status
+              - path: $.response.data[0].status
                 operator: eq
                 value: pending
   - name: Typed results from both instances
@@ -147,10 +147,10 @@ tests:
           query: 'SELECT id, name FROM users WHERE id = 1'
         assertions:
           - assertions:
-              - path: data
+              - path: $.response.data
                 operator: length
                 value: 1
-              - path: data[0].id
+              - path: $.response.data[0].id
                 operator: eq
                 value: 1
       - name: Read seeded order by id
@@ -160,9 +160,9 @@ tests:
           query: 'SELECT id, total_cents FROM orders WHERE id = 1'
         assertions:
           - assertions:
-              - path: data
+              - path: $.response.data
                 operator: length
                 value: 1
-              - path: data[0].id
+              - path: $.response.data[0].id
                 operator: eq
                 value: 1

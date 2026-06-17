@@ -102,6 +102,8 @@ export class DockerDatabaseGroupService {
       ? this.buildMongoEntrypoint(internalPort, dbEnv, initFileMountPath)
       : undefined;
 
+    const dbTmpfs = this.getDbTmpfs(item.database);
+
     await this.dockerClient.runContainer({
       name: dbContainerName,
       image: dbConfig.image,
@@ -115,6 +117,7 @@ export class DockerDatabaseGroupService {
           ? { cmd: dbCmd }
           : {}),
       exposedPorts: [internalPort],
+      ...(dbTmpfs ? { tmpfs: dbTmpfs } : {}),
       labels: {
         'io.dokkimi.instance-id': instanceId,
         'io.dokkimi.role': 'database',
@@ -226,6 +229,22 @@ until mongosh --port ${internalPort} --eval "db.adminCommand('ping')" &>/dev/nul
 ${initBlock}
 mongod --port ${internalPort} --shutdown
 exec mongod --port ${internalPort} --bind_ip_all`;
+  }
+
+  private getDbTmpfs(
+    databaseType: string,
+  ): Record<string, string> | undefined {
+    const dbType = databaseType.toLowerCase();
+    switch (dbType) {
+      case 'mysql':
+      case 'mariadb':
+        return { '/var/lib/mysql': '' };
+      case 'postgres':
+      case 'postgresql':
+        return { '/var/lib/postgresql/data': '' };
+      default:
+        return undefined;
+    }
   }
 
   private getInitFileMountPath(databaseType: string): string | null {

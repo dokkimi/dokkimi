@@ -6,7 +6,10 @@
   },
   "items": [
     {
-      "$ref": ["../shared/service-a.yaml", "../shared/staging-overrides.json"],
+      "$ref": [
+        "../shared/service-a.yaml",
+        "../shared/staging-overrides.json"
+      ],
       "env": [
         "...$ref.env",
         {
@@ -38,12 +41,12 @@
             {
               "assertions": [
                 {
-                  "path": "response.status",
+                  "path": "$.response.status",
                   "operator": "eq",
                   "value": 200
                 },
                 {
-                  "path": "response.body",
+                  "path": "$.response.body",
                   "operator": "eq",
                   "value": "OK"
                 }

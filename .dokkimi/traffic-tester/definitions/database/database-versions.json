@@ -60,12 +60,12 @@
             {
               "assertions": [
                 {
-                  "path": "response.status",
+                  "path": "$.response.status",
                   "operator": "eq",
                   "value": 200
                 },
                 {
-                  "path": "response.body.queryResults[0][0].result[0].version",
+                  "path": "$.response.body.queryResults[0][0].result[0].version",
                   "operator": "contains",
                   "value": "PostgreSQL 16"
                 }
@@ -104,12 +104,12 @@
             {
               "assertions": [
                 {
-                  "path": "response.status",
+                  "path": "$.response.status",
                   "operator": "eq",
                   "value": 200
                 },
                 {
-                  "path": "response.body.queryResults[0][0].result[0].version",
+                  "path": "$.response.body.queryResults[0][0].result[0].version",
                   "operator": "contains",
                   "value": "8.0"
                 }
@@ -148,12 +148,12 @@
             {
               "assertions": [
                 {
-                  "path": "response.status",
+                  "path": "$.response.status",
                   "operator": "eq",
                   "value": 200
                 },
                 {
-                  "path": "response.body.queryResults[0][0].result.acknowledged",
+                  "path": "$.response.body.queryResults[0][0].result.acknowledged",
                   "operator": "eq",
                   "value": true
                 }
@@ -192,12 +192,12 @@
             {
               "assertions": [
                 {
-                  "path": "response.status",
+                  "path": "$.response.status",
                   "operator": "eq",
                   "value": 200
                 },
                 {
-                  "path": "response.body.queryResults[0][0].result",
+                  "path": "$.response.body.queryResults[0][0].result",
                   "operator": "eq",
                   "value": "OK"
                 }
@@ -228,12 +228,12 @@
             {
               "assertions": [
                 {
-                  "path": "response.status",
+                  "path": "$.response.status",
                   "operator": "eq",
                   "value": 200
                 },
                 {
-                  "path": "response.body.queryResults[0][0].result",
+                  "path": "$.response.body.queryResults[0][0].result",
                   "operator": "eq",
                   "value": "redis6-works"
                 }
@@ -257,12 +257,12 @@
             {
               "assertions": [
                 {
-                  "path": "success",
+                  "path": "$.response.success",
                   "operator": "eq",
                   "value": true
                 },
                 {
-                  "path": "data[0].version",
+                  "path": "$.response.data[0].version",
                   "operator": "contains",
                   "value": "PostgreSQL 16"
                 }

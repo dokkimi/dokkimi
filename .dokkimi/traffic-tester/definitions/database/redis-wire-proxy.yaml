@@ -18,10 +18,10 @@ tests:
           query: SET wire-test-key hello-world
         assertions:
           - assertions:
-              - path: success
+              - path: $.response.success
                 operator: eq
                 value: true
-              - path: data[0].value
+              - path: $.response.data[0].value
                 operator: eq
                 value: OK
       - name: GET the key back
@@ -31,10 +31,10 @@ tests:
           query: GET wire-test-key
         assertions:
           - assertions:
-              - path: success
+              - path: $.response.success
                 operator: eq
                 value: true
-              - path: data[0].value
+              - path: $.response.data[0].value
                 operator: eq
                 value: hello-world
 
@@ -47,10 +47,10 @@ tests:
           query: GET nonexistent-key-xyz
         assertions:
           - assertions:
-              - path: success
+              - path: $.response.success
                 operator: eq
                 value: true
-              - path: data
+              - path: $.response.data
                 operator: length
                 value: 0
 
@@ -63,7 +63,7 @@ tests:
           query: SET counter 10
         assertions:
           - assertions:
-              - path: success
+              - path: $.response.success
                 operator: eq
                 value: true
       - name: INCR the counter
@@ -73,13 +73,13 @@ tests:
           query: INCR counter
         assertions:
           - assertions:
-              - path: success
+              - path: $.response.success
                 operator: eq
                 value: true
-              - path: data[0].value
+              - path: $.response.data[0].value
                 operator: eq
                 value: 11
-              - path: data[0].value
+              - path: $.response.data[0].value
                 operator: type
                 value: number
 
@@ -92,7 +92,7 @@ tests:
           query: SET overwrite-key original
         assertions:
           - assertions:
-              - path: success
+              - path: $.response.success
                 operator: eq
                 value: true
       - name: Overwrite with new value
@@ -102,7 +102,7 @@ tests:
           query: SET overwrite-key updated
         assertions:
           - assertions:
-              - path: success
+              - path: $.response.success
                 operator: eq
                 value: true
       - name: Verify new value
@@ -112,10 +112,10 @@ tests:
           query: GET overwrite-key
         assertions:
           - assertions:
-              - path: success
+              - path: $.response.success
                 operator: eq
                 value: true
-              - path: data[0].value
+              - path: $.response.data[0].value
                 operator: eq
                 value: updated
 
@@ -128,7 +128,7 @@ tests:
           query: SET temp-key to-be-deleted
         assertions:
           - assertions:
-              - path: success
+              - path: $.response.success
                 operator: eq
                 value: true
       - name: DEL the key
@@ -138,13 +138,13 @@ tests:
           query: DEL temp-key
         assertions:
           - assertions:
-              - path: success
+              - path: $.response.success
                 operator: eq
                 value: true
-              - path: data[0].value
+              - path: $.response.data[0].value
                 operator: eq
                 value: 1
-              - path: data[0].value
+              - path: $.response.data[0].value
                 operator: type
                 value: number
       - name: Confirm key is gone
@@ -154,10 +154,10 @@ tests:
           query: GET temp-key
         assertions:
           - assertions:
-              - path: success
+              - path: $.response.success
                 operator: eq
                 value: true
-              - path: data
+              - path: $.response.data
                 operator: length
                 value: 0
 
@@ -170,7 +170,7 @@ tests:
           query: HSET user:1 name Alice email alice@example.com age 30
         assertions:
           - assertions:
-              - path: success
+              - path: $.response.success
                 operator: eq
                 value: true
       - name: HGETALL returns key-value pairs
@@ -180,16 +180,16 @@ tests:
           query: HGETALL user:1
         assertions:
           - assertions:
-              - path: success
+              - path: $.response.success
                 operator: eq
                 value: true
-              - path: data[0].name
+              - path: $.response.data[0].name
                 operator: eq
                 value: Alice
-              - path: data[0].email
+              - path: $.response.data[0].email
                 operator: eq
                 value: alice@example.com
-              - path: data[0].age
+              - path: $.response.data[0].age
                 operator: eq
                 value: '30'
 
@@ -202,13 +202,13 @@ tests:
           query: LPUSH mylist c b a
         assertions:
           - assertions:
-              - path: success
+              - path: $.response.success
                 operator: eq
                 value: true
-              - path: data[0].value
+              - path: $.response.data[0].value
                 operator: type
                 value: number
-              - path: data[0].value
+              - path: $.response.data[0].value
                 operator: eq
                 value: 3
       - name: LRANGE to read the full list
@@ -218,19 +218,19 @@ tests:
           query: LRANGE mylist 0 -1
         assertions:
           - assertions:
-              - path: success
+              - path: $.response.success
                 operator: eq
                 value: true
-              - path: data
+              - path: $.response.data
                 operator: length
                 value: 3
-              - path: data[0].value
+              - path: $.response.data[0].value
                 operator: eq
                 value: a
-              - path: data[1].value
+              - path: $.response.data[1].value
                 operator: eq
                 value: b
-              - path: data[2].value
+              - path: $.response.data[2].value
                 operator: eq
                 value: c
 
@@ -243,7 +243,7 @@ tests:
           query: SET extracted-key my-extracted-value
         assertions:
           - assertions:
-              - path: success
+              - path: $.response.success
                 operator: eq
                 value: true
       - name: GET the key back
@@ -252,13 +252,13 @@ tests:
           database: redis-db
           query: GET extracted-key
         extract:
-          extractedVal: '$.data[0].value'
+          extractedVal: "$.response.data[0].value"
         assertions:
           - assertions:
-              - path: success
+              - path: $.response.success
                 operator: eq
                 value: true
-              - path: data[0].value
+              - path: $.response.data[0].value
                 operator: eq
                 value: my-extracted-value
 
@@ -271,9 +271,9 @@ tests:
           query: NOTAREALCOMMAND arg1 arg2
         assertions:
           - assertions:
-              - path: success
+              - path: $.response.success
                 operator: eq
                 value: false
-              - path: error
+              - path: $.response.error
                 operator: contains
                 value: unknown command

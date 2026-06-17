@@ -16,6 +16,8 @@ export interface RunContainerOptions {
   entrypoint?: string[];
   exposedPorts?: number[];
   logConfig?: { Type: string; Config: Record<string, string> };
+  /** Mount tmpfs volumes (e.g. { '/var/lib/mysql': '' } for in-memory data dirs). */
+  tmpfs?: Record<string, string>;
 }
 
 export interface ContainerInfo {
@@ -159,6 +161,7 @@ export class DockerClientService implements OnApplicationBootstrap {
           ? { NetworkMode: opts.networkMode }
           : { NetworkMode: opts.networkName }),
         ...(opts.logConfig ? { LogConfig: opts.logConfig } : {}),
+        ...(opts.tmpfs ? { Tmpfs: opts.tmpfs } : {}),
       },
       NetworkingConfig: networkingConfig,
     };

@@ -54,10 +54,10 @@ tests:
           query: '{"operation":"insertMany","collection":"bulk_items","documents":[{"name":"item1","val":1},{"name":"item2","val":2},{"name":"item3","val":3},{"name":"item4","val":4},{"name":"item5","val":5}]}'
         assertions:
           - assertions:
-              - path: success
+              - path: $.response.success
                 operator: eq
                 value: true
-              - path: rowsAffected
+              - path: $.response.rowsAffected
                 operator: eq
                 value: 5
       - name: Verify all 5 were inserted
@@ -67,10 +67,10 @@ tests:
           query: '{"operation":"find","collection":"bulk_items","filter":{}}'
         assertions:
           - assertions:
-              - path: success
+              - path: $.response.success
                 operator: eq
                 value: true
-              - path: data
+              - path: $.response.data
                 operator: length
                 value: 5
 
@@ -83,7 +83,7 @@ tests:
           query: '{"operation":"insertOne","collection":"users","document":{"username":"testuser","email":"test@test.com","active":true}}'
         assertions:
           - assertions:
-              - path: success
+              - path: $.response.success
                 operator: eq
                 value: true
       - name: Find the user and extract email
@@ -92,15 +92,15 @@ tests:
           database: mongo-db
           query: '{"operation":"find","collection":"users","filter":{"username":"testuser"}}'
         extract:
-          userEmail: '$.data[0].email'
+          userEmail: "$.response.data[0].email"
         assertions:
           - assertions:
-              - path: success
+              - path: $.response.success
                 operator: eq
                 value: true
-              - path: data[0].email
+              - path: $.response.data[0].email
                 operator: eq
                 value: test@test.com
-              - path: data[0].active
+              - path: $.response.data[0].active
                 operator: eq
                 value: true

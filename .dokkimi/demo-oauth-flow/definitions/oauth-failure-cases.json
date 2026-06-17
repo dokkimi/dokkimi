@@ -2,7 +2,9 @@
   "name": "oauth-failure-cases",
   "description": "Tests how the service handles OAuth provider failures — uses mocks that return errors instead of success responses",
   "items": [
-    { "$ref": "../shared/api-service.json" },
+    {
+      "$ref": "../shared/api-service.json"
+    },
     {
       "$ref": "../shared/postgres-db.json",
       "initFilePath": "../init-files/schema.sql"
@@ -15,7 +17,9 @@
       "mockTarget": "auth.provider.com",
       "mockPath": "/oauth/token",
       "mockResponseStatus": 400,
-      "mockResponseHeaders": { "Content-Type": "application/json" },
+      "mockResponseHeaders": {
+        "Content-Type": "application/json"
+      },
       "mockResponseBody": {
         "error": "invalid_grant",
         "error_description": "The authorization code has expired or is invalid."
@@ -29,7 +33,9 @@
       "mockTarget": "auth.provider.com",
       "mockPath": "/userinfo",
       "mockResponseStatus": 200,
-      "mockResponseHeaders": { "Content-Type": "application/json" },
+      "mockResponseHeaders": {
+        "Content-Type": "application/json"
+      },
       "mockResponseBody": {
         "sub": "should-not-reach",
         "email": "nope@example.com",
@@ -52,9 +58,13 @@
           "assertions": [
             {
               "assertions": [
-                { "path": "response.status", "operator": "eq", "value": 500 },
                 {
-                  "path": "response.body.message",
+                  "path": "$.response.status",
+                  "operator": "eq",
+                  "value": 500
+                },
+                {
+                  "path": "$.response.body.message",
                   "operator": "eq",
                   "value": "Authentication failed"
                 }
@@ -66,11 +76,18 @@
                 "method": "POST",
                 "url": "auth.provider.com/oauth/token"
               },
-              "count": { "operator": "eq", "value": 1 },
+              "count": {
+                "operator": "eq",
+                "value": 1
+              },
               "assertions": [
-                { "path": "response.status", "operator": "eq", "value": 400 },
                 {
-                  "path": "response.body.error",
+                  "path": "$.response.status",
+                  "operator": "eq",
+                  "value": 400
+                },
+                {
+                  "path": "$.response.body.error",
                   "operator": "eq",
                   "value": "invalid_grant"
                 }
@@ -82,7 +99,10 @@
                 "method": "GET",
                 "url": "auth.provider.com/userinfo"
               },
-              "count": { "operator": "eq", "value": 0 }
+              "count": {
+                "operator": "eq",
+                "value": 0
+              }
             },
             {
               "service": "api-service",
@@ -92,14 +112,20 @@
                     "operator": "contains",
                     "value": "Token exchange failed"
                   },
-                  "count": { "operator": "gte", "value": 1 }
+                  "count": {
+                    "operator": "gte",
+                    "value": 1
+                  }
                 },
                 {
                   "message": {
                     "operator": "contains",
                     "value": "OAuth callback failed"
                   },
-                  "count": { "operator": "gte", "value": 1 }
+                  "count": {
+                    "operator": "gte",
+                    "value": 1
+                  }
                 }
               ]
             }
@@ -115,7 +141,11 @@
           "assertions": [
             {
               "assertions": [
-                { "path": "data[0].count", "operator": "eq", "value": 0 }
+                {
+                  "path": "$.response.data[0].count",
+                  "operator": "eq",
+                  "value": 0
+                }
               ]
             }
           ]

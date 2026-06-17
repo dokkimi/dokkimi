@@ -45,7 +45,7 @@ tests:
           # The feed asks for limit=10 by default; assert the page came
           # back with exactly that many rows on the first request.
           - assertions:
-              - path: $.extracted.initialCount
+              - path: $.variables.initialCount
                 operator: eq
                 value: '10'
           - match:
@@ -55,10 +55,10 @@ tests:
               operator: eq
               value: 1
             assertions:
-              - path: response.status
+              - path: $.response.status
                 operator: eq
                 value: 200
-              - path: response.body.items
+              - path: $.response.body.items
                 operator: exists
       - name: Scroll sentinel into view and assert the second page fired
         action:
@@ -85,7 +85,7 @@ tests:
                 match: true
         assertions:
           - assertions:
-              - path: $.extracted.afterScrollCount
+              - path: $.variables.afterScrollCount
                 operator: eq
                 value: '20'
           # A single follow-up call to /api/bookmarks during this group's
@@ -100,6 +100,6 @@ tests:
               operator: eq
               value: 1
             assertions:
-              - path: response.status
+              - path: $.response.status
                 operator: eq
                 value: 200

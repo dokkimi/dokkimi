@@ -47,17 +47,17 @@
             {
               "assertions": [
                 {
-                  "path": "response.status",
+                  "path": "$.response.status",
                   "operator": "eq",
                   "value": 200
                 },
                 {
-                  "path": "response.body.results[0].updated",
+                  "path": "$.response.body.results[0].updated",
                   "operator": "eq",
                   "value": true
                 },
                 {
-                  "path": "response.body.results[0].version",
+                  "path": "$.response.body.results[0].version",
                   "operator": "type",
                   "value": "number"
                 }
@@ -75,12 +75,12 @@
               },
               "assertions": [
                 {
-                  "path": "request.method",
+                  "path": "$.request.method",
                   "operator": "eq",
                   "value": "PUT"
                 },
                 {
-                  "path": "response.status",
+                  "path": "$.response.status",
                   "operator": "eq",
                   "value": 200
                 }
@@ -122,7 +122,7 @@
             {
               "assertions": [
                 {
-                  "path": "response.status",
+                  "path": "$.response.status",
                   "operator": "eq",
                   "value": 200
                 }
@@ -140,7 +140,7 @@
               },
               "assertions": [
                 {
-                  "path": "response.status",
+                  "path": "$.response.status",
                   "operator": "eq",
                   "value": 204
                 }
@@ -185,17 +185,17 @@
             {
               "assertions": [
                 {
-                  "path": "response.status",
+                  "path": "$.response.status",
                   "operator": "eq",
                   "value": 200
                 },
                 {
-                  "path": "response.body.results[0].patched",
+                  "path": "$.response.body.results[0].patched",
                   "operator": "eq",
                   "value": true
                 },
                 {
-                  "path": "response.body.results[0].newValue",
+                  "path": "$.response.body.results[0].newValue",
                   "operator": "ne",
                   "value": "old-name"
                 }
@@ -242,22 +242,22 @@
             {
               "assertions": [
                 {
-                  "path": "response.status",
+                  "path": "$.response.status",
                   "operator": "eq",
                   "value": 404
                 },
                 {
-                  "path": "response.body.error",
+                  "path": "$.response.body.error",
                   "operator": "eq",
                   "value": "Not Found"
                 },
                 {
-                  "path": "response.body.message",
+                  "path": "$.response.body.message",
                   "operator": "contains",
                   "value": "does not exist"
                 },
                 {
-                  "path": "response.body.message",
+                  "path": "$.response.body.message",
                   "operator": "notContains",
                   "value": "server error"
                 }
@@ -302,37 +302,41 @@
             {
               "assertions": [
                 {
-                  "path": "response.status",
+                  "path": "$.response.status",
                   "operator": "eq",
                   "value": 422
                 },
                 {
-                  "path": "response.status",
+                  "path": "$.response.status",
                   "operator": "gte",
                   "value": 400
                 },
                 {
-                  "path": "response.status",
+                  "path": "$.response.status",
                   "operator": "lt",
                   "value": 500
                 },
                 {
-                  "path": "response.body.details",
+                  "path": "$.response.body.details",
                   "operator": "type",
                   "value": "array"
                 },
                 {
-                  "path": "response.body.details",
+                  "path": "$.response.body.details",
                   "operator": "length",
                   "value": 2
                 },
                 {
-                  "path": "response.body.details[0].field",
+                  "path": "$.response.body.details[0].field",
                   "operator": "in",
-                  "value": ["email", "age", "name"]
+                  "value": [
+                    "email",
+                    "age",
+                    "name"
+                  ]
                 },
                 {
-                  "path": "response.body.details[1].field",
+                  "path": "$.response.body.details[1].field",
                   "operator": "eq",
                   "value": "age"
                 }
@@ -356,7 +360,9 @@
               "Content-Type": "application/json"
             },
             "body": {
-              "preRequestLogs": ["ERROR: Something went wrong in service-a"],
+              "preRequestLogs": [
+                "ERROR: Something went wrong in service-a"
+              ],
               "response": {
                 "status": 500,
                 "value": {
@@ -370,20 +376,20 @@
             {
               "assertions": [
                 {
-                  "path": "response.status",
+                  "path": "$.response.status",
                   "operator": "eq",
                   "value": 500
                 },
                 {
-                  "path": "response.body.requestId",
+                  "path": "$.response.body.requestId",
                   "operator": "exists"
                 },
                 {
-                  "path": "response.body.requestId",
+                  "path": "$.response.body.requestId",
                   "operator": "notEmpty"
                 },
                 {
-                  "path": "response.body.requestId",
+                  "path": "$.response.body.requestId",
                   "operator": "matches",
                   "value": "^req-err-\\d+$"
                 }

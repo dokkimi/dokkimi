@@ -2,13 +2,19 @@
   "name": "authenticated-flow",
   "description": "Tests authenticated endpoints using the session token from the OAuth callback flow",
   "items": [
-    { "$ref": "../shared/api-service.json" },
+    {
+      "$ref": "../shared/api-service.json"
+    },
     {
       "$ref": "../shared/postgres-db.json",
       "initFilePath": "../init-files/schema.sql"
     },
-    { "$ref": "../shared/mock-oauth-token.json" },
-    { "$ref": "../shared/mock-oauth-userinfo.json" }
+    {
+      "$ref": "../shared/mock-oauth-token.json"
+    },
+    {
+      "$ref": "../shared/mock-oauth-userinfo.json"
+    }
   ],
   "tests": [
     {
@@ -23,14 +29,21 @@
             "url": "api-service/auth/callback?code=test_code&state=test"
           },
           "extract": {
-            "sessionToken": "$.body.token",
-            "userId": "$.body.user.id"
+            "sessionToken": "$.response.body.token",
+            "userId": "$.response.body.user.id"
           },
           "assertions": [
             {
               "assertions": [
-                { "path": "response.status", "operator": "eq", "value": 200 },
-                { "path": "response.body.token", "operator": "exists" }
+                {
+                  "path": "$.response.status",
+                  "operator": "eq",
+                  "value": 200
+                },
+                {
+                  "path": "$.response.body.token",
+                  "operator": "exists"
+                }
               ]
             }
           ]
@@ -48,19 +61,23 @@
           "assertions": [
             {
               "assertions": [
-                { "path": "response.status", "operator": "eq", "value": 200 },
                 {
-                  "path": "response.body.profile.email",
+                  "path": "$.response.status",
+                  "operator": "eq",
+                  "value": 200
+                },
+                {
+                  "path": "$.response.body.profile.email",
                   "operator": "eq",
                   "value": "bob@example.com"
                 },
                 {
-                  "path": "response.body.profile.name",
+                  "path": "$.response.body.profile.name",
                   "operator": "eq",
                   "value": "Bob Smith"
                 },
                 {
-                  "path": "response.body.profile.posts",
+                  "path": "$.response.body.profile.posts",
                   "operator": "length",
                   "value": 0
                 }
@@ -74,7 +91,10 @@
                     "operator": "contains",
                     "value": "Authenticated user: bob@example.com"
                   },
-                  "count": { "operator": "gte", "value": 1 }
+                  "count": {
+                    "operator": "gte",
+                    "value": 1
+                  }
                 }
               ]
             }
@@ -96,24 +116,28 @@
             }
           },
           "extract": {
-            "postId": "$.body.post.id"
+            "postId": "$.response.body.post.id"
           },
           "assertions": [
             {
               "assertions": [
-                { "path": "response.status", "operator": "eq", "value": 201 },
                 {
-                  "path": "response.body.post.title",
+                  "path": "$.response.status",
+                  "operator": "eq",
+                  "value": 201
+                },
+                {
+                  "path": "$.response.body.post.title",
                   "operator": "eq",
                   "value": "My First Post"
                 },
                 {
-                  "path": "response.body.post.published",
+                  "path": "$.response.body.post.published",
                   "operator": "eq",
                   "value": true
                 },
                 {
-                  "path": "response.body.post.authorId",
+                  "path": "$.response.body.post.authorId",
                   "operator": "eq",
                   "value": "{{userId}}"
                 }
@@ -131,9 +155,13 @@
           "assertions": [
             {
               "assertions": [
-                { "path": "response.status", "operator": "eq", "value": 200 },
                 {
-                  "path": "response.body.posts",
+                  "path": "$.response.status",
+                  "operator": "eq",
+                  "value": 200
+                },
+                {
+                  "path": "$.response.body.posts",
                   "operator": "length",
                   "value": 3
                 }
@@ -151,14 +179,18 @@
           "assertions": [
             {
               "assertions": [
-                { "path": "success", "operator": "eq", "value": true },
                 {
-                  "path": "data[0].title",
+                  "path": "$.response.success",
+                  "operator": "eq",
+                  "value": true
+                },
+                {
+                  "path": "$.response.data[0].title",
                   "operator": "eq",
                   "value": "My First Post"
                 },
                 {
-                  "path": "data[0].author_email",
+                  "path": "$.response.data[0].author_email",
                   "operator": "eq",
                   "value": "bob@example.com"
                 }
@@ -181,9 +213,13 @@
           "assertions": [
             {
               "assertions": [
-                { "path": "response.status", "operator": "eq", "value": 401 },
                 {
-                  "path": "response.body.message",
+                  "path": "$.response.status",
+                  "operator": "eq",
+                  "value": 401
+                },
+                {
+                  "path": "$.response.body.message",
                   "operator": "contains",
                   "value": "Missing or invalid authorization header"
                 }
@@ -197,13 +233,22 @@
             "type": "httpRequest",
             "method": "POST",
             "url": "api-service/api/profile/posts",
-            "headers": { "Content-Type": "application/json" },
-            "body": { "title": "Nope", "content": "Should fail" }
+            "headers": {
+              "Content-Type": "application/json"
+            },
+            "body": {
+              "title": "Nope",
+              "content": "Should fail"
+            }
           },
           "assertions": [
             {
               "assertions": [
-                { "path": "response.status", "operator": "eq", "value": 401 }
+                {
+                  "path": "$.response.status",
+                  "operator": "eq",
+                  "value": 401
+                }
               ]
             }
           ]
@@ -218,7 +263,11 @@
           "assertions": [
             {
               "assertions": [
-                { "path": "data[0].count", "operator": "eq", "value": 4 }
+                {
+                  "path": "$.response.data[0].count",
+                  "operator": "eq",
+                  "value": 4
+                }
               ]
             }
           ]
@@ -241,9 +290,13 @@
           "assertions": [
             {
               "assertions": [
-                { "path": "response.status", "operator": "eq", "value": 401 },
                 {
-                  "path": "response.body.message",
+                  "path": "$.response.status",
+                  "operator": "eq",
+                  "value": 401
+                },
+                {
+                  "path": "$.response.body.message",
                   "operator": "eq",
                   "value": "Invalid session token"
                 }
@@ -257,7 +310,10 @@
                     "operator": "contains",
                     "value": "Invalid session token"
                   },
-                  "count": { "operator": "gte", "value": 1 }
+                  "count": {
+                    "operator": "gte",
+                    "value": 1
+                  }
                 }
               ]
             }

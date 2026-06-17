@@ -17,9 +17,9 @@ tests:
           url: service-interpolated/health
         assertions:
           - assertions:
-              - path: response.status
+              - path: $.response.status
                 operator: eq
                 value: 200
-              - path: response.body
+              - path: $.response.body
                 operator: eq
                 value: OK

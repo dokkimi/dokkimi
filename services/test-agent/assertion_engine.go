@@ -58,7 +58,16 @@ func EvaluateDocPath(doc interface{}, path string) (interface{}, bool) {
 			return nil, false
 		}
 
-		if arrayMatch := arrayIndexPattern.FindStringSubmatch(seg); arrayMatch != nil {
+		if seg == "length" {
+			switch v := value.(type) {
+			case []interface{}:
+				value = float64(len(v))
+			case string:
+				value = float64(len([]rune(v)))
+			default:
+				return nil, false
+			}
+		} else if arrayMatch := arrayIndexPattern.FindStringSubmatch(seg); arrayMatch != nil {
 			arr, ok := toSlice(value)
 			if !ok {
 				return nil, false
@@ -139,6 +148,15 @@ func toSlice(v interface{}) ([]interface{}, bool) {
 	return s, ok
 }
 
+func looseEqual(a, b interface{}) bool {
+	if reflect.DeepEqual(a, b) {
+		return true
+	}
+	af, aOk := toFloat(a)
+	bf, bOk := toFloat(b)
+	return aOk && bOk && af == bf
+}
+
 func ciEquals(a, b interface{}) bool {
 	aStr, aIsStr := a.(string)
 	bStr, bIsStr := b.(string)
@@ -174,11 +192,11 @@ func toFloat(v interface{}) (float64, bool) {
 func CompareValues(operator string, actual, expected interface{}) AssertionResult {
 	switch operator {
 	case "eq":
-		return AssertionResult{Passed: reflect.DeepEqual(actual, expected), Expected: expected, Actual: actual}
+		return AssertionResult{Passed: looseEqual(actual, expected), Expected: expected, Actual: actual}
 	case "eqIgnoreCase":
 		return AssertionResult{Passed: ciEquals(actual, expected), Expected: expected, Actual: actual}
 	case "ne":
-		return AssertionResult{Passed: !reflect.DeepEqual(actual, expected), Expected: expected, Actual: actual}
+		return AssertionResult{Passed: !looseEqual(actual, expected), Expected: expected, Actual: actual}
 	case "gt":
 		af, aOk := toFloat(actual)
 		ef, eOk := toFloat(expected)
@@ -239,7 +257,7 @@ func CompareValues(operator string, actual, expected interface{}) AssertionResul
 		}
 		found := false
 		for _, item := range arr {
-			if reflect.DeepEqual(item, actual) {
+			if looseEqual(item, actual) {
 				found = true
 				break
 			}
@@ -252,7 +270,7 @@ func CompareValues(operator string, actual, expected interface{}) AssertionResul
 		}
 		found := false
 		for _, item := range arr {
-			if reflect.DeepEqual(item, actual) {
+			if looseEqual(item, actual) {
 				found = true
 				break
 			}
@@ -421,10 +439,16 @@ func ValidateCount(actual int, count CountAssertion) AssertionResult {
 }
 
 // ResolveExtractRule extracts a variable value from a document using a path and optional regex.
-func ResolveExtractRule(doc map[string]interface{}, variable string, rule ExtractRule) (string, error) {
+// Without a regex pattern, the raw typed value is returned (preserving numbers, arrays, objects).
+// With a regex pattern, the value is stringified and the matched group is returned as a string.
+func ResolveExtractRule(doc map[string]interface{}, variable string, rule ExtractRule) (interface{}, error) {
 	rawValue, found := EvaluateDocPath(doc, rule.Path)
 	if !found {
-		return "", fmt.Errorf("Failed to extract variable '%s': path '%s' not found", variable, rule.Path)
+		return nil, fmt.Errorf("Failed to extract variable '%s': path '%s' not found", variable, rule.Path)
+	}
+
+	if rule.Pattern == "" {
+		return rawValue, nil
 	}
 
 	var strValue string
@@ -435,13 +459,9 @@ func ResolveExtractRule(doc map[string]interface{}, variable string, rule Extrac
 		strValue = string(b)
 	}
 
-	if rule.Pattern == "" {
-		return strValue, nil
-	}
-
 	re, err := regexp.Compile(rule.Pattern)
 	if err != nil {
-		return "", fmt.Errorf("Failed to extract variable '%s': invalid regex pattern '%s': %w", variable, rule.Pattern, err)
+		return nil, fmt.Errorf("Failed to extract variable '%s': invalid regex pattern '%s': %w", variable, rule.Pattern, err)
 	}
 
 	group := 1
@@ -451,10 +471,10 @@ func ResolveExtractRule(doc map[string]interface{}, variable string, rule Extrac
 
 	matches := re.FindStringSubmatch(strValue)
 	if matches == nil {
-		return "", fmt.Errorf("Failed to extract variable '%s': pattern '%s' did not match value '%s'", variable, rule.Pattern, strValue)
+		return nil, fmt.Errorf("Failed to extract variable '%s': pattern '%s' did not match value '%s'", variable, rule.Pattern, strValue)
 	}
 	if group < 0 || group >= len(matches) {
-		return "", fmt.Errorf("Failed to extract variable '%s': capture group %d out of range (pattern has %d groups)", variable, group, len(matches)-1)
+		return nil, fmt.Errorf("Failed to extract variable '%s': capture group %d out of range (pattern has %d groups)", variable, group, len(matches)-1)
 	}
 
 	return matches[group], nil

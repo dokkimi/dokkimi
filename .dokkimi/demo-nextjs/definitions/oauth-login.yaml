@@ -57,10 +57,10 @@ tests:
           # 1. Self-block: dashboard rendered the values returned by the
           # mocked userinfo endpoint.
           - assertions:
-              - path: $.extracted.signedInName
+              - path: $.variables.signedInName
                 operator: eq
                 value: Alice Anderson
-              - path: $.extracted.signedInEmail
+              - path: $.variables.signedInEmail
                 operator: eq
                 value: alice@example.com
           # 2. Browser-initiated authorize redirect (caught by interceptor).
@@ -71,10 +71,10 @@ tests:
               operator: eq
               value: 1
             assertions:
-              - path: response.status
+              - path: $.response.status
                 operator: eq
                 value: 302
-              - path: response.header.location
+              - path: $.response.headers.location
                 operator: contains
                 value: /api/auth/callback?code=mock-code-abc123
           # 3. Server-side code-exchange call from Next.js.
@@ -86,13 +86,13 @@ tests:
               operator: eq
               value: 1
             assertions:
-              - path: response.status
+              - path: $.response.status
                 operator: eq
                 value: 200
-              - path: request.body
+              - path: $.request.body
                 operator: contains
                 value: code=mock-code-abc123
-              - path: request.body
+              - path: $.request.body
                 operator: contains
                 value: grant_type=authorization_code
           # 4. Server-side userinfo lookup using the access token.
@@ -104,9 +104,9 @@ tests:
               operator: eq
               value: 1
             assertions:
-              - path: response.status
+              - path: $.response.status
                 operator: eq
                 value: 200
-              - path: request.header.authorization
+              - path: $.request.headers.authorization
                 operator: eq
                 value: Bearer mock-access-token-xyz

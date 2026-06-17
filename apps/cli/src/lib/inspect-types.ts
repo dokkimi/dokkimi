@@ -148,7 +148,7 @@ export interface TestExecutionLog {
   duration: number | null;
   error: string | null;
   errorType: string | null;
-  variables: Record<string, string>;
+  variables: Record<string, unknown>;
   timestamp: string;
 }
 

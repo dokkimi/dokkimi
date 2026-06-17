@@ -2,13 +2,19 @@
   "name": "oauth-redirect-flow",
   "description": "Tests every endpoint in the OAuth redirect flow independently — login redirect, callback with mocked token exchange and userinfo, and auth rejection",
   "items": [
-    { "$ref": "../shared/api-service.json" },
+    {
+      "$ref": "../shared/api-service.json"
+    },
     {
       "$ref": "../shared/postgres-db.json",
       "initFilePath": "../init-files/schema.sql"
     },
-    { "$ref": "../shared/mock-oauth-token.json" },
-    { "$ref": "../shared/mock-oauth-userinfo.json" }
+    {
+      "$ref": "../shared/mock-oauth-token.json"
+    },
+    {
+      "$ref": "../shared/mock-oauth-userinfo.json"
+    }
   ],
   "variables": {
     "oauthDomain": "auth.provider.com",
@@ -29,29 +35,33 @@
           "assertions": [
             {
               "assertions": [
-                { "path": "response.status", "operator": "eq", "value": 302 },
                 {
-                  "path": "response.header.location",
+                  "path": "$.response.status",
+                  "operator": "eq",
+                  "value": 302
+                },
+                {
+                  "path": "$.response.headers.location",
                   "operator": "contains",
                   "value": "https://{{oauthDomain}}/authorize"
                 },
                 {
-                  "path": "response.header.location",
+                  "path": "$.response.headers.location",
                   "operator": "contains",
                   "value": "client_id={{clientId}}"
                 },
                 {
-                  "path": "response.header.location",
+                  "path": "$.response.headers.location",
                   "operator": "contains",
                   "value": "response_type=code"
                 },
                 {
-                  "path": "response.header.location",
+                  "path": "$.response.headers.location",
                   "operator": "contains",
                   "value": "scope=openid+profile+email"
                 },
                 {
-                  "path": "response.header.location",
+                  "path": "$.response.headers.location",
                   "operator": "contains",
                   "value": "redirect_uri="
                 }
@@ -65,7 +75,10 @@
                     "operator": "contains",
                     "value": "Redirecting to OAuth provider"
                   },
-                  "count": { "operator": "eq", "value": 1 }
+                  "count": {
+                    "operator": "eq",
+                    "value": 1
+                  }
                 }
               ]
             }
@@ -88,21 +101,28 @@
             "url": "api-service/auth/callback?code={{mockCode}}&state=test-state"
           },
           "extract": {
-            "sessionToken": "$.body.token",
-            "userId": "$.body.user.id"
+            "sessionToken": "$.response.body.token",
+            "userId": "$.response.body.user.id"
           },
           "assertions": [
             {
               "assertions": [
-                { "path": "response.status", "operator": "eq", "value": 200 },
-                { "path": "response.body.token", "operator": "exists" },
                 {
-                  "path": "response.body.user.email",
+                  "path": "$.response.status",
+                  "operator": "eq",
+                  "value": 200
+                },
+                {
+                  "path": "$.response.body.token",
+                  "operator": "exists"
+                },
+                {
+                  "path": "$.response.body.user.email",
                   "operator": "eq",
                   "value": "bob@example.com"
                 },
                 {
-                  "path": "response.body.user.name",
+                  "path": "$.response.body.user.name",
                   "operator": "eq",
                   "value": "Bob Smith"
                 }
@@ -114,30 +134,43 @@
                 "method": "POST",
                 "url": "{{oauthDomain}}/oauth/token"
               },
-              "count": { "operator": "eq", "value": 1 },
+              "count": {
+                "operator": "eq",
+                "value": 1
+              },
               "assertions": [
                 {
-                  "path": "request.body.grant_type",
+                  "path": "$.request.body.grant_type",
                   "operator": "eq",
                   "value": "authorization_code"
                 },
                 {
-                  "path": "request.body.code",
+                  "path": "$.request.body.code",
                   "operator": "eq",
                   "value": "{{mockCode}}"
                 },
                 {
-                  "path": "request.body.client_id",
+                  "path": "$.request.body.client_id",
                   "operator": "eq",
                   "value": "{{clientId}}"
                 },
                 {
-                  "path": "request.body.client_secret",
+                  "path": "$.request.body.client_secret",
                   "operator": "exists"
                 },
-                { "path": "request.body.redirect_uri", "operator": "exists" },
-                { "path": "response.status", "operator": "eq", "value": 200 },
-                { "path": "response.body.access_token", "operator": "exists" }
+                {
+                  "path": "$.request.body.redirect_uri",
+                  "operator": "exists"
+                },
+                {
+                  "path": "$.response.status",
+                  "operator": "eq",
+                  "value": 200
+                },
+                {
+                  "path": "$.response.body.access_token",
+                  "operator": "exists"
+                }
               ]
             },
             {
@@ -146,16 +179,23 @@
                 "method": "GET",
                 "url": "{{oauthDomain}}/userinfo"
               },
-              "count": { "operator": "eq", "value": 1 },
+              "count": {
+                "operator": "eq",
+                "value": 1
+              },
               "assertions": [
                 {
-                  "path": "request.header.authorization",
+                  "path": "$.request.headers.authorization",
                   "operator": "eq",
                   "value": "Bearer mock_access_token_abc123"
                 },
-                { "path": "response.status", "operator": "eq", "value": 200 },
                 {
-                  "path": "response.body.email",
+                  "path": "$.response.status",
+                  "operator": "eq",
+                  "value": 200
+                },
+                {
+                  "path": "$.response.body.email",
                   "operator": "eq",
                   "value": "bob@example.com"
                 }
@@ -169,35 +209,50 @@
                     "operator": "contains",
                     "value": "Exchanging authorization code"
                   },
-                  "count": { "operator": "gte", "value": 1 }
+                  "count": {
+                    "operator": "gte",
+                    "value": 1
+                  }
                 },
                 {
                   "message": {
                     "operator": "contains",
                     "value": "Token exchange successful"
                   },
-                  "count": { "operator": "gte", "value": 1 }
+                  "count": {
+                    "operator": "gte",
+                    "value": 1
+                  }
                 },
                 {
                   "message": {
                     "operator": "contains",
                     "value": "Fetching user info"
                   },
-                  "count": { "operator": "gte", "value": 1 }
+                  "count": {
+                    "operator": "gte",
+                    "value": 1
+                  }
                 },
                 {
                   "message": {
                     "operator": "contains",
                     "value": "Creating new user"
                   },
-                  "count": { "operator": "eq", "value": 1 }
+                  "count": {
+                    "operator": "eq",
+                    "value": 1
+                  }
                 },
                 {
                   "message": {
                     "operator": "contains",
                     "value": "OAuth flow complete"
                   },
-                  "count": { "operator": "gte", "value": 1 }
+                  "count": {
+                    "operator": "gte",
+                    "value": 1
+                  }
                 }
               ]
             }
@@ -213,15 +268,23 @@
           "assertions": [
             {
               "assertions": [
-                { "path": "success", "operator": "eq", "value": true },
-                { "path": "data", "operator": "length", "value": 1 },
                 {
-                  "path": "data[0].email",
+                  "path": "$.response.success",
+                  "operator": "eq",
+                  "value": true
+                },
+                {
+                  "path": "$.response.data",
+                  "operator": "length",
+                  "value": 1
+                },
+                {
+                  "path": "$.response.data[0].email",
                   "operator": "eq",
                   "value": "bob@example.com"
                 },
                 {
-                  "path": "data[0].name",
+                  "path": "$.response.data[0].name",
                   "operator": "eq",
                   "value": "Bob Smith"
                 }
@@ -244,9 +307,13 @@
           "assertions": [
             {
               "assertions": [
-                { "path": "response.status", "operator": "eq", "value": 401 },
                 {
-                  "path": "response.body.message",
+                  "path": "$.response.status",
+                  "operator": "eq",
+                  "value": 401
+                },
+                {
+                  "path": "$.response.body.message",
                   "operator": "contains",
                   "value": "Missing authorization code"
                 }
@@ -268,14 +335,18 @@
             "url": "api-service/auth/callback?code=first_code&state=s1"
           },
           "extract": {
-            "firstUserId": "$.body.user.id"
+            "firstUserId": "$.response.body.user.id"
           },
           "assertions": [
             {
               "assertions": [
-                { "path": "response.status", "operator": "eq", "value": 200 },
                 {
-                  "path": "response.body.user.email",
+                  "path": "$.response.status",
+                  "operator": "eq",
+                  "value": 200
+                },
+                {
+                  "path": "$.response.body.user.email",
                   "operator": "eq",
                   "value": "bob@example.com"
                 }
@@ -291,19 +362,23 @@
             "url": "api-service/auth/callback?code=second_code&state=s2"
           },
           "extract": {
-            "secondUserId": "$.body.user.id"
+            "secondUserId": "$.response.body.user.id"
           },
           "assertions": [
             {
               "assertions": [
-                { "path": "response.status", "operator": "eq", "value": 200 },
                 {
-                  "path": "response.body.user.id",
+                  "path": "$.response.status",
+                  "operator": "eq",
+                  "value": 200
+                },
+                {
+                  "path": "$.response.body.user.id",
                   "operator": "eq",
                   "value": "{{firstUserId}}"
                 },
                 {
-                  "path": "response.body.user.email",
+                  "path": "$.response.body.user.email",
                   "operator": "eq",
                   "value": "bob@example.com"
                 }
@@ -315,10 +390,13 @@
                 "method": "POST",
                 "url": "{{oauthDomain}}/oauth/token"
               },
-              "count": { "operator": "eq", "value": 1 },
+              "count": {
+                "operator": "eq",
+                "value": 1
+              },
               "assertions": [
                 {
-                  "path": "request.body.grant_type",
+                  "path": "$.request.body.grant_type",
                   "operator": "eq",
                   "value": "authorization_code"
                 }
@@ -330,7 +408,10 @@
                 "method": "GET",
                 "url": "{{oauthDomain}}/userinfo"
               },
-              "count": { "operator": "eq", "value": 1 }
+              "count": {
+                "operator": "eq",
+                "value": 1
+              }
             },
             {
               "service": "api-service",
@@ -340,7 +421,10 @@
                     "operator": "contains",
                     "value": "Found existing user"
                   },
-                  "count": { "operator": "gte", "value": 1 }
+                  "count": {
+                    "operator": "gte",
+                    "value": 1
+                  }
                 }
               ]
             }
@@ -356,7 +440,11 @@
           "assertions": [
             {
               "assertions": [
-                { "path": "data[0].count", "operator": "eq", "value": 1 }
+                {
+                  "path": "$.response.data[0].count",
+                  "operator": "eq",
+                  "value": 1
+                }
               ]
             }
           ]

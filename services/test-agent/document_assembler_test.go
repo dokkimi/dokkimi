@@ -63,7 +63,7 @@ func TestAssembleHttpDocument(t *testing.T) {
 			t.Errorf("expected 200, got %v", resp["status"])
 		}
 
-		header := resp["header"].(map[string]interface{})
+		header := resp["headers"].(map[string]interface{})
 		if header["x-request-id"] != "abc" {
 			t.Errorf("expected abc, got %v", header["x-request-id"])
 		}
@@ -208,13 +208,13 @@ func TestFindDirectRequestLog(t *testing.T) {
 	})
 }
 
-func TestAssembleStepDocument(t *testing.T) {
+func TestAssembleRootContext(t *testing.T) {
 	now := time.Now()
 	start := now.Add(-100 * time.Millisecond).Format(time.RFC3339Nano)
 	end := now.Add(100 * time.Millisecond).Format(time.RFC3339Nano)
 	stepExec := StepExecution{StartTime: start, EndTime: end}
 
-	t.Run("assembles HTTP document for httpRequest action", func(t *testing.T) {
+	t.Run("assembles unified root context for HTTP step", func(t *testing.T) {
 		target := "api"
 		status := 200
 		httpLogs := []HttpLogMessage{
@@ -225,8 +225,10 @@ func TestAssembleStepDocument(t *testing.T) {
 				ResponseBody: map[string]interface{}{"ok": true},
 			},
 		}
+		varCtx := NewVariableContext()
+		varCtx.Set("foo", "bar")
 		step := TestStep{Action: StepAction{Type: "httpRequest", Method: "GET", URL: "api/items"}}
-		doc := AssembleStepDocument(step, httpLogs, nil, stepExec)
+		doc := AssembleRootContext(step, stepExec, httpLogs, nil, nil, varCtx, nil)
 		resp, ok := doc["response"].(map[string]interface{})
 		if !ok {
 			t.Fatal("expected response in doc")
@@ -234,80 +236,83 @@ func TestAssembleStepDocument(t *testing.T) {
 		if resp["status"] != float64(200) {
 			t.Errorf("expected status 200, got %v", resp["status"])
 		}
+		vars := doc["variables"].(map[string]interface{})
+		if vars["foo"] != "bar" {
+			t.Errorf("expected variables.foo = bar, got %v", vars["foo"])
+		}
+		traffic := doc["traffic"].([]interface{})
+		if len(traffic) != 1 {
+			t.Errorf("expected 1 traffic entry, got %d", len(traffic))
+		}
 	})
 
-	t.Run("assembles DB document for dbQuery action", func(t *testing.T) {
+	t.Run("assembles root context for DB step", func(t *testing.T) {
 		rows := int64(3)
+		dur := 42
 		dbLogs := []DatabaseLogMessage{
 			{
 				DatabaseName: "mydb", Query: "SELECT 1",
 				Timestamp: now.Format(time.RFC3339Nano),
-				Success:   true, RowsAffected: &rows,
+				Success:   true, RowsAffected: &rows, Duration: &dur,
 			},
 		}
+		varCtx := NewVariableContext()
 		step := TestStep{Action: StepAction{Type: "dbQuery", Database: "mydb", Query: "SELECT 1"}}
-		doc := AssembleStepDocument(step, nil, dbLogs, stepExec)
-		if doc["success"] != true {
+		doc := AssembleRootContext(step, stepExec, nil, dbLogs, nil, varCtx, nil)
+		resp := doc["response"].(map[string]interface{})
+		if resp["success"] != true {
 			t.Error("expected success true")
 		}
-		if doc["rowsAffected"] != float64(3) {
-			t.Errorf("expected rowsAffected 3, got %v", doc["rowsAffected"])
+		if resp["rowsAffected"] != float64(3) {
+			t.Errorf("expected rowsAffected 3, got %v", resp["rowsAffected"])
+		}
+		if doc["responseTime"] != float64(42) {
+			t.Errorf("expected responseTime 42, got %v", doc["responseTime"])
 		}
 	})
 
-	t.Run("returns empty doc for wait action", func(t *testing.T) {
+	t.Run("assembles root context for wait step", func(t *testing.T) {
+		varCtx := NewVariableContext()
 		step := TestStep{Action: StepAction{Type: "wait"}}
-		doc := AssembleStepDocument(step, nil, nil, stepExec)
-		if len(doc) != 0 {
-			t.Errorf("expected empty doc, got %v", doc)
+		doc := AssembleRootContext(step, stepExec, nil, nil, nil, varCtx, nil)
+		resp := doc["response"].(map[string]interface{})
+		if len(resp) != 0 {
+			t.Errorf("expected empty response, got %v", resp)
 		}
 	})
-}
 
-func TestAssembleExtractDocument(t *testing.T) {
-	now := time.Now()
-	start := now.Add(-100 * time.Millisecond).Format(time.RFC3339Nano)
-	end := now.Add(100 * time.Millisecond).Format(time.RFC3339Nano)
-	stepExec := StepExecution{StartTime: start, EndTime: end}
-
-	t.Run("returns flat response doc for httpRequest", func(t *testing.T) {
+	t.Run("includes timeline sorted by timestamp", func(t *testing.T) {
 		target := "api"
-		status := 201
+		status := 200
+		earlyTs := now.Add(-50 * time.Millisecond).Format(time.RFC3339Nano)
+		lateTs := now.Add(50 * time.Millisecond).Format(time.RFC3339Nano)
 		httpLogs := []HttpLogMessage{
 			{
-				Method: "POST", URL: "/items", StatusCode: &status,
-				Timestamp: now.Format(time.RFC3339Nano), Target: &target,
-				RequestHeaders:  map[string]interface{}{},
-				ResponseHeaders: map[string]interface{}{"X-Id": "abc"},
-				ResponseBody:    map[string]interface{}{"id": float64(42)},
+				Method: "GET", URL: "/items", StatusCode: &status,
+				Timestamp: lateTs, Target: &target,
+				RequestHeaders: map[string]interface{}{}, ResponseHeaders: map[string]interface{}{},
 			},
 		}
-		step := TestStep{Action: StepAction{Type: "httpRequest", Method: "POST", URL: "api/items"}}
-		doc := AssembleExtractDocument(step, httpLogs, nil, stepExec)
-		if doc["statusCode"] != float64(201) {
-			t.Errorf("expected statusCode 201, got %v", doc["statusCode"])
+		dbLogs := []DatabaseLogMessage{
+			{
+				DatabaseName: "mydb", Query: "SELECT 1",
+				Timestamp: earlyTs, Success: true,
+			},
 		}
-		body, ok := doc["body"].(map[string]interface{})
-		if !ok {
-			t.Fatal("expected body in extract doc")
+		varCtx := NewVariableContext()
+		step := TestStep{Action: StepAction{Type: "httpRequest", Method: "GET", URL: "api/items"}}
+		doc := AssembleRootContext(step, stepExec, httpLogs, dbLogs, nil, varCtx, nil)
+		timeline := doc["timeline"].([]interface{})
+		if len(timeline) != 2 {
+			t.Fatalf("expected 2 timeline entries, got %d", len(timeline))
 		}
-		if body["id"] != float64(42) {
-			t.Errorf("expected body.id 42, got %v", body["id"])
+		first := timeline[0].(map[string]interface{})
+		second := timeline[1].(map[string]interface{})
+		if first["type"] != "dbQuery" {
+			t.Errorf("expected first timeline entry to be dbQuery, got %v", first["type"])
 		}
-		headers, ok := doc["headers"].(map[string]interface{})
-		if !ok {
-			t.Fatal("expected headers in extract doc")
-		}
-		if headers["x-id"] != "abc" {
-			t.Errorf("expected normalized header x-id, got %v", headers["x-id"])
-		}
-	})
-
-	t.Run("returns empty doc when no matching log", func(t *testing.T) {
-		step := TestStep{Action: StepAction{Type: "httpRequest", Method: "GET", URL: "api/missing"}}
-		doc := AssembleExtractDocument(step, nil, nil, stepExec)
-		if len(doc) != 0 {
-			t.Errorf("expected empty doc, got %v", doc)
+		if second["type"] != "httpTraffic" {
+			t.Errorf("expected second timeline entry to be httpTraffic, got %v", second["type"])
 		}
 	})
 }

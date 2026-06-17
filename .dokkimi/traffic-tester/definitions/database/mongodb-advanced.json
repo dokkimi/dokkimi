@@ -31,7 +31,7 @@
             {
               "assertions": [
                 {
-                  "path": "success",
+                  "path": "$.response.success",
                   "operator": "eq",
                   "value": true
                 }
@@ -50,37 +50,37 @@
             {
               "assertions": [
                 {
-                  "path": "success",
+                  "path": "$.response.success",
                   "operator": "eq",
                   "value": true
                 },
                 {
-                  "path": "data[0].orderId",
+                  "path": "$.response.data[0].orderId",
                   "operator": "eq",
                   "value": "{{newOrderId}}"
                 },
                 {
-                  "path": "data[0].customer",
+                  "path": "$.response.data[0].customer",
                   "operator": "eq",
                   "value": "{{customerEmail}}"
                 },
                 {
-                  "path": "data[0].status",
+                  "path": "$.response.data[0].status",
                   "operator": "eq",
                   "value": "pending"
                 },
                 {
-                  "path": "data[0].total",
+                  "path": "$.response.data[0].total",
                   "operator": "gt",
                   "value": 50
                 },
                 {
-                  "path": "data[0].items",
+                  "path": "$.response.data[0].items",
                   "operator": "type",
                   "value": "array"
                 },
                 {
-                  "path": "data[0].items",
+                  "path": "$.response.data[0].items",
                   "operator": "length",
                   "value": 1
                 }
@@ -99,7 +99,7 @@
             {
               "assertions": [
                 {
-                  "path": "success",
+                  "path": "$.response.success",
                   "operator": "eq",
                   "value": true
                 }
@@ -118,17 +118,17 @@
             {
               "assertions": [
                 {
-                  "path": "success",
+                  "path": "$.response.success",
                   "operator": "eq",
                   "value": true
                 },
                 {
-                  "path": "data[0].status",
+                  "path": "$.response.data[0].status",
                   "operator": "eq",
                   "value": "completed"
                 },
                 {
-                  "path": "data[0].status",
+                  "path": "$.response.data[0].status",
                   "operator": "ne",
                   "value": "pending"
                 }
@@ -155,12 +155,12 @@
             {
               "assertions": [
                 {
-                  "path": "success",
+                  "path": "$.response.success",
                   "operator": "eq",
                   "value": true
                 },
                 {
-                  "path": "data[0].orderId",
+                  "path": "$.response.data[0].orderId",
                   "operator": "eq",
                   "value": "{{targetOrderId}}"
                 }
@@ -179,7 +179,7 @@
             {
               "assertions": [
                 {
-                  "path": "success",
+                  "path": "$.response.success",
                   "operator": "eq",
                   "value": true
                 }
@@ -198,12 +198,12 @@
             {
               "assertions": [
                 {
-                  "path": "success",
+                  "path": "$.response.success",
                   "operator": "eq",
                   "value": true
                 },
                 {
-                  "path": "data",
+                  "path": "$.response.data",
                   "operator": "isEmpty"
                 }
               ]
@@ -223,28 +223,28 @@
             "query": "{\"operation\":\"find\",\"collection\":\"orders\",\"filter\":{\"status\":\"completed\"}}"
           },
           "extract": {
-            "completedCustomer": "$.data[0].customer",
-            "completedOrderId": "$.data[0].orderId"
+            "completedCustomer": "$.response.data[0].customer",
+            "completedOrderId": "$.response.data[0].orderId"
           },
           "assertions": [
             {
               "assertions": [
                 {
-                  "path": "success",
+                  "path": "$.response.success",
                   "operator": "eq",
                   "value": true
                 },
                 {
-                  "path": "data",
+                  "path": "$.response.data",
                   "operator": "notEmpty"
                 },
                 {
-                  "path": "data[0].status",
+                  "path": "$.response.data[0].status",
                   "operator": "eq",
                   "value": "completed"
                 },
                 {
-                  "path": "data[0].customer",
+                  "path": "$.response.data[0].customer",
                   "operator": "matches",
                   "value": "^.+@example\\.com$"
                 }
@@ -263,16 +263,16 @@
             {
               "assertions": [
                 {
-                  "path": "success",
+                  "path": "$.response.success",
                   "operator": "eq",
                   "value": true
                 },
                 {
-                  "path": "data",
+                  "path": "$.response.data",
                   "operator": "notEmpty"
                 },
                 {
-                  "path": "data[0].orderId",
+                  "path": "$.response.data[0].orderId",
                   "operator": "eq",
                   "value": "{{completedOrderId}}"
                 }

@@ -39,6 +39,6 @@ tests:
               timeoutMs: 10000
         assertions:
           - assertions:
-              - path: $.extracted.aliceName
+              - path: $.variables.aliceName
                 operator: eq
                 value: Alice

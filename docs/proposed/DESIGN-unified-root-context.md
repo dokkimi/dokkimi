@@ -510,13 +510,13 @@ Docs pages (3 files):
 
 **Definition validator — `shared/definition-validator/validate-assertions.ts`:**
 
-The validator currently doesn't check path formats — it validates structure (is it a string? does the object have `path`/`pattern`/`group`?) but not content. This is an opportunity to add path format validation:
+The validator currently doesn't check path formats — it validates structure (is it a string? does the object have `path`/`pattern`/`group`?) but not content. Add path format validation as part of this phase:
 
-- Warn if an extract path doesn't start with `$.`
-- Warn if an assertion path doesn't start with `$.`
-- Suggest corrections for common old-syntax patterns (`response.body.X` → `$.response.body.X`)
+- Error if an extract path doesn't start with `$.`
+- Error if an assertion path doesn't start with `$.`
+- Suggest corrections for common old-syntax patterns (`response.body.X` → `$.response.body.X`, `$.body.X` → `$.response.body.X`, `data[0].X` → `$.response.data[0].X`)
 
-This is optional but would help users migrating from old definitions.
+This catches stale definitions immediately at validation time rather than failing silently at runtime. The `dokkimi validate` command and VSCode extension both run the validator, so users get feedback before they even try to run.
 
 **Go test files:**
 
@@ -526,7 +526,7 @@ This is optional but would help users migrating from old definitions.
 
 **TypeScript test files:**
 
-- `shared/definition-validator/*.spec.ts` — update if path validation is added
+- `shared/definition-validator/*.spec.ts` — update for the new path validation rules
 
 ### What doesn't change
 

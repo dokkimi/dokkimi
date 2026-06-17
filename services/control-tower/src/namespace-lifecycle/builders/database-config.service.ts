@@ -47,6 +47,15 @@ export class DatabaseConfigService {
           MYSQL_ROOT_PASSWORD: dbPassword, // Same as password for simplicity
         },
         ports: [3306],
+        command: [
+          'mysqld',
+          '--innodb-buffer-pool-size=64M',
+          '--innodb-log-file-size=16M',
+          '--innodb-flush-log-at-trx-commit=0',
+          '--innodb-flush-method=nosync',
+          '--skip-innodb-doublewrite',
+          '--performance-schema=OFF',
+        ],
       },
       mongodb: {
         image: `mongo:${version || '7'}`,

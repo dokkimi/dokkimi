@@ -76,12 +76,12 @@
             {
               "assertions": [
                 {
-                  "path": "response.status",
+                  "path": "$.response.status",
                   "operator": "eq",
                   "value": 200
                 },
                 {
-                  "path": "response.body.results",
+                  "path": "$.response.body.results",
                   "operator": "length",
                   "value": 3
                 }
@@ -100,17 +100,25 @@
               "assertionScope": "first",
               "assertions": [
                 {
-                  "path": "response.body.index",
+                  "path": "$.response.body.index",
                   "operator": "in",
-                  "value": [1, 2, 3]
+                  "value": [
+                    1,
+                    2,
+                    3
+                  ]
                 },
                 {
-                  "path": "response.body.batch",
+                  "path": "$.response.body.batch",
                   "operator": "in",
-                  "value": ["first", "second", "third"]
+                  "value": [
+                    "first",
+                    "second",
+                    "third"
+                  ]
                 },
                 {
-                  "path": "response.status",
+                  "path": "$.response.status",
                   "operator": "eq",
                   "value": 200
                 }
@@ -187,7 +195,7 @@
               "assertionScope": "any",
               "assertions": [
                 {
-                  "path": "response.body.seq",
+                  "path": "$.response.body.seq",
                   "operator": "eq",
                   "value": 3
                 }
@@ -252,14 +260,17 @@
               "assertionScope": "last",
               "assertions": [
                 {
-                  "path": "response.status",
+                  "path": "$.response.status",
                   "operator": "eq",
                   "value": 200
                 },
                 {
-                  "path": "response.body.step",
+                  "path": "$.response.body.step",
                   "operator": "in",
-                  "value": ["first", "second"]
+                  "value": [
+                    "first",
+                    "second"
+                  ]
                 }
               ]
             }
@@ -334,7 +345,7 @@
               "assertionScope": "any",
               "assertions": [
                 {
-                  "path": "response.body.role",
+                  "path": "$.response.body.role",
                   "operator": "eq",
                   "value": "admin"
                 }

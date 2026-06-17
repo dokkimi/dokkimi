@@ -29,7 +29,7 @@ tests:
             - screenshot: validation-error
         assertions:
           - assertions:
-              - path: $.extracted.errorText
+              - path: $.variables.errorText
                 operator: contains
                 value: title is required
           - match:

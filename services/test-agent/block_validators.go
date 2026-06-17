@@ -8,12 +8,15 @@ import (
 
 // ValidateSelfBlock validates assertions against the step's own action result.
 func ValidateSelfBlock(block AssertionBlock, stepDoc map[string]interface{}) []AssertionResult {
-	if len(stepDoc) == 0 {
-		var results []AssertionResult
-		for _, a := range block.Assertions {
-			if a.Disabled {
-				continue
-			}
+	resp, _ := stepDoc["response"].(map[string]interface{})
+	responseEmpty := len(stepDoc) == 0 || (resp != nil && len(resp) == 0)
+
+	var results []AssertionResult
+	for _, a := range block.Assertions {
+		if a.Disabled {
+			continue
+		}
+		if responseEmpty && pathTargetsResponse(a.Path) {
 			results = append(results, AssertionResult{
 				Passed:     false,
 				Error:      "Step log not found",
@@ -21,13 +24,6 @@ func ValidateSelfBlock(block AssertionBlock, stepDoc map[string]interface{}) []A
 				Operator:   a.Operator,
 				ResultKind: "field",
 			})
-		}
-		return results
-	}
-
-	var results []AssertionResult
-	for _, a := range block.Assertions {
-		if a.Disabled {
 			continue
 		}
 		r := ValidateAssertion(a, stepDoc)
@@ -37,6 +33,13 @@ func ValidateSelfBlock(block AssertionBlock, stepDoc map[string]interface{}) []A
 		results = append(results, r)
 	}
 	return results
+}
+
+func pathTargetsResponse(path string) bool {
+	p := strings.TrimPrefix(path, "$.")
+	return strings.HasPrefix(p, "response") ||
+		strings.HasPrefix(p, "request") ||
+		strings.HasPrefix(p, "responseTime")
 }
 
 // ValidateHttpCallBlock validates assertions against matching HTTP logs observed during the step.

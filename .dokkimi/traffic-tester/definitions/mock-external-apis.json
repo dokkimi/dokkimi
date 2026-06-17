@@ -81,17 +81,17 @@
             {
               "assertions": [
                 {
-                  "path": "response.status",
+                  "path": "$.response.status",
                   "operator": "eq",
                   "value": 200
                 },
                 {
-                  "path": "response.body.results[0].id",
+                  "path": "$.response.body.results[0].id",
                   "operator": "eq",
                   "value": "ext-001"
                 },
                 {
-                  "path": "response.body.results[0].value",
+                  "path": "$.response.body.results[0].value",
                   "operator": "eq",
                   "value": "mocked-response"
                 }
@@ -108,7 +108,7 @@
               },
               "assertions": [
                 {
-                  "path": "response.status",
+                  "path": "$.response.status",
                   "operator": "eq",
                   "value": 200
                 }
@@ -145,12 +145,12 @@
             {
               "assertions": [
                 {
-                  "path": "response.status",
+                  "path": "$.response.status",
                   "operator": "eq",
                   "value": 200
                 },
                 {
-                  "path": "response.body.results[0].status",
+                  "path": "$.response.body.results[0].status",
                   "operator": "eq",
                   "value": 500
                 }
@@ -187,17 +187,17 @@
             {
               "assertions": [
                 {
-                  "path": "response.status",
+                  "path": "$.response.status",
                   "operator": "eq",
                   "value": 200
                 },
                 {
-                  "path": "response.body.results[0].accepted",
+                  "path": "$.response.body.results[0].accepted",
                   "operator": "eq",
                   "value": true
                 },
                 {
-                  "path": "responseTime",
+                  "path": "$.responseTime",
                   "operator": "gte",
                   "value": 200
                 }

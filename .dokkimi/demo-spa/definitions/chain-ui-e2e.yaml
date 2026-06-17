@@ -33,7 +33,7 @@ tests:
           # The seeded users table has 3 rows. Asserts the chain executed
           # all the way through and the count came back into the DOM.
           - assertions:
-              - path: $.extracted.userCount
+              - path: $.variables.userCount
                 operator: eq
                 value: '3'
           # Outer hop: UI → traffic-tester (kicked off by the SPA's fetch).

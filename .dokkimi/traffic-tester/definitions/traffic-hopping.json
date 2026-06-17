@@ -80,22 +80,22 @@
             {
               "assertions": [
                 {
-                  "path": "response.status",
+                  "path": "$.response.status",
                   "operator": "eq",
                   "value": 200
                 },
                 {
-                  "path": "response.body.results[0].results[0].results[0].results[0].deepest",
+                  "path": "$.response.body.results[0].results[0].results[0].results[0].deepest",
                   "operator": "eq",
                   "value": true
                 },
                 {
-                  "path": "response.body.results[0].results[0].results[0].results[0].hop",
+                  "path": "$.response.body.results[0].results[0].results[0].results[0].hop",
                   "operator": "eq",
                   "value": 4
                 },
                 {
-                  "path": "response.body.results[0].results[0].results[0].results[0].finalHandler",
+                  "path": "$.response.body.results[0].results[0].results[0].results[0].finalHandler",
                   "operator": "eq",
                   "value": "service-b"
                 }
@@ -113,7 +113,7 @@
               },
               "assertions": [
                 {
-                  "path": "response.status",
+                  "path": "$.response.status",
                   "operator": "eq",
                   "value": 200
                 }
@@ -131,7 +131,7 @@
               },
               "assertions": [
                 {
-                  "path": "response.status",
+                  "path": "$.response.status",
                   "operator": "eq",
                   "value": 200
                 }
@@ -149,7 +149,7 @@
               },
               "assertions": [
                 {
-                  "path": "response.status",
+                  "path": "$.response.status",
                   "operator": "eq",
                   "value": 200
                 }
@@ -167,22 +167,22 @@
               },
               "assertions": [
                 {
-                  "path": "response.status",
+                  "path": "$.response.status",
                   "operator": "eq",
                   "value": 200
                 },
                 {
-                  "path": "response.body.deepest",
+                  "path": "$.response.body.deepest",
                   "operator": "eq",
                   "value": true
                 },
                 {
-                  "path": "response.body.hop",
+                  "path": "$.response.body.hop",
                   "operator": "eq",
                   "value": 4
                 },
                 {
-                  "path": "response.body.finalHandler",
+                  "path": "$.response.body.finalHandler",
                   "operator": "eq",
                   "value": "service-b"
                 }

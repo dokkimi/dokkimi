@@ -46,7 +46,7 @@
             {
               "assertions": [
                 {
-                  "path": "response.status",
+                  "path": "$.response.status",
                   "operator": "eq",
                   "value": 200
                 }
@@ -126,7 +126,7 @@
             {
               "assertions": [
                 {
-                  "path": "response.status",
+                  "path": "$.response.status",
                   "operator": "eq",
                   "value": 200
                 }
@@ -193,13 +193,17 @@
                   "url": "/log-handler",
                   "method": "POST",
                   "data": {
-                    "preRequestLogs": ["HANDLER-B: Received dispatch"],
+                    "preRequestLogs": [
+                      "HANDLER-B: Received dispatch"
+                    ],
                     "response": {
                       "value": {
                         "handler": "b"
                       }
                     },
-                    "postRequestLogs": ["HANDLER-B: Completed"]
+                    "postRequestLogs": [
+                      "HANDLER-B: Completed"
+                    ]
                   }
                 },
                 {
@@ -207,29 +211,35 @@
                   "url": "/log-handler",
                   "method": "POST",
                   "data": {
-                    "preRequestLogs": ["HANDLER-C: Received dispatch"],
+                    "preRequestLogs": [
+                      "HANDLER-C: Received dispatch"
+                    ],
                     "response": {
                       "value": {
                         "handler": "c"
                       }
                     },
-                    "postRequestLogs": ["HANDLER-C: Completed"]
+                    "postRequestLogs": [
+                      "HANDLER-C: Completed"
+                    ]
                   }
                 }
               ],
-              "postRequestLogs": ["ORCHESTRATOR: All dispatches completed"]
+              "postRequestLogs": [
+                "ORCHESTRATOR: All dispatches completed"
+              ]
             }
           },
           "assertions": [
             {
               "assertions": [
                 {
-                  "path": "response.status",
+                  "path": "$.response.status",
                   "operator": "eq",
                   "value": 200
                 },
                 {
-                  "path": "response.body.results",
+                  "path": "$.response.body.results",
                   "operator": "length",
                   "value": 2
                 }

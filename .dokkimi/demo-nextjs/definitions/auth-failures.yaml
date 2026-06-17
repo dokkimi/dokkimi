@@ -21,10 +21,10 @@ tests:
           url: nextjs-demo/api/auth/callback
         assertions:
           - assertions:
-              - path: response.status
+              - path: $.response.status
                 operator: eq
                 value: 400
-              - path: response.body.error
+              - path: $.response.body.error
                 operator: eq
                 value: missing code or state
   - name: Unauthenticated write returns 401
@@ -42,9 +42,9 @@ tests:
             country: US
         assertions:
           - assertions:
-              - path: response.status
+              - path: $.response.status
                 operator: eq
                 value: 401
-              - path: response.body.error
+              - path: $.response.body.error
                 operator: eq
                 value: unauthorized

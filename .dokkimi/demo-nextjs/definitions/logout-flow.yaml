@@ -53,11 +53,11 @@ tests:
               operator: eq
               value: 1
             assertions:
-              - path: response.status
+              - path: $.response.status
                 operator: eq
                 value: 303
           - assertions:
-              - path: $.extracted.postLogoutUrl
+              - path: $.variables.postLogoutUrl
                 operator: eq
                 value: /
       - name: Visiting /dashboard after sign-out redirects to /login
@@ -79,12 +79,12 @@ tests:
                   selector: "[data-testid='dashboard-page']"
         assertions:
           - assertions:
-              - path: $.extracted.finalPath
+              - path: $.variables.finalPath
                 operator: eq
                 value: /login
-              - path: $.extracted.loginButtonExists
+              - path: $.variables.loginButtonExists
                 operator: eq
                 value: 'true'
-              - path: $.extracted.dashboardCardExists
+              - path: $.variables.dashboardCardExists
                 operator: eq
                 value: 'false'

@@ -2,6 +2,7 @@ package main
 
 import (
 	"log"
+	"sort"
 	"strings"
 	"time"
 )
@@ -103,18 +104,17 @@ func (sv *StepValidator) validateStep(step TestStep, stepExec StepExecution, ste
 		resolvedStep.Action = resolved
 	}
 
-	var stepDoc, extractDoc map[string]interface{}
-	if step.Action.Type == "ui" && stepResp != nil {
-		stepDoc = stepResp
-		extractDoc = stepResp
-	} else {
-		stepDoc = AssembleStepDocument(resolvedStep, httpLogs, dbLogs, stepExec)
-		extractDoc = AssembleExtractDocument(resolvedStep, httpLogs, dbLogs, stepExec)
-	}
+	rootCtx := AssembleRootContext(resolvedStep, stepExec, httpLogs, dbLogs, consoleLogs, sv.varCtx, stepResp)
 
 	if step.Extract != nil {
-		for variable, rule := range step.Extract {
-			value, err := ResolveExtractRule(extractDoc, variable, rule)
+		extractKeys := make([]string, 0, len(step.Extract))
+		for k := range step.Extract {
+			extractKeys = append(extractKeys, k)
+		}
+		sort.Strings(extractKeys)
+		for _, variable := range extractKeys {
+			rule := step.Extract[variable]
+			value, err := ResolveExtractRule(rootCtx, variable, rule)
 			if err != nil {
 				results = append(results, AssertionResult{
 					Passed:     false,
@@ -124,6 +124,8 @@ func (sv *StepValidator) validateStep(step TestStep, stepExec StepExecution, ste
 				})
 			} else {
 				sv.varCtx.Set(variable, value)
+				vars := rootCtx["variables"].(map[string]interface{})
+				vars[variable] = value
 				results = append(results, AssertionResult{
 					Passed:     true,
 					Path:       rule.Path,
@@ -144,8 +146,14 @@ func (sv *StepValidator) validateStep(step TestStep, stepExec StepExecution, ste
 		bi := blockIndex
 
 		if block.Extract != nil {
-			for variable, rule := range block.Extract {
-				value, err := ResolveExtractRule(stepDoc, variable, rule)
+			blockExtractKeys := make([]string, 0, len(block.Extract))
+			for k := range block.Extract {
+				blockExtractKeys = append(blockExtractKeys, k)
+			}
+			sort.Strings(blockExtractKeys)
+			for _, variable := range blockExtractKeys {
+				rule := block.Extract[variable]
+				value, err := ResolveExtractRule(rootCtx, variable, rule)
 				if err != nil {
 					results = append(results, AssertionResult{
 						Passed:     false,
@@ -156,6 +164,8 @@ func (sv *StepValidator) validateStep(step TestStep, stepExec StepExecution, ste
 					})
 				} else {
 					sv.varCtx.Set(variable, value)
+					vars := rootCtx["variables"].(map[string]interface{})
+					vars[variable] = value
 					results = append(results, AssertionResult{
 						Passed:     true,
 						Path:       rule.Path,
@@ -172,7 +182,7 @@ func (sv *StepValidator) validateStep(step TestStep, stepExec StepExecution, ste
 		} else if block.Match != nil {
 			blockResults = ValidateHttpCallBlock(block, stepExec, httpLogs)
 		} else {
-			blockResults = ValidateSelfBlock(block, stepDoc)
+			blockResults = ValidateSelfBlock(block, rootCtx)
 		}
 
 		for i := range blockResults {

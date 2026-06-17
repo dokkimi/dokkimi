@@ -50,12 +50,12 @@
             {
               "assertions": [
                 {
-                  "path": "response.status",
+                  "path": "$.response.status",
                   "operator": "eq",
                   "value": 200
                 },
                 {
-                  "path": "response.body.results[0].message",
+                  "path": "$.response.body.results[0].message",
                   "operator": "eq",
                   "value": "hello from service-b"
                 }
@@ -73,12 +73,12 @@
               },
               "assertions": [
                 {
-                  "path": "response.status",
+                  "path": "$.response.status",
                   "operator": "eq",
                   "value": 200
                 },
                 {
-                  "path": "response.body.message",
+                  "path": "$.response.body.message",
                   "operator": "eq",
                   "value": "hello from service-b"
                 }
@@ -132,17 +132,17 @@
             {
               "assertions": [
                 {
-                  "path": "response.status",
+                  "path": "$.response.status",
                   "operator": "eq",
                   "value": 200
                 },
                 {
-                  "path": "response.body.results[0].results[0].origin",
+                  "path": "$.response.body.results[0].results[0].origin",
                   "operator": "eq",
                   "value": "service-c"
                 },
                 {
-                  "path": "response.body.results[0].results[0].hop",
+                  "path": "$.response.body.results[0].results[0].hop",
                   "operator": "eq",
                   "value": 3
                 }
@@ -160,7 +160,7 @@
               },
               "assertions": [
                 {
-                  "path": "response.status",
+                  "path": "$.response.status",
                   "operator": "eq",
                   "value": 200
                 }
@@ -178,12 +178,12 @@
               },
               "assertions": [
                 {
-                  "path": "response.status",
+                  "path": "$.response.status",
                   "operator": "eq",
                   "value": 200
                 },
                 {
-                  "path": "response.body.origin",
+                  "path": "$.response.body.origin",
                   "operator": "eq",
                   "value": "service-c"
                 }
@@ -238,12 +238,12 @@
             {
               "assertions": [
                 {
-                  "path": "response.status",
+                  "path": "$.response.status",
                   "operator": "eq",
                   "value": 200
                 },
                 {
-                  "path": "response.body.results",
+                  "path": "$.response.body.results",
                   "operator": "length",
                   "value": 2
                 }
@@ -312,7 +312,7 @@
             {
               "assertions": [
                 {
-                  "path": "response.status",
+                  "path": "$.response.status",
                   "operator": "eq",
                   "value": 200
                 }
@@ -330,17 +330,17 @@
               },
               "assertions": [
                 {
-                  "path": "request.header.x-trace-id",
+                  "path": "$.request.headers.x-trace-id",
                   "operator": "eq",
                   "value": "trace-abc-123"
                 },
                 {
-                  "path": "request.header.x-custom-auth",
+                  "path": "$.request.headers.x-custom-auth",
                   "operator": "eq",
                   "value": "Bearer test-token"
                 },
                 {
-                  "path": "response.status",
+                  "path": "$.response.status",
                   "operator": "eq",
                   "value": 200
                 }
@@ -374,12 +374,12 @@
             {
               "assertions": [
                 {
-                  "path": "response.status",
+                  "path": "$.response.status",
                   "operator": "eq",
                   "value": 200
                 },
                 {
-                  "path": "response.body.isolated",
+                  "path": "$.response.body.isolated",
                   "operator": "eq",
                   "value": true
                 }

@@ -58,19 +58,19 @@ tests:
           query: MGET par-1 par-2 par-3
         assertions:
           - assertions:
-              - path: success
+              - path: $.response.success
                 operator: eq
                 value: true
-              - path: data
+              - path: $.response.data
                 operator: length
                 value: 3
-              - path: data[0].value
+              - path: $.response.data[0].value
                 operator: eq
                 value: alpha
-              - path: data[1].value
+              - path: $.response.data[1].value
                 operator: eq
                 value: beta
-              - path: data[2].value
+              - path: $.response.data[2].value
                 operator: eq
                 value: gamma
 
@@ -88,10 +88,10 @@ tests:
             bulk-16 v16 bulk-17 v17 bulk-18 v18 bulk-19 v19 bulk-20 v20
         assertions:
           - assertions:
-              - path: success
+              - path: $.response.success
                 operator: eq
                 value: true
-              - path: data[0].value
+              - path: $.response.data[0].value
                 operator: eq
                 value: OK
       - name: MGET all 20 keys
@@ -106,16 +106,16 @@ tests:
             bulk-16 bulk-17 bulk-18 bulk-19 bulk-20
         assertions:
           - assertions:
-              - path: success
+              - path: $.response.success
                 operator: eq
                 value: true
-              - path: data
+              - path: $.response.data
                 operator: length
                 value: 20
-              - path: data[0].value
+              - path: $.response.data[0].value
                 operator: eq
                 value: v01
-              - path: data[19].value
+              - path: $.response.data[19].value
                 operator: eq
                 value: v20
 
@@ -128,7 +128,7 @@ tests:
           query: SET race-counter 0
         assertions:
           - assertions:
-              - path: success
+              - path: $.response.success
                 operator: eq
                 value: true
       - name: Parallel requests
@@ -151,10 +151,10 @@ tests:
           query: GET race-counter
         assertions:
           - assertions:
-              - path: success
+              - path: $.response.success
                 operator: eq
                 value: true
-              - path: data[0].value
+              - path: $.response.data[0].value
                 operator: eq
                 value: '3'
 

@@ -22,7 +22,12 @@
       "mockResponseBody": {
         "id": "chatcmpl-001",
         "choices": [
-          { "message": { "role": "assistant", "content": "billing" } }
+          {
+            "message": {
+              "role": "assistant",
+              "content": "billing"
+            }
+          }
         ]
       }
     },
@@ -63,7 +68,10 @@
         "id": "chatcmpl-fallback",
         "choices": [
           {
-            "message": { "role": "assistant", "content": "I don't understand." }
+            "message": {
+              "role": "assistant",
+              "content": "I don't understand."
+            }
           }
         ]
       }
@@ -80,7 +88,14 @@
         "Content-Type": "application/json"
       },
       "mockResponseBody": {
-        "data": { "users": [{ "id": "1", "name": "Alice" }] }
+        "data": {
+          "users": [
+            {
+              "id": "1",
+              "name": "Alice"
+            }
+          ]
+        }
       }
     },
     {
@@ -95,7 +110,14 @@
         "Content-Type": "application/json"
       },
       "mockResponseBody": {
-        "data": { "orders": [{ "id": "ord-1", "total": 99.99 }] }
+        "data": {
+          "orders": [
+            {
+              "id": "ord-1",
+              "total": 99.99
+            }
+          ]
+        }
       }
     },
     {
@@ -139,7 +161,9 @@
             "type": "httpRequest",
             "method": "POST",
             "url": "service-a/external-call",
-            "headers": { "Content-Type": "application/json" },
+            "headers": {
+              "Content-Type": "application/json"
+            },
             "body": {
               "requests": [
                 {
@@ -162,14 +186,18 @@
           "assertions": [
             {
               "assertions": [
-                { "path": "response.status", "operator": "eq", "value": 200 },
                 {
-                  "path": "response.body.results[0].id",
+                  "path": "$.response.status",
+                  "operator": "eq",
+                  "value": 200
+                },
+                {
+                  "path": "$.response.body.results[0].id",
                   "operator": "eq",
                   "value": "chatcmpl-001"
                 },
                 {
-                  "path": "response.body.results[0].choices[0].message.content",
+                  "path": "$.response.body.results[0].choices[0].message.content",
                   "operator": "eq",
                   "value": "billing"
                 }
@@ -183,7 +211,9 @@
             "type": "httpRequest",
             "method": "POST",
             "url": "service-a/external-call",
-            "headers": { "Content-Type": "application/json" },
+            "headers": {
+              "Content-Type": "application/json"
+            },
             "body": {
               "requests": [
                 {
@@ -206,14 +236,18 @@
           "assertions": [
             {
               "assertions": [
-                { "path": "response.status", "operator": "eq", "value": 200 },
                 {
-                  "path": "response.body.results[0].id",
+                  "path": "$.response.status",
+                  "operator": "eq",
+                  "value": 200
+                },
+                {
+                  "path": "$.response.body.results[0].id",
                   "operator": "eq",
                   "value": "chatcmpl-002"
                 },
                 {
-                  "path": "response.body.results[0].choices[0].message.content",
+                  "path": "$.response.body.results[0].choices[0].message.content",
                   "operator": "contains",
                   "value": "Alice"
                 }
@@ -227,7 +261,9 @@
             "type": "httpRequest",
             "method": "POST",
             "url": "service-a/external-call",
-            "headers": { "Content-Type": "application/json" },
+            "headers": {
+              "Content-Type": "application/json"
+            },
             "body": {
               "requests": [
                 {
@@ -237,7 +273,10 @@
                   "data": {
                     "model": "gpt-4o",
                     "messages": [
-                      { "role": "user", "content": "tell me a joke" }
+                      {
+                        "role": "user",
+                        "content": "tell me a joke"
+                      }
                     ]
                   }
                 }
@@ -247,14 +286,18 @@
           "assertions": [
             {
               "assertions": [
-                { "path": "response.status", "operator": "eq", "value": 200 },
                 {
-                  "path": "response.body.results[0].id",
+                  "path": "$.response.status",
+                  "operator": "eq",
+                  "value": 200
+                },
+                {
+                  "path": "$.response.body.results[0].id",
                   "operator": "eq",
                   "value": "chatcmpl-fallback"
                 },
                 {
-                  "path": "response.body.results[0].choices[0].message.content",
+                  "path": "$.response.body.results[0].choices[0].message.content",
                   "operator": "eq",
                   "value": "I don't understand."
                 }
@@ -273,7 +316,9 @@
             "type": "httpRequest",
             "method": "POST",
             "url": "service-a/external-call",
-            "headers": { "Content-Type": "application/json" },
+            "headers": {
+              "Content-Type": "application/json"
+            },
             "body": {
               "requests": [
                 {
@@ -290,9 +335,13 @@
           "assertions": [
             {
               "assertions": [
-                { "path": "response.status", "operator": "eq", "value": 200 },
                 {
-                  "path": "response.body.results[0].data.users[0].name",
+                  "path": "$.response.status",
+                  "operator": "eq",
+                  "value": 200
+                },
+                {
+                  "path": "$.response.body.results[0].data.users[0].name",
                   "operator": "eq",
                   "value": "Alice"
                 }
@@ -306,7 +355,9 @@
             "type": "httpRequest",
             "method": "POST",
             "url": "service-a/external-call",
-            "headers": { "Content-Type": "application/json" },
+            "headers": {
+              "Content-Type": "application/json"
+            },
             "body": {
               "requests": [
                 {
@@ -323,14 +374,18 @@
           "assertions": [
             {
               "assertions": [
-                { "path": "response.status", "operator": "eq", "value": 200 },
                 {
-                  "path": "response.body.results[0].data.orders[0].id",
+                  "path": "$.response.status",
+                  "operator": "eq",
+                  "value": 200
+                },
+                {
+                  "path": "$.response.body.results[0].data.orders[0].id",
                   "operator": "eq",
                   "value": "ord-1"
                 },
                 {
-                  "path": "response.body.results[0].data.orders[0].total",
+                  "path": "$.response.body.results[0].data.orders[0].total",
                   "operator": "eq",
                   "value": 99.99
                 }
@@ -349,7 +404,9 @@
             "type": "httpRequest",
             "method": "POST",
             "url": "service-a/external-call",
-            "headers": { "Content-Type": "application/json" },
+            "headers": {
+              "Content-Type": "application/json"
+            },
             "body": {
               "requests": [
                 {
@@ -358,7 +415,9 @@
                   "method": "POST",
                   "data": {
                     "tool": "search_database",
-                    "args": { "query": "order #1234" }
+                    "args": {
+                      "query": "order #1234"
+                    }
                   }
                 }
               ]
@@ -367,9 +426,13 @@
           "assertions": [
             {
               "assertions": [
-                { "path": "response.status", "operator": "eq", "value": 200 },
                 {
-                  "path": "response.body.results[0].result",
+                  "path": "$.response.status",
+                  "operator": "eq",
+                  "value": 200
+                },
+                {
+                  "path": "$.response.body.results[0].result",
                   "operator": "eq",
                   "value": "found 3 matching records"
                 }
@@ -383,7 +446,9 @@
             "type": "httpRequest",
             "method": "POST",
             "url": "service-a/external-call",
-            "headers": { "Content-Type": "application/json" },
+            "headers": {
+              "Content-Type": "application/json"
+            },
             "body": {
               "requests": [
                 {
@@ -392,7 +457,10 @@
                   "method": "POST",
                   "data": {
                     "tool": "send_email",
-                    "args": { "to": "alice@example.com", "subject": "Hello" }
+                    "args": {
+                      "to": "alice@example.com",
+                      "subject": "Hello"
+                    }
                   }
                 }
               ]
@@ -401,9 +469,13 @@
           "assertions": [
             {
               "assertions": [
-                { "path": "response.status", "operator": "eq", "value": 200 },
                 {
-                  "path": "response.body.results[0].result",
+                  "path": "$.response.status",
+                  "operator": "eq",
+                  "value": 200
+                },
+                {
+                  "path": "$.response.body.results[0].result",
                   "operator": "eq",
                   "value": "email sent successfully"
                 }
@@ -422,7 +494,9 @@
             "type": "httpRequest",
             "method": "POST",
             "url": "service-a/external-call",
-            "headers": { "Content-Type": "application/json" },
+            "headers": {
+              "Content-Type": "application/json"
+            },
             "body": {
               "requests": [
                 {
@@ -445,9 +519,13 @@
           "assertions": [
             {
               "assertions": [
-                { "path": "response.status", "operator": "eq", "value": 200 },
                 {
-                  "path": "response.body.results[0].id",
+                  "path": "$.response.status",
+                  "operator": "eq",
+                  "value": 200
+                },
+                {
+                  "path": "$.response.body.results[0].id",
                   "operator": "eq",
                   "value": "chatcmpl-001"
                 }
@@ -466,7 +544,9 @@
             "type": "httpRequest",
             "method": "POST",
             "url": "service-a/external-call",
-            "headers": { "Content-Type": "application/json" },
+            "headers": {
+              "Content-Type": "application/json"
+            },
             "body": {
               "requests": [
                 {
@@ -501,7 +581,10 @@
                   "method": "POST",
                   "data": {
                     "messages": [
-                      { "role": "user", "content": "something else entirely" }
+                      {
+                        "role": "user",
+                        "content": "something else entirely"
+                      }
                     ]
                   }
                 }
@@ -511,19 +594,23 @@
           "assertions": [
             {
               "assertions": [
-                { "path": "response.status", "operator": "eq", "value": 200 },
                 {
-                  "path": "response.body.results[0].id",
+                  "path": "$.response.status",
+                  "operator": "eq",
+                  "value": 200
+                },
+                {
+                  "path": "$.response.body.results[0].id",
                   "operator": "eq",
                   "value": "chatcmpl-001"
                 },
                 {
-                  "path": "response.body.results[1].id",
+                  "path": "$.response.body.results[1].id",
                   "operator": "eq",
                   "value": "chatcmpl-002"
                 },
                 {
-                  "path": "response.body.results[2].id",
+                  "path": "$.response.body.results[2].id",
                   "operator": "eq",
                   "value": "chatcmpl-fallback"
                 }

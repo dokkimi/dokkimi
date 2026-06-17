@@ -72,11 +72,11 @@ func TestExtract_SimplePath(t *testing.T) {
 	if err := vc.Extract(rules, doc); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if v := vc.variables["userId"]; v != "42" {
-		t.Errorf("expected '42', got '%s'", v)
+	if v := vc.variables["userId"]; v != float64(42) {
+		t.Errorf("expected 42, got '%v'", v)
 	}
 	if v := vc.variables["userName"]; v != "alice" {
-		t.Errorf("expected 'alice', got '%s'", v)
+		t.Errorf("expected 'alice', got '%v'", v)
 	}
 }
 
@@ -99,7 +99,7 @@ func TestExtract_RegexPattern(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if v := vc.variables["orderId"]; v != "12345" {
-		t.Errorf("expected '12345', got '%s'", v)
+		t.Errorf("expected '12345', got '%v'", v)
 	}
 }
 
@@ -117,7 +117,7 @@ func TestExtract_RegexPattern_DefaultGroup(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if v := vc.variables["resourceId"]; v != "789" {
-		t.Errorf("expected '789', got '%s'", v)
+		t.Errorf("expected '789', got '%v'", v)
 	}
 }
 
@@ -136,7 +136,7 @@ func TestExtract_RegexPattern_Group0_FullMatch(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if v := vc.variables["ts"]; v != "2024-01-15T10:30:00Z" {
-		t.Errorf("expected '2024-01-15T10:30:00Z', got '%s'", v)
+		t.Errorf("expected '2024-01-15T10:30:00Z', got '%v'", v)
 	}
 }
 

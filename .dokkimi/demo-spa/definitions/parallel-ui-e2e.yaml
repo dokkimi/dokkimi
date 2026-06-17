@@ -37,13 +37,13 @@ tests:
         assertions:
           # All three sub-results landed in the DOM.
           - assertions:
-              - path: $.extracted.usersN
+              - path: $.variables.usersN
                 operator: eq
                 value: '3'
-              - path: $.extracted.postsN
+              - path: $.variables.postsN
                 operator: eq
                 value: '2'
-              - path: $.extracted.pingValue
+              - path: $.variables.pingValue
                 operator: eq
                 value: pong
           # Three independent POSTs to traffic-tester from one UI action.

@@ -13,19 +13,19 @@ import (
 
 // TestExecutionLogMessage represents the format expected by Log Processor Service
 type TestExecutionLogMessage struct {
-	InstanceID     string            `json:"instanceId"`
-	EventType      string            `json:"eventType"`
-	Message        string            `json:"message"`
-	StepIndex      *int              `json:"stepIndex,omitempty"`
-	SubActionIndex *int              `json:"subActionIndex,omitempty"` // index within a parallel action batch
-	SubStepIndex   *int              `json:"subStepIndex,omitempty"`   // UI sub-step position within action.steps
-	ActionType     string            `json:"actionType,omitempty"`     // UI sub-step kind (visit/click/type/...)
-	Selector       string            `json:"selector,omitempty"`       // UI sub-step CSS selector (when applicable)
-	Duration       *int              `json:"duration,omitempty"`
-	Error          string            `json:"error,omitempty"`
-	ErrorType      string            `json:"errorType,omitempty"`
-	Variables      map[string]string `json:"variables"`
-	Timestamp      string            `json:"timestamp,omitempty"`
+	InstanceID     string                 `json:"instanceId"`
+	EventType      string                 `json:"eventType"`
+	Message        string                 `json:"message"`
+	StepIndex      *int                   `json:"stepIndex,omitempty"`
+	SubActionIndex *int                   `json:"subActionIndex,omitempty"` // index within a parallel action batch
+	SubStepIndex   *int                   `json:"subStepIndex,omitempty"`   // UI sub-step position within action.steps
+	ActionType     string                 `json:"actionType,omitempty"`     // UI sub-step kind (visit/click/type/...)
+	Selector       string                 `json:"selector,omitempty"`       // UI sub-step CSS selector (when applicable)
+	Duration       *int                   `json:"duration,omitempty"`
+	Error          string                 `json:"error,omitempty"`
+	ErrorType      string                 `json:"errorType,omitempty"`
+	Variables      map[string]interface{} `json:"variables"`
+	Timestamp      string                 `json:"timestamp,omitempty"`
 
 	// flushDone is an internal sentinel field — when non-nil, the worker closes
 	// it instead of sending the message. This guarantees all prior messages in
@@ -132,7 +132,7 @@ func (l *TestExecutionLogger) logEventDetailed(
 	errStr string,
 	errorType string,
 ) {
-	variables := map[string]string{}
+	variables := map[string]interface{}{}
 	if l.varCtx != nil {
 		variables = l.varCtx.Snapshot()
 	}
