@@ -70,7 +70,11 @@
             {
               "assertions": [
                 { "path": "$.response.status", "operator": "eq", "value": 200 },
-                { "path": "$.response.body.profile.posts", "operator": "length", "value": 3 }
+                {
+                  "path": "$.response.body.profile.posts",
+                  "operator": "length",
+                  "value": 3
+                }
               ]
             }
           ]
@@ -93,7 +97,11 @@
           "assertions": [
             {
               "assertions": [
-                { "path": "$.response.success", "operator": "eq", "value": true },
+                {
+                  "path": "$.response.success",
+                  "operator": "eq",
+                  "value": true
+                },
                 { "path": "$.response.data", "operator": "length", "value": 2 }
               ]
             }
@@ -143,7 +151,11 @@
           "assertions": [
             {
               "assertions": [
-                { "path": "$.response.success", "operator": "eq", "value": true }
+                {
+                  "path": "$.response.success",
+                  "operator": "eq",
+                  "value": true
+                }
               ]
             }
           ]
@@ -158,8 +170,16 @@
           "assertions": [
             {
               "assertions": [
-                { "path": "$.response.success", "operator": "eq", "value": true },
-                { "path": "$.response.data[0].count", "operator": "eq", "value": 3 }
+                {
+                  "path": "$.response.success",
+                  "operator": "eq",
+                  "value": true
+                },
+                {
+                  "path": "$.response.data[0].count",
+                  "operator": "eq",
+                  "value": 3
+                }
               ]
             }
           ]
@@ -200,8 +220,16 @@
           "assertions": [
             {
               "assertions": [
-                { "path": "$.variables.pollLoop.completed", "operator": "eq", "value": true },
-                { "path": "$.variables.pollLoop.iterations", "operator": "lte", "value": 5 }
+                {
+                  "path": "$.variables.pollLoop.completed",
+                  "operator": "eq",
+                  "value": true
+                },
+                {
+                  "path": "$.variables.pollLoop.iterations",
+                  "operator": "lte",
+                  "value": 5
+                }
               ]
             }
           ]
@@ -240,8 +268,16 @@
           "assertions": [
             {
               "assertions": [
-                { "path": "$.variables.roundLoop.iterations", "operator": "eq", "value": 3 },
-                { "path": "$.variables.roundLoop.completed", "operator": "eq", "value": true }
+                {
+                  "path": "$.variables.roundLoop.iterations",
+                  "operator": "eq",
+                  "value": 3
+                },
+                {
+                  "path": "$.variables.roundLoop.completed",
+                  "operator": "eq",
+                  "value": true
+                }
               ]
             }
           ]
@@ -282,8 +318,16 @@
           "assertions": [
             {
               "assertions": [
-                { "path": "$.variables.exhaustLoop.completed", "operator": "eq", "value": false },
-                { "path": "$.variables.exhaustLoop.iterations", "operator": "eq", "value": 3 }
+                {
+                  "path": "$.variables.exhaustLoop.completed",
+                  "operator": "eq",
+                  "value": false
+                },
+                {
+                  "path": "$.variables.exhaustLoop.iterations",
+                  "operator": "eq",
+                  "value": 3
+                }
               ]
             }
           ]

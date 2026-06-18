@@ -1028,8 +1028,8 @@ The JSONPath is resolved first, the result is coerced to a string, then the rege
 
 | Field       | Type   | Required | Description                                           |
 | ----------- | ------ | -------- | ----------------------------------------------------- |
-| `path`      | string | *        | JSONPath to the source object                         |
-| `from`      | string | *        | Variable reference (`{{varName}}`) as the source      |
+| `path`      | string | \*       | JSONPath to the source object                         |
+| `from`      | string | \*       | Variable reference (`{{varName}}`) as the source      |
 | `transform` | string | Yes      | Conversion type: `"keys"`, `"values"`, or `"entries"` |
 
 \* Either `path` or `from` is required (not both).
@@ -1091,12 +1091,12 @@ Loop modifiers let you repeat tests, steps, or actions over data. Three types ar
 
 Iterates over an array of items. Each iteration sets the loop variable to the current item.
 
-| Field     | Type            | Required | Description                                                                                              |
-| --------- | --------------- | -------- | -------------------------------------------------------------------------------------------------------- |
-| `items`   | array or string | Yes      | Inline array, `{{variable}}` reference, or `$.path` into the response (assertion-block level only)       |
-| `as`      | string          | Yes      | Variable name for the current item. Access fields with `{{as.field}}`.                                   |
+| Field     | Type            | Required | Description                                                                                                               |
+| --------- | --------------- | -------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `items`   | array or string | Yes      | Inline array, `{{variable}}` reference, or `$.path` into the response (assertion-block level only)                        |
+| `as`      | string          | Yes      | Variable name for the current item. Access fields with `{{as.field}}`.                                                    |
 | `name`    | string          | No       | Loop name. When set, exposes metadata as `{{name.index}}`, `{{name.items}}`, `{{name.completed}}`, `{{name.iterations}}`. |
-| `delayMs` | integer         | No       | Milliseconds to wait between iterations                                                                  |
+| `delayMs` | integer         | No       | Milliseconds to wait between iterations                                                                                   |
 
 ```json
 {
@@ -1126,14 +1126,14 @@ Items can also be a variable reference or a JSONPath:
 
 Iterates over a numeric range (inclusive on both ends).
 
-| Field     | Type    | Required | Default                 | Description                             |
-| --------- | ------- | -------- | ----------------------- | --------------------------------------- |
-| `from`    | integer | Yes      | —                       | Start value (inclusive)                  |
-| `to`      | integer | Yes      | —                       | End value (inclusive)                    |
-| `step`    | integer | No       | 1                       | Increment per iteration. Must not be 0. Use negative step for descending ranges. |
-| `as`      | string  | Yes      | —                       | Variable name for the current value     |
-| `name`    | string  | No       | —                       | Loop name for metadata (see forEach)    |
-| `delayMs` | integer | No       | —                       | Milliseconds to wait between iterations |
+| Field     | Type    | Required | Default | Description                                                                      |
+| --------- | ------- | -------- | ------- | -------------------------------------------------------------------------------- |
+| `from`    | integer | Yes      | —       | Start value (inclusive)                                                          |
+| `to`      | integer | Yes      | —       | End value (inclusive)                                                            |
+| `step`    | integer | No       | 1       | Increment per iteration. Must not be 0. Use negative step for descending ranges. |
+| `as`      | string  | Yes      | —       | Variable name for the current value                                              |
+| `name`    | string  | No       | —       | Loop name for metadata (see forEach)                                             |
+| `delayMs` | integer | No       | —       | Milliseconds to wait between iterations                                          |
 
 ```json
 {
@@ -1194,8 +1194,22 @@ Loops can be applied at five levels:
   "name": "Verify order {{order.id}}",
   "forEach": { "items": "{{orders}}", "as": "order" },
   "steps": [
-    { "name": "Check API", "action": { "type": "httpRequest", "method": "GET", "url": "api/orders/{{order.id}}" } },
-    { "name": "Check DB", "action": { "type": "dbQuery", "database": "postgres-db", "query": "SELECT * FROM orders WHERE id = '{{order.id}}'" } }
+    {
+      "name": "Check API",
+      "action": {
+        "type": "httpRequest",
+        "method": "GET",
+        "url": "api/orders/{{order.id}}"
+      }
+    },
+    {
+      "name": "Check DB",
+      "action": {
+        "type": "dbQuery",
+        "database": "postgres-db",
+        "query": "SELECT * FROM orders WHERE id = '{{order.id}}'"
+      }
+    }
   ]
 }
 ```
@@ -1234,7 +1248,11 @@ Loops can be applied at five levels:
 {
   "forEach": { "items": "$.response.body", "as": "user" },
   "assertions": [
-    { "path": "{{user.email}}", "operator": "matches", "value": "^.+@.+\\..+$" },
+    {
+      "path": "{{user.email}}",
+      "operator": "matches",
+      "value": "^.+@.+\\..+$"
+    },
     { "path": "{{user.active}}", "operator": "eq", "value": true }
   ]
 }

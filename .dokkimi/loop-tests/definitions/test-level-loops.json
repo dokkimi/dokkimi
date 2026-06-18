@@ -58,7 +58,11 @@
           "assertions": [
             {
               "assertions": [
-                { "path": "$.response.success", "operator": "eq", "value": true },
+                {
+                  "path": "$.response.success",
+                  "operator": "eq",
+                  "value": true
+                },
                 { "path": "$.response.data", "operator": "length", "value": 1 }
               ]
             }
@@ -87,7 +91,11 @@
           "assertions": [
             {
               "assertions": [
-                { "path": "$.response.success", "operator": "eq", "value": true }
+                {
+                  "path": "$.response.success",
+                  "operator": "eq",
+                  "value": true
+                }
               ]
             }
           ]

@@ -23,7 +23,11 @@
             {
               "assertions": [
                 { "path": "$.response.status", "operator": "eq", "value": 200 },
-                { "path": "$.response.body.posts", "operator": "length", "value": 2 }
+                {
+                  "path": "$.response.body.posts",
+                  "operator": "length",
+                  "value": 2
+                }
               ]
             },
             {
@@ -68,7 +72,11 @@
           "assertions": [
             {
               "assertions": [
-                { "path": "$.response.success", "operator": "eq", "value": true }
+                {
+                  "path": "$.response.success",
+                  "operator": "eq",
+                  "value": true
+                }
               ]
             }
           ]
@@ -249,8 +257,16 @@
           "assertions": [
             {
               "assertions": [
-                { "path": "$.variables.userValues", "operator": "type", "value": "array" },
-                { "path": "$.variables.userValues", "operator": "length", "value": 2 }
+                {
+                  "path": "$.variables.userValues",
+                  "operator": "type",
+                  "value": "array"
+                },
+                {
+                  "path": "$.variables.userValues",
+                  "operator": "length",
+                  "value": 2
+                }
               ]
             }
           ]

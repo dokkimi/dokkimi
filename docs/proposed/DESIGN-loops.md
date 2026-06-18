@@ -45,11 +45,11 @@ Iterate over an array, running the attached object once per item.
 
 **Variables set per iteration:**
 
-| Variable             | Type    | Description                               |
-| -------------------- | ------- | ----------------------------------------- |
-| `{{<as>}}`           | any     | The current item                          |
-| `{{<name>.index}}`   | integer | 0-based iteration counter (requires name) |
-| `{{<name>.items}}`   | array   | The full items array (requires name)      |
+| Variable           | Type    | Description                               |
+| ------------------ | ------- | ----------------------------------------- |
+| `{{<as>}}`         | any     | The current item                          |
+| `{{<name>.index}}` | integer | 0-based iteration counter (requires name) |
+| `{{<name>.items}}` | array   | The full items array (requires name)      |
 
 **Semantics:**
 
@@ -62,21 +62,21 @@ Iterate over an array, running the attached object once per item.
 
 Iterate from one number to another with a configurable step.
 
-| Field     | Type    | Required | Description                                                                                |
-| --------- | ------- | -------- | ------------------------------------------------------------------------------------------ |
-| `from`    | integer | Yes      | Start value (inclusive)                                                                    |
-| `to`      | integer | Yes      | End value (inclusive)                                                                      |
-| `step`    | integer | No       | Increment per iteration (default 1). Can be negative for descending ranges. Must not be 0. |
-| `as`      | string  | Yes      | Variable name for the current range value                                                  |
+| Field     | Type    | Required | Description                                                                                           |
+| --------- | ------- | -------- | ----------------------------------------------------------------------------------------------------- |
+| `from`    | integer | Yes      | Start value (inclusive)                                                                               |
+| `to`      | integer | Yes      | End value (inclusive)                                                                                 |
+| `step`    | integer | No       | Increment per iteration (default 1). Can be negative for descending ranges. Must not be 0.            |
+| `as`      | string  | Yes      | Variable name for the current range value                                                             |
 | `name`    | string  | No       | Loop name — namespaces meta-variables (`{{name.index}}`, `{{name.completed}}`, `{{name.iterations}}`) |
-| `delayMs` | integer | No       | Pause between iterations (default 0)                                                       |
+| `delayMs` | integer | No       | Pause between iterations (default 0)                                                                  |
 
 **Variables set per iteration:**
 
-| Variable             | Type    | Description                                                     |
-| -------------------- | ------- | --------------------------------------------------------------- |
-| `{{<as>}}`           | integer | Current value in the range (from, from+step, from+2\*step, ...) |
-| `{{<name>.index}}`   | integer | 0-based iteration counter (requires name)                       |
+| Variable           | Type    | Description                                                     |
+| ------------------ | ------- | --------------------------------------------------------------- |
+| `{{<as>}}`         | integer | Current value in the range (from, from+step, from+2\*step, ...) |
+| `{{<name>.index}}` | integer | 0-based iteration counter (requires name)                       |
 
 **Validation rules:**
 
@@ -91,13 +91,13 @@ Iterate from one number to another with a configurable step.
 
 Repeat up to `count` times, optionally stopping early when a condition is met.
 
-| Field     | Type        | Required | Description                                                        |
-| --------- | ----------- | -------- | ------------------------------------------------------------------ |
-| `count`   | integer     | Yes      | Max iterations (safety cap)                                        |
-| `as`      | string      | Yes      | Variable name for the current iteration counter                    |
+| Field     | Type        | Required | Description                                                                         |
+| --------- | ----------- | -------- | ----------------------------------------------------------------------------------- |
+| `count`   | integer     | Yes      | Max iterations (safety cap)                                                         |
+| `as`      | string      | Yes      | Variable name for the current iteration counter                                     |
 | `name`    | string      | No       | Loop name — namespaces meta-variables (`{{name.completed}}`, `{{name.iterations}}`) |
-| `delayMs` | integer     | No       | Pause between iterations (default 0)                               |
-| `until`   | assertion[] | No       | Stop early when all assertions pass                                |
+| `delayMs` | integer     | No       | Pause between iterations (default 0)                                                |
+| `until`   | assertion[] | No       | Stop early when all assertions pass                                                 |
 
 **Variables set per iteration:**
 

@@ -63,10 +63,26 @@
             {
               "assertions": [
                 { "path": "$.response.status", "operator": "eq", "value": 200 },
-                { "path": "$.variables.postIdLoop.index", "operator": "type", "value": "number" },
-                { "path": "$.variables.postIdLoop.index", "operator": "gte", "value": 0 },
-                { "path": "$.variables.postIdLoop.items", "operator": "type", "value": "array" },
-                { "path": "$.variables.postIdLoop.items", "operator": "length", "value": 2 }
+                {
+                  "path": "$.variables.postIdLoop.index",
+                  "operator": "type",
+                  "value": "number"
+                },
+                {
+                  "path": "$.variables.postIdLoop.index",
+                  "operator": "gte",
+                  "value": 0
+                },
+                {
+                  "path": "$.variables.postIdLoop.items",
+                  "operator": "type",
+                  "value": "array"
+                },
+                {
+                  "path": "$.variables.postIdLoop.items",
+                  "operator": "length",
+                  "value": 2
+                }
               ]
             }
           ]
@@ -189,7 +205,11 @@
           "assertions": [
             {
               "assertions": [
-                { "path": "$.response.success", "operator": "eq", "value": true }
+                {
+                  "path": "$.response.success",
+                  "operator": "eq",
+                  "value": true
+                }
               ]
             }
           ]
@@ -243,8 +263,16 @@
           "assertions": [
             {
               "assertions": [
-                { "path": "$.variables.emptyLoop.iterations", "operator": "eq", "value": 0 },
-                { "path": "$.variables.emptyLoop.completed", "operator": "eq", "value": true }
+                {
+                  "path": "$.variables.emptyLoop.iterations",
+                  "operator": "eq",
+                  "value": 0
+                },
+                {
+                  "path": "$.variables.emptyLoop.completed",
+                  "operator": "eq",
+                  "value": true
+                }
               ]
             }
           ]
@@ -285,7 +313,11 @@
           "assertions": [
             {
               "assertions": [
-                { "path": "$.variables.singleLoop.iterations", "operator": "eq", "value": 1 }
+                {
+                  "path": "$.variables.singleLoop.iterations",
+                  "operator": "eq",
+                  "value": 1
+                }
               ]
             }
           ]
@@ -326,8 +358,16 @@
           "assertions": [
             {
               "assertions": [
-                { "path": "$.variables.countdownLoop.iterations", "operator": "eq", "value": 3 },
-                { "path": "$.variables.countdown", "operator": "eq", "value": 1 }
+                {
+                  "path": "$.variables.countdownLoop.iterations",
+                  "operator": "eq",
+                  "value": 3
+                },
+                {
+                  "path": "$.variables.countdown",
+                  "operator": "eq",
+                  "value": 1
+                }
               ]
             }
           ]
@@ -367,7 +407,11 @@
           "assertions": [
             {
               "assertions": [
-                { "path": "$.variables.failLoop.iterations", "operator": "eq", "value": 2 }
+                {
+                  "path": "$.variables.failLoop.iterations",
+                  "operator": "eq",
+                  "value": 2
+                }
               ]
             }
           ]
