@@ -1,0 +1,214 @@
+{
+  "name": "combined-and-nested-loops",
+  "description": "Validates combined loop patterns: parallel inside loop, __index/__items, nested step+test loops",
+  "items": [
+    { "$ref": "../shared/api-service.json" },
+    {
+      "$ref": "../shared/postgres-db.json",
+      "initFilePath": "../init-files/schema.sql"
+    },
+    { "$ref": "../../demo-oauth-flow/shared/mock-oauth-token.json" },
+    { "$ref": "../../demo-oauth-flow/shared/mock-oauth-userinfo.json" }
+  ],
+  "variables": {
+    "seedPostIds": [
+      "b1b2c3d4-0000-0000-0000-000000000001",
+      "b1b2c3d4-0000-0000-0000-000000000002"
+    ]
+  },
+  "tests": [
+    {
+      "name": "forEach step with parallel action inside",
+      "steps": [
+        {
+          "name": "Verify post {{postId}} in API and DB",
+          "forEach": {
+            "items": "{{seedPostIds}}",
+            "as": "postId"
+          },
+          "action": {
+            "type": "parallel",
+            "actions": [
+              {
+                "type": "httpRequest",
+                "method": "GET",
+                "url": "api-service/api/posts/{{postId}}"
+              },
+              {
+                "type": "dbQuery",
+                "database": "postgres-db",
+                "query": "SELECT * FROM posts WHERE id = '{{postId}}'"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "forEach using __index meta-variable",
+      "steps": [
+        {
+          "name": "Fetch post at index {{postId.__index}}",
+          "forEach": {
+            "items": "{{seedPostIds}}",
+            "as": "postId"
+          },
+          "action": {
+            "type": "httpRequest",
+            "method": "GET",
+            "url": "api-service/api/posts/{{postId}}"
+          },
+          "assertions": [
+            {
+              "assertions": [
+                { "path": "$.response.status", "operator": "eq", "value": 200 }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Test-level forEach with step-level for inside",
+      "forEach": {
+        "items": "{{seedPostIds}}",
+        "as": "postId"
+      },
+      "steps": [
+        {
+          "name": "Fetch same post 2 times to verify consistency",
+          "for": {
+            "from": 1,
+            "to": 2,
+            "as": "attempt"
+          },
+          "action": {
+            "type": "httpRequest",
+            "method": "GET",
+            "url": "api-service/api/posts/{{postId}}"
+          },
+          "assertions": [
+            {
+              "assertions": [
+                { "path": "$.response.status", "operator": "eq", "value": 200 }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "for loop with extract — create posts and verify last",
+      "steps": [
+        {
+          "name": "Login for auth",
+          "action": {
+            "type": "httpRequest",
+            "method": "GET",
+            "url": "api-service/auth/callback?code=test_code&state=s1"
+          },
+          "extract": {
+            "sessionToken": "$.response.body.token"
+          }
+        },
+        {
+          "name": "Create post {{i}}",
+          "for": {
+            "from": 1,
+            "to": 3,
+            "as": "i"
+          },
+          "action": {
+            "type": "httpRequest",
+            "method": "POST",
+            "url": "api-service/api/profile/posts",
+            "headers": {
+              "Authorization": "Bearer {{sessionToken}}",
+              "Content-Type": "application/json"
+            },
+            "body": {
+              "title": "Combined Post {{i}}",
+              "content": "Content {{i}}"
+            }
+          },
+          "extract": {
+            "lastPostTitle": "$.response.body.post.title"
+          },
+          "assertions": [
+            {
+              "assertions": [
+                { "path": "$.response.status", "operator": "eq", "value": 201 }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "Verify last created post title",
+          "action": {
+            "type": "httpRequest",
+            "method": "GET",
+            "url": "api-service/api/profile",
+            "headers": {
+              "Authorization": "Bearer {{sessionToken}}"
+            }
+          },
+          "assertions": [
+            {
+              "assertions": [
+                { "path": "$.response.status", "operator": "eq", "value": 200 },
+                {
+                  "path": "$.variables.lastPostTitle",
+                  "operator": "eq",
+                  "value": "Combined Post 3"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Action-level forEach on dbQuery",
+      "steps": [
+        {
+          "name": "Insert multiple posts via action loop",
+          "action": {
+            "type": "dbQuery",
+            "database": "postgres-db",
+            "query": "INSERT INTO posts (title, content, published, author_id) VALUES ('{{tag}} Post', 'Tagged content', true, 'a1b2c3d4-0000-0000-0000-000000000001') RETURNING id",
+            "forEach": {
+              "items": ["urgent", "review", "backlog"],
+              "as": "tag"
+            }
+          },
+          "assertions": [
+            {
+              "assertions": [
+                { "path": "$.response.success", "operator": "eq", "value": true }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "Verify tagged posts exist",
+          "action": {
+            "type": "dbQuery",
+            "database": "postgres-db",
+            "query": "SELECT COUNT(*)::int as count FROM posts WHERE title LIKE '% Post' AND title IN ('urgent Post', 'review Post', 'backlog Post')"
+          },
+          "assertions": [
+            {
+              "assertions": [
+                {
+                  "path": "$.response.data[0].count",
+                  "operator": "eq",
+                  "value": 3
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

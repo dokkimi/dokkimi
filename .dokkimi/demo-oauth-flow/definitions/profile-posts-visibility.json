@@ -72,7 +72,14 @@
           ]
         },
         {
-          "name": "Create first post",
+          "name": "Create post: {{post.title}}",
+          "forEach": {
+            "items": [
+              { "title": "First Post", "content": "Hello world" },
+              { "title": "Second Post", "content": "More content" }
+            ],
+            "as": "post"
+          },
           "action": {
             "type": "httpRequest",
             "method": "POST",
@@ -82,8 +89,8 @@
               "Content-Type": "application/json"
             },
             "body": {
-              "title": "First Post",
-              "content": "Hello world"
+              "title": "{{post.title}}",
+              "content": "{{post.content}}"
             }
           },
           "assertions": [
@@ -98,33 +105,6 @@
                   "path": "$.response.body.post.authorId",
                   "operator": "eq",
                   "value": "{{userId}}"
-                }
-              ]
-            }
-          ]
-        },
-        {
-          "name": "Create second post",
-          "action": {
-            "type": "httpRequest",
-            "method": "POST",
-            "url": "api-service/api/profile/posts",
-            "headers": {
-              "Authorization": "Bearer {{sessionToken}}",
-              "Content-Type": "application/json"
-            },
-            "body": {
-              "title": "Second Post",
-              "content": "More content"
-            }
-          },
-          "assertions": [
-            {
-              "assertions": [
-                {
-                  "path": "$.response.status",
-                  "operator": "eq",
-                  "value": 201
                 }
               ]
             }

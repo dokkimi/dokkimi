@@ -32,7 +32,10 @@ export class DockerDeployerService {
     private readonly instanceService: NamespaceInstanceService,
   ) {}
 
-  async deploy(ctx: DeploymentContext): Promise<void> {
+  async deploy(
+    ctx: DeploymentContext,
+    onCrash?: (instanceId: string) => void,
+  ): Promise<void> {
     const instanceId = ctx.instanceId;
     const attachChromium = hasUiSteps(ctx.definition);
 
@@ -180,7 +183,7 @@ export class DockerDeployerService {
         InstanceStatus.RUNNING,
       );
 
-      this.monitorForCrashedContainers(instanceId);
+      this.monitorForCrashedContainers(instanceId, onCrash);
 
       this.logger.log(`Docker deployment complete for instance ${instanceId}`);
     } catch (err) {
@@ -198,7 +201,10 @@ export class DockerDeployerService {
     }
   }
 
-  private monitorForCrashedContainers(instanceId: string): void {
+  private monitorForCrashedContainers(
+    instanceId: string,
+    onCrash?: (instanceId: string) => void,
+  ): void {
     const checkInterval = setInterval(async () => {
       try {
         const instance = await this.instanceService.findInstance(instanceId);
@@ -233,6 +239,9 @@ export class DockerDeployerService {
               InstanceStatus.FAILED,
             );
             await this.teardown(instanceId);
+            if (onCrash) {
+              onCrash(instanceId);
+            }
           }
         }
       } catch {

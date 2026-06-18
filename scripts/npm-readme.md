@@ -32,6 +32,7 @@ Dokkimi gives you **isolated test environments on demand**:
 - **Isolated environments** — every test run gets its own Docker network with dedicated services, databases, and browser. No shared state. No corrupted tests.
 - **Variable extraction** — extract values from responses using JSONPath + regex capture groups, then use them in subsequent steps.
 - **Parallel test execution** — run steps in parallel within a test, and run multiple test definitions concurrently.
+- **Loop modifiers** — iterate over data with `forEach`, repeat numeric ranges with `for`, or poll with `repeat` + `until`. Loops work at every level: test, step, action, assertion block, and UI sub-step groups.
 - **Zero code changes** — your services run unmodified. Dokkimi wires up sidecars, routing, DNS, browser, and cleanup.
 
 ## Install

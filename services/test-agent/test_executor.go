@@ -122,11 +122,16 @@ type flatStep struct {
 	stepIndex     int // 0-based index of the step within the parent test
 	step          TestStep
 	testVariables map[string]interface{} // test-level variables to seed when this test starts
+	loopLabel     string                 // optional loop context for display (e.g., "[user=Alice]")
 }
 
 // label returns a 1-based "Step X.Y" string matching the CLI display.
 func (s flatStep) label() string {
-	return fmt.Sprintf("Step %d.%d", s.testIndex+1, s.stepIndex+1)
+	base := fmt.Sprintf("Step %d.%d", s.testIndex+1, s.stepIndex+1)
+	if s.loopLabel != "" {
+		return base + " " + s.loopLabel
+	}
+	return base
 }
 
 // flattenSteps flattens all steps across all test definitions into a sequential list.
@@ -160,8 +165,167 @@ func (e *TestExecutor) flattenSteps(testConfig *TestConfig, resetVars bool) []fl
 
 // executeStepAt executes a single flat step, emitting STEP_STARTED/COMPLETED/FAILED logs.
 // When inline validation is configured, it also waits for quiescence, validates assertions,
-// and reports results after each step.
+// and reports results after each step. Handles step-level loop modifiers.
 func (e *TestExecutor) executeStepAt(ctx context.Context, fs flatStep) (StepExecution, error) {
+	forEach, forLoop, repeat := getStepLoop(fs.step)
+	hasLoop := forEach != nil || forLoop != nil || repeat != nil
+
+	if !hasLoop {
+		return e.executeStepOnce(ctx, fs)
+	}
+
+	si := fs.globalIndex
+	label := fs.label()
+	log.Printf("Executing %s (looped)", label)
+	e.testExecutionLogger.LogEvent("STEP_STARTED",
+		fmt.Sprintf("%s started (loop)", label), &si, nil)
+
+	stepExec := StepExecution{
+		StepIndex: si,
+		StartTime: time.Now().Format(time.RFC3339Nano),
+	}
+
+	// Build iteration plan.
+	type stepIteration struct {
+		iterLabel string
+		setupFn   func()
+	}
+	var iterations []stepIteration
+	var delayMs int
+
+	if forEach != nil {
+		items, err := resolveForEachItems(forEach.Items, e.varCtx, nil)
+		if err != nil {
+			stepExec.EndTime = time.Now().Format(time.RFC3339Nano)
+			return stepExec, err
+		}
+		delayMs = forEach.DelayMs
+		for i, item := range items {
+			idx := i
+			it := item
+			il := fmt.Sprintf("[%s=%v]", forEach.As, valueToString(it))
+			iterations = append(iterations, stepIteration{
+				iterLabel: il,
+				setupFn:   func() { setForEachVars(e.varCtx, forEach.As, it, idx, items) },
+			})
+		}
+	} else if forLoop != nil {
+		values := forRangeValues(forLoop)
+		delayMs = forLoop.DelayMs
+		for i, v := range values {
+			idx := i
+			val := v
+			il := fmt.Sprintf("[%s=%d]", forLoop.As, val)
+			iterations = append(iterations, stepIteration{
+				iterLabel: il,
+				setupFn:   func() { setForVars(e.varCtx, forLoop.As, val, idx) },
+			})
+		}
+	} else if repeat != nil {
+		delayMs = repeat.DelayMs
+		for i := 0; i < repeat.Count; i++ {
+			idx := i
+			il := fmt.Sprintf("[%s=%d]", repeat.As, idx)
+			iterations = append(iterations, stepIteration{
+				iterLabel: il,
+				setupFn:   func() { setRepeatVars(e.varCtx, repeat.As, idx) },
+			})
+		}
+	}
+
+	var lastResp map[string]interface{}
+	completed := true
+	iterationsRan := 0
+
+	for iterIdx, iter := range iterations {
+		delayBetweenIterations(iterIdx, delayMs)
+		iter.setupFn()
+
+		iterFS := fs
+		iterFS.loopLabel = fs.loopLabel + iter.iterLabel
+
+		log.Printf("Step loop iteration %d: %s", iterIdx, iterFS.label())
+
+		// Track per-iteration timing so the assertion engine's time-window
+		// matching can find the HTTP/DB logs for this specific iteration.
+		iterStart := time.Now().Format(time.RFC3339Nano)
+
+		// Execute the action.
+		resp, err := e.executeStep(ctx, iterFS.step, si)
+		iterationsRan++
+
+		iterEnd := time.Now().Format(time.RFC3339Nano)
+
+		if err != nil {
+			stepExec.EndTime = iterEnd
+			e.testExecutionLogger.LogEvent("STEP_FAILED",
+				fmt.Sprintf("%s failed at iteration %d: %v", label, iterIdx, err), &si, nil)
+			return stepExec, err
+		}
+
+		lastResp = resp
+
+		iterExec := StepExecution{
+			StepIndex: si,
+			StartTime: iterStart,
+			EndTime:   iterEnd,
+		}
+
+		// Per-iteration extraction + validation (step-level loop repeats everything).
+		if e.stepValidator == nil && resp != nil && len(fs.step.Extract) > 0 {
+			if extractErr := e.varCtx.Extract(fs.step.Extract, resp); extractErr != nil {
+				stepExec.EndTime = iterEnd
+				return stepExec, fmt.Errorf("variable extraction failed: %w", extractErr)
+			}
+		}
+
+		if e.stepValidator != nil && (len(fs.step.Assertions) > 0 || len(fs.step.Extract) > 0) {
+			results, passed := e.stepValidator.ValidateStepWithRetry(fs.step, iterExec, resp)
+			if e.validationReporter != nil {
+				e.validationReporter.ReportStepResultsAsync(e.instanceID, si, results, passed)
+			}
+			if !passed {
+				summary := FormatStepResult(si, iterFS.label(), results, passed)
+				e.testExecutionLogger.LogEvent("STEP_FAILED", summary, &si, nil)
+				stepExec.EndTime = iterEnd
+				return stepExec, fmt.Errorf("assertion validation failed: %s", summary)
+			}
+		}
+
+		// Check repeat until.
+		if repeat != nil && len(repeat.Until) > 0 && lastResp != nil {
+			rootCtx := map[string]interface{}{
+				"response":  lastResp,
+				"variables": e.varCtx.Snapshot(),
+			}
+			if evaluateUntil(repeat.Until, rootCtx, e.varCtx) {
+				log.Printf("Step loop: until condition met after iteration %d", iterIdx)
+				completed = true
+				break
+			}
+			if iterIdx == len(iterations)-1 {
+				completed = false
+			}
+		}
+	}
+
+	stepExec.EndTime = time.Now().Format(time.RFC3339Nano)
+
+	// Store loop result as variables for downstream assertions on $.completed / $.iterations.
+	_ = lastResp
+	e.varCtx.Set("__loopResult", map[string]interface{}{
+		"iterations": float64(iterationsRan),
+		"completed":  completed,
+	})
+
+	log.Printf("%s loop completed (%d iterations, completed=%v)", label, iterationsRan, completed)
+	e.testExecutionLogger.LogEvent("STEP_COMPLETED",
+		fmt.Sprintf("%s loop completed (%d iterations)", label, iterationsRan), &si, nil)
+	return stepExec, nil
+}
+
+// executeStepOnce executes a single flat step without loop logic.
+func (e *TestExecutor) executeStepOnce(ctx context.Context, fs flatStep) (StepExecution, error) {
 	si := fs.globalIndex
 	label := fs.label()
 	log.Printf("Executing %s", label)
@@ -233,44 +397,145 @@ func (e *TestExecutor) ExecuteTests(ctx context.Context, testConfig *TestConfig,
 	var stepExecutions []StepExecution
 	lastTestIndex := -1
 
+	// Group steps by test index so we can iterate test-level loops.
+	type testGroup struct {
+		testIndex int
+		testDef   TestDefinition
+		steps     []flatStep
+	}
+	var groups []testGroup
 	for _, fs := range steps {
-		if fs.globalIndex < startAtStep {
-			continue
+		if len(groups) == 0 || groups[len(groups)-1].testIndex != fs.testIndex {
+			groups = append(groups, testGroup{
+				testIndex: fs.testIndex,
+				testDef:   testConfig.Tests[fs.testIndex],
+				steps:     nil,
+			})
 		}
-		if stopBefore >= 0 && fs.globalIndex >= stopBefore {
-			break
+		groups[len(groups)-1].steps = append(groups[len(groups)-1].steps, fs)
+	}
+
+	for _, tg := range groups {
+		testDef := tg.testDef
+		hasLoop := testDef.ForEach != nil || testDef.For != nil || testDef.Repeat != nil
+
+		// Build the iteration plan.
+		type testIteration struct {
+			label   string
+			setupFn func()
+		}
+		var iterations []testIteration
+
+		if testDef.ForEach != nil {
+			items, err := resolveForEachItems(testDef.ForEach.Items, e.varCtx, nil)
+			if err != nil {
+				return stepExecutions, err
+			}
+			for i, item := range items {
+				idx := i
+				it := item
+				label := fmt.Sprintf("[%s=%v]", testDef.ForEach.As, valueToString(it))
+				iterations = append(iterations, testIteration{
+					label:   label,
+					setupFn: func() { setForEachVars(e.varCtx, testDef.ForEach.As, it, idx, items) },
+				})
+			}
+		} else if testDef.For != nil {
+			values := forRangeValues(testDef.For)
+			for i, v := range values {
+				idx := i
+				val := v
+				label := fmt.Sprintf("[%s=%d]", testDef.For.As, val)
+				iterations = append(iterations, testIteration{
+					label:   label,
+					setupFn: func() { setForVars(e.varCtx, testDef.For.As, val, idx) },
+				})
+			}
+		} else if testDef.Repeat != nil {
+			for i := 0; i < testDef.Repeat.Count; i++ {
+				idx := i
+				label := fmt.Sprintf("[%s=%d]", testDef.Repeat.As, idx)
+				iterations = append(iterations, testIteration{
+					label:   label,
+					setupFn: func() { setRepeatVars(e.varCtx, testDef.Repeat.As, idx) },
+				})
+			}
+		} else {
+			iterations = []testIteration{{label: "", setupFn: func() {}}}
 		}
 
-		// Reset and re-seed variables when entering a new test's steps.
-		// Without the reset, extracted variables from prior tests leak
-		// into subsequent tests — creating hidden cross-test dependencies.
-		if fs.testIndex != lastTestIndex {
-			lastTestIndex = fs.testIndex
-			e.varCtx.Reset()
-			if testConfig.Variables != nil {
-				for name, value := range testConfig.Variables {
-					e.varCtx.Set(name, value)
+		for iterIdx, iter := range iterations {
+			if hasLoop {
+				delayMs := 0
+				if testDef.ForEach != nil {
+					delayMs = testDef.ForEach.DelayMs
+				}
+				if testDef.For != nil {
+					delayMs = testDef.For.DelayMs
+				}
+				if testDef.Repeat != nil {
+					delayMs = testDef.Repeat.DelayMs
+				}
+				delayBetweenIterations(iterIdx, delayMs)
+			}
+
+			for _, fs := range tg.steps {
+				if fs.globalIndex < startAtStep {
+					continue
+				}
+				if stopBefore >= 0 && fs.globalIndex >= stopBefore {
+					break
+				}
+
+				if fs.testIndex != lastTestIndex || hasLoop {
+					if !hasLoop || iterIdx == 0 {
+						lastTestIndex = fs.testIndex
+					}
+					if fs.stepIndex == 0 {
+						e.varCtx.Reset()
+						if testConfig.Variables != nil {
+							for name, value := range testConfig.Variables {
+								e.varCtx.Set(name, value)
+							}
+						}
+						if fs.testVariables != nil {
+							for name, value := range fs.testVariables {
+								e.varCtx.Set(name, value)
+							}
+						}
+						iter.setupFn()
+					}
+				}
+
+				// Safety delay between steps
+				if len(stepExecutions) > 0 {
+					if fs.step.Action.Type != "wait" {
+						const DEFAULT_WAIT_MS = 100
+						time.Sleep(DEFAULT_WAIT_MS * time.Millisecond)
+					}
+				}
+
+				fsWithLabel := fs
+				fsWithLabel.loopLabel = iter.label
+
+				stepExec, err := e.executeStepAt(ctx, fsWithLabel)
+				stepExecutions = append(stepExecutions, stepExec)
+				if err != nil {
+					return stepExecutions, fmt.Errorf("%s failed: %w", fsWithLabel.label(), err)
 				}
 			}
-			if fs.testVariables != nil {
-				for name, value := range fs.testVariables {
-					e.varCtx.Set(name, value)
+
+			// Check repeat until condition after all steps in this iteration.
+			if testDef.Repeat != nil && len(testDef.Repeat.Until) > 0 {
+				// Build a minimal root context from the last step execution for until eval.
+				// For test-level repeat, until evaluates against the last step's response.
+				// We just check if the until assertions pass against variables context.
+				untilDoc := map[string]interface{}{"variables": e.varCtx.Snapshot()}
+				if evaluateUntil(testDef.Repeat.Until, untilDoc, e.varCtx) {
+					log.Printf("Test-level repeat: until condition met after iteration %d", iterIdx)
+					break
 				}
 			}
-		}
-
-		// Safety delay between steps
-		if len(stepExecutions) > 0 {
-			if fs.step.Action.Type != "wait" {
-				const DEFAULT_WAIT_MS = 100
-				time.Sleep(DEFAULT_WAIT_MS * time.Millisecond)
-			}
-		}
-
-		stepExec, err := e.executeStepAt(ctx, fs)
-		stepExecutions = append(stepExecutions, stepExec)
-		if err != nil {
-			return stepExecutions, fmt.Errorf("%s failed: %w", fs.label(), err)
 		}
 	}
 
@@ -298,6 +563,7 @@ func (e *TestExecutor) ExecuteStep(ctx context.Context, testConfig *TestConfig, 
 
 // executeStep executes a single test step based on its action type.
 // Returns an extraction document for variable extraction.
+// Handles action-level loop modifiers (loops only the action, not extract/assertions).
 func (e *TestExecutor) executeStep(ctx context.Context, step TestStep, stepIndex int) (map[string]interface{}, error) {
 	// Resolve variables in step name and description
 	if step.Name != "" {
@@ -315,7 +581,18 @@ func (e *TestExecutor) executeStep(ctx context.Context, step TestStep, stepIndex
 		step.Description = resolved
 	}
 
-	// Resolve variables in action before execution
+	forEach, forLoop, repeat := getActionLoop(step.Action)
+	hasActionLoop := forEach != nil || forLoop != nil || repeat != nil
+
+	if hasActionLoop {
+		return e.executeActionLoop(ctx, step, stepIndex, forEach, forLoop, repeat)
+	}
+
+	return e.executeAction(ctx, step, stepIndex)
+}
+
+// executeAction dispatches a single action execution (no loop).
+func (e *TestExecutor) executeAction(ctx context.Context, step TestStep, stepIndex int) (map[string]interface{}, error) {
 	resolvedAction, err := e.varCtx.ResolveAction(step.Action)
 	if err != nil {
 		return nil, fmt.Errorf("variable resolution failed: %w", err)
@@ -344,6 +621,86 @@ func (e *TestExecutor) executeStep(ctx context.Context, step TestStep, stepIndex
 	default:
 		return nil, fmt.Errorf("unsupported action type: %s", resolvedAction.Type)
 	}
+}
+
+// executeActionLoop runs the action portion of a step in a loop.
+// Extract + assertions run once after all iterations against the last response.
+func (e *TestExecutor) executeActionLoop(ctx context.Context, step TestStep, stepIndex int,
+	forEach *ForEachLoop, forLoop *ForLoop, repeat *RepeatLoop) (map[string]interface{}, error) {
+
+	type actionIteration struct {
+		label   string
+		setupFn func()
+	}
+	var iterations []actionIteration
+	var delayMs int
+
+	if forEach != nil {
+		items, err := resolveForEachItems(forEach.Items, e.varCtx, nil)
+		if err != nil {
+			return nil, err
+		}
+		delayMs = forEach.DelayMs
+		for i, item := range items {
+			idx := i
+			it := item
+			il := fmt.Sprintf("[%s=%v]", forEach.As, valueToString(it))
+			iterations = append(iterations, actionIteration{
+				label:   il,
+				setupFn: func() { setForEachVars(e.varCtx, forEach.As, it, idx, items) },
+			})
+		}
+	} else if forLoop != nil {
+		values := forRangeValues(forLoop)
+		delayMs = forLoop.DelayMs
+		for i, v := range values {
+			idx := i
+			val := v
+			il := fmt.Sprintf("[%s=%d]", forLoop.As, val)
+			iterations = append(iterations, actionIteration{
+				label:   il,
+				setupFn: func() { setForVars(e.varCtx, forLoop.As, val, idx) },
+			})
+		}
+	} else if repeat != nil {
+		delayMs = repeat.DelayMs
+		for i := 0; i < repeat.Count; i++ {
+			idx := i
+			il := fmt.Sprintf("[%s=%d]", repeat.As, idx)
+			iterations = append(iterations, actionIteration{
+				label:   il,
+				setupFn: func() { setRepeatVars(e.varCtx, repeat.As, idx) },
+			})
+		}
+	}
+
+	var lastResp map[string]interface{}
+	for iterIdx, iter := range iterations {
+		delayBetweenIterations(iterIdx, delayMs)
+		iter.setupFn()
+
+		log.Printf("Action loop iteration %d %s", iterIdx, iter.label)
+
+		resp, err := e.executeAction(ctx, step, stepIndex)
+		if err != nil {
+			return nil, err
+		}
+		lastResp = resp
+
+		// Check repeat until after each action iteration.
+		if repeat != nil && len(repeat.Until) > 0 && lastResp != nil {
+			rootCtx := map[string]interface{}{
+				"response":  lastResp,
+				"variables": e.varCtx.Snapshot(),
+			}
+			if evaluateUntil(repeat.Until, rootCtx, e.varCtx) {
+				log.Printf("Action loop: until condition met after iteration %d", iterIdx)
+				break
+			}
+		}
+	}
+
+	return lastResp, nil
 }
 
 // executeParallelAction runs all sub-actions concurrently and collects results.

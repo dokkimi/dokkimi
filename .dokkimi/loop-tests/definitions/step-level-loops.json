@@ -1,0 +1,202 @@
+{
+  "name": "step-level-loops",
+  "description": "Validates all three loop modifiers at the step level",
+  "items": [
+    { "$ref": "../shared/api-service.json" },
+    {
+      "$ref": "../shared/postgres-db.json",
+      "initFilePath": "../init-files/schema.sql"
+    },
+    { "$ref": "../../demo-oauth-flow/shared/mock-oauth-token.json" },
+    { "$ref": "../../demo-oauth-flow/shared/mock-oauth-userinfo.json" }
+  ],
+  "tests": [
+    {
+      "name": "forEach with inline data (create multiple posts)",
+      "steps": [
+        {
+          "name": "Login to get session token",
+          "action": {
+            "type": "httpRequest",
+            "method": "GET",
+            "url": "api-service/auth/callback?code=test_code&state=s1"
+          },
+          "extract": {
+            "sessionToken": "$.response.body.token"
+          }
+        },
+        {
+          "name": "Create post: {{post.title}}",
+          "forEach": {
+            "items": [
+              { "title": "First Post", "content": "Hello world" },
+              { "title": "Second Post", "content": "More content" },
+              { "title": "Third Post", "content": "Even more" }
+            ],
+            "as": "post"
+          },
+          "action": {
+            "type": "httpRequest",
+            "method": "POST",
+            "url": "api-service/api/profile/posts",
+            "headers": {
+              "Authorization": "Bearer {{sessionToken}}",
+              "Content-Type": "application/json"
+            },
+            "body": {
+              "title": "{{post.title}}",
+              "content": "{{post.content}}"
+            }
+          },
+          "assertions": [
+            {
+              "assertions": [
+                { "path": "$.response.status", "operator": "eq", "value": 201 }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "Verify all 3 new posts exist in profile",
+          "action": {
+            "type": "httpRequest",
+            "method": "GET",
+            "url": "api-service/api/profile",
+            "headers": {
+              "Authorization": "Bearer {{sessionToken}}"
+            }
+          },
+          "assertions": [
+            {
+              "assertions": [
+                { "path": "$.response.status", "operator": "eq", "value": 200 },
+                { "path": "$.response.body.profile.posts", "operator": "length", "value": 3 }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "forEach with extracted array from DB",
+      "steps": [
+        {
+          "name": "Get seed posts from DB",
+          "action": {
+            "type": "dbQuery",
+            "database": "postgres-db",
+            "query": "SELECT id, title FROM posts WHERE author_id = 'a1b2c3d4-0000-0000-0000-000000000001' AND published = true"
+          },
+          "extract": {
+            "posts": "$.response.data"
+          },
+          "assertions": [
+            {
+              "assertions": [
+                { "path": "$.response.success", "operator": "eq", "value": true },
+                { "path": "$.response.data", "operator": "length", "value": 2 }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "Verify post {{post.title}} via API",
+          "forEach": {
+            "items": "{{posts}}",
+            "as": "post"
+          },
+          "action": {
+            "type": "httpRequest",
+            "method": "GET",
+            "url": "api-service/api/posts/{{post.id}}"
+          },
+          "assertions": [
+            {
+              "assertions": [
+                { "path": "$.response.status", "operator": "eq", "value": 200 },
+                {
+                  "path": "$.response.body.title",
+                  "operator": "eq",
+                  "value": "{{post.title}}"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "for loop with numeric range (seed posts via DB)",
+      "steps": [
+        {
+          "name": "Insert post {{i}} via DB",
+          "for": {
+            "from": 1,
+            "to": 3,
+            "as": "i"
+          },
+          "action": {
+            "type": "dbQuery",
+            "database": "postgres-db",
+            "query": "INSERT INTO posts (title, content, published, author_id) VALUES ('Loop Post {{i}}', 'Content {{i}}', true, 'a1b2c3d4-0000-0000-0000-000000000001') RETURNING id"
+          },
+          "assertions": [
+            {
+              "assertions": [
+                { "path": "$.response.success", "operator": "eq", "value": true }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "Verify total published posts via API",
+          "action": {
+            "type": "httpRequest",
+            "method": "GET",
+            "url": "api-service/api/posts"
+          },
+          "assertions": [
+            {
+              "assertions": [
+                { "path": "$.response.status", "operator": "eq", "value": 200 },
+                { "path": "$.response.body.posts", "operator": "length", "value": 8 }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "repeat with until (poll DB until row count)",
+      "steps": [
+        {
+          "name": "Poll until we see seed posts (attempt {{attempt}})",
+          "repeat": {
+            "count": 5,
+            "as": "attempt",
+            "delayMs": 100,
+            "until": [
+              {
+                "path": "$.response.data[0].count",
+                "operator": "gte",
+                "value": 2
+              }
+            ]
+          },
+          "action": {
+            "type": "dbQuery",
+            "database": "postgres-db",
+            "query": "SELECT COUNT(*)::int as count FROM posts WHERE published = true"
+          },
+          "assertions": [
+            {
+              "assertions": [
+                { "path": "$.response.success", "operator": "eq", "value": true }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -886,4 +886,109 @@ func TestResolveExtractRule(t *testing.T) {
 			t.Errorf("expected {a:1}, got %v", result)
 		}
 	})
+
+	t.Run("transform keys from path", func(t *testing.T) {
+		d := map[string]interface{}{
+			"response": map[string]interface{}{
+				"body": map[string]interface{}{"a": float64(1), "b": float64(2)},
+			},
+		}
+		result, err := ResolveExtractRule(d, "keys", ExtractRule{Path: "response.body", Transform: "keys"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		arr, ok := result.([]interface{})
+		if !ok {
+			t.Fatalf("expected array, got %T", result)
+		}
+		if len(arr) != 2 {
+			t.Errorf("expected 2 keys, got %d", len(arr))
+		}
+	})
+
+	t.Run("transform values from path", func(t *testing.T) {
+		d := map[string]interface{}{
+			"response": map[string]interface{}{
+				"body": map[string]interface{}{"x": float64(10), "y": float64(20)},
+			},
+		}
+		result, err := ResolveExtractRule(d, "vals", ExtractRule{Path: "response.body", Transform: "values"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		arr, ok := result.([]interface{})
+		if !ok {
+			t.Fatalf("expected array, got %T", result)
+		}
+		if len(arr) != 2 {
+			t.Errorf("expected 2 values, got %d", len(arr))
+		}
+	})
+
+	t.Run("transform entries from path", func(t *testing.T) {
+		d := map[string]interface{}{
+			"response": map[string]interface{}{
+				"body": map[string]interface{}{"name": "Alice"},
+			},
+		}
+		result, err := ResolveExtractRule(d, "entries", ExtractRule{Path: "response.body", Transform: "entries"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		arr, ok := result.([]interface{})
+		if !ok {
+			t.Fatalf("expected array, got %T", result)
+		}
+		if len(arr) != 1 {
+			t.Errorf("expected 1 entry, got %d", len(arr))
+		}
+		entry, ok := arr[0].(map[string]interface{})
+		if !ok {
+			t.Fatalf("expected entry to be map, got %T", arr[0])
+		}
+		if entry["key"] != "name" || entry["value"] != "Alice" {
+			t.Errorf("expected {key:name, value:Alice}, got %v", entry)
+		}
+	})
+
+	t.Run("transform from variable reference", func(t *testing.T) {
+		d := map[string]interface{}{
+			"variables": map[string]interface{}{
+				"config": map[string]interface{}{"timeout": float64(30), "retries": float64(3)},
+			},
+		}
+		result, err := ResolveExtractRule(d, "configKeys", ExtractRule{From: "{{config}}", Transform: "keys"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		arr, ok := result.([]interface{})
+		if !ok {
+			t.Fatalf("expected array, got %T", result)
+		}
+		if len(arr) != 2 {
+			t.Errorf("expected 2 keys, got %d", len(arr))
+		}
+	})
+
+	t.Run("transform errors on non-object source", func(t *testing.T) {
+		d := map[string]interface{}{
+			"response": map[string]interface{}{
+				"body": []interface{}{"a", "b"},
+			},
+		}
+		_, err := ResolveExtractRule(d, "keys", ExtractRule{Path: "response.body", Transform: "keys"})
+		if err == nil {
+			t.Fatal("expected error for non-object source")
+		}
+	})
+
+	t.Run("transform errors when from reference not found", func(t *testing.T) {
+		d := map[string]interface{}{
+			"variables": map[string]interface{}{},
+		}
+		_, err := ResolveExtractRule(d, "keys", ExtractRule{From: "{{missing}}", Transform: "keys"})
+		if err == nil {
+			t.Fatal("expected error for missing variable")
+		}
+	})
 }

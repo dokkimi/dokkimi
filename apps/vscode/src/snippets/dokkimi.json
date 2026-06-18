@@ -442,5 +442,54 @@
     "prefix": "dok-env",
     "description": "Add an environment variable entry",
     "body": ["{ \"name\": \"${1:ENV_VAR}\", \"value\": \"${2:value}\" }"]
+  },
+
+  "Dokkimi: Step forEach Loop": {
+    "prefix": "dok-foreach",
+    "description": "Add a forEach loop modifier to a step — iterates over an array of items",
+    "body": [
+      "\"forEach\": {",
+      "  \"items\": [${1:\"a\", \"b\", \"c\"}],",
+      "  \"as\": \"${2:item}\"",
+      "}"
+    ]
+  },
+
+  "Dokkimi: Step for Loop": {
+    "prefix": "dok-for",
+    "description": "Add a for loop modifier to a step — iterates over a numeric range",
+    "body": [
+      "\"for\": {",
+      "  \"from\": ${1:1},",
+      "  \"to\": ${2:5},",
+      "  \"as\": \"${3:i}\"",
+      "}"
+    ]
+  },
+
+  "Dokkimi: Step repeat Loop": {
+    "prefix": "dok-repeat",
+    "description": "Add a repeat loop modifier to a step — repeats up to N times with optional until condition",
+    "body": [
+      "\"repeat\": {",
+      "  \"count\": ${1:10},",
+      "  \"as\": \"${2:attempt}\",",
+      "  \"delayMs\": ${3:500},",
+      "  \"until\": [",
+      "    { \"path\": \"${4:$.response.body.ready}\", \"operator\": \"eq\", \"value\": ${5:true} }",
+      "  ]",
+      "}"
+    ]
+  },
+
+  "Dokkimi: Extract with Transform": {
+    "prefix": "dok-extract-transform",
+    "description": "Extract and transform an object into an array (keys, values, or entries)",
+    "body": [
+      "\"${1:variableName}\": {",
+      "  \"path\": \"\\$.${2:response.body}\",",
+      "  \"transform\": \"${3|keys,values,entries|}\"",
+      "}"
+    ]
   }
 }

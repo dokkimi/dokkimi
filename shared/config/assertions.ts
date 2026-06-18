@@ -38,6 +38,31 @@ export interface JSONObject {
 export type JSONArray = JSONValue[];
 
 // ============================================
+// LOOP MODIFIERS
+// ============================================
+
+export interface ForEachLoop {
+  items: unknown[] | string;
+  as: string;
+  delayMs?: number;
+}
+
+export interface ForLoop {
+  from: number;
+  to: number;
+  step?: number;
+  as: string;
+  delayMs?: number;
+}
+
+export interface RepeatLoop {
+  count: number;
+  as: string;
+  delayMs?: number;
+  until?: Assertion[];
+}
+
+// ============================================
 // TEST DEFINITION
 // ============================================
 
@@ -48,6 +73,9 @@ export interface TestDefinition {
   stopOnFailure?: boolean;
   variables?: Record<string, unknown>;
   steps: TestStep[];
+  forEach?: ForEachLoop;
+  for?: ForLoop;
+  repeat?: RepeatLoop;
 }
 
 // ============================================
@@ -64,8 +92,15 @@ export interface RegexExtractRule {
   group?: number;
 }
 
-/** An extract rule is either a plain JSONPath string or a regex extract object. */
-export type ExtractRule = string | RegexExtractRule;
+/** A transform extract rule: convert an object to an array for forEach iteration. */
+export interface TransformExtractRule {
+  path?: string;
+  from?: string;
+  transform: 'keys' | 'values' | 'entries';
+}
+
+/** An extract rule is either a plain JSONPath string, a regex extract object, or a transform rule. */
+export type ExtractRule = string | RegexExtractRule | TransformExtractRule;
 
 export interface ActionTestStep {
   name?: string;
@@ -74,6 +109,9 @@ export interface ActionTestStep {
   action: StepAction;
   extract?: Record<string, ExtractRule>;
   assertions?: AssertionBlock[];
+  forEach?: ForEachLoop;
+  for?: ForLoop;
+  repeat?: RepeatLoop;
 }
 
 // ============================================
@@ -135,6 +173,9 @@ export interface AssertionBlock {
   /** When present, validate against console log output for this service. */
   service?: string;
   consoleAssertions?: ConsoleLogAssertion[];
+
+  /** forEach on an assertion block iterates over an array and runs assertions per element. */
+  forEach?: ForEachLoop;
 }
 
 // ============================================

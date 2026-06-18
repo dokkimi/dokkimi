@@ -124,8 +124,9 @@ func (sv *StepValidator) validateStep(step TestStep, stepExec StepExecution, ste
 				})
 			} else {
 				sv.varCtx.Set(variable, value)
-				vars := rootCtx["variables"].(map[string]interface{})
-				vars[variable] = value
+				if vars, ok := rootCtx["variables"].(map[string]interface{}); ok {
+					vars[variable] = value
+				}
 				results = append(results, AssertionResult{
 					Passed:     true,
 					Path:       rule.Path,
@@ -144,6 +145,38 @@ func (sv *StepValidator) validateStep(step TestStep, stepExec StepExecution, ste
 	for blockIndex := 0; blockIndex < len(resolvedBlocks); blockIndex++ {
 		block := resolvedBlocks[blockIndex]
 		bi := blockIndex
+
+		// Assertion-block-level forEach: iterate over items and validate per-element.
+		if block.ForEach != nil {
+			items, err := resolveForEachItems(block.ForEach.Items, sv.varCtx, rootCtx)
+			if err != nil {
+				results = append(results, AssertionResult{
+					Passed:     false,
+					Error:      err.Error(),
+					BlockIndex: &bi,
+					ResultKind: "field",
+				})
+				continue
+			}
+			for itemIdx, item := range items {
+				setForEachVars(sv.varCtx, block.ForEach.As, item, itemIdx, items)
+				// Update the rootCtx variables snapshot so $.variables.<as> paths resolve.
+				rootCtx["variables"] = sv.varCtx.Snapshot()
+				// Re-resolve the block's assertions with the updated variable context.
+				iterBlocks := sv.varCtx.ResolveAssertionBlocks([]AssertionBlock{block})
+				if len(iterBlocks) == 0 {
+					continue
+				}
+				iterBlock := iterBlocks[0]
+				iterBlock.ForEach = nil // prevent infinite recursion
+				iterResults := ValidateSelfBlock(iterBlock, rootCtx)
+				for i := range iterResults {
+					iterResults[i].BlockIndex = &bi
+				}
+				results = append(results, iterResults...)
+			}
+			continue
+		}
 
 		if block.Extract != nil {
 			blockExtractKeys := make([]string, 0, len(block.Extract))

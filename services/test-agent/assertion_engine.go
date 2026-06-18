@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"reflect"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 )
@@ -461,7 +462,13 @@ func ValidateCount(actual int, count CountAssertion) AssertionResult {
 // ResolveExtractRule extracts a variable value from a document using a path and optional regex.
 // Without a regex pattern, the raw typed value is returned (preserving numbers, arrays, objects).
 // With a regex pattern, the value is stringified and the matched group is returned as a string.
+// With a transform, the source object is converted to an array (keys/values/entries).
 func ResolveExtractRule(doc map[string]interface{}, variable string, rule ExtractRule) (interface{}, error) {
+	// Transform form: convert an object to an array.
+	if rule.Transform != "" {
+		return resolveTransformExtract(doc, variable, rule)
+	}
+
 	rawValue, found := EvaluateDocPath(doc, rule.Path)
 	if !found {
 		return nil, fmt.Errorf("Failed to extract variable '%s': path '%s' not found", variable, rule.Path)
@@ -498,4 +505,76 @@ func ResolveExtractRule(doc map[string]interface{}, variable string, rule Extrac
 	}
 
 	return matches[group], nil
+}
+
+// resolveTransformExtract handles extract rules with the transform field.
+// Resolves the source from path or from, then applies keys/values/entries transform.
+// When using `from`, the caller must pre-resolve the {{var}} reference and pass the
+// resolved value via rule.FromResolved (set by the variable context before calling).
+func resolveTransformExtract(doc map[string]interface{}, variable string, rule ExtractRule) (interface{}, error) {
+	var source interface{}
+
+	if rule.From != "" {
+		// From form: resolve a {{varName}} reference from doc["variables"].
+		from := rule.From
+		if len(from) >= 4 && from[:2] == "{{" && from[len(from)-2:] == "}}" {
+			varName := from[2 : len(from)-2]
+			if vars, ok := doc["variables"].(map[string]interface{}); ok {
+				if val, exists := vars[varName]; exists {
+					source = val
+				}
+			}
+		}
+		if source == nil {
+			return nil, fmt.Errorf("Failed to extract variable '%s': from reference '%s' could not be resolved", variable, rule.From)
+		}
+	} else if rule.Path != "" {
+		rawValue, found := EvaluateDocPath(doc, rule.Path)
+		if !found {
+			return nil, fmt.Errorf("Failed to extract variable '%s': path '%s' not found", variable, rule.Path)
+		}
+		source = rawValue
+	} else {
+		return nil, fmt.Errorf("Failed to extract variable '%s': transform requires 'path' or 'from'", variable)
+	}
+
+	obj, ok := source.(map[string]interface{})
+	if !ok {
+		return nil, fmt.Errorf("Failed to extract variable '%s': transform source must be an object, got %T", variable, source)
+	}
+
+	return applyTransform(obj, rule.Transform, variable)
+}
+
+// applyTransform converts a map to an array using the specified transform.
+func applyTransform(obj map[string]interface{}, transform string, variable string) (interface{}, error) {
+	// Collect keys in a stable order for deterministic output.
+	keys := make([]string, 0, len(obj))
+	for k := range obj {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+
+	switch transform {
+	case "keys":
+		result := make([]interface{}, len(keys))
+		for i, k := range keys {
+			result[i] = k
+		}
+		return result, nil
+	case "values":
+		result := make([]interface{}, len(keys))
+		for i, k := range keys {
+			result[i] = obj[k]
+		}
+		return result, nil
+	case "entries":
+		result := make([]interface{}, len(keys))
+		for i, k := range keys {
+			result[i] = map[string]interface{}{"key": k, "value": obj[k]}
+		}
+		return result, nil
+	default:
+		return nil, fmt.Errorf("Failed to extract variable '%s': unknown transform '%s'", variable, transform)
+	}
 }

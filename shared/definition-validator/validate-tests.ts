@@ -19,6 +19,7 @@ import {
   validateExtractRules,
 } from './validate-assertions';
 import { validateUiAction } from './validate-ui-action';
+import { validateLoopModifiers } from './validate-loops';
 
 // ---------------------------------------------------------------------------
 // Variable $ref resolution
@@ -277,6 +278,14 @@ export function validateStep(
     err(r, `${ctx}.action: missing "type"`);
   }
 
+  // Validate loop modifiers on the step itself.
+  validateLoopModifiers(step, ctx, r);
+
+  // Validate loop modifiers on the action (action-level loops).
+  if (action.type !== 'parallel' && action.type !== 'ui') {
+    validateLoopModifiers(action, `${ctx}.action`, r);
+  }
+
   if (step.extract !== undefined) {
     validateExtractRules(step.extract, ctx, r);
   }
@@ -333,6 +342,9 @@ export function validateTests(
     checkUnknownKeys(test, VALID_TEST_KEYS, ctx, r);
 
     validateVariablesField(test.variables, ctx, filePath, r, fs);
+
+    // Validate loop modifiers on the test itself.
+    validateLoopModifiers(test, ctx, r);
 
     if (test.steps !== undefined) {
       if (!Array.isArray(test.steps)) {

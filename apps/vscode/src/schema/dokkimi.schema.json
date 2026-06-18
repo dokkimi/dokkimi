@@ -59,7 +59,7 @@
         },
         "variables": {
           "type": "object",
-          "description": "Definition-level variables shared by all tests. Supports $ref for cross-file sharing. Test-level variables override these.",
+          "description": "Definition-level variables shared by all tests. Supports $ref for cross-file sharing. Test-level variables override these. Values can be any JSON type (string, number, boolean, array, object).",
           "properties": {
             "$ref": {
               "oneOf": [
@@ -76,33 +76,7 @@
             }
           },
           "additionalProperties": {
-            "oneOf": [
-              {
-                "type": "string",
-                "description": "JSONPath expression (e.g. $.body.id)"
-              },
-              {
-                "type": "object",
-                "description": "Regex extraction rule — resolve a JSONPath, then apply a regex pattern.",
-                "required": ["path", "pattern"],
-                "properties": {
-                  "path": {
-                    "type": "string",
-                    "description": "JSONPath to the source value."
-                  },
-                  "pattern": {
-                    "type": "string",
-                    "description": "Regex pattern with capture groups."
-                  },
-                  "group": {
-                    "type": "integer",
-                    "minimum": 0,
-                    "description": "Capture group index (default 1; use 0 for full match)."
-                  }
-                },
-                "additionalProperties": false
-              }
-            ]
+            "description": "Variable value — any JSON type. Strings support {{interpolation}}."
           }
         },
         "tests": {
@@ -708,9 +682,21 @@
           "type": "boolean",
           "description": "Stop on first failure (default true)."
         },
+        "forEach": {
+          "$ref": "#/definitions/ForEachLoop",
+          "description": "Test-level forEach — run all steps once per item."
+        },
+        "for": {
+          "$ref": "#/definitions/ForLoop",
+          "description": "Test-level for — run all steps once per numeric value."
+        },
+        "repeat": {
+          "$ref": "#/definitions/RepeatLoop",
+          "description": "Test-level repeat — run all steps up to count times, optionally stopping on until."
+        },
         "variables": {
           "type": "object",
-          "description": "Variables for {{interpolation}} in actions and assertions. Supports $ref for cross-file sharing. Overrides definition-level variables.",
+          "description": "Variables for {{interpolation}} in actions and assertions. Supports $ref for cross-file sharing. Overrides definition-level variables. Values can be any JSON type.",
           "properties": {
             "$ref": {
               "oneOf": [
@@ -727,33 +713,7 @@
             }
           },
           "additionalProperties": {
-            "oneOf": [
-              {
-                "type": "string",
-                "description": "JSONPath expression (e.g. $.body.id)"
-              },
-              {
-                "type": "object",
-                "description": "Regex extraction rule — resolve a JSONPath, then apply a regex pattern.",
-                "required": ["path", "pattern"],
-                "properties": {
-                  "path": {
-                    "type": "string",
-                    "description": "JSONPath to the source value."
-                  },
-                  "pattern": {
-                    "type": "string",
-                    "description": "Regex pattern with capture groups."
-                  },
-                  "group": {
-                    "type": "integer",
-                    "minimum": 0,
-                    "description": "Capture group index (default 1; use 0 for full match)."
-                  }
-                },
-                "additionalProperties": false
-              }
-            ]
+            "description": "Variable value — any JSON type. Strings support {{interpolation}}."
           }
         },
         "steps": {
@@ -777,6 +737,18 @@
         "stopOnFailure": {
           "type": "boolean",
           "description": "Stop the test on assertion failure (default true)."
+        },
+        "forEach": {
+          "$ref": "#/definitions/ForEachLoop",
+          "description": "Step-level forEach — repeat action+extract+assertions per item."
+        },
+        "for": {
+          "$ref": "#/definitions/ForLoop",
+          "description": "Step-level for — repeat action+extract+assertions per numeric value."
+        },
+        "repeat": {
+          "$ref": "#/definitions/RepeatLoop",
+          "description": "Step-level repeat — repeat action+extract+assertions up to count times."
         },
         "action": { "$ref": "#/definitions/AnyAction" },
         "extract": {
@@ -808,7 +780,8 @@
                   }
                 },
                 "additionalProperties": false
-              }
+              },
+              { "$ref": "#/definitions/ExtractRuleWithTransform" }
             ]
           }
         },
@@ -921,6 +894,18 @@
               "timeout": {
                 "type": "integer",
                 "description": "Request timeout in milliseconds."
+              },
+              "forEach": {
+                "$ref": "#/definitions/ForEachLoop",
+                "description": "Action-level forEach — repeat only this action per item; extract+assertions run once after."
+              },
+              "for": {
+                "$ref": "#/definitions/ForLoop",
+                "description": "Action-level for — repeat only this action per numeric value."
+              },
+              "repeat": {
+                "$ref": "#/definitions/RepeatLoop",
+                "description": "Action-level repeat — repeat only this action up to count times."
               }
             }
           }
@@ -951,6 +936,18 @@
               "timeout": {
                 "type": "integer",
                 "description": "Query timeout in milliseconds."
+              },
+              "forEach": {
+                "$ref": "#/definitions/ForEachLoop",
+                "description": "Action-level forEach — repeat only this query per item."
+              },
+              "for": {
+                "$ref": "#/definitions/ForLoop",
+                "description": "Action-level for — repeat only this query per numeric value."
+              },
+              "repeat": {
+                "$ref": "#/definitions/RepeatLoop",
+                "description": "Action-level repeat — repeat only this query up to count times."
               }
             }
           }
@@ -969,6 +966,18 @@
                 "type": "integer",
                 "description": "Duration to wait in milliseconds.",
                 "exclusiveMinimum": 0
+              },
+              "forEach": {
+                "$ref": "#/definitions/ForEachLoop",
+                "description": "Action-level forEach — repeat only this wait per item."
+              },
+              "for": {
+                "$ref": "#/definitions/ForLoop",
+                "description": "Action-level for — repeat only this wait per numeric value."
+              },
+              "repeat": {
+                "$ref": "#/definitions/RepeatLoop",
+                "description": "Action-level repeat — repeat only this wait up to count times."
               }
             }
           }
@@ -989,11 +998,12 @@
               },
               "steps": {
                 "type": "array",
-                "description": "Ordered UI sub-steps (visit, click, type, waitFor, extract, screenshot). Entries can also be { $ref: 'path' } to splice in shared sub-step fragments.",
+                "description": "Ordered UI sub-steps (visit, click, type, waitFor, extract, screenshot). Entries can also be { $ref: 'path' } to splice in shared sub-step fragments, or loop groups with nested steps.",
                 "items": {
                   "oneOf": [
                     { "$ref": "#/definitions/UiSubStep" },
-                    { "$ref": "#/definitions/UiSubStepRef" }
+                    { "$ref": "#/definitions/UiSubStepRef" },
+                    { "$ref": "#/definitions/UiSubStepGroup" }
                   ]
                 }
               }
@@ -1032,6 +1042,37 @@
           "description": "Relative path to a sub-step fragment file (e.g., '../shared/login-flow.yaml')."
         }
       }
+    },
+
+    "UiSubStepGroup": {
+      "type": "object",
+      "description": "A loop group inside a UI action's steps array. Repeats the nested steps per iteration of the loop modifier.",
+      "required": ["steps"],
+      "properties": {
+        "forEach": {
+          "$ref": "#/definitions/ForEachLoop",
+          "description": "Iterate over an array of items."
+        },
+        "for": {
+          "$ref": "#/definitions/ForLoop",
+          "description": "Iterate over a numeric range."
+        },
+        "repeat": {
+          "$ref": "#/definitions/RepeatLoop",
+          "description": "Repeat up to count times, optionally until assertions pass."
+        },
+        "steps": {
+          "type": "array",
+          "description": "UI sub-steps to repeat per iteration.",
+          "items": {
+            "oneOf": [
+              { "$ref": "#/definitions/UiSubStep" },
+              { "$ref": "#/definitions/UiSubStepRef" }
+            ]
+          }
+        }
+      },
+      "additionalProperties": false
     },
 
     "UiSubStep": {
@@ -1328,6 +1369,10 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
+        "forEach": {
+          "$ref": "#/definitions/ForEachLoop",
+          "description": "Assertion-block forEach — run these assertions once per item. items can be a $.path into the response or a {{variable}} reference."
+        },
         "assertions": {
           "type": "array",
           "description": "Field assertions using dotted paths.",
@@ -1476,6 +1521,121 @@
         "count": { "$ref": "#/definitions/CountAssertion" },
         "disabled": { "type": "boolean", "description": "Skip this assertion." }
       }
+    },
+
+    "ForEachLoop": {
+      "type": "object",
+      "description": "Iterate over an array of items. Each iteration sets the loop variable (as) to the current item, plus __index (0-based) and __items (total count).",
+      "required": ["items", "as"],
+      "additionalProperties": false,
+      "properties": {
+        "items": {
+          "oneOf": [
+            {
+              "type": "array",
+              "description": "Inline array of items to iterate over."
+            },
+            {
+              "type": "string",
+              "description": "Variable reference ({{varName}}) or JSONPath ($.response.body.items) resolving to an array."
+            }
+          ]
+        },
+        "as": {
+          "type": "string",
+          "description": "Variable name for the current item. Access fields via {{as.field}}, index via {{as.__index}}, count via {{as.__items}}."
+        },
+        "delayMs": {
+          "type": "integer",
+          "description": "Milliseconds to wait between iterations.",
+          "exclusiveMinimum": 0
+        }
+      }
+    },
+
+    "ForLoop": {
+      "type": "object",
+      "description": "Numeric range loop. Iterates from 'from' to 'to' (inclusive) with optional step.",
+      "required": ["from", "to", "as"],
+      "additionalProperties": false,
+      "properties": {
+        "from": {
+          "type": "integer",
+          "description": "Start value (inclusive)."
+        },
+        "to": {
+          "type": "integer",
+          "description": "End value (inclusive)."
+        },
+        "step": {
+          "type": "integer",
+          "description": "Increment per iteration. Positive for ascending, negative for descending. Must not be 0. Defaults to 1 (or -1 if from > to).",
+          "not": { "const": 0 }
+        },
+        "as": {
+          "type": "string",
+          "description": "Variable name for the current numeric value."
+        },
+        "delayMs": {
+          "type": "integer",
+          "description": "Milliseconds to wait between iterations.",
+          "exclusiveMinimum": 0
+        }
+      }
+    },
+
+    "RepeatLoop": {
+      "type": "object",
+      "description": "Repeat a fixed number of times, optionally stopping early when 'until' assertions all pass.",
+      "required": ["count"],
+      "additionalProperties": false,
+      "properties": {
+        "count": {
+          "type": "integer",
+          "description": "Maximum number of iterations.",
+          "exclusiveMinimum": 0
+        },
+        "as": {
+          "type": "string",
+          "description": "Variable name for the current iteration index (0-based)."
+        },
+        "delayMs": {
+          "type": "integer",
+          "description": "Milliseconds to wait between iterations.",
+          "exclusiveMinimum": 0
+        },
+        "until": {
+          "type": "array",
+          "description": "Assertions checked after each iteration. When ALL pass, the loop stops early. The loop always executes at least once.",
+          "items": { "$ref": "#/definitions/Assertion" }
+        }
+      }
+    },
+
+    "ExtractRuleWithTransform": {
+      "type": "object",
+      "description": "Extract and transform an object into an array (keys, values, or entries).",
+      "required": ["transform"],
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "JSONPath to the source object (e.g. $.response.body.settings)."
+        },
+        "from": {
+          "type": "string",
+          "description": "Variable reference ({{varName}}) to use as the source object. Alternative to path."
+        },
+        "transform": {
+          "type": "string",
+          "description": "How to convert the object to an array.",
+          "enum": ["keys", "values", "entries"]
+        }
+      },
+      "oneOf": [
+        { "required": ["path", "transform"] },
+        { "required": ["from", "transform"] }
+      ]
     },
 
     "CountAssertion": {

@@ -10,7 +10,9 @@ import {
   VALID_CONSOLE_LOG_LEVELS,
   VALID_MESSAGE_FILTER_KEYS,
   VALID_MESSAGE_OPERATORS,
+  VALID_EXTRACT_TRANSFORMS,
 } from './constants';
+import { validateLoopModifiers } from './validate-loops';
 import {
   ValidationResult,
   err,
@@ -182,39 +184,80 @@ export function validateExtractRules(
       validatePathFormat(value, `${ctx}.extract["${key}"]`, r);
     } else if (value && typeof value === 'object' && !Array.isArray(value)) {
       const rule = value as Record<string, unknown>;
-      const validKeys = new Set(['path', 'pattern', 'group']);
-      for (const k of Object.keys(rule)) {
-        if (!validKeys.has(k)) {
-          warn(r, `${ctx}.extract["${key}"]: unknown key "${k}"`);
+      const eCtx = `${ctx}.extract["${key}"]`;
+
+      const hasTransform = rule.transform !== undefined;
+      const hasFrom = rule.from !== undefined;
+      const hasPattern = rule.pattern !== undefined;
+
+      if (hasTransform) {
+        // Transform form: path+transform or from+transform.
+        const validKeys = new Set(['path', 'from', 'transform']);
+        for (const k of Object.keys(rule)) {
+          if (!validKeys.has(k)) {
+            warn(r, `${eCtx}: unknown key "${k}"`);
+          }
         }
-      }
-      if (typeof rule.path !== 'string' || !rule.path) {
-        err(r, `${ctx}.extract["${key}"]: "path" must be a non-empty string`);
-      } else {
-        validatePathFormat(rule.path, `${ctx}.extract["${key}"]`, r);
-      }
-      if (typeof rule.pattern !== 'string' || !rule.pattern) {
-        err(
-          r,
-          `${ctx}.extract["${key}"]: "pattern" must be a non-empty string`,
-        );
-      } else {
-        try {
-          new RegExp(rule.pattern);
-        } catch {
-          err(r, `${ctx}.extract["${key}"]: "pattern" is not a valid regex`);
+        if (hasPattern) {
+          err(r, `${eCtx}: "transform" and "pattern" are mutually exclusive`);
         }
-      }
-      if (rule.group !== undefined) {
+        if (hasFrom && rule.path !== undefined) {
+          err(
+            r,
+            `${eCtx}: "from" and "path" are mutually exclusive in a transform rule`,
+          );
+        }
         if (
-          typeof rule.group !== 'number' ||
-          !Number.isInteger(rule.group) ||
-          rule.group < 0
+          !(VALID_EXTRACT_TRANSFORMS as readonly string[]).includes(
+            rule.transform as string,
+          )
         ) {
           err(
             r,
-            `${ctx}.extract["${key}"]: "group" must be a non-negative integer`,
+            `${eCtx}: "transform" must be one of: ${VALID_EXTRACT_TRANSFORMS.join(', ')}`,
           );
+        }
+        if (hasFrom) {
+          if (typeof rule.from !== 'string' || !rule.from) {
+            err(r, `${eCtx}: "from" must be a non-empty string`);
+          }
+        } else {
+          if (typeof rule.path !== 'string' || !rule.path) {
+            err(r, `${eCtx}: "path" must be a non-empty string`);
+          } else {
+            validatePathFormat(rule.path, eCtx, r);
+          }
+        }
+      } else {
+        // Regex form: path+pattern+group.
+        const validKeys = new Set(['path', 'pattern', 'group']);
+        for (const k of Object.keys(rule)) {
+          if (!validKeys.has(k)) {
+            warn(r, `${eCtx}: unknown key "${k}"`);
+          }
+        }
+        if (typeof rule.path !== 'string' || !rule.path) {
+          err(r, `${eCtx}: "path" must be a non-empty string`);
+        } else {
+          validatePathFormat(rule.path, eCtx, r);
+        }
+        if (typeof rule.pattern !== 'string' || !rule.pattern) {
+          err(r, `${eCtx}: "pattern" must be a non-empty string`);
+        } else {
+          try {
+            new RegExp(rule.pattern);
+          } catch {
+            err(r, `${eCtx}: "pattern" is not a valid regex`);
+          }
+        }
+        if (rule.group !== undefined) {
+          if (
+            typeof rule.group !== 'number' ||
+            !Number.isInteger(rule.group) ||
+            rule.group < 0
+          ) {
+            err(r, `${eCtx}: "group" must be a non-negative integer`);
+          }
         }
       }
     } else {
@@ -320,6 +363,17 @@ export function validateAssertionBlock(
           r,
         );
       }
+    }
+  }
+
+  // Validate forEach on assertion blocks.
+  if (block.forEach !== undefined) {
+    validateLoopModifiers(block, ctx, r);
+    if (block.match !== undefined || block.service !== undefined) {
+      err(
+        r,
+        `${ctx}: "forEach" cannot be combined with "match" or "service" on an assertion block`,
+      );
     }
   }
 }

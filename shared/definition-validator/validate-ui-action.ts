@@ -15,6 +15,7 @@ import {
   warn,
   checkUnknownKeys,
 } from './validate-helpers';
+import { validateLoopModifiers } from './validate-loops';
 
 // ---------------------------------------------------------------------------
 // UI action top-level validation
@@ -72,6 +73,32 @@ function validateUiSubStep(
 
   const obj = subStep as Record<string, unknown>;
   const keys = Object.keys(obj);
+
+  // Detect sub-step groups: an entry with a loop modifier + "steps" array.
+  const loopKeys = keys.filter(
+    (k) => k === 'forEach' || k === 'for' || k === 'repeat',
+  );
+  if (loopKeys.length > 0 && obj.steps !== undefined) {
+    // This is a sub-step group.
+    const kindKeys = keys.filter((k) => VALID_UI_SUB_STEP_KEY_SET.has(k));
+    if (kindKeys.length > 0) {
+      err(
+        r,
+        `${ctx}: sub-step group cannot have both a loop modifier and a sub-step kind (${kindKeys.join(', ')})`,
+      );
+      return;
+    }
+    validateLoopModifiers(obj, ctx, r);
+    if (!Array.isArray(obj.steps)) {
+      err(r, `${ctx}: sub-step group "steps" must be an array`);
+    } else {
+      for (let i = 0; i < obj.steps.length; i++) {
+        validateUiSubStep(obj.steps[i], `${ctx}.steps[${i}]`, r);
+      }
+    }
+    return;
+  }
+
   const kindKeys = keys.filter((k) => VALID_UI_SUB_STEP_KEY_SET.has(k));
 
   if (kindKeys.length === 0) {

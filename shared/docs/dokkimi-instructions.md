@@ -1024,6 +1024,35 @@ Each extract rule can be a **simple JSONPath string** or a **regex extract objec
 
 The JSONPath is resolved first, the result is coerced to a string, then the regex is applied. An error is raised if the path doesn't exist, the pattern doesn't match, or the capture group is out of range.
 
+**Transform form** (object): converts an object into an array for use with `forEach`:
+
+| Field       | Type   | Required | Description                                           |
+| ----------- | ------ | -------- | ----------------------------------------------------- |
+| `path`      | string | *        | JSONPath to the source object                         |
+| `from`      | string | *        | Variable reference (`{{varName}}`) as the source      |
+| `transform` | string | Yes      | Conversion type: `"keys"`, `"values"`, or `"entries"` |
+
+\* Either `path` or `from` is required (not both).
+
+- `"keys"` — returns an array of the object's key names (sorted alphabetically)
+- `"values"` — returns an array of values (in sorted key order)
+- `"entries"` — returns an array of `{ "key": "...", "value": ... }` objects (in sorted key order)
+
+```json
+{
+  "extract": {
+    "settingKeys": {
+      "path": "$.body.settings",
+      "transform": "keys"
+    },
+    "fieldNames": {
+      "from": "{{userTemplate}}",
+      "transform": "keys"
+    }
+  }
+}
+```
+
 Extract operates on the **action's response only** — it does not have access to request data. This applies to both step-level and assertion-block extract (even inside `match` blocks). The test-agent resolves extract paths against the response document from the step's action, not against intercepted traffic logs.
 
 For HTTP actions, the extract document is: `{ statusCode, headers, body }`
@@ -1051,6 +1080,177 @@ This distinction matters — don't use `response.body` in extract paths or `$.bo
 - Extracted variables from step N are available in steps N+1, N+2, etc.
 - Within a `parallel` action, variable extraction order is non-deterministic
 - Referencing an undefined variable causes an immediate error
+
+---
+
+### Loops
+
+Loop modifiers let you repeat tests, steps, or actions over data. Three types are available: `forEach` (iterate an array), `for` (numeric range), and `repeat` (fixed count with optional early exit).
+
+#### forEach
+
+Iterates over an array of items. Each iteration sets the loop variable to the current item.
+
+| Field     | Type            | Required | Description                                                                                              |
+| --------- | --------------- | -------- | -------------------------------------------------------------------------------------------------------- |
+| `items`   | array or string | Yes      | Inline array, `{{variable}}` reference, or `$.path` into the response (assertion-block level only)       |
+| `as`      | string          | Yes      | Variable name for the current item. Access fields with `{{as.field}}`.                                   |
+| `delayMs` | integer         | No       | Milliseconds to wait between iterations                                                                  |
+
+**Meta-variables:** During iteration, `{{as.__index}}` gives the 0-based index and `{{as.__items}}` gives the total item count.
+
+```json
+{
+  "name": "Verify user {{user.name}}",
+  "forEach": {
+    "items": [
+      { "name": "Alice", "email": "alice@test.com" },
+      { "name": "Bob", "email": "bob@test.com" }
+    ],
+    "as": "user"
+  },
+  "action": {
+    "type": "httpRequest",
+    "method": "GET",
+    "url": "api-gateway/api/users?email={{user.email}}"
+  }
+}
+```
+
+Items can also be a variable reference or a JSONPath:
+
+```json
+"forEach": { "items": "{{users}}", "as": "user" }
+```
+
+#### for
+
+Iterates over a numeric range (inclusive on both ends).
+
+| Field     | Type    | Required | Default                 | Description                             |
+| --------- | ------- | -------- | ----------------------- | --------------------------------------- |
+| `from`    | integer | Yes      | —                       | Start value (inclusive)                  |
+| `to`      | integer | Yes      | —                       | End value (inclusive)                    |
+| `step`    | integer | No       | 1 (or -1 if descending) | Increment per iteration. Must not be 0. |
+| `as`      | string  | Yes      | —                       | Variable name for the current value     |
+| `delayMs` | integer | No       | —                       | Milliseconds to wait between iterations |
+
+```json
+{
+  "name": "Seed user {{i}}",
+  "for": { "from": 1, "to": 5, "as": "i" },
+  "action": {
+    "type": "httpRequest",
+    "method": "POST",
+    "url": "api-gateway/api/users",
+    "body": { "name": "user-{{i}}" }
+  }
+}
+```
+
+For descending ranges, `step` defaults to -1: `"for": { "from": 10, "to": 1, "as": "i" }`.
+
+#### repeat
+
+Repeats a fixed number of times, optionally stopping early when `until` assertions all pass.
+
+| Field     | Type    | Required | Description                                                          |
+| --------- | ------- | -------- | -------------------------------------------------------------------- |
+| `count`   | integer | Yes      | Maximum number of iterations                                         |
+| `as`      | string  | No       | Variable name for the iteration index (0-based)                      |
+| `delayMs` | integer | No       | Milliseconds to wait between iterations                              |
+| `until`   | array   | No       | Assertions checked after each iteration; all must pass to stop early |
+
+The loop always executes at least once, regardless of `until`.
+
+```json
+{
+  "name": "Poll until job completes (attempt {{attempt}})",
+  "repeat": {
+    "count": 10,
+    "as": "attempt",
+    "delayMs": 500,
+    "until": [
+      { "path": "$.response.body.status", "operator": "eq", "value": "done" }
+    ]
+  },
+  "action": {
+    "type": "httpRequest",
+    "method": "GET",
+    "url": "api-gateway/api/jobs/{{jobId}}"
+  }
+}
+```
+
+#### Loop levels
+
+Loops can be applied at five levels:
+
+**Test-level** — add `forEach`, `for`, or `repeat` to a test definition. All steps repeat per iteration:
+
+```json
+{
+  "name": "Verify order {{order.id}}",
+  "forEach": { "items": "{{orders}}", "as": "order" },
+  "steps": [
+    { "name": "Check API", "action": { "type": "httpRequest", "method": "GET", "url": "api/orders/{{order.id}}" } },
+    { "name": "Check DB", "action": { "type": "dbQuery", "database": "postgres-db", "query": "SELECT * FROM orders WHERE id = '{{order.id}}'" } }
+  ]
+}
+```
+
+**Step-level** — add a loop modifier to a step. The action, extract, and assertions all repeat per iteration:
+
+```json
+{
+  "name": "Create user {{user.name}}",
+  "forEach": { "items": "{{users}}", "as": "user" },
+  "action": { ... },
+  "extract": { "lastId": "$.response.body.id" },
+  "assertions": [ ... ]
+}
+```
+
+**Action-level** — add a loop modifier inside the action object. Only the action repeats; extract and assertions run once on the last response:
+
+```json
+{
+  "name": "Seed 5 users",
+  "action": {
+    "type": "httpRequest",
+    "method": "POST",
+    "url": "api-gateway/api/users",
+    "body": { "name": "user-{{i}}" },
+    "for": { "from": 1, "to": 5, "as": "i" }
+  },
+  "extract": { "lastUserId": "$.response.body.id" }
+}
+```
+
+**Assertion-block level** — add `forEach` to an assertion block. The assertions run once per item (only `forEach` is supported at this level):
+
+```json
+{
+  "forEach": { "items": "$.response.body", "as": "user" },
+  "assertions": [
+    { "path": "{{user.email}}", "operator": "matches", "value": "^.+@.+\\..+$" },
+    { "path": "{{user.active}}", "operator": "eq", "value": true }
+  ]
+}
+```
+
+**UI sub-step group** — inside a UI action's `steps` array, add an object with a loop modifier and nested `steps`:
+
+```json
+{
+  "forEach": { "items": ["bad@", "", "no-dot"], "as": "email" },
+  "steps": [
+    { "type": { "selector": "#email", "text": "{{email}}" } },
+    { "click": "#submit" },
+    { "waitFor": "[data-testid='error']" }
+  ]
+}
+```
 
 ---
 

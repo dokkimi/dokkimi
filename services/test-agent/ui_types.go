@@ -59,6 +59,11 @@ type UIAction struct {
 // UISubStep is a single UI action step. The JSON shape is a discriminated union
 // where the discriminator is the object key itself — see UISubStepKind. Only
 // one field is populated per instance; which one is indicated by Kind.
+//
+// A sub-step can also be a "group" — an entry with a loop modifier (forEach,
+// for, repeat) and a nested `steps` array instead of a regular sub-step key.
+// When IsGroup is true, the loop modifier + Group.Steps are populated and the
+// regular kind fields are ignored.
 type UISubStep struct {
 	Kind UISubStepKind
 
@@ -81,6 +86,13 @@ type UISubStep struct {
 	// executor's defaultUISubStepTimeout for this sub-step only. Wire form is
 	// a sibling of the kind discriminator: { click: "...", timeoutMs: 5000 }.
 	TimeoutMs int
+
+	// Sub-step group fields (loop modifier + nested steps).
+	IsGroup bool
+	ForEach *ForEachLoop `json:"forEach,omitempty"`
+	For     *ForLoop     `json:"for,omitempty"`
+	Repeat  *RepeatLoop  `json:"repeat,omitempty"`
+	Steps   []UISubStep  `json:"steps,omitempty"` // nested sub-steps in a group
 }
 
 // UIScrollStep is the payload for a "scroll" sub-step. Two shapes are
@@ -250,6 +262,40 @@ func (s *UISubStep) UnmarshalJSON(data []byte) error {
 		return fmt.Errorf("ui sub-step: %w", err)
 	}
 
+	// Check if this is a sub-step group (has a loop modifier key + steps).
+	_, hasForEach := raw["forEach"]
+	_, hasFor := raw["for"]
+	_, hasRepeat := raw["repeat"]
+	_, hasSteps := raw["steps"]
+	if (hasForEach || hasFor || hasRepeat) && hasSteps {
+		s.IsGroup = true
+		if hasForEach {
+			fe := &ForEachLoop{}
+			if err := json.Unmarshal(raw["forEach"], fe); err != nil {
+				return fmt.Errorf("ui sub-step group forEach: %w", err)
+			}
+			s.ForEach = fe
+		}
+		if hasFor {
+			fl := &ForLoop{}
+			if err := json.Unmarshal(raw["for"], fl); err != nil {
+				return fmt.Errorf("ui sub-step group for: %w", err)
+			}
+			s.For = fl
+		}
+		if hasRepeat {
+			rl := &RepeatLoop{}
+			if err := json.Unmarshal(raw["repeat"], rl); err != nil {
+				return fmt.Errorf("ui sub-step group repeat: %w", err)
+			}
+			s.Repeat = rl
+		}
+		if err := json.Unmarshal(raw["steps"], &s.Steps); err != nil {
+			return fmt.Errorf("ui sub-step group steps: %w", err)
+		}
+		return nil
+	}
+
 	var foundKind UISubStepKind
 	var foundValue json.RawMessage
 	foundCount := 0
@@ -355,6 +401,20 @@ func (s *UISubStep) UnmarshalJSON(data []byte) error {
 
 // MarshalJSON emits the wire shape corresponding to Kind.
 func (s UISubStep) MarshalJSON() ([]byte, error) {
+	if s.IsGroup {
+		obj := map[string]interface{}{}
+		if s.ForEach != nil {
+			obj["forEach"] = s.ForEach
+		}
+		if s.For != nil {
+			obj["for"] = s.For
+		}
+		if s.Repeat != nil {
+			obj["repeat"] = s.Repeat
+		}
+		obj["steps"] = s.Steps
+		return json.Marshal(obj)
+	}
 	obj := map[string]interface{}{}
 	switch s.Kind {
 	case UISubVisit:

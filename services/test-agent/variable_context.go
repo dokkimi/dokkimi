@@ -79,7 +79,13 @@ func (vc *VariableContext) ResolveTyped(template string) (interface{}, error) {
 
 // resolveVarPath looks up a dotted/bracketed path in the variable map.
 // Must be called with vc.mu held (at least RLock).
+// Tries the full path as a flat key first (supports loop meta-variables like
+// "user.__index" stored via Set("user.__index", ...)), then falls back to
+// EvaluateDocPath for nested object traversal.
 func (vc *VariableContext) resolveVarPath(varPath string) (interface{}, error) {
+	if value, ok := vc.variables[varPath]; ok {
+		return value, nil
+	}
 	value, ok := EvaluateDocPath(vc.variables, varPath)
 	if !ok {
 		return nil, fmt.Errorf("variable '%s' is not defined", varPath)
@@ -169,6 +175,11 @@ func (vc *VariableContext) ResolveAssertionBlocks(blocks []AssertionBlock) []Ass
 			resolvedAssertions := make([]Assertion, len(block.Assertions))
 			for j, a := range block.Assertions {
 				resolvedAssertions[j] = a
+				if a.Path != "" {
+					if rv, err := vc.Resolve(a.Path); err == nil {
+						resolvedAssertions[j].Path = rv
+					}
+				}
 				if a.Value != nil {
 					if rv, err := vc.resolveValue(a.Value); err == nil {
 						resolvedAssertions[j].Value = rv

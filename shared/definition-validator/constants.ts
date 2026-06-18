@@ -141,6 +141,9 @@ export const VALID_TEST_KEYS = new Set([
   'stopOnFailure',
   'variables',
   'steps',
+  'forEach',
+  'for',
+  'repeat',
 ]);
 
 export const VALID_STEP_KEYS = new Set([
@@ -150,6 +153,9 @@ export const VALID_STEP_KEYS = new Set([
   'action',
   'extract',
   'assertions',
+  'forEach',
+  'for',
+  'repeat',
 ]);
 
 export const VALID_ACTION_KEYS: Record<string, Set<string>> = {
@@ -161,9 +167,21 @@ export const VALID_ACTION_KEYS: Record<string, Set<string>> = {
     'headers',
     'body',
     'timeout',
+    'forEach',
+    'for',
+    'repeat',
   ]),
-  dbQuery: new Set(['type', 'database', 'query', 'params', 'timeout']),
-  wait: new Set(['type', 'durationMs']),
+  dbQuery: new Set([
+    'type',
+    'database',
+    'query',
+    'params',
+    'timeout',
+    'forEach',
+    'for',
+    'repeat',
+  ]),
+  wait: new Set(['type', 'durationMs', 'forEach', 'for', 'repeat']),
   ui: new Set(['type', 'target', 'steps']),
   parallel: new Set(['type', 'actions']),
 };
@@ -255,6 +273,7 @@ export const VALID_ASSERTION_BLOCK_KEYS = new Set([
   'extract',
   'assertionScope',
   'count',
+  'forEach',
 ]);
 
 export const VALID_ASSERTION_KEYS = new Set([
@@ -319,3 +338,13 @@ export const VALID_MESSAGE_OPERATORS = [
   'containsIgnoreCase',
   'matches',
 ] as const;
+
+// ---------------------------------------------------------------------------
+// Loop modifier valid keys
+// ---------------------------------------------------------------------------
+
+export const VALID_FOR_EACH_KEYS = new Set(['items', 'as', 'delayMs']);
+export const VALID_FOR_KEYS = new Set(['from', 'to', 'step', 'as', 'delayMs']);
+export const VALID_REPEAT_KEYS = new Set(['count', 'as', 'delayMs', 'until']);
+
+export const VALID_EXTRACT_TRANSFORMS = ['keys', 'values', 'entries'] as const;
