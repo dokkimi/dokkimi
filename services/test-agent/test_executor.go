@@ -46,6 +46,7 @@ type TestExecutor struct {
 	stepValidator         *StepValidator
 	validationReporter    *ValidationReporter
 	instanceID            string
+	lastStepResponse      map[string]interface{} // last response from executeStep, for test-level until
 }
 
 // NewTestExecutor creates a new test executor
@@ -206,7 +207,7 @@ func (e *TestExecutor) executeStepAt(ctx context.Context, fs flatStep) (StepExec
 			il := fmt.Sprintf("[%s=%v]", forEach.As, valueToString(it))
 			iterations = append(iterations, stepIteration{
 				iterLabel: il,
-				setupFn:   func() { setForEachVars(e.varCtx, forEach.As, it, idx, items) },
+				setupFn:   func() { setForEachVars(e.varCtx, forEach.As, forEach.Name, it, idx, items) },
 			})
 		}
 	} else if forLoop != nil {
@@ -218,7 +219,7 @@ func (e *TestExecutor) executeStepAt(ctx context.Context, fs flatStep) (StepExec
 			il := fmt.Sprintf("[%s=%d]", forLoop.As, val)
 			iterations = append(iterations, stepIteration{
 				iterLabel: il,
-				setupFn:   func() { setForVars(e.varCtx, forLoop.As, val, idx) },
+				setupFn:   func() { setForVars(e.varCtx, forLoop.As, forLoop.Name, val, idx) },
 			})
 		}
 	} else if repeat != nil {
@@ -286,16 +287,21 @@ func (e *TestExecutor) executeStepAt(ctx context.Context, fs flatStep) (StepExec
 			}
 			if !passed {
 				summary := FormatStepResult(si, iterFS.label(), results, passed)
-				e.testExecutionLogger.LogEvent("STEP_FAILED", summary, &si, nil)
-				stepExec.EndTime = iterEnd
-				return stepExec, fmt.Errorf("assertion validation failed: %s", summary)
+				stopOnFailure := fs.step.StopOnFailure == nil || *fs.step.StopOnFailure
+				if stopOnFailure {
+					e.testExecutionLogger.LogEvent("STEP_FAILED", summary, &si, nil)
+					stepExec.EndTime = iterEnd
+					return stepExec, fmt.Errorf("assertion validation failed: %s", summary)
+				}
+				e.testExecutionLogger.LogEvent("STEP_WARNING",
+					fmt.Sprintf("%s (stopOnFailure=false, continuing)", summary), &si, nil)
 			}
 		}
 
 		// Check repeat until.
 		if repeat != nil && len(repeat.Until) > 0 && lastResp != nil {
 			rootCtx := map[string]interface{}{
-				"response":  lastResp,
+				"response":  normalizeResponseForUntil(lastResp),
 				"variables": e.varCtx.Snapshot(),
 			}
 			if evaluateUntil(repeat.Until, rootCtx, e.varCtx) {
@@ -311,12 +317,15 @@ func (e *TestExecutor) executeStepAt(ctx context.Context, fs flatStep) (StepExec
 
 	stepExec.EndTime = time.Now().Format(time.RFC3339Nano)
 
-	// Store loop result as variables for downstream assertions on $.completed / $.iterations.
-	_ = lastResp
-	e.varCtx.Set("__loopResult", map[string]interface{}{
-		"iterations": float64(iterationsRan),
-		"completed":  completed,
-	})
+	loopName := ""
+	if forEach != nil {
+		loopName = forEach.Name
+	} else if forLoop != nil {
+		loopName = forLoop.Name
+	} else if repeat != nil {
+		loopName = repeat.Name
+	}
+	setLoopResult(e.varCtx, loopName, completed, iterationsRan)
 
 	log.Printf("%s loop completed (%d iterations, completed=%v)", label, iterationsRan, completed)
 	e.testExecutionLogger.LogEvent("STEP_COMPLETED",
@@ -437,7 +446,7 @@ func (e *TestExecutor) ExecuteTests(ctx context.Context, testConfig *TestConfig,
 				label := fmt.Sprintf("[%s=%v]", testDef.ForEach.As, valueToString(it))
 				iterations = append(iterations, testIteration{
 					label:   label,
-					setupFn: func() { setForEachVars(e.varCtx, testDef.ForEach.As, it, idx, items) },
+					setupFn: func() { setForEachVars(e.varCtx, testDef.ForEach.As, testDef.ForEach.Name, it, idx, items) },
 				})
 			}
 		} else if testDef.For != nil {
@@ -448,7 +457,7 @@ func (e *TestExecutor) ExecuteTests(ctx context.Context, testConfig *TestConfig,
 				label := fmt.Sprintf("[%s=%d]", testDef.For.As, val)
 				iterations = append(iterations, testIteration{
 					label:   label,
-					setupFn: func() { setForVars(e.varCtx, testDef.For.As, val, idx) },
+					setupFn: func() { setForVars(e.varCtx, testDef.For.As, testDef.For.Name, val, idx) },
 				})
 			}
 		} else if testDef.Repeat != nil {
@@ -463,6 +472,9 @@ func (e *TestExecutor) ExecuteTests(ctx context.Context, testConfig *TestConfig,
 		} else {
 			iterations = []testIteration{{label: "", setupFn: func() {}}}
 		}
+
+		testLoopCompleted := true
+		testIterationsRan := 0
 
 		for iterIdx, iter := range iterations {
 			if hasLoop {
@@ -525,17 +537,37 @@ func (e *TestExecutor) ExecuteTests(ctx context.Context, testConfig *TestConfig,
 				}
 			}
 
+			testIterationsRan++
+
 			// Check repeat until condition after all steps in this iteration.
 			if testDef.Repeat != nil && len(testDef.Repeat.Until) > 0 {
-				// Build a minimal root context from the last step execution for until eval.
-				// For test-level repeat, until evaluates against the last step's response.
-				// We just check if the until assertions pass against variables context.
-				untilDoc := map[string]interface{}{"variables": e.varCtx.Snapshot()}
+				untilDoc := map[string]interface{}{
+					"variables": e.varCtx.Snapshot(),
+				}
+				if e.lastStepResponse != nil {
+					untilDoc["response"] = normalizeResponseForUntil(e.lastStepResponse)
+				}
 				if evaluateUntil(testDef.Repeat.Until, untilDoc, e.varCtx) {
 					log.Printf("Test-level repeat: until condition met after iteration %d", iterIdx)
+					testLoopCompleted = true
 					break
 				}
+				if iterIdx == len(iterations)-1 {
+					testLoopCompleted = false
+				}
 			}
+		}
+
+		if hasLoop {
+			testLoopName := ""
+			if testDef.ForEach != nil {
+				testLoopName = testDef.ForEach.Name
+			} else if testDef.For != nil {
+				testLoopName = testDef.For.Name
+			} else if testDef.Repeat != nil {
+				testLoopName = testDef.Repeat.Name
+			}
+			setLoopResult(e.varCtx, testLoopName, testLoopCompleted, testIterationsRan)
 		}
 	}
 
@@ -585,10 +617,14 @@ func (e *TestExecutor) executeStep(ctx context.Context, step TestStep, stepIndex
 	hasActionLoop := forEach != nil || forLoop != nil || repeat != nil
 
 	if hasActionLoop {
-		return e.executeActionLoop(ctx, step, stepIndex, forEach, forLoop, repeat)
+		resp, err := e.executeActionLoop(ctx, step, stepIndex, forEach, forLoop, repeat)
+		e.lastStepResponse = resp
+		return resp, err
 	}
 
-	return e.executeAction(ctx, step, stepIndex)
+	resp, err := e.executeAction(ctx, step, stepIndex)
+	e.lastStepResponse = resp
+	return resp, err
 }
 
 // executeAction dispatches a single action execution (no loop).
@@ -647,7 +683,7 @@ func (e *TestExecutor) executeActionLoop(ctx context.Context, step TestStep, ste
 			il := fmt.Sprintf("[%s=%v]", forEach.As, valueToString(it))
 			iterations = append(iterations, actionIteration{
 				label:   il,
-				setupFn: func() { setForEachVars(e.varCtx, forEach.As, it, idx, items) },
+				setupFn: func() { setForEachVars(e.varCtx, forEach.As, forEach.Name, it, idx, items) },
 			})
 		}
 	} else if forLoop != nil {
@@ -659,7 +695,7 @@ func (e *TestExecutor) executeActionLoop(ctx context.Context, step TestStep, ste
 			il := fmt.Sprintf("[%s=%d]", forLoop.As, val)
 			iterations = append(iterations, actionIteration{
 				label:   il,
-				setupFn: func() { setForVars(e.varCtx, forLoop.As, val, idx) },
+				setupFn: func() { setForVars(e.varCtx, forLoop.As, forLoop.Name, val, idx) },
 			})
 		}
 	} else if repeat != nil {
@@ -675,6 +711,9 @@ func (e *TestExecutor) executeActionLoop(ctx context.Context, step TestStep, ste
 	}
 
 	var lastResp map[string]interface{}
+	completed := true
+	iterationsRan := 0
+
 	for iterIdx, iter := range iterations {
 		delayBetweenIterations(iterIdx, delayMs)
 		iter.setupFn()
@@ -686,19 +725,34 @@ func (e *TestExecutor) executeActionLoop(ctx context.Context, step TestStep, ste
 			return nil, err
 		}
 		lastResp = resp
+		iterationsRan++
 
 		// Check repeat until after each action iteration.
 		if repeat != nil && len(repeat.Until) > 0 && lastResp != nil {
 			rootCtx := map[string]interface{}{
-				"response":  lastResp,
+				"response":  normalizeResponseForUntil(lastResp),
 				"variables": e.varCtx.Snapshot(),
 			}
 			if evaluateUntil(repeat.Until, rootCtx, e.varCtx) {
 				log.Printf("Action loop: until condition met after iteration %d", iterIdx)
+				completed = true
 				break
+			}
+			if iterIdx == len(iterations)-1 {
+				completed = false
 			}
 		}
 	}
+
+	loopName := ""
+	if forEach != nil {
+		loopName = forEach.Name
+	} else if forLoop != nil {
+		loopName = forLoop.Name
+	} else if repeat != nil {
+		loopName = repeat.Name
+	}
+	setLoopResult(e.varCtx, loopName, completed, iterationsRan)
 
 	return lastResp, nil
 }
@@ -849,6 +903,39 @@ func apiResponseToExtractDoc(resp *APIResponse) map[string]interface{} {
 	}
 
 	return doc
+}
+
+// normalizeResponseForUntil converts the raw extraction doc returned by
+// executeStep into the shape the assertion engine uses, so that until
+// conditions can reference the same paths as regular assertions
+// (e.g. $.response.status instead of $.response.statusCode).
+func normalizeResponseForUntil(raw map[string]interface{}) map[string]interface{} {
+	if raw == nil {
+		return nil
+	}
+	normalized := make(map[string]interface{}, len(raw))
+	for k, v := range raw {
+		normalized[k] = v
+	}
+	if sc, ok := normalized["statusCode"]; ok {
+		if _, already := normalized["status"]; !already {
+			normalized["status"] = toFloat64(sc)
+		}
+	}
+	return normalized
+}
+
+func toFloat64(v interface{}) float64 {
+	switch n := v.(type) {
+	case float64:
+		return n
+	case int:
+		return float64(n)
+	case int64:
+		return float64(n)
+	default:
+		return 0
+	}
 }
 
 // rootCause unwraps an error chain to return the deepest error message,

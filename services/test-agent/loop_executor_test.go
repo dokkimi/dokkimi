@@ -95,31 +95,67 @@ func TestForRangeValues(t *testing.T) {
 }
 
 func TestSetForEachVars(t *testing.T) {
-	varCtx := NewVariableContext()
-	items := []interface{}{"alice", "bob"}
-	setForEachVars(varCtx, "user", "alice", 0, items)
+	t.Run("without name", func(t *testing.T) {
+		varCtx := NewVariableContext()
+		items := []interface{}{"alice", "bob"}
+		setForEachVars(varCtx, "user", "", "alice", 0, items)
 
-	if v, _ := varCtx.ResolveTyped("{{user}}"); v != "alice" {
-		t.Errorf("expected alice, got %v", v)
-	}
-	if v, _ := varCtx.ResolveTyped("{{user.__index}}"); v != float64(0) {
-		t.Errorf("expected 0, got %v", v)
-	}
-	if v, _ := varCtx.ResolveTyped("{{user.__items}}"); v == nil {
-		t.Error("expected items array, got nil")
-	}
+		if v, _ := varCtx.ResolveTyped("{{user}}"); v != "alice" {
+			t.Errorf("expected alice, got %v", v)
+		}
+		if _, err := varCtx.ResolveTyped("{{loop}}"); err == nil {
+			t.Error("expected loop var to not exist without name")
+		}
+	})
+
+	t.Run("with name", func(t *testing.T) {
+		varCtx := NewVariableContext()
+		items := []interface{}{"alice", "bob"}
+		setForEachVars(varCtx, "user", "userLoop", "alice", 0, items)
+
+		if v, _ := varCtx.ResolveTyped("{{user}}"); v != "alice" {
+			t.Errorf("expected alice, got %v", v)
+		}
+		loopVar, _ := varCtx.ResolveTyped("{{userLoop}}")
+		m, ok := loopVar.(map[string]interface{})
+		if !ok {
+			t.Fatalf("expected map, got %T", loopVar)
+		}
+		if m["index"] != float64(0) {
+			t.Errorf("expected index 0, got %v", m["index"])
+		}
+		if m["items"] == nil {
+			t.Error("expected items array, got nil")
+		}
+	})
 }
 
 func TestSetForVars(t *testing.T) {
-	varCtx := NewVariableContext()
-	setForVars(varCtx, "i", 5, 2)
+	t.Run("without name", func(t *testing.T) {
+		varCtx := NewVariableContext()
+		setForVars(varCtx, "i", "", 5, 2)
 
-	if v, _ := varCtx.ResolveTyped("{{i}}"); v != float64(5) {
-		t.Errorf("expected 5, got %v", v)
-	}
-	if v, _ := varCtx.ResolveTyped("{{i.__index}}"); v != float64(2) {
-		t.Errorf("expected 2, got %v", v)
-	}
+		if v, _ := varCtx.ResolveTyped("{{i}}"); v != float64(5) {
+			t.Errorf("expected 5, got %v", v)
+		}
+	})
+
+	t.Run("with name", func(t *testing.T) {
+		varCtx := NewVariableContext()
+		setForVars(varCtx, "i", "counter", 5, 2)
+
+		if v, _ := varCtx.ResolveTyped("{{i}}"); v != float64(5) {
+			t.Errorf("expected 5, got %v", v)
+		}
+		loopVar, _ := varCtx.ResolveTyped("{{counter}}")
+		m, ok := loopVar.(map[string]interface{})
+		if !ok {
+			t.Fatalf("expected map, got %T", loopVar)
+		}
+		if m["index"] != float64(2) {
+			t.Errorf("expected index 2, got %v", m["index"])
+		}
+	})
 }
 
 func TestSetRepeatVars(t *testing.T) {

@@ -159,7 +159,7 @@ func (sv *StepValidator) validateStep(step TestStep, stepExec StepExecution, ste
 				continue
 			}
 			for itemIdx, item := range items {
-				setForEachVars(sv.varCtx, block.ForEach.As, item, itemIdx, items)
+				setForEachVars(sv.varCtx, block.ForEach.As, block.ForEach.Name, item, itemIdx, items)
 				// Update the rootCtx variables snapshot so $.variables.<as> paths resolve.
 				rootCtx["variables"] = sv.varCtx.Snapshot()
 				// Re-resolve the block's assertions with the updated variable context.

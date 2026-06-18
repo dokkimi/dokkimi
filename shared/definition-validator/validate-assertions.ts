@@ -366,6 +366,20 @@ export function validateAssertionBlock(
     }
   }
 
+  // for and repeat are not supported at the assertion-block level.
+  if (block.for !== undefined) {
+    err(
+      r,
+      `${ctx}: "for" is not supported on assertion blocks — only "forEach" is allowed`,
+    );
+  }
+  if (block.repeat !== undefined) {
+    err(
+      r,
+      `${ctx}: "repeat" is not supported on assertion blocks — only "forEach" is allowed`,
+    );
+  }
+
   // Validate forEach on assertion blocks.
   if (block.forEach !== undefined) {
     validateLoopModifiers(block, ctx, r);

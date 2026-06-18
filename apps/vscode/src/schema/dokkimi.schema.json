@@ -1048,6 +1048,11 @@
       "type": "object",
       "description": "A loop group inside a UI action's steps array. Repeats the nested steps per iteration of the loop modifier.",
       "required": ["steps"],
+      "oneOf": [
+        { "required": ["forEach", "steps"] },
+        { "required": ["for", "steps"] },
+        { "required": ["repeat", "steps"] }
+      ],
       "properties": {
         "forEach": {
           "$ref": "#/definitions/ForEachLoop",
@@ -1387,6 +1392,7 @@
                 "type": "string",
                 "description": "JSONPath expression (e.g. $.body.id)"
               },
+              { "$ref": "#/definitions/ExtractRuleWithTransform" },
               {
                 "type": "object",
                 "description": "Regex extraction rule — resolve a JSONPath, then apply a regex pattern.",
@@ -1463,13 +1469,16 @@
           "description": "Comparison operator.",
           "enum": [
             "eq",
+            "eqIgnoreCase",
             "ne",
             "gt",
             "gte",
             "lt",
             "lte",
             "contains",
+            "containsIgnoreCase",
             "notContains",
+            "notContainsIgnoreCase",
             "matches",
             "exists",
             "notExists",
@@ -1509,8 +1518,8 @@
           "properties": {
             "operator": {
               "type": "string",
-              "description": "Match mode: 'eq' (exact), 'contains' (substring), 'matches' (regex).",
-              "enum": ["eq", "contains", "matches"]
+              "description": "Match mode: 'eq' (exact), 'contains' (substring), 'containsIgnoreCase', 'matches' (regex).",
+              "enum": ["eq", "contains", "containsIgnoreCase", "matches"]
             },
             "value": {
               "type": "string",
@@ -1525,7 +1534,7 @@
 
     "ForEachLoop": {
       "type": "object",
-      "description": "Iterate over an array of items. Each iteration sets the loop variable (as) to the current item, plus __index (0-based) and __items (total count).",
+      "description": "Iterate over an array of items. Each iteration sets the loop variable (as) to the current item.",
       "required": ["items", "as"],
       "additionalProperties": false,
       "properties": {
@@ -1543,12 +1552,16 @@
         },
         "as": {
           "type": "string",
-          "description": "Variable name for the current item. Access fields via {{as.field}}, index via {{as.__index}}, count via {{as.__items}}."
+          "description": "Variable name for the current item. Access fields via {{as.field}}."
+        },
+        "name": {
+          "type": "string",
+          "description": "Optional loop name. When set, exposes loop metadata as a variable: {{name.index}}, {{name.items}}, {{name.completed}}, {{name.iterations}}."
         },
         "delayMs": {
           "type": "integer",
           "description": "Milliseconds to wait between iterations.",
-          "exclusiveMinimum": 0
+          "minimum": 0
         }
       }
     },
@@ -1569,17 +1582,21 @@
         },
         "step": {
           "type": "integer",
-          "description": "Increment per iteration. Positive for ascending, negative for descending. Must not be 0. Defaults to 1 (or -1 if from > to).",
+          "description": "Increment per iteration. Positive for ascending, negative for descending. Must not be 0. Defaults to 1; use negative step for descending ranges.",
           "not": { "const": 0 }
         },
         "as": {
           "type": "string",
           "description": "Variable name for the current numeric value."
         },
+        "name": {
+          "type": "string",
+          "description": "Optional loop name. When set, exposes loop metadata as a variable: {{name.index}}, {{name.completed}}, {{name.iterations}}."
+        },
         "delayMs": {
           "type": "integer",
           "description": "Milliseconds to wait between iterations.",
-          "exclusiveMinimum": 0
+          "minimum": 0
         }
       }
     },
@@ -1587,7 +1604,7 @@
     "RepeatLoop": {
       "type": "object",
       "description": "Repeat a fixed number of times, optionally stopping early when 'until' assertions all pass.",
-      "required": ["count"],
+      "required": ["count", "as"],
       "additionalProperties": false,
       "properties": {
         "count": {
@@ -1599,10 +1616,14 @@
           "type": "string",
           "description": "Variable name for the current iteration index (0-based)."
         },
+        "name": {
+          "type": "string",
+          "description": "Optional loop name. When set, exposes loop metadata as a variable: {{name.completed}}, {{name.iterations}}."
+        },
         "delayMs": {
           "type": "integer",
           "description": "Milliseconds to wait between iterations.",
-          "exclusiveMinimum": 0
+          "minimum": 0
         },
         "until": {
           "type": "array",

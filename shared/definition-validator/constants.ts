@@ -274,6 +274,8 @@ export const VALID_ASSERTION_BLOCK_KEYS = new Set([
   'assertionScope',
   'count',
   'forEach',
+  'for',
+  'repeat',
 ]);
 
 export const VALID_ASSERTION_KEYS = new Set([
@@ -343,8 +345,21 @@ export const VALID_MESSAGE_OPERATORS = [
 // Loop modifier valid keys
 // ---------------------------------------------------------------------------
 
-export const VALID_FOR_EACH_KEYS = new Set(['items', 'as', 'delayMs']);
-export const VALID_FOR_KEYS = new Set(['from', 'to', 'step', 'as', 'delayMs']);
-export const VALID_REPEAT_KEYS = new Set(['count', 'as', 'delayMs', 'until']);
+export const VALID_FOR_EACH_KEYS = new Set(['items', 'as', 'name', 'delayMs']);
+export const VALID_FOR_KEYS = new Set([
+  'from',
+  'to',
+  'step',
+  'as',
+  'name',
+  'delayMs',
+]);
+export const VALID_REPEAT_KEYS = new Set([
+  'count',
+  'as',
+  'name',
+  'delayMs',
+  'until',
+]);
 
 export const VALID_EXTRACT_TRANSFORMS = ['keys', 'values', 'entries'] as const;

@@ -48,7 +48,7 @@ import CodeBlock from '../../components/CodeBlock.astro';
   ]
 }`} lang="json" />
 
-  <p>Each iteration also exposes meta-variables: <code>&#123;&#123;user.__index&#125;&#125;</code> (0-based index) and <code>&#123;&#123;user.__items&#125;&#125;</code> (total item count).</p>
+  <p>To access loop metadata (index, items array), add an optional <code>name</code> to the loop. The named variable exposes <code>&#123;&#123;name.index&#125;&#125;</code> (0-based) and <code>&#123;&#123;name.items&#125;&#125;</code> (the full items array).</p>
 
   <p>You can reference a variable instead of an inline array:</p>
   <CodeBlock code={`"forEach": {
@@ -66,7 +66,7 @@ import CodeBlock from '../../components/CodeBlock.astro';
     <tbody>
       <tr><td><code>from</code></td><td>integer</td><td>Yes</td><td>Start value</td></tr>
       <tr><td><code>to</code></td><td>integer</td><td>Yes</td><td>End value (inclusive)</td></tr>
-      <tr><td><code>step</code></td><td>integer</td><td>No</td><td>Increment per iteration (defaults to 1 or -1)</td></tr>
+      <tr><td><code>step</code></td><td>integer</td><td>No</td><td>Increment per iteration (defaults to 1). Use negative step for descending ranges.</td></tr>
       <tr><td><code>as</code></td><td>string</td><td>Yes</td><td>Variable name for the current value</td></tr>
       <tr><td><code>delayMs</code></td><td>integer</td><td>No</td><td>Milliseconds to wait between iterations</td></tr>
     </tbody>
@@ -83,7 +83,7 @@ import CodeBlock from '../../components/CodeBlock.astro';
   }
 }`} lang="json" />
 
-  <p>If <code>from</code> is greater than <code>to</code>, the step defaults to <code>-1</code> so the range counts downward automatically.</p>
+  <p>If <code>from</code> is greater than <code>to</code>, you must provide a negative <code>step</code> explicitly (e.g. <code>"step": -1</code>). Omitting <code>step</code> when <code>from &gt; to</code> is a validation error.</p>
 
   <h2>repeat</h2>
   <p>Run a fixed number of times with an optional early-exit condition. Useful for polling until a condition is met.</p>
@@ -94,7 +94,7 @@ import CodeBlock from '../../components/CodeBlock.astro';
     </thead>
     <tbody>
       <tr><td><code>count</code></td><td>integer</td><td>Yes</td><td>Maximum number of iterations</td></tr>
-      <tr><td><code>as</code></td><td>string</td><td>No</td><td>Variable name for the iteration counter (0-based)</td></tr>
+      <tr><td><code>as</code></td><td>string</td><td>Yes</td><td>Variable name for the iteration counter (0-based)</td></tr>
       <tr><td><code>delayMs</code></td><td>integer</td><td>No</td><td>Milliseconds to wait between iterations</td></tr>
       <tr><td><code>until</code></td><td>array of assertions</td><td>No</td><td>Checked after each iteration; all must pass to stop early</td></tr>
     </tbody>
@@ -119,6 +119,54 @@ import CodeBlock from '../../components/CodeBlock.astro';
 }`} lang="json" />
 
   <p>The loop always executes at least once. The <code>until</code> assertions are evaluated after each iteration, so the action runs before the exit condition is checked.</p>
+
+  <h2>Loop result variables</h2>
+  <p>When a loop has a <code>name</code>, result metadata is set on the named variable after the loop completes:</p>
+  <table>
+    <thead>
+      <tr><th>Variable</th><th>Type</th><th>Description</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>&#123;&#123;name.completed&#125;&#125;</code></td><td>boolean</td><td><code>true</code> if the loop finished normally or <code>until</code> triggered; <code>false</code> if a <code>repeat</code> exhausted all iterations without <code>until</code> matching</td></tr>
+      <tr><td><code>&#123;&#123;name.iterations&#125;&#125;</code></td><td>number</td><td>How many iterations actually ran</td></tr>
+    </tbody>
+  </table>
+  <p>Use these in a subsequent step to verify polling behavior:</p>
+  <CodeBlock code={`{
+  "name": "Poll until ready",
+  "repeat": {
+    "count": 10, "as": "attempt", "name": "pollLoop",
+    "delayMs": 500,
+    "until": [{ "path": "$.response.body.status", "operator": "eq", "value": "done" }]
+  },
+  "action": { "type": "httpRequest", "method": "GET", "url": "api/jobs/{{jobId}}" }
+},
+{
+  "name": "Verify polling completed",
+  "action": { "type": "wait", "durationMs": 10 },
+  "assertions": [
+    {
+      "assertions": [
+        { "path": "$.variables.pollLoop.completed", "operator": "eq", "value": true }
+      ]
+    }
+  ]
+}`} lang="json" />
+
+  <h2>stopOnFailure interaction</h2>
+  <p>By default, a failed assertion in any loop iteration stops the loop immediately. Set <code>"stopOnFailure": false</code> on the step to collect all iteration failures without halting:</p>
+  <CodeBlock code={`{
+  "name": "Verify all users (collect failures)",
+  "stopOnFailure": false,
+  "forEach": {
+    "items": "{{users}}",
+    "as": "user"
+  },
+  "action": { "type": "httpRequest", "method": "GET", "url": "api/users/{{user.id}}" },
+  "assertions": [
+    { "assertions": [{ "path": "$.response.status", "operator": "eq", "value": 200 }] }
+  ]
+}`} lang="json" />
 
   <h2>Where loops can be used</h2>
   <p>Loops can be applied at multiple levels of a test definition:</p>

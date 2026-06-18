@@ -68,8 +68,9 @@ type TestStep struct {
 
 // ForEachLoop iterates over an array, running the attached object once per item.
 type ForEachLoop struct {
-	Items   interface{} `json:"items"` // inline array or "{{varName}}" string
-	As      string      `json:"as"`    // variable name for the current item
+	Items   interface{} `json:"items"`          // inline array or "{{varName}}" string
+	As      string      `json:"as"`             // variable name for the current item
+	Name    string      `json:"name,omitempty"` // optional loop name for metadata (index, items, completed, iterations)
 	DelayMs int         `json:"delayMs,omitempty"`
 }
 
@@ -79,6 +80,7 @@ type ForLoop struct {
 	To      int    `json:"to"`
 	Step    int    `json:"step,omitempty"` // default 1; can be negative
 	As      string `json:"as"`
+	Name    string `json:"name,omitempty"`
 	DelayMs int    `json:"delayMs,omitempty"`
 }
 
@@ -86,6 +88,7 @@ type ForLoop struct {
 type RepeatLoop struct {
 	Count   int         `json:"count"`
 	As      string      `json:"as"`
+	Name    string      `json:"name,omitempty"`
 	DelayMs int         `json:"delayMs,omitempty"`
 	Until   []Assertion `json:"until,omitempty"`
 }

@@ -208,10 +208,7 @@ export class DeploymentSchedulerService {
         this.checkRunCompletion(runId)
           .then(() => this.deployPendingInstances(runId))
           .catch((e) =>
-            this.logger.error(
-              `Failed to handle crash for run ${runId}:`,
-              e,
-            ),
+            this.logger.error(`Failed to handle crash for run ${runId}:`, e),
           );
       })
       .then(() => {

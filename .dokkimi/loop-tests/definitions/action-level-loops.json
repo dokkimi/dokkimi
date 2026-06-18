@@ -88,23 +88,23 @@
       ]
     },
     {
-      "name": "Action-level repeat with until on DB query",
+      "name": "Action-level repeat with until — health check polling",
       "steps": [
         {
-          "name": "Poll post count until seed data is present",
+          "name": "Poll health until 200",
           "action": {
-            "type": "dbQuery",
-            "database": "postgres-db",
-            "query": "SELECT COUNT(*)::int as count FROM posts WHERE published = true",
+            "type": "httpRequest",
+            "method": "GET",
+            "url": "api-service/health",
             "repeat": {
               "count": 5,
               "as": "poll",
               "delayMs": 100,
               "until": [
                 {
-                  "path": "$.response.data[0].count",
-                  "operator": "gte",
-                  "value": 2
+                  "path": "$.response.status",
+                  "operator": "eq",
+                  "value": 200
                 }
               ]
             }
@@ -112,7 +112,7 @@
           "assertions": [
             {
               "assertions": [
-                { "path": "$.response.success", "operator": "eq", "value": true }
+                { "path": "$.response.status", "operator": "eq", "value": 200 }
               ]
             }
           ]

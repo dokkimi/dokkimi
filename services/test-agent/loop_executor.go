@@ -6,12 +6,6 @@ import (
 	"time"
 )
 
-// loopResult is the document exposed to step-level assertions via $.completed / $.iterations.
-type loopResult struct {
-	Iterations int  `json:"iterations"`
-	Completed  bool `json:"completed"`
-}
-
 // resolveForEachItems resolves the items array for a forEach loop.
 // Accepts: inline []interface{}, "{{varName}}" string, or "$.path" string.
 func resolveForEachItems(items interface{}, varCtx *VariableContext, rootCtx map[string]interface{}) ([]interface{}, error) {
@@ -48,16 +42,26 @@ func resolveForEachItems(items interface{}, varCtx *VariableContext, rootCtx map
 }
 
 // setForEachVars sets the loop variables for a forEach iteration.
-func setForEachVars(varCtx *VariableContext, as string, item interface{}, index int, items []interface{}) {
+// Meta-variables (index, items) are only set when name is non-empty.
+func setForEachVars(varCtx *VariableContext, as string, name string, item interface{}, index int, items []interface{}) {
 	varCtx.Set(as, item)
-	varCtx.Set(as+".__index", float64(index))
-	varCtx.Set(as+".__items", items)
+	if name != "" {
+		varCtx.Set(name, map[string]interface{}{
+			"index": float64(index),
+			"items": items,
+		})
+	}
 }
 
 // setForVars sets the loop variable for a for-range iteration.
-func setForVars(varCtx *VariableContext, as string, value int, index int) {
+// Meta-variables (index) are only set when name is non-empty.
+func setForVars(varCtx *VariableContext, as string, name string, value int, index int) {
 	varCtx.Set(as, float64(value))
-	varCtx.Set(as+".__index", float64(index))
+	if name != "" {
+		varCtx.Set(name, map[string]interface{}{
+			"index": float64(index),
+		})
+	}
 }
 
 // setRepeatVars sets the loop variable for a repeat iteration.
@@ -65,10 +69,30 @@ func setRepeatVars(varCtx *VariableContext, as string, index int) {
 	varCtx.Set(as, float64(index))
 }
 
+// setLoopResult sets completed/iterations on the named loop variable after a loop finishes.
+// No-op if name is empty.
+func setLoopResult(varCtx *VariableContext, name string, completed bool, iterations int) {
+	if name == "" {
+		return
+	}
+	existing, _ := varCtx.ResolveTyped("{{" + name + "}}")
+	if m, ok := existing.(map[string]interface{}); ok {
+		m["completed"] = completed
+		m["iterations"] = float64(iterations)
+		varCtx.Set(name, m)
+	} else {
+		varCtx.Set(name, map[string]interface{}{
+			"completed":  completed,
+			"iterations": float64(iterations),
+		})
+	}
+}
+
 // forRangeValues generates the range values for a for loop.
 func forRangeValues(fl *ForLoop) []int {
 	step := fl.Step
 	if step == 0 {
+		log.Printf("WARNING: for loop step is 0, defaulting to 1 — the validator should reject this")
 		step = 1
 	}
 	var values []int

@@ -509,7 +509,7 @@ func (e *UIStepExecutor) runSubStepGroup(
 			it := item
 			iterations = append(iterations, groupIteration{
 				label:   fmt.Sprintf("[%s=%v]", group.ForEach.As, valueToString(it)),
-				setupFn: func() { setForEachVars(e.varCtx, group.ForEach.As, it, idx, items) },
+				setupFn: func() { setForEachVars(e.varCtx, group.ForEach.As, group.ForEach.Name, it, idx, items) },
 			})
 		}
 	} else if group.For != nil {
@@ -520,7 +520,7 @@ func (e *UIStepExecutor) runSubStepGroup(
 			val := v
 			iterations = append(iterations, groupIteration{
 				label:   fmt.Sprintf("[%s=%d]", group.For.As, val),
-				setupFn: func() { setForVars(e.varCtx, group.For.As, val, idx) },
+				setupFn: func() { setForVars(e.varCtx, group.For.As, group.For.Name, val, idx) },
 			})
 		}
 	} else if group.Repeat != nil {

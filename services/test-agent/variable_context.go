@@ -79,9 +79,8 @@ func (vc *VariableContext) ResolveTyped(template string) (interface{}, error) {
 
 // resolveVarPath looks up a dotted/bracketed path in the variable map.
 // Must be called with vc.mu held (at least RLock).
-// Tries the full path as a flat key first (supports loop meta-variables like
-// "user.__index" stored via Set("user.__index", ...)), then falls back to
-// EvaluateDocPath for nested object traversal.
+// Tries the full path as a flat key first, then falls back to
+// EvaluateDocPath for nested object traversal (e.g. map-valued variables).
 func (vc *VariableContext) resolveVarPath(varPath string) (interface{}, error) {
 	if value, ok := vc.variables[varPath]; ok {
 		return value, nil

@@ -515,12 +515,13 @@ func resolveTransformExtract(doc map[string]interface{}, variable string, rule E
 	var source interface{}
 
 	if rule.From != "" {
-		// From form: resolve a {{varName}} reference from doc["variables"].
 		from := rule.From
 		if len(from) >= 4 && from[:2] == "{{" && from[len(from)-2:] == "}}" {
 			varName := from[2 : len(from)-2]
 			if vars, ok := doc["variables"].(map[string]interface{}); ok {
 				if val, exists := vars[varName]; exists {
+					source = val
+				} else if val, found := EvaluateDocPath(vars, varName); found {
 					source = val
 				}
 			}

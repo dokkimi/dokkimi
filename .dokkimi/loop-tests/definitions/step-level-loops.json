@@ -149,17 +149,17 @@
           ]
         },
         {
-          "name": "Verify total published posts via API",
+          "name": "Verify all 3 loop-inserted posts exist",
           "action": {
-            "type": "httpRequest",
-            "method": "GET",
-            "url": "api-service/api/posts"
+            "type": "dbQuery",
+            "database": "postgres-db",
+            "query": "SELECT COUNT(*)::int as count FROM posts WHERE title LIKE 'Loop Post%'"
           },
           "assertions": [
             {
               "assertions": [
-                { "path": "$.response.status", "operator": "eq", "value": 200 },
-                { "path": "$.response.body.posts", "operator": "length", "value": 8 }
+                { "path": "$.response.success", "operator": "eq", "value": true },
+                { "path": "$.response.data[0].count", "operator": "eq", "value": 3 }
               ]
             }
           ]
@@ -167,31 +167,123 @@
       ]
     },
     {
-      "name": "repeat with until (poll DB until row count)",
+      "name": "repeat with until — polls and exits early",
       "steps": [
         {
-          "name": "Poll until we see seed posts (attempt {{attempt}})",
+          "name": "Poll health endpoint until status 200 (attempt {{attempt}})",
           "repeat": {
             "count": 5,
             "as": "attempt",
+            "name": "pollLoop",
             "delayMs": 100,
             "until": [
               {
-                "path": "$.response.data[0].count",
-                "operator": "gte",
-                "value": 2
+                "path": "$.response.status",
+                "operator": "eq",
+                "value": 200
               }
             ]
           },
+          "stopOnFailure": false,
           "action": {
-            "type": "dbQuery",
-            "database": "postgres-db",
-            "query": "SELECT COUNT(*)::int as count FROM posts WHERE published = true"
+            "type": "httpRequest",
+            "method": "GET",
+            "url": "api-service/health"
+          }
+        },
+        {
+          "name": "Verify loop completed via until",
+          "action": {
+            "type": "wait",
+            "durationMs": 10
           },
           "assertions": [
             {
               "assertions": [
-                { "path": "$.response.success", "operator": "eq", "value": true }
+                { "path": "$.variables.pollLoop.completed", "operator": "eq", "value": true },
+                { "path": "$.variables.pollLoop.iterations", "operator": "lte", "value": 5 }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "repeat without until — simple count-based",
+      "steps": [
+        {
+          "name": "Hit health endpoint 3 times",
+          "repeat": {
+            "count": 3,
+            "as": "round",
+            "name": "roundLoop"
+          },
+          "action": {
+            "type": "httpRequest",
+            "method": "GET",
+            "url": "api-service/health"
+          },
+          "assertions": [
+            {
+              "assertions": [
+                { "path": "$.response.status", "operator": "eq", "value": 200 }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "Verify all 3 iterations ran",
+          "action": {
+            "type": "wait",
+            "durationMs": 10
+          },
+          "assertions": [
+            {
+              "assertions": [
+                { "path": "$.variables.roundLoop.iterations", "operator": "eq", "value": 3 },
+                { "path": "$.variables.roundLoop.completed", "operator": "eq", "value": true }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "repeat with unsatisfiable until — exhausts count",
+      "steps": [
+        {
+          "name": "Poll for nonexistent post (attempt {{attempt}})",
+          "repeat": {
+            "count": 3,
+            "as": "attempt",
+            "name": "exhaustLoop",
+            "delayMs": 50,
+            "until": [
+              {
+                "path": "$.response.data[0].count",
+                "operator": "gte",
+                "value": 9999
+              }
+            ]
+          },
+          "stopOnFailure": false,
+          "action": {
+            "type": "dbQuery",
+            "database": "postgres-db",
+            "query": "SELECT COUNT(*)::int as count FROM posts WHERE title = 'THIS_DOES_NOT_EXIST'"
+          }
+        },
+        {
+          "name": "Verify loop did NOT complete (until never matched)",
+          "action": {
+            "type": "wait",
+            "durationMs": 10
+          },
+          "assertions": [
+            {
+              "assertions": [
+                { "path": "$.variables.exhaustLoop.completed", "operator": "eq", "value": false },
+                { "path": "$.variables.exhaustLoop.iterations", "operator": "eq", "value": 3 }
               ]
             }
           ]

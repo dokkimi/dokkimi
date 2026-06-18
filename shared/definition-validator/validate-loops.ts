@@ -75,6 +75,7 @@ function validateForEachLoop(
   }
 
   validateAsField(fe.as, ctx, r);
+  validateNameField(fe.name, ctx, r);
   validateDelayMs(fe.delayMs, ctx, r);
 }
 
@@ -106,6 +107,7 @@ function validateForLoop(
       if (fl.step > 0 && fl.from > fl.to) {
         err(r, `${ctx}: "from" must be <= "to" when "step" is positive`);
       }
+      // from == to with negative step is rejected: use step >= 1 (or omit) for single-iteration ranges.
       if (fl.step < 0 && fl.from <= fl.to) {
         err(r, `${ctx}: "from" must be > "to" when "step" is negative`);
       }
@@ -122,6 +124,7 @@ function validateForLoop(
   }
 
   validateAsField(fl.as, ctx, r);
+  validateNameField(fl.name, ctx, r);
   validateDelayMs(fl.delayMs, ctx, r);
 }
 
@@ -146,6 +149,7 @@ function validateRepeatLoop(
   }
 
   validateAsField(rl.as, ctx, r);
+  validateNameField(rl.name, ctx, r);
   validateDelayMs(rl.delayMs, ctx, r);
 
   if (rl.until !== undefined) {
@@ -159,6 +163,12 @@ function validateRepeatLoop(
           continue;
         }
         checkUnknownKeys(a, VALID_ASSERTION_KEYS, `${ctx}.until[${i}]`, r);
+        if (typeof a.path !== 'string' || a.path.length === 0) {
+          err(
+            r,
+            `${ctx}.until[${i}]: "path" is required and must be a non-empty string`,
+          );
+        }
         if (
           a.operator !== undefined &&
           !VALID_ASSERTION_OPERATORS.includes(
@@ -184,6 +194,24 @@ function validateAsField(
     err(r, `${ctx}: "as" is required and must be a non-empty string`);
   } else if (!/^\w+$/.test(value)) {
     err(r, `${ctx}: "as" must be alphanumeric (letters, digits, underscores)`);
+  }
+}
+
+function validateNameField(
+  value: unknown,
+  ctx: string,
+  r: ValidationResult,
+): void {
+  if (value === undefined) {
+    return;
+  }
+  if (typeof value !== 'string' || value.length === 0) {
+    err(r, `${ctx}: "name" must be a non-empty string`);
+  } else if (!/^\w+$/.test(value)) {
+    err(
+      r,
+      `${ctx}: "name" must be alphanumeric (letters, digits, underscores)`,
+    );
   }
 }
 

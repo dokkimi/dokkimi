@@ -39,16 +39,17 @@ Iterate over an array, running the attached object once per item.
 | Field     | Type            | Required | Description                                                                                                                                                                                                      |
 | --------- | --------------- | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `items`   | array \| string | Yes      | Inline array, `"{{varName}}"` referencing an extracted array, or a `$` path (assertion level only — resolves against the root context, e.g., `"$.response.body"`, `"$.request.body.users"`, `"$.response.data"`) |
-| `as`      | string          | Yes      | Variable name for the current item and loop namespace                                                                                                                                                            |
+| `as`      | string          | Yes      | Variable name for the current item                                                                                                                                                                               |
+| `name`    | string          | No       | Loop name — namespaces meta-variables (`{{name.index}}`, `{{name.items}}`, `{{name.completed}}`, `{{name.iterations}}`)                                                                                          |
 | `delayMs` | integer         | No       | Pause between iterations (default 0)                                                                                                                                                                             |
 
 **Variables set per iteration:**
 
-| Variable           | Type    | Description               |
-| ------------------ | ------- | ------------------------- |
-| `{{<as>}}`         | any     | The current item          |
-| `{{<as>.__index}}` | integer | 0-based iteration counter |
-| `{{<as>.__items}}` | array   | The full items array      |
+| Variable             | Type    | Description                               |
+| -------------------- | ------- | ----------------------------------------- |
+| `{{<as>}}`           | any     | The current item                          |
+| `{{<name>.index}}`   | integer | 0-based iteration counter (requires name) |
+| `{{<name>.items}}`   | array   | The full items array (requires name)      |
 
 **Semantics:**
 
@@ -66,15 +67,16 @@ Iterate from one number to another with a configurable step.
 | `from`    | integer | Yes      | Start value (inclusive)                                                                    |
 | `to`      | integer | Yes      | End value (inclusive)                                                                      |
 | `step`    | integer | No       | Increment per iteration (default 1). Can be negative for descending ranges. Must not be 0. |
-| `as`      | string  | Yes      | Variable name for the current range value and loop namespace                               |
+| `as`      | string  | Yes      | Variable name for the current range value                                                  |
+| `name`    | string  | No       | Loop name — namespaces meta-variables (`{{name.index}}`, `{{name.completed}}`, `{{name.iterations}}`) |
 | `delayMs` | integer | No       | Pause between iterations (default 0)                                                       |
 
 **Variables set per iteration:**
 
-| Variable           | Type    | Description                                                     |
-| ------------------ | ------- | --------------------------------------------------------------- |
-| `{{<as>}}`         | integer | Current value in the range (from, from+step, from+2\*step, ...) |
-| `{{<as>.__index}}` | integer | 0-based iteration counter (0, 1, 2, ...)                        |
+| Variable             | Type    | Description                                                     |
+| -------------------- | ------- | --------------------------------------------------------------- |
+| `{{<as>}}`           | integer | Current value in the range (from, from+step, from+2\*step, ...) |
+| `{{<name>.index}}`   | integer | 0-based iteration counter (requires name)                       |
 
 **Validation rules:**
 
@@ -92,7 +94,8 @@ Repeat up to `count` times, optionally stopping early when a condition is met.
 | Field     | Type        | Required | Description                                                        |
 | --------- | ----------- | -------- | ------------------------------------------------------------------ |
 | `count`   | integer     | Yes      | Max iterations (safety cap)                                        |
-| `as`      | string      | Yes      | Variable name for the current iteration counter and loop namespace |
+| `as`      | string      | Yes      | Variable name for the current iteration counter                    |
+| `name`    | string      | No       | Loop name — namespaces meta-variables (`{{name.completed}}`, `{{name.iterations}}`) |
 | `delayMs` | integer     | No       | Pause between iterations (default 0)                               |
 | `until`   | assertion[] | No       | Stop early when all assertions pass                                |
 
@@ -1178,7 +1181,7 @@ The variable context remains a **flat map**, same as today. Loop variables are n
 
 **How it works:**
 
-Every loop variable is prefixed with the `as` name. A `forEach` with `"as": "user"` writes `user`, `user.__index`, and `user.__items` to the flat map. A nested `repeat` with `"as": "attempt"` writes `attempt` to the same map. They never collide because they have different names.
+Every loop variable is prefixed with the `as` name. A `forEach` with `"as": "user"` writes `user`, `user.index`, and `user.items` to the flat map. A nested `repeat` with `"as": "attempt"` writes `attempt` to the same map. They never collide because they have different names.
 
 After a loop ends, its variables remain in the map holding the last iteration's values — same as `extract` and every other variable in the system. There is no cleanup, no scoping stack, no hidden behavior.
 
@@ -1188,7 +1191,7 @@ After a loop ends, its variables remain in the map holding the last iteration's 
 Flat map before loops: { orderId: "abc", pgConnStr: "..." }
 
 forEach (as: "order"):
-  iteration 0: { ..., order: {id: 1}, order.__index: 0, order.__items: [...] }
+  iteration 0: { ..., order: {id: 1}, order.index: 0, order.items: [...] }
 
   repeat (as: "attempt"):
     iteration 0: { ..., attempt: 0 }
@@ -1197,10 +1200,10 @@ forEach (as: "order"):
 
   After inner loop: order is still {id: 1}, attempt is 1, status is "done"
 
-  iteration 1: { ..., order: {id: 2}, order.__index: 1 }
+  iteration 1: { ..., order: {id: 2}, order.index: 1 }
   ...
 
-After outer loop: order is {id: 2}, order.__index is 1, attempt is 1, status is "done"
+After outer loop: order is {id: 2}, order.index is 1, attempt is 1, status is "done"
 ```
 
 **The user controls naming.** If two loops use the same `as` value, the second overwrites the first — same as if two `extract` rules use the same key. Loop `as` names and extract variable names share the same flat namespace — if a loop has `as: "status"` and an extract rule writes `status`, the extract overwrites the loop variable mid-iteration. Naming is the user's responsibility, same as every other variable name in the system.
@@ -1219,4 +1222,4 @@ Three modifiers, one concept, every level:
 | `for`     | Numeric range              | `from`, `to`, `step`, `as` (required), `delayMs` |
 | `repeat`  | Count + optional condition | `count`, `as` (required), `delayMs`, `until`     |
 
-All variables are namespaced under the required `as` field. `{{<as>}}` is the current value (item, range value, or 0-based counter). `{{<as>.__index}}` is the 0-based iteration counter. `forEach` additionally exposes `{{<as>.__items}}` (the full array). All three support `delayMs`. They attach as optional fields on tests, steps, actions, assertion blocks, or UI sub-steps. The variable context is a flat map — no scoping stack, no cleanup. Naming is the user's responsibility.
+All variables are namespaced under the required `as` field. `{{<as>}}` is the current value (item, range value, or 0-based counter). `{{<as>.index}}` is the 0-based iteration counter. `forEach` additionally exposes `{{<as>.items}}` (the full array). All three support `delayMs`. They attach as optional fields on tests, steps, actions, assertion blocks, or UI sub-steps. The variable context is a flat map — no scoping stack, no cleanup. Naming is the user's responsibility.

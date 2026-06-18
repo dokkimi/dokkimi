@@ -222,6 +222,40 @@
           ]
         }
       ]
+    },
+    {
+      "name": "Extract transform: values from DB row",
+      "steps": [
+        {
+          "name": "Get first user and extract values",
+          "action": {
+            "type": "dbQuery",
+            "database": "postgres-db",
+            "query": "SELECT name, email FROM users LIMIT 1"
+          },
+          "extract": {
+            "userValues": {
+              "path": "$.response.data[0]",
+              "transform": "values"
+            }
+          }
+        },
+        {
+          "name": "Verify extracted values array is not empty",
+          "action": {
+            "type": "wait",
+            "durationMs": 10
+          },
+          "assertions": [
+            {
+              "assertions": [
+                { "path": "$.variables.userValues", "operator": "type", "value": "array" },
+                { "path": "$.variables.userValues", "operator": "length", "value": 2 }
+              ]
+            }
+          ]
+        }
+      ]
     }
   ]
 }

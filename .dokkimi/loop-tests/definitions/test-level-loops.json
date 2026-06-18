@@ -115,7 +115,7 @@
       ]
     },
     {
-      "name": "Repeat health check until ready",
+      "name": "Test-level repeat with until — poll health endpoint",
       "repeat": {
         "count": 5,
         "as": "attempt",
@@ -131,18 +131,12 @@
       "steps": [
         {
           "name": "Check health (attempt {{attempt}})",
+          "stopOnFailure": false,
           "action": {
             "type": "httpRequest",
             "method": "GET",
             "url": "api-service/health"
-          },
-          "assertions": [
-            {
-              "assertions": [
-                { "path": "$.response.status", "operator": "eq", "value": 200 }
-              ]
-            }
-          ]
+          }
         }
       ]
     }

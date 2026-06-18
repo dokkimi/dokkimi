@@ -1042,7 +1042,7 @@ The JSONPath is resolved first, the result is coerced to a string, then the rege
 {
   "extract": {
     "settingKeys": {
-      "path": "$.body.settings",
+      "path": "$.response.body.settings",
       "transform": "keys"
     },
     "fieldNames": {
@@ -1095,9 +1095,8 @@ Iterates over an array of items. Each iteration sets the loop variable to the cu
 | --------- | --------------- | -------- | -------------------------------------------------------------------------------------------------------- |
 | `items`   | array or string | Yes      | Inline array, `{{variable}}` reference, or `$.path` into the response (assertion-block level only)       |
 | `as`      | string          | Yes      | Variable name for the current item. Access fields with `{{as.field}}`.                                   |
+| `name`    | string          | No       | Loop name. When set, exposes metadata as `{{name.index}}`, `{{name.items}}`, `{{name.completed}}`, `{{name.iterations}}`. |
 | `delayMs` | integer         | No       | Milliseconds to wait between iterations                                                                  |
-
-**Meta-variables:** During iteration, `{{as.__index}}` gives the 0-based index and `{{as.__items}}` gives the total item count.
 
 ```json
 {
@@ -1131,8 +1130,9 @@ Iterates over a numeric range (inclusive on both ends).
 | --------- | ------- | -------- | ----------------------- | --------------------------------------- |
 | `from`    | integer | Yes      | —                       | Start value (inclusive)                  |
 | `to`      | integer | Yes      | —                       | End value (inclusive)                    |
-| `step`    | integer | No       | 1 (or -1 if descending) | Increment per iteration. Must not be 0. |
+| `step`    | integer | No       | 1                       | Increment per iteration. Must not be 0. Use negative step for descending ranges. |
 | `as`      | string  | Yes      | —                       | Variable name for the current value     |
+| `name`    | string  | No       | —                       | Loop name for metadata (see forEach)    |
 | `delayMs` | integer | No       | —                       | Milliseconds to wait between iterations |
 
 ```json
@@ -1148,7 +1148,7 @@ Iterates over a numeric range (inclusive on both ends).
 }
 ```
 
-For descending ranges, `step` defaults to -1: `"for": { "from": 10, "to": 1, "as": "i" }`.
+For descending ranges, provide a negative `step` explicitly: `"for": { "from": 10, "to": 1, "step": -1, "as": "i" }`. Omitting `step` when `from > to` is a validation error.
 
 #### repeat
 
@@ -1157,7 +1157,8 @@ Repeats a fixed number of times, optionally stopping early when `until` assertio
 | Field     | Type    | Required | Description                                                          |
 | --------- | ------- | -------- | -------------------------------------------------------------------- |
 | `count`   | integer | Yes      | Maximum number of iterations                                         |
-| `as`      | string  | No       | Variable name for the iteration index (0-based)                      |
+| `as`      | string  | Yes      | Variable name for the iteration index (0-based)                      |
+| `name`    | string  | No       | Loop name for metadata (see forEach)                                 |
 | `delayMs` | integer | No       | Milliseconds to wait between iterations                              |
 | `until`   | array   | No       | Assertions checked after each iteration; all must pass to stop early |
 
