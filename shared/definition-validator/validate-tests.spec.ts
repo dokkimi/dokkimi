@@ -339,7 +339,9 @@ describe('validateTests', () => {
       );
       expect(
         r.warnings.some((w) =>
-          w.includes('"extract" on a parallel step will always receive an empty response'),
+          w.includes(
+            '"extract" on a parallel step will always receive an empty response',
+          ),
         ),
       ).toBe(true);
     });

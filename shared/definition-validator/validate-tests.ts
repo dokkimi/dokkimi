@@ -395,7 +395,9 @@ export function validateTests(
             string,
             unknown
           >;
-          const action = lastStep?.action as Record<string, unknown> | undefined;
+          const action = lastStep?.action as
+            | Record<string, unknown>
+            | undefined;
           if (action?.type === 'wait') {
             warn(
               r,
