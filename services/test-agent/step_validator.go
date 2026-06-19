@@ -175,6 +175,11 @@ func (sv *StepValidator) validateStep(step TestStep, stepExec StepExecution, ste
 				}
 				results = append(results, iterResults...)
 			}
+			sv.varCtx.Delete(block.ForEach.As)
+			if block.ForEach.Name != "" {
+				sv.varCtx.Delete(block.ForEach.Name)
+			}
+			rootCtx["variables"] = sv.varCtx.Snapshot()
 			continue
 		}
 

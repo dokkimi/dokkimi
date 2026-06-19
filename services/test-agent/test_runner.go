@@ -58,32 +58,32 @@ func (e *TestExecutor) ExecuteTests(ctx context.Context, testConfig *TestConfig,
 		}
 
 		_, loopErr := runLoop(plan, e.varCtx, func(iterIdx int, iter Iteration) (map[string]interface{}, error) {
+			if tg.testIndex != lastTestIndex || hasLoop {
+				if !hasLoop || iterIdx == 0 {
+					lastTestIndex = tg.testIndex
+				}
+				e.varCtx.Reset()
+				if testConfig.Variables != nil {
+					for name, value := range testConfig.Variables {
+						e.varCtx.Set(name, value)
+					}
+				}
+				if len(tg.steps) > 0 {
+					if vars := tg.steps[0].testVariables; vars != nil {
+						for name, value := range vars {
+							e.varCtx.Set(name, value)
+						}
+					}
+				}
+				iter.SetupFn()
+			}
+
 			for _, fs := range tg.steps {
 				if fs.globalIndex < startAtStep {
 					continue
 				}
 				if stopBefore >= 0 && fs.globalIndex >= stopBefore {
 					break
-				}
-
-				if fs.testIndex != lastTestIndex || hasLoop {
-					if !hasLoop || iterIdx == 0 {
-						lastTestIndex = fs.testIndex
-					}
-					if fs.stepIndex == 0 {
-						e.varCtx.Reset()
-						if testConfig.Variables != nil {
-							for name, value := range testConfig.Variables {
-								e.varCtx.Set(name, value)
-							}
-						}
-						if fs.testVariables != nil {
-							for name, value := range fs.testVariables {
-								e.varCtx.Set(name, value)
-							}
-						}
-						iter.SetupFn()
-					}
 				}
 
 				if len(stepExecutions) > 0 {

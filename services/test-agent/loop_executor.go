@@ -201,19 +201,19 @@ type LoopResult struct {
 // evaluation — nil if not applicable) and an error to stop the loop.
 type LoopBody func(iterIdx int, iter Iteration) (lastResp map[string]interface{}, err error)
 
-// runLoop executes the iteration plan: delays between iterations, calls setupFn,
-// invokes the body callback, checks repeat-until, and calls setLoopResult at the end.
+// runLoop executes the iteration plan: delays between iterations, invokes the
+// body callback, checks repeat-until, and calls setLoopResult at the end.
+// The body is responsible for calling iter.SetupFn() to seed loop variables.
 func runLoop(plan IterationPlan, varCtx *VariableContext, body LoopBody) (LoopResult, error) {
 	completed := true
 	iterationsRan := 0
 
 	for iterIdx, iter := range plan.Iterations {
 		delayBetweenIterations(iterIdx, plan.DelayMs)
-		iter.SetupFn()
 
 		resp, err := body(iterIdx, iter)
 		if err != nil {
-			return LoopResult{completed, iterationsRan}, err
+			return LoopResult{false, iterationsRan}, err
 		}
 		iterationsRan++
 

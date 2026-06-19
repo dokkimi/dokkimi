@@ -329,7 +329,7 @@ export function validateAssertionBlock(
 
   // Validate forEach on assertion blocks.
   if (block.forEach !== undefined) {
-    validateLoopModifiers(block, ctx, r);
+    validateLoopModifiers(block, ctx, r, { allowDocPaths: true });
     if (block.match !== undefined || block.service !== undefined) {
       err(
         r,

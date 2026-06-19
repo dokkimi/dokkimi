@@ -213,4 +213,36 @@ describe('validateLoopModifiers', () => {
       true,
     );
   });
+
+  // ── Audit finding #1: $.path in forEach items accepted but fails at runtime ──
+
+  it('should reject $.path in forEach items (only valid in assertion blocks)', () => {
+    const r = makeResult();
+    validateLoopModifiers(
+      { forEach: { items: '$.response.body', as: 'item' } },
+      'ctx',
+      r,
+    );
+    // $.path items are only valid in assertion-block forEach where rootCtx
+    // is available. At the step/action/test level, buildIterationPlan passes
+    // nil rootCtx, so $.path silently fails at runtime.
+    expect(
+      r.errors.some((e) => e.includes('$.')) || r.warnings.length > 0,
+    ).toBe(true);
+  });
+
+  // ── Audit finding #6: no upper bound on delayMs ──
+
+  it('should reject or warn on unreasonably large delayMs', () => {
+    const r = makeResult();
+    validateLoopModifiers(
+      { forEach: { items: [], as: 'item', delayMs: 999999999 } },
+      'ctx',
+      r,
+    );
+    // 999999999ms ≈ 11.5 days per iteration. The validator should cap this
+    // or at least warn.
+    const hasIssue = r.errors.length > 0 || r.warnings.length > 0;
+    expect(hasIssue).toBe(true);
+  });
 });

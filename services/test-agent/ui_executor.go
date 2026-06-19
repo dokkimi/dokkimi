@@ -497,11 +497,12 @@ func (e *UIStepExecutor) runSubStepGroup(
 	}
 
 	_, loopErr := runLoop(plan, e.varCtx, func(iterIdx int, iter Iteration) (map[string]interface{}, error) {
+		iter.SetupFn()
 		log.Printf("UI sub-step group iteration %d %s", iterIdx, iter.Label)
 
 		for j, sub := range group.Steps {
 			selector := subStepSelector(sub)
-			pos := SubStepPosition{StepIndex: stepIndex, SubStepIndex: subStepIndex*10000 + iterIdx*100 + j}
+			pos := SubStepPosition{StepIndex: stepIndex, SubStepIndex: subStepIndex*10000000 + iterIdx*10000 + j}
 			start := time.Now()
 			e.logger.LogUISubStepStarted(stepIndex, pos.SubStepIndex, string(sub.Kind), selector, target)
 

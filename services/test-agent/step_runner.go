@@ -36,6 +36,7 @@ func (e *TestExecutor) executeStepAt(ctx context.Context, fs flatStep) (StepExec
 	}
 
 	result, loopErr := runLoop(plan, e.varCtx, func(iterIdx int, iter Iteration) (map[string]interface{}, error) {
+		iter.SetupFn()
 		iterFS := fs
 		iterFS.loopLabel = fs.loopLabel + iter.Label
 
@@ -229,6 +230,7 @@ func (e *TestExecutor) executeActionLoop(ctx context.Context, step TestStep, ste
 
 	var lastResp map[string]interface{}
 	_, loopErr := runLoop(plan, e.varCtx, func(iterIdx int, iter Iteration) (map[string]interface{}, error) {
+		iter.SetupFn()
 		log.Printf("Action loop iteration %d %s", iterIdx, iter.Label)
 		resp, err := e.executeAction(ctx, step, stepIndex)
 		if err != nil {

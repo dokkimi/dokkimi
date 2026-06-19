@@ -39,6 +39,13 @@ func (vc *VariableContext) Set(name string, value interface{}) {
 	vc.variables[name] = value
 }
 
+// Delete removes a variable. No-op if the variable does not exist.
+func (vc *VariableContext) Delete(name string) {
+	vc.mu.Lock()
+	defer vc.mu.Unlock()
+	delete(vc.variables, name)
+}
+
 // Resolve replaces {{variableName}} placeholders in a template string.
 // Returns an error if a referenced variable is not defined.
 // Dotted paths (e.g. {{user.email}}, {{users[0].name}}) are resolved

@@ -307,3 +307,54 @@ func TestTestExecutor_RequestTimeout(t *testing.T) {
 		t.Error("Expected timeout error, got nil")
 	}
 }
+
+// ── Audit finding #2: test-level loop + startAtStep skipping step 0 prevents variable setup ──
+
+func TestTestExecutor_TestVarsNotSeededWhenStartAtStepSkipsStepZero(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{}`))
+	}))
+	defer server.Close()
+
+	logger := NewTestExecutionLogger(server.URL, "test-instance", 5*time.Second)
+	defer logger.Stop()
+	executor := NewTestExecutor(server.URL, 30*time.Second, nil, logger)
+
+	testConfig := &TestConfig{
+		TestRunID:      "test-startat-loop",
+		TimeoutSeconds: 30,
+		Tests: []TestDefinition{
+			{
+				Name: "looped test with test-level vars",
+				Variables: map[string]interface{}{
+					"testVar": "should-be-seeded",
+				},
+				ForEach: &ForEachLoop{
+					Items: []interface{}{"a"},
+					As:    "item",
+				},
+				Steps: []TestStep{
+					{Action: StepAction{Type: "httpRequest", Method: "GET", URL: "svc/step0"}},
+					{Action: StepAction{Type: "httpRequest", Method: "GET", URL: "svc/step1"}},
+				},
+			},
+		},
+	}
+
+	ctx := context.Background()
+	_, err := executor.ExecuteTests(ctx, testConfig, 1, -1) // skip step 0
+	if err != nil {
+		t.Fatalf("ExecuteTests error: %v", err)
+	}
+
+	// Test-level variables should be seeded even when startAtStep skips step 0.
+	// The seeding code is inside the `if fs.stepIndex == 0` guard, so it's
+	// skipped when step 0 is filtered out by startAtStep.
+	val, varErr := executor.varCtx.Resolve("{{testVar}}")
+	if varErr != nil {
+		t.Errorf("Bug #2: test-level variable {{testVar}} not set when startAtStep skips step 0: %v", varErr)
+	} else if val != "should-be-seeded" {
+		t.Errorf("Bug #2: expected testVar='should-be-seeded', got '%s'", val)
+	}
+}

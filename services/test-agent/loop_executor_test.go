@@ -371,6 +371,7 @@ func TestRunLoop(t *testing.T) {
 
 		var calls []int
 		result, err := runLoop(plan, varCtx, func(iterIdx int, iter Iteration) (map[string]interface{}, error) {
+			iter.SetupFn()
 			calls = append(calls, iterIdx)
 			return nil, nil
 		})
@@ -407,6 +408,7 @@ func TestRunLoop(t *testing.T) {
 
 		var calls int
 		result, err := runLoop(plan, varCtx, func(iterIdx int, iter Iteration) (map[string]interface{}, error) {
+			iter.SetupFn()
 			calls++
 			if iterIdx == 1 {
 				return nil, fmt.Errorf("boom")
@@ -444,6 +446,7 @@ func TestRunLoop(t *testing.T) {
 
 		var calls int
 		result, err := runLoop(plan, varCtx, func(iterIdx int, iter Iteration) (map[string]interface{}, error) {
+			iter.SetupFn()
 			calls++
 			status := float64(500)
 			if iterIdx == 1 {
@@ -483,6 +486,7 @@ func TestRunLoop(t *testing.T) {
 		}
 
 		result, err := runLoop(plan, varCtx, func(iterIdx int, iter Iteration) (map[string]interface{}, error) {
+			iter.SetupFn()
 			return map[string]interface{}{"statusCode": float64(500)}, nil
 		})
 		if err != nil {
@@ -499,6 +503,7 @@ func TestRunLoop(t *testing.T) {
 
 		var calls int
 		result, err := runLoop(plan, varCtx, func(iterIdx int, iter Iteration) (map[string]interface{}, error) {
+			iter.SetupFn()
 			calls++
 			return nil, nil
 		})
@@ -512,6 +517,122 @@ func TestRunLoop(t *testing.T) {
 			t.Errorf("expected iterationsRan=0, got %d", result.IterationsRan)
 		}
 	})
+}
+
+// ── Audit finding #1: $.path items correctly rejected at runtime (validator now catches this earlier) ──
+
+func TestBuildIterationPlan_DocPathItemsFailWithNilRootCtx(t *testing.T) {
+	varCtx := NewVariableContext()
+	forEach := &ForEachLoop{
+		Items: "$.response.body.users",
+		As:    "user",
+	}
+
+	// buildIterationPlan passes nil rootCtx, so $.path items are correctly
+	// rejected. The TS validator now also rejects $.path at non-assertion
+	// levels, so this error should never reach the Go runtime in practice.
+	_, err := buildIterationPlan(forEach, nil, nil, varCtx)
+	if err == nil {
+		t.Error("expected error for $.path items with nil rootCtx")
+	}
+}
+
+// ── Audit finding #3: UI sub-step position encoding collides at >=100 ──
+
+func TestSubStepPositionEncoding_Collisions(t *testing.T) {
+	encode := func(subStepIndex, iterIdx, j int) int {
+		return subStepIndex*10000000 + iterIdx*10000 + j
+	}
+
+	t.Run("100 sub-steps bleeds into next iteration", func(t *testing.T) {
+		// j=100 in iteration 0 should NOT equal j=0 in iteration 1
+		a := encode(0, 0, 100) // group 0, iter 0, sub-step 100
+		b := encode(0, 1, 0)   // group 0, iter 1, sub-step 0
+		if a == b {
+			t.Errorf("Bug #3: position collision: (group=0, iter=0, j=100) = %d == (group=0, iter=1, j=0) = %d", a, b)
+		}
+	})
+
+	t.Run("100 iterations bleeds into next group", func(t *testing.T) {
+		// iterIdx=100 in group 0 should NOT equal iterIdx=0 in group 1
+		a := encode(0, 100, 0) // group 0, iter 100, sub-step 0
+		b := encode(1, 0, 0)   // group 1, iter 0, sub-step 0
+		if a == b {
+			t.Errorf("Bug #3: position collision: (group=0, iter=100, j=0) = %d == (group=1, iter=0, j=0) = %d", a, b)
+		}
+	})
+}
+
+// ── Audit finding #4: forEach loop variables cleaned up after block completes ──
+
+func TestStepValidator_ForEachVarsCleanedUpBetweenBlocks(t *testing.T) {
+	varCtx := NewVariableContext()
+	logBuffer := NewStepLogBuffer()
+	sv := NewStepValidator(logBuffer, varCtx)
+
+	// Step with two assertion blocks:
+	//   Block 0: forEach over ["alice","bob"], asserts {{item}} exists (passes)
+	//   Block 1: no forEach, asserts {{item}} equals "leaked" — should fail
+	//            because {{item}} must not leak from block 0
+	step := TestStep{
+		Action: StepAction{Type: "wait"},
+		Assertions: []AssertionBlock{
+			{
+				ForEach: &ForEachLoop{
+					Items: []interface{}{"alice", "bob"},
+					As:    "item",
+				},
+				Assertions: []Assertion{
+					{Path: "$.variables.item", Operator: "exists"},
+				},
+			},
+			{
+				Assertions: []Assertion{
+					{Path: "$.variables.item", Operator: "eq", Value: "leaked"},
+				},
+			},
+		},
+	}
+
+	stepExec := StepExecution{StepIndex: 0}
+	results, _ := sv.validateStep(step, stepExec, nil)
+
+	// Block 1's assertion should fail because {{item}} was cleaned up.
+	// If it passes with value "bob" (the last forEach iteration), the leak is proven.
+	for _, r := range results {
+		if r.Path == "$.variables.item" && r.Operator == "eq" && r.Passed {
+			t.Error("Bug #4: forEach variable {{item}} leaked from block 0 into block 1 — " +
+				"block 1 matched the last iteration value instead of failing")
+		}
+	}
+}
+
+// ── Audit finding #5: completed=true returned alongside errors for non-repeat loops ──
+
+func TestRunLoop_CompletedShouldBeFalseOnBodyError(t *testing.T) {
+	varCtx := NewVariableContext()
+	plan := IterationPlan{
+		Iterations: []Iteration{
+			{Label: "a", SetupFn: func() {}},
+			{Label: "b", SetupFn: func() {}},
+			{Label: "c", SetupFn: func() {}},
+		},
+		LoopName: "test",
+	}
+
+	result, err := runLoop(plan, varCtx, func(iterIdx int, iter Iteration) (map[string]interface{}, error) {
+		iter.SetupFn()
+		if iterIdx == 1 {
+			return nil, fmt.Errorf("boom")
+		}
+		return nil, nil
+	})
+	if err == nil {
+		t.Fatal("expected error from body")
+	}
+	if result.Completed {
+		t.Error("Bug #5: completed should be false when loop body returns an error, got true")
+	}
 }
 
 func TestValueToString(t *testing.T) {

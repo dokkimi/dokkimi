@@ -16,10 +16,15 @@ import {
  * Validates that at most one loop modifier is present on an object.
  * Returns which modifier is set (or null if none).
  */
+export interface LoopValidationOptions {
+  allowDocPaths?: boolean;
+}
+
 export function validateLoopModifiers(
   obj: Record<string, unknown>,
   ctx: string,
   r: ValidationResult,
+  options?: LoopValidationOptions,
 ): 'forEach' | 'for' | 'repeat' | null {
   const present: string[] = [];
   if (obj.forEach !== undefined) {
@@ -46,7 +51,7 @@ export function validateLoopModifiers(
   const modifier = present[0] as 'forEach' | 'for' | 'repeat';
   switch (modifier) {
     case 'forEach':
-      validateForEachLoop(obj.forEach, `${ctx}.forEach`, r);
+      validateForEachLoop(obj.forEach, `${ctx}.forEach`, r, options);
       break;
     case 'for':
       validateForLoop(obj.for, `${ctx}.for`, r);
@@ -62,6 +67,7 @@ function validateForEachLoop(
   value: unknown,
   ctx: string,
   r: ValidationResult,
+  options?: LoopValidationOptions,
 ): void {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     err(r, `${ctx}: must be an object`);
@@ -76,6 +82,15 @@ function validateForEachLoop(
     err(
       r,
       `${ctx}: "items" must be an array or a string (variable reference or $ path)`,
+    );
+  } else if (
+    typeof fe.items === 'string' &&
+    fe.items.startsWith('$.') &&
+    !options?.allowDocPaths
+  ) {
+    err(
+      r,
+      `${ctx}: "items" with a $.path is only supported on assertion-block forEach; use a {{variable}} reference instead`,
     );
   }
 
@@ -252,6 +267,8 @@ function validateNameField(
   }
 }
 
+const MAX_DELAY_MS = 60000;
+
 function validateDelayMs(
   value: unknown,
   ctx: string,
@@ -262,5 +279,10 @@ function validateDelayMs(
   }
   if (typeof value !== 'number' || !Number.isInteger(value) || value < 0) {
     err(r, `${ctx}: "delayMs" must be a non-negative integer`);
+  } else if (value > MAX_DELAY_MS) {
+    err(
+      r,
+      `${ctx}: "delayMs" must not exceed ${MAX_DELAY_MS}ms (${MAX_DELAY_MS / 1000}s)`,
+    );
   }
 }
