@@ -84,11 +84,7 @@ describe('validateExtractRules', () => {
   it('errors when value is not a string or object', () => {
     const r = makeResult();
     validateExtractRules({ key: 123 }, 'ctx', r);
-    expect(
-      r.errors.some((e) =>
-        e.includes('must be a string'),
-      ),
-    ).toBe(true);
+    expect(r.errors.some((e) => e.includes('must be a string'))).toBe(true);
   });
 
   describe('regex extract rules', () => {
