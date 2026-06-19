@@ -29,85 +29,28 @@ func (e *TestExecutor) executeStepAt(ctx context.Context, fs flatStep) (StepExec
 		StartTime: time.Now().Format(time.RFC3339Nano),
 	}
 
-	// Build iteration plan.
-	type stepIteration struct {
-		iterLabel string
-		setupFn   func()
-	}
-	var iterations []stepIteration
-	var delayMs int
-
-	if forEach != nil {
-		items, err := resolveForEachItems(forEach.Items, e.varCtx, nil)
-		if err != nil {
-			stepExec.EndTime = time.Now().Format(time.RFC3339Nano)
-			return stepExec, err
-		}
-		delayMs = forEach.DelayMs
-		for i, item := range items {
-			idx := i
-			it := item
-			il := fmt.Sprintf("[%s=%v]", forEach.As, valueToString(it))
-			iterations = append(iterations, stepIteration{
-				iterLabel: il,
-				setupFn:   func() { setForEachVars(e.varCtx, forEach.As, forEach.Name, it, idx, items) },
-			})
-		}
-	} else if forLoop != nil {
-		values := forRangeValues(forLoop)
-		delayMs = forLoop.DelayMs
-		for i, v := range values {
-			idx := i
-			val := v
-			il := fmt.Sprintf("[%s=%d]", forLoop.As, val)
-			iterations = append(iterations, stepIteration{
-				iterLabel: il,
-				setupFn:   func() { setForVars(e.varCtx, forLoop.As, forLoop.Name, val, idx) },
-			})
-		}
-	} else if repeat != nil {
-		delayMs = repeat.DelayMs
-		for i := 0; i < repeat.Count; i++ {
-			idx := i
-			il := fmt.Sprintf("[%s=%d]", repeat.As, idx)
-			iterations = append(iterations, stepIteration{
-				iterLabel: il,
-				setupFn:   func() { setRepeatVars(e.varCtx, repeat.As, idx) },
-			})
-		}
+	plan, err := buildIterationPlan(forEach, forLoop, repeat, e.varCtx)
+	if err != nil {
+		stepExec.EndTime = time.Now().Format(time.RFC3339Nano)
+		return stepExec, err
 	}
 
-	var lastResp map[string]interface{}
-	completed := true
-	iterationsRan := 0
-
-	for iterIdx, iter := range iterations {
-		delayBetweenIterations(iterIdx, delayMs)
-		iter.setupFn()
-
+	result, loopErr := runLoop(plan, e.varCtx, func(iterIdx int, iter Iteration) (map[string]interface{}, error) {
 		iterFS := fs
-		iterFS.loopLabel = fs.loopLabel + iter.iterLabel
+		iterFS.loopLabel = fs.loopLabel + iter.Label
 
 		log.Printf("Step loop iteration %d: %s", iterIdx, iterFS.label())
 
-		// Track per-iteration timing so the assertion engine's time-window
-		// matching can find the HTTP/DB logs for this specific iteration.
 		iterStart := time.Now().Format(time.RFC3339Nano)
-
-		// Execute the action.
 		resp, err := e.executeStep(ctx, iterFS.step, si)
-		iterationsRan++
-
 		iterEnd := time.Now().Format(time.RFC3339Nano)
 
 		if err != nil {
 			stepExec.EndTime = iterEnd
 			e.testExecutionLogger.LogEvent("STEP_FAILED",
 				fmt.Sprintf("%s failed at iteration %d: %v", label, iterIdx, err), &si, nil)
-			return stepExec, err
+			return nil, err
 		}
-
-		lastResp = resp
 
 		iterExec := StepExecution{
 			StepIndex: si,
@@ -115,11 +58,10 @@ func (e *TestExecutor) executeStepAt(ctx context.Context, fs flatStep) (StepExec
 			EndTime:   iterEnd,
 		}
 
-		// Per-iteration extraction + validation (step-level loop repeats everything).
 		if e.stepValidator == nil && resp != nil && len(fs.step.Extract) > 0 {
 			if extractErr := e.varCtx.Extract(fs.step.Extract, resp); extractErr != nil {
 				stepExec.EndTime = iterEnd
-				return stepExec, fmt.Errorf("variable extraction failed: %w", extractErr)
+				return nil, fmt.Errorf("variable extraction failed: %w", extractErr)
 			}
 		}
 
@@ -134,45 +76,24 @@ func (e *TestExecutor) executeStepAt(ctx context.Context, fs flatStep) (StepExec
 				if stopOnFailure {
 					e.testExecutionLogger.LogEvent("STEP_FAILED", summary, &si, nil)
 					stepExec.EndTime = iterEnd
-					return stepExec, fmt.Errorf("assertion validation failed: %s", summary)
+					return nil, fmt.Errorf("assertion validation failed: %s", summary)
 				}
 				e.testExecutionLogger.LogEvent("STEP_WARNING",
 					fmt.Sprintf("%s (stopOnFailure=false, continuing)", summary), &si, nil)
 			}
 		}
 
-		// Check repeat until.
-		if repeat != nil && len(repeat.Until) > 0 && lastResp != nil {
-			rootCtx := map[string]interface{}{
-				"response":  normalizeResponseForUntil(lastResp),
-				"variables": e.varCtx.Snapshot(),
-			}
-			if evaluateUntil(repeat.Until, rootCtx, e.varCtx) {
-				log.Printf("Step loop: until condition met after iteration %d", iterIdx)
-				completed = true
-				break
-			}
-			if iterIdx == len(iterations)-1 {
-				completed = false
-			}
-		}
+		return resp, nil
+	})
+
+	if loopErr != nil {
+		return stepExec, loopErr
 	}
 
 	stepExec.EndTime = time.Now().Format(time.RFC3339Nano)
-
-	loopName := ""
-	if forEach != nil {
-		loopName = forEach.Name
-	} else if forLoop != nil {
-		loopName = forLoop.Name
-	} else if repeat != nil {
-		loopName = repeat.Name
-	}
-	setLoopResult(e.varCtx, loopName, completed, iterationsRan)
-
-	log.Printf("%s loop completed (%d iterations, completed=%v)", label, iterationsRan, completed)
+	log.Printf("%s loop completed (%d iterations, completed=%v)", label, result.IterationsRan, result.Completed)
 	e.testExecutionLogger.LogEvent("STEP_COMPLETED",
-		fmt.Sprintf("%s loop completed (%d iterations)", label, iterationsRan), &si, nil)
+		fmt.Sprintf("%s loop completed (%d iterations)", label, result.IterationsRan), &si, nil)
 	return stepExec, nil
 }
 
@@ -301,97 +222,23 @@ func (e *TestExecutor) executeAction(ctx context.Context, step TestStep, stepInd
 func (e *TestExecutor) executeActionLoop(ctx context.Context, step TestStep, stepIndex int,
 	forEach *ForEachLoop, forLoop *ForLoop, repeat *RepeatLoop) (map[string]interface{}, error) {
 
-	type actionIteration struct {
-		label   string
-		setupFn func()
-	}
-	var iterations []actionIteration
-	var delayMs int
-
-	if forEach != nil {
-		items, err := resolveForEachItems(forEach.Items, e.varCtx, nil)
-		if err != nil {
-			return nil, err
-		}
-		delayMs = forEach.DelayMs
-		for i, item := range items {
-			idx := i
-			it := item
-			il := fmt.Sprintf("[%s=%v]", forEach.As, valueToString(it))
-			iterations = append(iterations, actionIteration{
-				label:   il,
-				setupFn: func() { setForEachVars(e.varCtx, forEach.As, forEach.Name, it, idx, items) },
-			})
-		}
-	} else if forLoop != nil {
-		values := forRangeValues(forLoop)
-		delayMs = forLoop.DelayMs
-		for i, v := range values {
-			idx := i
-			val := v
-			il := fmt.Sprintf("[%s=%d]", forLoop.As, val)
-			iterations = append(iterations, actionIteration{
-				label:   il,
-				setupFn: func() { setForVars(e.varCtx, forLoop.As, forLoop.Name, val, idx) },
-			})
-		}
-	} else if repeat != nil {
-		delayMs = repeat.DelayMs
-		for i := 0; i < repeat.Count; i++ {
-			idx := i
-			il := fmt.Sprintf("[%s=%d]", repeat.As, idx)
-			iterations = append(iterations, actionIteration{
-				label:   il,
-				setupFn: func() { setRepeatVars(e.varCtx, repeat.As, idx) },
-			})
-		}
+	plan, err := buildIterationPlan(forEach, forLoop, repeat, e.varCtx)
+	if err != nil {
+		return nil, err
 	}
 
 	var lastResp map[string]interface{}
-	completed := true
-	iterationsRan := 0
-
-	for iterIdx, iter := range iterations {
-		delayBetweenIterations(iterIdx, delayMs)
-		iter.setupFn()
-
-		log.Printf("Action loop iteration %d %s", iterIdx, iter.label)
-
+	_, loopErr := runLoop(plan, e.varCtx, func(iterIdx int, iter Iteration) (map[string]interface{}, error) {
+		log.Printf("Action loop iteration %d %s", iterIdx, iter.Label)
 		resp, err := e.executeAction(ctx, step, stepIndex)
 		if err != nil {
 			return nil, err
 		}
 		lastResp = resp
-		iterationsRan++
+		return resp, nil
+	})
 
-		// Check repeat until after each action iteration.
-		if repeat != nil && len(repeat.Until) > 0 && lastResp != nil {
-			rootCtx := map[string]interface{}{
-				"response":  normalizeResponseForUntil(lastResp),
-				"variables": e.varCtx.Snapshot(),
-			}
-			if evaluateUntil(repeat.Until, rootCtx, e.varCtx) {
-				log.Printf("Action loop: until condition met after iteration %d", iterIdx)
-				completed = true
-				break
-			}
-			if iterIdx == len(iterations)-1 {
-				completed = false
-			}
-		}
-	}
-
-	loopName := ""
-	if forEach != nil {
-		loopName = forEach.Name
-	} else if forLoop != nil {
-		loopName = forLoop.Name
-	} else if repeat != nil {
-		loopName = repeat.Name
-	}
-	setLoopResult(e.varCtx, loopName, completed, iterationsRan)
-
-	return lastResp, nil
+	return lastResp, loopErr
 }
 
 // executeParallelAction runs all sub-actions concurrently and collects results.

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"testing"
 )
 
@@ -201,6 +202,314 @@ func TestEvaluateUntil(t *testing.T) {
 	t.Run("empty until returns false", func(t *testing.T) {
 		if evaluateUntil(nil, nil, varCtx) {
 			t.Error("expected empty until to return false")
+		}
+	})
+}
+
+func TestSetLoopResult(t *testing.T) {
+	t.Run("no-op when name is empty", func(t *testing.T) {
+		varCtx := NewVariableContext()
+		snapshot := varCtx.Snapshot()
+		setLoopResult(varCtx, "", true, 5)
+		after := varCtx.Snapshot()
+		if len(after) != len(snapshot) {
+			t.Error("expected no new variables to be set when name is empty")
+		}
+	})
+
+	t.Run("sets completed and iterations", func(t *testing.T) {
+		varCtx := NewVariableContext()
+		setLoopResult(varCtx, "myLoop", true, 3)
+
+		v, _ := varCtx.ResolveTyped("{{myLoop}}")
+		m, ok := v.(map[string]interface{})
+		if !ok {
+			t.Fatalf("expected map, got %T", v)
+		}
+		if m["completed"] != true {
+			t.Errorf("expected completed=true, got %v", m["completed"])
+		}
+		if m["iterations"] != float64(3) {
+			t.Errorf("expected iterations=3, got %v", m["iterations"])
+		}
+	})
+
+	t.Run("preserves existing meta-variables", func(t *testing.T) {
+		varCtx := NewVariableContext()
+		varCtx.Set("myLoop", map[string]interface{}{
+			"index": float64(2),
+			"items": []interface{}{"a", "b", "c"},
+		})
+		setLoopResult(varCtx, "myLoop", false, 3)
+
+		v, _ := varCtx.ResolveTyped("{{myLoop}}")
+		m := v.(map[string]interface{})
+		if m["index"] != float64(2) {
+			t.Errorf("expected index preserved as 2, got %v", m["index"])
+		}
+		if m["completed"] != false {
+			t.Errorf("expected completed=false, got %v", m["completed"])
+		}
+	})
+
+	t.Run("creates new map instead of mutating", func(t *testing.T) {
+		varCtx := NewVariableContext()
+		original := map[string]interface{}{"index": float64(0)}
+		varCtx.Set("loop", original)
+		setLoopResult(varCtx, "loop", true, 1)
+
+		if _, ok := original["completed"]; ok {
+			t.Error("original map was mutated — setLoopResult should create a new map")
+		}
+	})
+}
+
+func TestBuildIterationPlan(t *testing.T) {
+	t.Run("forEach builds iterations from items", func(t *testing.T) {
+		varCtx := NewVariableContext()
+		forEach := &ForEachLoop{
+			Items:   []interface{}{"alice", "bob"},
+			As:      "user",
+			Name:    "userLoop",
+			DelayMs: 100,
+		}
+		plan, err := buildIterationPlan(forEach, nil, nil, varCtx)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(plan.Iterations) != 2 {
+			t.Fatalf("expected 2 iterations, got %d", len(plan.Iterations))
+		}
+		if plan.DelayMs != 100 {
+			t.Errorf("expected delayMs=100, got %d", plan.DelayMs)
+		}
+		if plan.LoopName != "userLoop" {
+			t.Errorf("expected loopName=userLoop, got %q", plan.LoopName)
+		}
+		if plan.Repeat != nil {
+			t.Error("expected Repeat to be nil for forEach")
+		}
+		if plan.Iterations[0].Label != "[user=alice]" {
+			t.Errorf("expected label [user=alice], got %q", plan.Iterations[0].Label)
+		}
+	})
+
+	t.Run("for builds iterations from range", func(t *testing.T) {
+		varCtx := NewVariableContext()
+		forLoop := &ForLoop{From: 1, To: 3, As: "i", Name: "counter"}
+		plan, err := buildIterationPlan(nil, forLoop, nil, varCtx)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(plan.Iterations) != 3 {
+			t.Fatalf("expected 3 iterations, got %d", len(plan.Iterations))
+		}
+		if plan.LoopName != "counter" {
+			t.Errorf("expected loopName=counter, got %q", plan.LoopName)
+		}
+		if plan.Iterations[0].Label != "[i=1]" {
+			t.Errorf("expected label [i=1], got %q", plan.Iterations[0].Label)
+		}
+	})
+
+	t.Run("repeat builds iterations from count", func(t *testing.T) {
+		varCtx := NewVariableContext()
+		repeat := &RepeatLoop{Count: 3, As: "attempt", Name: "retry"}
+		plan, err := buildIterationPlan(nil, nil, repeat, varCtx)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(plan.Iterations) != 3 {
+			t.Fatalf("expected 3 iterations, got %d", len(plan.Iterations))
+		}
+		if plan.Repeat != repeat {
+			t.Error("expected Repeat to be set for repeat loops")
+		}
+		if plan.Iterations[2].Label != "[attempt=2]" {
+			t.Errorf("expected label [attempt=2], got %q", plan.Iterations[2].Label)
+		}
+	})
+
+	t.Run("all nil returns empty plan", func(t *testing.T) {
+		varCtx := NewVariableContext()
+		plan, err := buildIterationPlan(nil, nil, nil, varCtx)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(plan.Iterations) != 0 {
+			t.Errorf("expected 0 iterations, got %d", len(plan.Iterations))
+		}
+	})
+
+	t.Run("setupFn sets variables correctly", func(t *testing.T) {
+		varCtx := NewVariableContext()
+		forEach := &ForEachLoop{
+			Items: []interface{}{"x", "y"},
+			As:    "val",
+		}
+		plan, _ := buildIterationPlan(forEach, nil, nil, varCtx)
+		plan.Iterations[1].SetupFn()
+
+		v, _ := varCtx.ResolveTyped("{{val}}")
+		if v != "y" {
+			t.Errorf("expected val=y after setupFn, got %v", v)
+		}
+	})
+}
+
+func TestRunLoop(t *testing.T) {
+	t.Run("executes all iterations and calls setLoopResult", func(t *testing.T) {
+		varCtx := NewVariableContext()
+		plan := IterationPlan{
+			Iterations: []Iteration{
+				{Label: "[i=0]", SetupFn: func() { varCtx.Set("i", float64(0)) }},
+				{Label: "[i=1]", SetupFn: func() { varCtx.Set("i", float64(1)) }},
+				{Label: "[i=2]", SetupFn: func() { varCtx.Set("i", float64(2)) }},
+			},
+			LoopName: "counter",
+		}
+
+		var calls []int
+		result, err := runLoop(plan, varCtx, func(iterIdx int, iter Iteration) (map[string]interface{}, error) {
+			calls = append(calls, iterIdx)
+			return nil, nil
+		})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(calls) != 3 {
+			t.Errorf("expected 3 calls, got %d", len(calls))
+		}
+		if result.IterationsRan != 3 {
+			t.Errorf("expected iterationsRan=3, got %d", result.IterationsRan)
+		}
+		if !result.Completed {
+			t.Error("expected completed=true")
+		}
+
+		v, _ := varCtx.ResolveTyped("{{counter}}")
+		m := v.(map[string]interface{})
+		if m["completed"] != true {
+			t.Error("expected setLoopResult to set completed=true")
+		}
+	})
+
+	t.Run("stops on body error", func(t *testing.T) {
+		varCtx := NewVariableContext()
+		plan := IterationPlan{
+			Iterations: []Iteration{
+				{Label: "a", SetupFn: func() {}},
+				{Label: "b", SetupFn: func() {}},
+				{Label: "c", SetupFn: func() {}},
+			},
+			LoopName: "test",
+		}
+
+		var calls int
+		result, err := runLoop(plan, varCtx, func(iterIdx int, iter Iteration) (map[string]interface{}, error) {
+			calls++
+			if iterIdx == 1 {
+				return nil, fmt.Errorf("boom")
+			}
+			return nil, nil
+		})
+		if err == nil {
+			t.Fatal("expected error")
+		}
+		if calls != 2 {
+			t.Errorf("expected 2 calls (stopped on error), got %d", calls)
+		}
+		if result.IterationsRan != 1 {
+			t.Errorf("expected iterationsRan=1 (error before increment), got %d", result.IterationsRan)
+		}
+	})
+
+	t.Run("repeat until stops loop early", func(t *testing.T) {
+		varCtx := NewVariableContext()
+		plan := IterationPlan{
+			Iterations: []Iteration{
+				{Label: "[0]", SetupFn: func() {}},
+				{Label: "[1]", SetupFn: func() {}},
+				{Label: "[2]", SetupFn: func() {}},
+			},
+			LoopName: "poll",
+			Repeat: &RepeatLoop{
+				Count: 3,
+				As:    "attempt",
+				Until: []Assertion{
+					{Path: "$.response.status", Operator: "eq", Value: float64(200)},
+				},
+			},
+		}
+
+		var calls int
+		result, err := runLoop(plan, varCtx, func(iterIdx int, iter Iteration) (map[string]interface{}, error) {
+			calls++
+			status := float64(500)
+			if iterIdx == 1 {
+				status = float64(200)
+			}
+			return map[string]interface{}{"statusCode": status}, nil
+		})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if calls != 2 {
+			t.Errorf("expected 2 calls (until met at idx 1), got %d", calls)
+		}
+		if result.IterationsRan != 2 {
+			t.Errorf("expected iterationsRan=2, got %d", result.IterationsRan)
+		}
+		if !result.Completed {
+			t.Error("expected completed=true when until triggers")
+		}
+	})
+
+	t.Run("repeat until not met sets completed=false", func(t *testing.T) {
+		varCtx := NewVariableContext()
+		plan := IterationPlan{
+			Iterations: []Iteration{
+				{Label: "[0]", SetupFn: func() {}},
+				{Label: "[1]", SetupFn: func() {}},
+			},
+			LoopName: "poll",
+			Repeat: &RepeatLoop{
+				Count: 2,
+				As:    "attempt",
+				Until: []Assertion{
+					{Path: "$.response.status", Operator: "eq", Value: float64(200)},
+				},
+			},
+		}
+
+		result, err := runLoop(plan, varCtx, func(iterIdx int, iter Iteration) (map[string]interface{}, error) {
+			return map[string]interface{}{"statusCode": float64(500)}, nil
+		})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if result.Completed {
+			t.Error("expected completed=false when until never triggers")
+		}
+	})
+
+	t.Run("empty plan runs zero iterations", func(t *testing.T) {
+		varCtx := NewVariableContext()
+		plan := IterationPlan{LoopName: "empty"}
+
+		var calls int
+		result, err := runLoop(plan, varCtx, func(iterIdx int, iter Iteration) (map[string]interface{}, error) {
+			calls++
+			return nil, nil
+		})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if calls != 0 {
+			t.Errorf("expected 0 calls, got %d", calls)
+		}
+		if result.IterationsRan != 0 {
+			t.Errorf("expected iterationsRan=0, got %d", result.IterationsRan)
 		}
 	})
 }

@@ -491,57 +491,13 @@ func (e *UIStepExecutor) runSubStepGroup(
 	stepIndex, subStepIndex int,
 	stepName, target string,
 ) error {
-	type groupIteration struct {
-		label   string
-		setupFn func()
-	}
-	var iterations []groupIteration
-	var delayMs int
-
-	if group.ForEach != nil {
-		items, err := resolveForEachItems(group.ForEach.Items, e.varCtx, nil)
-		if err != nil {
-			return err
-		}
-		delayMs = group.ForEach.DelayMs
-		for i, item := range items {
-			idx := i
-			it := item
-			iterations = append(iterations, groupIteration{
-				label:   fmt.Sprintf("[%s=%v]", group.ForEach.As, valueToString(it)),
-				setupFn: func() { setForEachVars(e.varCtx, group.ForEach.As, group.ForEach.Name, it, idx, items) },
-			})
-		}
-	} else if group.For != nil {
-		values := forRangeValues(group.For)
-		delayMs = group.For.DelayMs
-		for i, v := range values {
-			idx := i
-			val := v
-			iterations = append(iterations, groupIteration{
-				label:   fmt.Sprintf("[%s=%d]", group.For.As, val),
-				setupFn: func() { setForVars(e.varCtx, group.For.As, group.For.Name, val, idx) },
-			})
-		}
-	} else if group.Repeat != nil {
-		delayMs = group.Repeat.DelayMs
-		for i := 0; i < group.Repeat.Count; i++ {
-			idx := i
-			iterations = append(iterations, groupIteration{
-				label:   fmt.Sprintf("[%s=%d]", group.Repeat.As, idx),
-				setupFn: func() { setRepeatVars(e.varCtx, group.Repeat.As, idx) },
-			})
-		}
+	plan, err := buildIterationPlan(group.ForEach, group.For, group.Repeat, e.varCtx)
+	if err != nil {
+		return err
 	}
 
-	completed := true
-	iterationsRan := 0
-
-	for iterIdx, iter := range iterations {
-		delayBetweenIterations(iterIdx, delayMs)
-		iter.setupFn()
-
-		log.Printf("UI sub-step group iteration %d %s", iterIdx, iter.label)
+	_, loopErr := runLoop(plan, e.varCtx, func(iterIdx int, iter Iteration) (map[string]interface{}, error) {
+		log.Printf("UI sub-step group iteration %d %s", iterIdx, iter.Label)
 
 		for j, sub := range group.Steps {
 			selector := subStepSelector(sub)
@@ -556,40 +512,17 @@ func (e *UIStepExecutor) runSubStepGroup(
 			if err != nil {
 				failureName := buildFailureName(stepName, sub)
 				e.captureFailureArtifacts(ctx, driver, pos, failureName)
-				return fmt.Errorf(
+				return nil, fmt.Errorf(
 					"ui target=%s step=%d group[%d] iter=%d sub[%d/%s]: %w",
 					target, stepIndex, subStepIndex, iterIdx, j, sub.Kind, err,
 				)
 			}
 		}
 
-		iterationsRan++
+		return nil, nil
+	})
 
-		// Check repeat until (uses variable interpolation for UI loops).
-		if group.Repeat != nil && len(group.Repeat.Until) > 0 {
-			untilDoc := map[string]interface{}{"variables": e.varCtx.Snapshot()}
-			if evaluateUntil(group.Repeat.Until, untilDoc, e.varCtx) {
-				log.Printf("UI sub-step group: until condition met after iteration %d", iterIdx)
-				completed = true
-				break
-			}
-			if iterIdx == len(iterations)-1 {
-				completed = false
-			}
-		}
-	}
-
-	loopName := ""
-	if group.ForEach != nil {
-		loopName = group.ForEach.Name
-	} else if group.For != nil {
-		loopName = group.For.Name
-	} else if group.Repeat != nil {
-		loopName = group.Repeat.Name
-	}
-	setLoopResult(e.varCtx, loopName, completed, iterationsRan)
-
-	return nil
+	return loopErr
 }
 
 // captureFailureArtifacts grabs a screenshot + page HTML at the moment of

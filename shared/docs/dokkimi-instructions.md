@@ -698,14 +698,14 @@ Tests are defined in the top-level `tests` array. Each test is independent and c
 
 ### TestStep
 
-| Field           | Type    | Required | Default | Description                                                     |
-| --------------- | ------- | -------- | ------- | --------------------------------------------------------------- |
-| `name`          | string  | No       | —       | Step name                                                       |
-| `description`   | string  | No       | —       | Step description                                                |
-| `action`        | object  | Yes      | —       | Action to execute (httpRequest, dbQuery, wait, ui, or parallel) |
+| Field           | Type    | Required | Default | Description                                                                       |
+| --------------- | ------- | -------- | ------- | --------------------------------------------------------------------------------- |
+| `name`          | string  | No       | —       | Step name                                                                         |
+| `description`   | string  | No       | —       | Step description                                                                  |
+| `action`        | object  | Yes      | —       | Action to execute (httpRequest, dbQuery, wait, ui, or parallel)                   |
 | `extract`       | object  | No       | —       | Extract variables from the root context: `{ "varName": "$.response.body.field" }` |
-| `assertions`    | array   | No       | —       | Assertion blocks to validate after action completes             |
-| `stopOnFailure` | boolean | No       | `true`  | Stop test when assertions in this step fail                     |
+| `assertions`    | array   | No       | —       | Assertion blocks to validate after action completes                               |
+| `stopOnFailure` | boolean | No       | `true`  | Stop test when assertions in this step fail                                       |
 
 ### Step Actions
 
@@ -1287,7 +1287,11 @@ Asserts on the step's own outcome:
   "assertions": [
     { "path": "$.response.status", "operator": "eq", "value": 201 },
     { "path": "$.response.body.id", "operator": "exists" },
-    { "path": "$.response.body.name", "operator": "eq", "value": "{{userName}}" },
+    {
+      "path": "$.response.body.name",
+      "operator": "eq",
+      "value": "{{userName}}"
+    },
     {
       "path": "$.response.headers.content-type",
       "operator": "contains",
@@ -1385,24 +1389,24 @@ All three block types can include `extract` to capture variables from matched re
 
 **For HTTP responses (self block or HTTP call block):**
 
-| Path                          | Description                        |
-| ----------------------------- | ---------------------------------- |
+| Path                             | Description                        |
+| -------------------------------- | ---------------------------------- |
 | `$.response.status`              | HTTP status code (integer)         |
-| `$.response.body`               | Entire response body               |
-| `$.response.body.field`         | Top-level field in response body   |
-| `$.response.body.nested.field`  | Nested field (dot notation)        |
-| `$.response.body[0].field`      | Array element access               |
-| `$.response.headers.header-name`| Response header (case-insensitive) |
-| `$.request.method`              | HTTP method of the request         |
-| `$.request.body`                | Entire request body                |
-| `$.request.body.field`          | Field in request body              |
-| `$.request.headers.header-name` | Request header (case-insensitive)  |
-| `$.responseTime`                | Response time in milliseconds      |
+| `$.response.body`                | Entire response body               |
+| `$.response.body.field`          | Top-level field in response body   |
+| `$.response.body.nested.field`   | Nested field (dot notation)        |
+| `$.response.body[0].field`       | Array element access               |
+| `$.response.headers.header-name` | Response header (case-insensitive) |
+| `$.request.method`               | HTTP method of the request         |
+| `$.request.body`                 | Entire request body                |
+| `$.request.body.field`           | Field in request body              |
+| `$.request.headers.header-name`  | Request header (case-insensitive)  |
+| `$.responseTime`                 | Response time in milliseconds      |
 
 **For database query results (self block only):**
 
-| Path             | Description                                    |
-| ---------------- | ---------------------------------------------- |
+| Path                        | Description                                    |
+| --------------------------- | ---------------------------------------------- |
 | `$.response.success`        | Boolean — did the query succeed?               |
 | `$.response.data`           | Array of result rows                           |
 | `$.response.data[0].column` | Specific column from a result row              |
@@ -1414,26 +1418,26 @@ All three block types can include `extract` to capture variables from matched re
 
 ### Assertion Operators
 
-| Operator           | Value required? | Value type     | Description                                                                                 |
-| ------------------ | --------------- | -------------- | ------------------------------------------------------------------------------------------- |
-| `eq`               | Yes             | any            | Exact equality (case-insensitive for strings)                                               |
-| `ne`               | Yes             | any            | Not equal (case-insensitive for strings)                                                    |
-| `gt`               | Yes             | number         | Greater than                                                                                |
-| `gte`              | Yes             | number         | Greater than or equal                                                                       |
-| `lt`               | Yes             | number         | Less than                                                                                   |
-| `lte`              | Yes             | number         | Less than or equal                                                                          |
-| `contains`         | Yes             | string         | Substring match (case-insensitive)                                                          |
-| `notContains`      | Yes             | string         | Substring does NOT match (case-insensitive)                                                 |
-| `matches`          | Yes             | string (regex) | Regular expression match                                                                    |
-| `exists`           | No              | —              | Value exists (is defined and not null)                                                      |
-| `notExists`        | No              | —              | Value does not exist                                                                        |
-| `in`               | Yes             | array          | Value is in the given array                                                                 |
-| `notIn`            | Yes             | array          | Value is NOT in the given array                                                             |
-| `type`             | Yes             | string         | JavaScript type check: `"string"`, `"number"`, `"boolean"`, `"object"`, `"array"`, `"null"` |
-| `length`           | Yes             | number         | Array or string length equals value                                                         |
-| `isEmpty`          | No              | —              | Value is empty/null/undefined/empty array/empty object                                      |
-| `notEmpty`         | No              | —              | Value is not empty                                                                          |
-| `arrayContains`    | Yes             | any            | Array contains the given element                                                            |
+| Operator                | Value required? | Value type     | Description                                                                                 |
+| ----------------------- | --------------- | -------------- | ------------------------------------------------------------------------------------------- |
+| `eq`                    | Yes             | any            | Exact equality (case-insensitive for strings)                                               |
+| `ne`                    | Yes             | any            | Not equal (case-insensitive for strings)                                                    |
+| `gt`                    | Yes             | number         | Greater than                                                                                |
+| `gte`                   | Yes             | number         | Greater than or equal                                                                       |
+| `lt`                    | Yes             | number         | Less than                                                                                   |
+| `lte`                   | Yes             | number         | Less than or equal                                                                          |
+| `contains`              | Yes             | string         | Substring match (case-insensitive)                                                          |
+| `notContains`           | Yes             | string         | Substring does NOT match (case-insensitive)                                                 |
+| `matches`               | Yes             | string (regex) | Regular expression match                                                                    |
+| `exists`                | No              | —              | Value exists (is defined and not null)                                                      |
+| `notExists`             | No              | —              | Value does not exist                                                                        |
+| `in`                    | Yes             | array          | Value is in the given array                                                                 |
+| `notIn`                 | Yes             | array          | Value is NOT in the given array                                                             |
+| `type`                  | Yes             | string         | JavaScript type check: `"string"`, `"number"`, `"boolean"`, `"object"`, `"array"`, `"null"` |
+| `length`                | Yes             | number         | Array or string length equals value                                                         |
+| `isEmpty`               | No              | —              | Value is empty/null/undefined/empty array/empty object                                      |
+| `notEmpty`              | No              | —              | Value is not empty                                                                          |
+| `arrayContains`         | Yes             | any            | Array contains the given element                                                            |
 | `arrayNotContains`      | Yes             | any            | Array does NOT contain the given element                                                    |
 | `eqIgnoreCase`          | Yes             | string         | Case-insensitive equality                                                                   |
 | `containsIgnoreCase`    | Yes             | string         | Case-insensitive substring match                                                            |
@@ -1569,7 +1573,11 @@ A full definition with two services, a database, a mock, and tests:
           "assertions": [
             {
               "assertions": [
-                { "path": "$.response.success", "operator": "eq", "value": true },
+                {
+                  "path": "$.response.success",
+                  "operator": "eq",
+                  "value": true
+                },
                 {
                   "path": "$.response.data[0].email",
                   "operator": "eq",

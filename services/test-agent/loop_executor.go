@@ -125,6 +125,118 @@ func forRangeValues(fl *ForLoop) []int {
 	return values
 }
 
+// Iteration holds a single loop iteration's label and variable-setup function.
+type Iteration struct {
+	Label   string
+	SetupFn func()
+}
+
+// IterationPlan holds the fully-resolved plan for a loop: the iterations to run,
+// the inter-iteration delay, the loop name (for setLoopResult), and the repeat
+// config (for until-checking). Built once by buildIterationPlan and consumed by runLoop.
+type IterationPlan struct {
+	Iterations []Iteration
+	DelayMs    int
+	LoopName   string
+	Repeat     *RepeatLoop
+}
+
+// buildIterationPlan resolves forEach/for/repeat into a flat iteration plan.
+// Exactly one of the three should be non-nil. Returns an empty plan (no iterations)
+// if all three are nil.
+func buildIterationPlan(forEach *ForEachLoop, forLoop *ForLoop, repeat *RepeatLoop, varCtx *VariableContext) (IterationPlan, error) {
+	var plan IterationPlan
+
+	if forEach != nil {
+		items, err := resolveForEachItems(forEach.Items, varCtx, nil)
+		if err != nil {
+			return plan, err
+		}
+		plan.DelayMs = forEach.DelayMs
+		plan.LoopName = forEach.Name
+		for i, item := range items {
+			idx := i
+			it := item
+			plan.Iterations = append(plan.Iterations, Iteration{
+				Label:   fmt.Sprintf("[%s=%v]", forEach.As, valueToString(it)),
+				SetupFn: func() { setForEachVars(varCtx, forEach.As, forEach.Name, it, idx, items) },
+			})
+		}
+	} else if forLoop != nil {
+		values := forRangeValues(forLoop)
+		plan.DelayMs = forLoop.DelayMs
+		plan.LoopName = forLoop.Name
+		for i, v := range values {
+			idx := i
+			val := v
+			plan.Iterations = append(plan.Iterations, Iteration{
+				Label:   fmt.Sprintf("[%s=%d]", forLoop.As, val),
+				SetupFn: func() { setForVars(varCtx, forLoop.As, forLoop.Name, val, idx) },
+			})
+		}
+	} else if repeat != nil {
+		plan.DelayMs = repeat.DelayMs
+		plan.LoopName = repeat.Name
+		plan.Repeat = repeat
+		for i := 0; i < repeat.Count; i++ {
+			idx := i
+			plan.Iterations = append(plan.Iterations, Iteration{
+				Label:   fmt.Sprintf("[%s=%d]", repeat.As, idx),
+				SetupFn: func() { setRepeatVars(varCtx, repeat.As, idx) },
+			})
+		}
+	}
+
+	return plan, nil
+}
+
+// LoopResult holds the outcome of a loop execution.
+type LoopResult struct {
+	Completed     bool
+	IterationsRan int
+}
+
+// LoopBody is the callback invoked for each iteration. It receives the iteration
+// index and the iteration descriptor. It returns the last response (for until
+// evaluation — nil if not applicable) and an error to stop the loop.
+type LoopBody func(iterIdx int, iter Iteration) (lastResp map[string]interface{}, err error)
+
+// runLoop executes the iteration plan: delays between iterations, calls setupFn,
+// invokes the body callback, checks repeat-until, and calls setLoopResult at the end.
+func runLoop(plan IterationPlan, varCtx *VariableContext, body LoopBody) (LoopResult, error) {
+	completed := true
+	iterationsRan := 0
+
+	for iterIdx, iter := range plan.Iterations {
+		delayBetweenIterations(iterIdx, plan.DelayMs)
+		iter.SetupFn()
+
+		resp, err := body(iterIdx, iter)
+		if err != nil {
+			return LoopResult{completed, iterationsRan}, err
+		}
+		iterationsRan++
+
+		if plan.Repeat != nil && len(plan.Repeat.Until) > 0 {
+			untilDoc := map[string]interface{}{"variables": varCtx.Snapshot()}
+			if resp != nil {
+				untilDoc["response"] = normalizeResponseForUntil(resp)
+			}
+			if evaluateUntil(plan.Repeat.Until, untilDoc, varCtx) {
+				log.Printf("Loop %q: until condition met after iteration %d", plan.LoopName, iterIdx)
+				completed = true
+				break
+			}
+			if iterIdx == len(plan.Iterations)-1 {
+				completed = false
+			}
+		}
+	}
+
+	setLoopResult(varCtx, plan.LoopName, completed, iterationsRan)
+	return LoopResult{completed, iterationsRan}, nil
+}
+
 // getStepLoop returns the loop modifier on a step (if any). At most one is non-nil.
 func getStepLoop(step TestStep) (forEach *ForEachLoop, forLoop *ForLoop, repeat *RepeatLoop) {
 	return step.ForEach, step.For, step.Repeat
