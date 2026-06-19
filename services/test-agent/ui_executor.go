@@ -534,6 +534,9 @@ func (e *UIStepExecutor) runSubStepGroup(
 		}
 	}
 
+	completed := true
+	iterationsRan := 0
+
 	for iterIdx, iter := range iterations {
 		delayBetweenIterations(iterIdx, delayMs)
 		iter.setupFn()
@@ -542,7 +545,7 @@ func (e *UIStepExecutor) runSubStepGroup(
 
 		for j, sub := range group.Steps {
 			selector := subStepSelector(sub)
-			pos := SubStepPosition{StepIndex: stepIndex, SubStepIndex: subStepIndex*1000 + iterIdx*100 + j}
+			pos := SubStepPosition{StepIndex: stepIndex, SubStepIndex: subStepIndex*10000 + iterIdx*100 + j}
 			start := time.Now()
 			e.logger.LogUISubStepStarted(stepIndex, pos.SubStepIndex, string(sub.Kind), selector, target)
 
@@ -560,15 +563,31 @@ func (e *UIStepExecutor) runSubStepGroup(
 			}
 		}
 
+		iterationsRan++
+
 		// Check repeat until (uses variable interpolation for UI loops).
 		if group.Repeat != nil && len(group.Repeat.Until) > 0 {
 			untilDoc := map[string]interface{}{"variables": e.varCtx.Snapshot()}
 			if evaluateUntil(group.Repeat.Until, untilDoc, e.varCtx) {
 				log.Printf("UI sub-step group: until condition met after iteration %d", iterIdx)
+				completed = true
 				break
+			}
+			if iterIdx == len(iterations)-1 {
+				completed = false
 			}
 		}
 	}
+
+	loopName := ""
+	if group.ForEach != nil {
+		loopName = group.ForEach.Name
+	} else if group.For != nil {
+		loopName = group.For.Name
+	} else if group.Repeat != nil {
+		loopName = group.Repeat.Name
+	}
+	setLoopResult(e.varCtx, loopName, completed, iterationsRan)
 
 	return nil
 }

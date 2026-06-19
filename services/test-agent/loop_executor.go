@@ -70,23 +70,27 @@ func setRepeatVars(varCtx *VariableContext, as string, index int) {
 }
 
 // setLoopResult sets completed/iterations on the named loop variable after a loop finishes.
-// No-op if name is empty.
+// No-op if name is empty. Creates a new map to avoid mutating any prior snapshot.
 func setLoopResult(varCtx *VariableContext, name string, completed bool, iterations int) {
 	if name == "" {
 		return
 	}
+	result := map[string]interface{}{
+		"completed":  completed,
+		"iterations": float64(iterations),
+	}
 	existing, _ := varCtx.ResolveTyped("{{" + name + "}}")
 	if m, ok := existing.(map[string]interface{}); ok {
-		m["completed"] = completed
-		m["iterations"] = float64(iterations)
-		varCtx.Set(name, m)
-	} else {
-		varCtx.Set(name, map[string]interface{}{
-			"completed":  completed,
-			"iterations": float64(iterations),
-		})
+		for k, v := range m {
+			if k != "completed" && k != "iterations" {
+				result[k] = v
+			}
+		}
 	}
+	varCtx.Set(name, result)
 }
+
+const maxForIterations = 10000
 
 // forRangeValues generates the range values for a for loop.
 func forRangeValues(fl *ForLoop) []int {
@@ -95,13 +99,26 @@ func forRangeValues(fl *ForLoop) []int {
 		log.Printf("WARNING: for loop step is 0, defaulting to 1 — the validator should reject this")
 		step = 1
 	}
-	var values []int
+	count := 0
 	if step > 0 {
-		for v := fl.From; v <= fl.To; v += step {
+		count = (fl.To-fl.From)/step + 1
+	} else {
+		count = (fl.From-fl.To)/(-step) + 1
+	}
+	if count < 0 {
+		count = 0
+	}
+	if count > maxForIterations {
+		log.Printf("WARNING: for loop would produce %d iterations, capping at %d", count, maxForIterations)
+		count = maxForIterations
+	}
+	values := make([]int, 0, count)
+	if step > 0 {
+		for v := fl.From; v <= fl.To && len(values) < maxForIterations; v += step {
 			values = append(values, v)
 		}
 	} else {
-		for v := fl.From; v >= fl.To; v += step {
+		for v := fl.From; v >= fl.To && len(values) < maxForIterations; v += step {
 			values = append(values, v)
 		}
 	}

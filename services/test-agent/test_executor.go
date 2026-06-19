@@ -905,13 +905,16 @@ func apiResponseToExtractDoc(resp *APIResponse) map[string]interface{} {
 	return doc
 }
 
-// normalizeResponseForUntil converts the raw extraction doc returned by
-// executeStep into the shape the assertion engine uses, so that until
-// conditions can reference the same paths as regular assertions
-// (e.g. $.response.status instead of $.response.statusCode).
+// normalizeResponseForUntil converts the raw response map returned by
+// executeStep into the same shape as AssembleHttpDocument's response section,
+// so until conditions can reference $.response.status consistently.
 func normalizeResponseForUntil(raw map[string]interface{}) map[string]interface{} {
 	if raw == nil {
-		return nil
+		return map[string]interface{}{
+			"status":  nil,
+			"headers": map[string]interface{}{},
+			"body":    map[string]interface{}{},
+		}
 	}
 	normalized := make(map[string]interface{}, len(raw))
 	for k, v := range raw {
@@ -919,23 +922,19 @@ func normalizeResponseForUntil(raw map[string]interface{}) map[string]interface{
 	}
 	if sc, ok := normalized["statusCode"]; ok {
 		if _, already := normalized["status"]; !already {
-			normalized["status"] = toFloat64(sc)
+			if f, ok := toFloat(sc); ok {
+				normalized["status"] = f
+			}
 		}
+		delete(normalized, "statusCode")
+	}
+	if _, ok := normalized["headers"]; !ok {
+		normalized["headers"] = map[string]interface{}{}
+	}
+	if _, ok := normalized["body"]; !ok {
+		normalized["body"] = map[string]interface{}{}
 	}
 	return normalized
-}
-
-func toFloat64(v interface{}) float64 {
-	switch n := v.(type) {
-	case float64:
-		return n
-	case int:
-		return float64(n)
-	case int64:
-		return float64(n)
-	default:
-		return 0
-	}
 }
 
 // rootCause unwraps an error chain to return the deepest error message,

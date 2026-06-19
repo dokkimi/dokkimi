@@ -298,7 +298,7 @@
       "        \"assertions\": [",
       "          {",
       "            \"assertions\": [",
-      "              { \"path\": \"response.status\", \"operator\": \"eq\", \"value\": ${6:200} }",
+      "              { \"path\": \"$.response.status\", \"operator\": \"eq\", \"value\": ${6:200} }",
       "            ]",
       "          }",
       "        ]",
@@ -324,7 +324,7 @@
       "  \"assertions\": [",
       "    {",
       "      \"assertions\": [",
-      "        { \"path\": \"response.status\", \"operator\": \"eq\", \"value\": ${6:200} }",
+      "        { \"path\": \"$.response.status\", \"operator\": \"eq\", \"value\": ${6:200} }",
       "      ]",
       "    }",
       "  ]",
@@ -374,8 +374,8 @@
     "body": [
       "{",
       "  \"assertions\": [",
-      "    { \"path\": \"response.status\", \"operator\": \"eq\", \"value\": ${1:200} }${2:,",
-      "    { \"path\": \"response.body.${3:field}\", \"operator\": \"${4|eq,ne,exists,notExists,contains,matches|}\", \"value\": ${5:\"expected\"} \\}}",
+      "    { \"path\": \"$.response.status\", \"operator\": \"eq\", \"value\": ${1:200} }${2:,",
+      "    { \"path\": \"$.response.body.${3:field}\", \"operator\": \"${4|eq,ne,exists,notExists,contains,matches|}\", \"value\": ${5:\"expected\"} \\}}",
       "  ]",
       "}"
     ]
@@ -393,7 +393,7 @@
       "  },",
       "  \"count\": { \"operator\": \"${4|eq,gte,lte,gt,lt|}\", \"value\": ${5:1} },",
       "  \"assertions\": [",
-      "    { \"path\": \"response.status\", \"operator\": \"eq\", \"value\": ${6:200} }",
+      "    { \"path\": \"$.response.status\", \"operator\": \"eq\", \"value\": ${6:200} }",
       "  ]",
       "}"
     ]
@@ -421,7 +421,7 @@
     "description": "Extract variables from a step's response for use in subsequent steps",
     "body": [
       "\"extract\": {",
-      "  \"${1:variableName}\": \"\\$.${2:body.id}\"",
+      "  \"${1:variableName}\": \"\\$.${2:response.body.id}\"",
       "}"
     ]
   },

@@ -18,61 +18,8 @@ import {
   err,
   warn,
   checkUnknownKeys,
+  validatePathFormat,
 } from './validate-helpers';
-
-// ---------------------------------------------------------------------------
-// Path format validation
-// ---------------------------------------------------------------------------
-
-const DEPRECATED_PATH_PATTERNS: [RegExp, string][] = [
-  [/^\$\.body\./, 'Did you mean "$.response.body."?'],
-  [/^\$\.headers\./, 'Did you mean "$.response.headers."?'],
-  [/^\$\.statusCode$/, 'Did you mean "$.response.status"?'],
-  [/^\$\.extracted\./, 'Did you mean "$.variables."?'],
-];
-
-const OLD_PATH_SUGGESTIONS: [RegExp, string][] = [
-  [/^response\.body\./, 'Did you mean "$.response.body."?'],
-  [/^response\.status/, 'Did you mean "$.response.status"?'],
-  [/^response\.headers?\./, 'Did you mean "$.response.headers."?'],
-  [/^request\./, 'Did you mean "$.request."?'],
-  [/^responseTime$/, 'Did you mean "$.responseTime"?'],
-  [/^data\[/, 'Did you mean "$.response.data["?'],
-  [/^success$/, 'Did you mean "$.response.success"?'],
-  [/^rowsAffected$/, 'Did you mean "$.response.rowsAffected"?'],
-  [/^error$/, 'Did you mean "$.response.error"?'],
-  [/^duration$/, 'Did you mean "$.responseTime"?'],
-];
-
-function validatePathFormat(
-  pathValue: string,
-  ctx: string,
-  r: ValidationResult,
-): void {
-  if (pathValue.startsWith('{{')) {
-    return;
-  }
-
-  for (const [pattern, msg] of DEPRECATED_PATH_PATTERNS) {
-    if (pattern.test(pathValue)) {
-      err(r, `${ctx}: path "${pathValue}" uses a deprecated format. ${msg}`);
-      return;
-    }
-  }
-
-  if (pathValue.startsWith('$.')) {
-    return;
-  }
-
-  let suggestion = '';
-  for (const [pattern, msg] of OLD_PATH_SUGGESTIONS) {
-    if (pattern.test(pathValue)) {
-      suggestion = ` ${msg}`;
-      break;
-    }
-  }
-  err(r, `${ctx}: path "${pathValue}" must start with "$.".${suggestion}`);
-}
 
 // ---------------------------------------------------------------------------
 // Count assertion
@@ -263,7 +210,7 @@ export function validateExtractRules(
     } else {
       err(
         r,
-        `${ctx}.extract: value for "${key}" must be a string or { path, pattern, group? }`,
+        `${ctx}.extract: value for "${key}" must be a string, { path, pattern, group? }, or { transform, path/from }`,
       );
     }
   }

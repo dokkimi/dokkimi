@@ -5,7 +5,12 @@ import {
   VALID_ASSERTION_KEYS,
   VALID_ASSERTION_OPERATORS,
 } from './constants';
-import { ValidationResult, err, checkUnknownKeys } from './validate-helpers';
+import {
+  ValidationResult,
+  err,
+  checkUnknownKeys,
+  validatePathFormat,
+} from './validate-helpers';
 
 /**
  * Validates that at most one loop modifier is present on an object.
@@ -123,6 +128,36 @@ function validateForLoop(
     );
   }
 
+  if (
+    typeof fl.from === 'number' &&
+    typeof fl.to === 'number' &&
+    typeof fl.step === 'number' &&
+    fl.step !== 0
+  ) {
+    const count =
+      fl.step > 0
+        ? Math.floor((fl.to - fl.from) / fl.step) + 1
+        : Math.floor((fl.from - fl.to) / -fl.step) + 1;
+    if (count > 10000) {
+      err(
+        r,
+        `${ctx}: for loop would produce ${count} iterations, which exceeds the 10,000 limit`,
+      );
+    }
+  } else if (
+    typeof fl.from === 'number' &&
+    typeof fl.to === 'number' &&
+    fl.step === undefined
+  ) {
+    const count = fl.to - fl.from + 1;
+    if (count > 10000) {
+      err(
+        r,
+        `${ctx}: for loop would produce ${count} iterations, which exceeds the 10,000 limit`,
+      );
+    }
+  }
+
   validateAsField(fl.as, ctx, r);
   validateNameField(fl.name, ctx, r);
   validateDelayMs(fl.delayMs, ctx, r);
@@ -168,6 +203,8 @@ function validateRepeatLoop(
             r,
             `${ctx}.until[${i}]: "path" is required and must be a non-empty string`,
           );
+        } else {
+          validatePathFormat(a.path as string, `${ctx}.until[${i}]`, r);
         }
         if (
           a.operator !== undefined &&

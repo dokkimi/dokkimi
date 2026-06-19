@@ -44,6 +44,7 @@ export type JSONArray = JSONValue[];
 export interface ForEachLoop {
   items: unknown[] | string;
   as: string;
+  name?: string;
   delayMs?: number;
 }
 
@@ -52,12 +53,14 @@ export interface ForLoop {
   to: number;
   step?: number;
   as: string;
+  name?: string;
   delayMs?: number;
 }
 
 export interface RepeatLoop {
   count: number;
   as: string;
+  name?: string;
   delayMs?: number;
   until?: Assertion[];
 }
@@ -131,6 +134,9 @@ export interface HttpRequestAction {
   headers?: Record<string, string>;
   body?: JSONValue;
   timeout?: number;
+  forEach?: ForEachLoop;
+  for?: ForLoop;
+  repeat?: RepeatLoop;
 }
 
 export interface DbQueryAction {
@@ -139,11 +145,17 @@ export interface DbQueryAction {
   query: string;
   params?: Record<string, any>;
   timeout?: number;
+  forEach?: ForEachLoop;
+  for?: ForLoop;
+  repeat?: RepeatLoop;
 }
 
 export interface WaitAction {
   type: 'wait';
   durationMs: number;
+  forEach?: ForEachLoop;
+  for?: ForLoop;
+  repeat?: RepeatLoop;
 }
 
 export interface ParallelAction {
@@ -209,10 +221,11 @@ export type AssertionOperator =
 /**
  * A single assertion on a value located by a dotted path.
  *
- * The path is relative to the assembled document root:
- * - HTTP logs: "response.status", "response.body.user.name", "request.header.Authorization"
- * - DB query logs: "success", "data[0].email", "rowsAffected"
- * - Special: "responseTime" (computed from timing fields)
+ * Paths use the unified root context (prefix with "$."):
+ * - HTTP: "$.response.status", "$.response.body.user.name", "$.request.headers.authorization"
+ * - DB:   "$.response.success", "$.response.data[0].email", "$.response.rowsAffected"
+ * - Variables: "$.variables.myVar"
+ * - Timing: "$.responseTime"
  */
 export interface Assertion {
   path: string;

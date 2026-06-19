@@ -86,7 +86,7 @@ describe('validateExtractRules', () => {
     validateExtractRules({ key: 123 }, 'ctx', r);
     expect(
       r.errors.some((e) =>
-        e.includes('must be a string or { path, pattern, group? }'),
+        e.includes('must be a string'),
       ),
     ).toBe(true);
   });

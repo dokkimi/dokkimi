@@ -332,7 +332,7 @@
             "oneOf": [
               {
                 "type": "string",
-                "description": "JSONPath expression (e.g. $.body.id)"
+                "description": "JSONPath expression (e.g. $.response.body.id)"
               },
               {
                 "type": "object",
@@ -404,7 +404,7 @@
             "oneOf": [
               {
                 "type": "string",
-                "description": "JSONPath expression (e.g. $.body.id)"
+                "description": "JSONPath expression (e.g. $.response.body.id)"
               },
               {
                 "type": "object",
@@ -477,7 +477,7 @@
         "oneOf": [
           {
             "type": "string",
-            "description": "JSONPath expression (e.g. $.body.id)"
+            "description": "JSONPath expression (e.g. $.response.body.id)"
           },
           {
             "type": "object",
@@ -634,7 +634,7 @@
             "oneOf": [
               {
                 "type": "string",
-                "description": "JSONPath expression (e.g. $.body.id)"
+                "description": "JSONPath expression (e.g. $.response.body.id)"
               },
               {
                 "type": "object",
@@ -758,7 +758,7 @@
             "oneOf": [
               {
                 "type": "string",
-                "description": "JSONPath expression (e.g. $.body.id)"
+                "description": "JSONPath expression (e.g. $.response.body.id)"
               },
               {
                 "type": "object",
@@ -862,7 +862,7 @@
                   "oneOf": [
                     {
                       "type": "string",
-                      "description": "JSONPath expression (e.g. $.body.id)"
+                      "description": "JSONPath expression (e.g. $.response.body.id)"
                     },
                     {
                       "type": "object",
@@ -1390,7 +1390,7 @@
             "oneOf": [
               {
                 "type": "string",
-                "description": "JSONPath expression (e.g. $.body.id)"
+                "description": "JSONPath expression (e.g. $.response.body.id)"
               },
               { "$ref": "#/definitions/ExtractRuleWithTransform" },
               {
@@ -1462,7 +1462,7 @@
       "properties": {
         "path": {
           "type": "string",
-          "description": "Dotted path to the value (e.g., 'response.status', 'response.body.user.id')."
+          "description": "Dotted path to the value (e.g., '$.response.status', '$.response.body.user.id')."
         },
         "operator": {
           "type": "string",
