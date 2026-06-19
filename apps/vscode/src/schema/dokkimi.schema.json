@@ -721,6 +721,13 @@
           "description": "Sequential test steps. Use a 'parallel' action to run multiple actions concurrently.",
           "items": { "$ref": "#/definitions/TestStep" }
         }
+      },
+      "not": {
+        "anyOf": [
+          { "required": ["forEach", "for"] },
+          { "required": ["forEach", "repeat"] },
+          { "required": ["for", "repeat"] }
+        ]
       }
     },
 
@@ -728,6 +735,13 @@
       "type": "object",
       "required": ["action"],
       "additionalProperties": false,
+      "not": {
+        "anyOf": [
+          { "required": ["forEach", "for"] },
+          { "required": ["forEach", "repeat"] },
+          { "required": ["for", "repeat"] }
+        ]
+      },
       "properties": {
         "name": { "type": "string", "description": "Step name." },
         "description": {

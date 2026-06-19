@@ -251,6 +251,125 @@ describe('validateExtractRules', () => {
     });
   });
 
+  describe('transform extract rules', () => {
+    it('accepts a valid transform extract with path + transform: "keys"', () => {
+      const r = makeResult();
+      validateExtractRules(
+        {
+          result: {
+            path: '$.response.body.data',
+            transform: 'keys',
+          },
+        },
+        'ctx',
+        r,
+      );
+      expect(r.errors).toHaveLength(0);
+    });
+
+    it('accepts a valid transform extract with from + transform: "values"', () => {
+      const r = makeResult();
+      validateExtractRules(
+        {
+          result: {
+            from: 'myVar',
+            transform: 'values',
+          },
+        },
+        'ctx',
+        r,
+      );
+      expect(r.errors).toHaveLength(0);
+    });
+
+    it('accepts a valid transform extract with transform: "entries"', () => {
+      const r = makeResult();
+      validateExtractRules(
+        {
+          result: {
+            path: '$.response.body.config',
+            transform: 'entries',
+          },
+        },
+        'ctx',
+        r,
+      );
+      expect(r.errors).toHaveLength(0);
+    });
+
+    it('errors when transform has both path and from', () => {
+      const r = makeResult();
+      validateExtractRules(
+        {
+          result: {
+            path: '$.response.body.data',
+            from: 'myVar',
+            transform: 'keys',
+          },
+        },
+        'ctx',
+        r,
+      );
+      expect(
+        r.errors.some((e) =>
+          e.includes('"from" and "path" are mutually exclusive'),
+        ),
+      ).toBe(true);
+    });
+
+    it('errors when transform has neither path nor from', () => {
+      const r = makeResult();
+      validateExtractRules(
+        {
+          result: {
+            transform: 'keys',
+          },
+        },
+        'ctx',
+        r,
+      );
+      expect(
+        r.errors.some((e) => e.includes('"path" must be a non-empty string')),
+      ).toBe(true);
+    });
+
+    it('errors when transform value is not one of keys/values/entries', () => {
+      const r = makeResult();
+      validateExtractRules(
+        {
+          result: {
+            path: '$.response.body.data',
+            transform: 'bogus',
+          },
+        },
+        'ctx',
+        r,
+      );
+      expect(
+        r.errors.some((e) =>
+          e.includes('"transform" must be one of: keys, values, entries'),
+        ),
+      ).toBe(true);
+    });
+
+    it('errors when transform path does not start with $.', () => {
+      const r = makeResult();
+      validateExtractRules(
+        {
+          result: {
+            path: 'response.body.data',
+            transform: 'keys',
+          },
+        },
+        'ctx',
+        r,
+      );
+      expect(r.errors.some((e) => e.includes('must start with "$."'))).toBe(
+        true,
+      );
+    });
+  });
+
   it('accepts mixed simple and regex rules', () => {
     const r = makeResult();
     validateExtractRules(
@@ -580,6 +699,134 @@ describe('validateAssertionBlock', () => {
     expect(r.warnings.some((w) => w.includes('unknown property "bogus"'))).toBe(
       true,
     );
+  });
+
+  describe('forEach', () => {
+    it('accepts a valid forEach with inline items array and assertions', () => {
+      const r = makeResult();
+      validateAssertionBlock(
+        {
+          forEach: { items: ['a', 'b', 'c'], as: 'item' },
+          assertions: [
+            { path: '$.response.status', operator: 'eq', value: 200 },
+          ],
+        },
+        'ctx',
+        r,
+      );
+      expect(r.errors).toHaveLength(0);
+    });
+
+    it('accepts forEach with a {{variable}} string reference for items', () => {
+      const r = makeResult();
+      validateAssertionBlock(
+        {
+          forEach: { items: '{{myList}}', as: 'item' },
+          assertions: [
+            { path: '$.response.status', operator: 'eq', value: 200 },
+          ],
+        },
+        'ctx',
+        r,
+      );
+      expect(r.errors).toHaveLength(0);
+    });
+
+    it('errors when forEach is present with for', () => {
+      const r = makeResult();
+      validateAssertionBlock(
+        {
+          for: { from: 0, to: 5, as: 'i' },
+        },
+        'ctx',
+        r,
+      );
+      expect(
+        r.errors.some((e) =>
+          e.includes('"for" is not supported on assertion blocks'),
+        ),
+      ).toBe(true);
+    });
+
+    it('errors when forEach is present with repeat', () => {
+      const r = makeResult();
+      validateAssertionBlock(
+        {
+          repeat: { count: 3, as: 'i' },
+        },
+        'ctx',
+        r,
+      );
+      expect(
+        r.errors.some((e) =>
+          e.includes('"repeat" is not supported on assertion blocks'),
+        ),
+      ).toBe(true);
+    });
+
+    it('errors when forEach is missing items', () => {
+      const r = makeResult();
+      validateAssertionBlock(
+        {
+          forEach: { as: 'item' },
+        },
+        'ctx',
+        r,
+      );
+      expect(r.errors.some((e) => e.includes('"items" is required'))).toBe(
+        true,
+      );
+    });
+
+    it('errors when forEach is missing as', () => {
+      const r = makeResult();
+      validateAssertionBlock(
+        {
+          forEach: { items: [1, 2, 3] },
+        },
+        'ctx',
+        r,
+      );
+      expect(
+        r.errors.some((e) =>
+          e.includes('"as" is required and must be a non-empty string'),
+        ),
+      ).toBe(true);
+    });
+
+    it('errors when as is not a valid identifier', () => {
+      const r = makeResult();
+      validateAssertionBlock(
+        {
+          forEach: { items: [1, 2], as: 'not valid!' },
+        },
+        'ctx',
+        r,
+      );
+      expect(
+        r.errors.some((e) => e.includes('"as" must be alphanumeric')),
+      ).toBe(true);
+    });
+
+    it('accepts forEach with optional name and delayMs', () => {
+      const r = makeResult();
+      validateAssertionBlock(
+        {
+          forEach: {
+            items: ['x', 'y'],
+            as: 'val',
+            name: 'myLoop',
+            delayMs: 100,
+          },
+          assertions: [
+            { path: '$.response.status', operator: 'eq', value: 200 },
+          ],
+        },
+        'ctx',
+        r,
+      );
+      expect(r.errors).toHaveLength(0);
+    });
   });
 
   describe('path format validation', () => {

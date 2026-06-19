@@ -604,7 +604,7 @@ Reference it on a step's `action` with `$ref`. Inline fields are shallow-merged 
       name: custom-name
   assertions:
     - assertions:
-        - path: response.statusCode
+        - path: $.response.status
           operator: eq
           value: 201
 ```
@@ -703,7 +703,7 @@ Tests are defined in the top-level `tests` array. Each test is independent and c
 | `name`          | string  | No       | —       | Step name                                                       |
 | `description`   | string  | No       | —       | Step description                                                |
 | `action`        | object  | Yes      | —       | Action to execute (httpRequest, dbQuery, wait, ui, or parallel) |
-| `extract`       | object  | No       | —       | Extract variables from response: `{ "varName": "$.path" }`      |
+| `extract`       | object  | No       | —       | Extract variables from the root context: `{ "varName": "$.response.body.field" }` |
 | `assertions`    | array   | No       | —       | Assertion blocks to validate after action completes             |
 | `stopOnFailure` | boolean | No       | `true`  | Stop test when assertions in this step fail                     |
 
@@ -929,7 +929,7 @@ If the regex doesn't match, the extract step fails with a clear error.
 
 **Using extracted values:** anything pulled out via `extract` is added to the variable context and behaves like any other variable.
 
-- In the same step's assertions, reference it as `$.extracted.<varName>` in a self-block (for example `path: "$.extracted.newPostId"`).
+- In the same step's assertions, reference it as `$.variables.<varName>` in a self-block (for example `path: "$.variables.newPostId"`).
 - In any later step (in this group or beyond), reference it as `{{newPostId}}` inside an action's URL, headers, body, query, params, etc.
 
 **CORS gotcha — read this before writing UI tests against your own services.**
@@ -999,12 +999,12 @@ Each extract rule can be a **simple JSONPath string** or a **regex extract objec
 ```json
 {
   "extract": {
-    "userId": "$.body.id",
-    "authToken": "$.headers.x-auth-token",
-    "firstName": "$.body.user.profile.name",
-    "firstItem": "$.body.items[0].id",
+    "userId": "$.response.body.id",
+    "authToken": "$.response.headers.x-auth-token",
+    "firstName": "$.response.body.user.profile.name",
+    "firstItem": "$.response.body.items[0].id",
     "correlationId": {
-      "path": "$.body.message",
+      "path": "$.response.body.message",
       "pattern": "correlation_id=([a-f0-9-]+)",
       "group": 1
     }
@@ -1053,25 +1053,22 @@ The JSONPath is resolved first, the result is coerced to a string, then the rege
 }
 ```
 
-Extract operates on the **action's response only** — it does not have access to request data. This applies to both step-level and assertion-block extract (even inside `match` blocks). The test-agent resolves extract paths against the response document from the step's action, not against intercepted traffic logs.
+Extract resolves paths against the unified root context, the same document structure used by assertions. The root context is: `{ request, response, responseTime, variables, traffic, consoleLogs, dbLogs, timeline }`. For step-level and assertion-block extract (including inside `match` blocks), the test-agent resolves extract paths against this root context.
 
-For HTTP actions, the extract document is: `{ statusCode, headers, body }`
-For DB queries, the extract document is: `{ success, data, rowsAffected, error, duration }`
+For HTTP actions, use paths like `$.response.body.field`, `$.response.status`, `$.response.headers.name`.
+For DB queries, use paths like `$.response.data[0].field`, `$.response.success`, `$.response.rowsAffected`.
 
 Supported JSONPath syntax:
 
-- `$.field` — top-level field
-- `$.nested.field` — nested object access
-- `$.array[0]` — array index
-- `$.array[0].field` — array element field access
-- `$.headers.header-name` — headers (case-insensitive)
+- `$.response.body.field` — field in the response body
+- `$.response.body.nested.field` — nested object access
+- `$.response.body.array[0]` — array index
+- `$.response.body.array[0].field` — array element field access
+- `$.response.headers.header-name` — response headers (case-insensitive)
+- `$.response.status` — HTTP status code
+- `$.response.data[0].column` — DB query result field
 
-**Extract paths vs assertion paths:** Extract paths and assertion paths use **different** document structures and have different capabilities:
-
-- **Extract paths** use a flat response-only document: `$.body.field`, `$.statusCode`, `$.headers.name` (for HTTP); `$.data[0].field`, `$.success` (for DB queries). **No access to `request.*`.**
-- **Assertion paths** use a nested document with both request and response: `response.body.field`, `response.status`, `response.header.name`, `request.body.field` (for HTTP); `data[0].field`, `success` (for DB queries)
-
-This distinction matters — don't use `response.body` in extract paths or `$.body` in assertion paths. If you need to validate request-side data, use assertions (not extract).
+**Extract paths and assertion paths use the same unified root context.** Both resolve against the same document structure with a `$.` prefix. For example, `$.response.body.id` works in both extract and assertion paths. The unified root context includes `request`, `response`, `responseTime`, `variables`, and more — so both extract and assertions can access request-side data.
 
 **Variable scope and precedence:**
 
@@ -1281,22 +1278,22 @@ Each step can have an `assertions` array of blocks. Block type is determined by 
 
 Asserts on the step's own outcome:
 
-- HTTP step → the response (`response.status`, `response.body`, `response.header.*`, `responseTime`).
-- DB query step → the query result (`success`, `data`, `rowsAffected`, `error`, `duration`).
-- UI step → variables newly pulled out by the action's `extract` sub-steps, exposed as `$.extracted.<varName>` (e.g. `$.extracted.errorText`).
+- HTTP step → the response (`$.response.status`, `$.response.body`, `$.response.headers.*`, `$.responseTime`).
+- DB query step → the query result (`$.response.success`, `$.response.data`, `$.response.rowsAffected`, `$.response.error`, `$.response.duration`).
+- UI step → variables newly pulled out by the action's `extract` sub-steps, exposed as `$.variables.<varName>` (e.g. `$.variables.errorText`).
 
 ```json
 {
   "assertions": [
-    { "path": "response.status", "operator": "eq", "value": 201 },
-    { "path": "response.body.id", "operator": "exists" },
-    { "path": "response.body.name", "operator": "eq", "value": "{{userName}}" },
+    { "path": "$.response.status", "operator": "eq", "value": 201 },
+    { "path": "$.response.body.id", "operator": "exists" },
+    { "path": "$.response.body.name", "operator": "eq", "value": "{{userName}}" },
     {
-      "path": "response.header.content-type",
+      "path": "$.response.headers.content-type",
       "operator": "contains",
       "value": "application/json"
     },
-    { "path": "responseTime", "operator": "lt", "value": 500 }
+    { "path": "$.responseTime", "operator": "lt", "value": 500 }
   ]
 }
 ```
@@ -1315,9 +1312,9 @@ Asserts on observed inter-service traffic captured by the interceptor sidecar.
   "count": { "operator": "eq", "value": 1 },
   "assertionScope": "all",
   "assertions": [
-    { "path": "request.body.email", "operator": "eq", "value": "{{email}}" },
-    { "path": "response.status", "operator": "eq", "value": 201 },
-    { "path": "response.body.id", "operator": "exists" }
+    { "path": "$.request.body.email", "operator": "eq", "value": "{{email}}" },
+    { "path": "$.response.status", "operator": "eq", "value": 201 },
+    { "path": "$.response.body.id", "operator": "exists" }
   ]
 }
 ```
@@ -1390,27 +1387,28 @@ All three block types can include `extract` to capture variables from matched re
 
 | Path                          | Description                        |
 | ----------------------------- | ---------------------------------- |
-| `response.status`             | HTTP status code (integer)         |
-| `response.body`               | Entire response body               |
-| `response.body.field`         | Top-level field in response body   |
-| `response.body.nested.field`  | Nested field (dot notation)        |
-| `response.body[0].field`      | Array element access               |
-| `response.header.header-name` | Response header (case-insensitive) |
-| `request.method`              | HTTP method of the request         |
-| `request.body`                | Entire request body                |
-| `request.body.field`          | Field in request body              |
-| `request.header.header-name`  | Request header (case-insensitive)  |
-| `responseTime`                | Response time in milliseconds      |
+| `$.response.status`              | HTTP status code (integer)         |
+| `$.response.body`               | Entire response body               |
+| `$.response.body.field`         | Top-level field in response body   |
+| `$.response.body.nested.field`  | Nested field (dot notation)        |
+| `$.response.body[0].field`      | Array element access               |
+| `$.response.headers.header-name`| Response header (case-insensitive) |
+| `$.request.method`              | HTTP method of the request         |
+| `$.request.body`                | Entire request body                |
+| `$.request.body.field`          | Field in request body              |
+| `$.request.headers.header-name` | Request header (case-insensitive)  |
+| `$.responseTime`                | Response time in milliseconds      |
 
 **For database query results (self block only):**
 
 | Path             | Description                                    |
 | ---------------- | ---------------------------------------------- |
-| `success`        | Boolean — did the query succeed?               |
-| `data`           | Array of result rows                           |
-| `data[0].column` | Specific column from a result row              |
-| `rowsAffected`   | Number of affected rows (integer)              |
-| `error`          | Error message if query failed (string or null) |
+| `$.response.success`        | Boolean — did the query succeed?               |
+| `$.response.data`           | Array of result rows                           |
+| `$.response.data[0].column` | Specific column from a result row              |
+| `$.response.rowsAffected`   | Number of affected rows (integer)              |
+| `$.response.error`          | Error message if query failed (string or null) |
+| `$.response.duration`       | Query execution time in milliseconds           |
 
 ---
 
@@ -1436,7 +1434,10 @@ All three block types can include `extract` to capture variables from matched re
 | `isEmpty`          | No              | —              | Value is empty/null/undefined/empty array/empty object                                      |
 | `notEmpty`         | No              | —              | Value is not empty                                                                          |
 | `arrayContains`    | Yes             | any            | Array contains the given element                                                            |
-| `arrayNotContains` | Yes             | any            | Array does NOT contain the given element                                                    |
+| `arrayNotContains`      | Yes             | any            | Array does NOT contain the given element                                                    |
+| `eqIgnoreCase`          | Yes             | string         | Case-insensitive equality                                                                   |
+| `containsIgnoreCase`    | Yes             | string         | Case-insensitive substring match                                                            |
+| `notContainsIgnoreCase` | Yes             | string         | Case-insensitive substring does NOT match                                                   |
 
 ---
 
@@ -1514,15 +1515,15 @@ A full definition with two services, a database, a mock, and tests:
             }
           },
           "extract": {
-            "orderId": "$.body.id"
+            "orderId": "$.response.body.id"
           },
           "assertions": [
             {
               "assertions": [
-                { "path": "response.status", "operator": "eq", "value": 201 },
-                { "path": "response.body.id", "operator": "exists" },
+                { "path": "$.response.status", "operator": "eq", "value": 201 },
+                { "path": "$.response.body.id", "operator": "exists" },
                 {
-                  "path": "response.body.status",
+                  "path": "$.response.body.status",
                   "operator": "eq",
                   "value": "pending"
                 }
@@ -1536,7 +1537,7 @@ A full definition with two services, a database, a mock, and tests:
               },
               "count": { "operator": "eq", "value": 1 },
               "assertions": [
-                { "path": "response.status", "operator": "eq", "value": 201 }
+                { "path": "$.response.status", "operator": "eq", "value": 201 }
               ]
             },
             {
@@ -1568,14 +1569,14 @@ A full definition with two services, a database, a mock, and tests:
           "assertions": [
             {
               "assertions": [
-                { "path": "success", "operator": "eq", "value": true },
+                { "path": "$.response.success", "operator": "eq", "value": true },
                 {
-                  "path": "data[0].email",
+                  "path": "$.response.data[0].email",
                   "operator": "eq",
                   "value": "{{userEmail}}"
                 },
                 {
-                  "path": "data[0].status",
+                  "path": "$.response.data[0].status",
                   "operator": "eq",
                   "value": "completed"
                 }
