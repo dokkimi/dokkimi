@@ -224,7 +224,7 @@ func (e *TestExecutor) executeDbQueryStep(ctx context.Context, action StepAction
 		return nil, err
 	}
 
-	// Convert []map[string]interface{} to []interface{} so EvaluateJsonPath
+	// Convert []map[string]interface{} to []interface{} so EvaluateDocPath
 	// type assertions work (it expects []interface{} for array indexing).
 	var data []interface{}
 	for _, row := range result.Data {

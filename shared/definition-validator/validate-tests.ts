@@ -286,6 +286,30 @@ export function validateStep(
     validateLoopModifiers(action, `${ctx}.action`, r);
   }
 
+  if (action.type === 'parallel') {
+    if (step.extract !== undefined) {
+      warn(
+        r,
+        `${ctx}: "extract" on a parallel step will always receive an empty response — parallel actions do not produce an extraction document`,
+      );
+    }
+    if (
+      Array.isArray(step.assertions) &&
+      step.assertions.some(
+        (b: unknown) =>
+          typeof b === 'object' &&
+          b !== null &&
+          !('match' in (b as Record<string, unknown>)) &&
+          !('service' in (b as Record<string, unknown>)),
+      )
+    ) {
+      warn(
+        r,
+        `${ctx}: self-block assertions on a parallel step will always receive an empty response — use "match" blocks to assert against individual sub-action traffic`,
+      );
+    }
+  }
+
   if (step.extract !== undefined) {
     validateExtractRules(step.extract, ctx, r);
   }
@@ -356,6 +380,28 @@ export function validateTests(
             `${ctx}.steps[${si}]`,
             r,
           );
+        }
+
+        // Warn if test-level repeat has until but the last step is a wait action,
+        // since until evaluates against the last step's response (which is nil for wait).
+        if (
+          test.repeat !== undefined &&
+          typeof test.repeat === 'object' &&
+          !Array.isArray(test.repeat) &&
+          (test.repeat as Record<string, unknown>).until !== undefined &&
+          test.steps.length > 0
+        ) {
+          const lastStep = test.steps[test.steps.length - 1] as Record<
+            string,
+            unknown
+          >;
+          const action = lastStep?.action as Record<string, unknown> | undefined;
+          if (action?.type === 'wait') {
+            warn(
+              r,
+              `${ctx}: test-level "repeat.until" evaluates against the last step's response, but the last step is a "wait" action (which produces no response) — the until condition will never match a $.response.* path`,
+            );
+          }
         }
 
         // Cross-step uniqueness for artifact names. The artifact pipeline

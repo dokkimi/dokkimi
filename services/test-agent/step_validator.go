@@ -202,8 +202,9 @@ func (sv *StepValidator) validateStep(step TestStep, stepExec StepExecution, ste
 					})
 				} else {
 					sv.varCtx.Set(variable, value)
-					vars := rootCtx["variables"].(map[string]interface{})
-					vars[variable] = value
+					if vars, ok := rootCtx["variables"].(map[string]interface{}); ok {
+						vars[variable] = value
+					}
 					results = append(results, AssertionResult{
 						Passed:     true,
 						Path:       rule.Path,

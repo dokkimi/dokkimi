@@ -96,7 +96,6 @@ const maxForIterations = 10000
 func forRangeValues(fl *ForLoop) []int {
 	step := fl.Step
 	if step == 0 {
-		log.Printf("WARNING: for loop step is 0, defaulting to 1 — the validator should reject this")
 		step = 1
 	}
 	count := 0

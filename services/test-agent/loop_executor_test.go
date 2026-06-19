@@ -537,28 +537,26 @@ func TestBuildIterationPlan_DocPathItemsFailWithNilRootCtx(t *testing.T) {
 	}
 }
 
-// ── Audit finding #3: UI sub-step position encoding collides at >=100 ──
+// ── Audit finding #3: UI sub-step position encoding ──
 
-func TestSubStepPositionEncoding_Collisions(t *testing.T) {
+func TestSubStepPositionEncoding_NoCollisions(t *testing.T) {
 	encode := func(subStepIndex, iterIdx, j int) int {
-		return subStepIndex*10000000 + iterIdx*10000 + j
+		return subStepIndex*100_000_000 + iterIdx*10_000 + j
 	}
 
-	t.Run("100 sub-steps bleeds into next iteration", func(t *testing.T) {
-		// j=100 in iteration 0 should NOT equal j=0 in iteration 1
-		a := encode(0, 0, 100) // group 0, iter 0, sub-step 100
-		b := encode(0, 1, 0)   // group 0, iter 1, sub-step 0
-		if a == b {
-			t.Errorf("Bug #3: position collision: (group=0, iter=0, j=100) = %d == (group=0, iter=1, j=0) = %d", a, b)
+	t.Run("10000 sub-steps fits within iteration slot", func(t *testing.T) {
+		a := encode(0, 0, 9999) // group 0, iter 0, last sub-step
+		b := encode(0, 1, 0)    // group 0, iter 1, first sub-step
+		if a >= b {
+			t.Errorf("position collision: (group=0, iter=0, j=9999) = %d >= (group=0, iter=1, j=0) = %d", a, b)
 		}
 	})
 
-	t.Run("100 iterations bleeds into next group", func(t *testing.T) {
-		// iterIdx=100 in group 0 should NOT equal iterIdx=0 in group 1
-		a := encode(0, 100, 0) // group 0, iter 100, sub-step 0
-		b := encode(1, 0, 0)   // group 1, iter 0, sub-step 0
-		if a == b {
-			t.Errorf("Bug #3: position collision: (group=0, iter=100, j=0) = %d == (group=1, iter=0, j=0) = %d", a, b)
+	t.Run("10000 iterations fits within group slot", func(t *testing.T) {
+		a := encode(0, 9999, 9999) // group 0, last iter, last sub-step
+		b := encode(1, 0, 0)       // group 1, first iter, first sub-step
+		if a >= b {
+			t.Errorf("position collision: (group=0, iter=9999, j=9999) = %d >= (group=1, iter=0, j=0) = %d", a, b)
 		}
 	})
 }

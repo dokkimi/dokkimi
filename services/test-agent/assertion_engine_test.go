@@ -150,6 +150,100 @@ func TestEvaluateDocPath(t *testing.T) {
 	})
 }
 
+func TestEvaluateDocPath_RootContextPaths(t *testing.T) {
+	rootCtx := map[string]interface{}{
+		"variables": map[string]interface{}{
+			"userId": float64(42),
+			"nested": map[string]interface{}{"key": "val"},
+		},
+		"traffic": []interface{}{
+			map[string]interface{}{
+				"from": "client",
+				"to":   "api",
+				"request": map[string]interface{}{
+					"method": "GET",
+					"url":    "/users",
+				},
+			},
+		},
+		"consoleLogs": []interface{}{
+			map[string]interface{}{
+				"service": "api",
+				"level":   "info",
+				"message": "started",
+			},
+		},
+		"dbLogs": []interface{}{
+			map[string]interface{}{
+				"database": "mydb",
+				"query":    "SELECT 1",
+			},
+		},
+		"timeline": []interface{}{
+			map[string]interface{}{
+				"type":      "httpTraffic",
+				"timestamp": "2024-01-01T00:00:00Z",
+			},
+			map[string]interface{}{
+				"type":      "dbQuery",
+				"timestamp": "2024-01-01T00:00:01Z",
+			},
+		},
+		"response": map[string]interface{}{
+			"status": float64(200),
+		},
+	}
+
+	t.Run("resolves $.variables.X", func(t *testing.T) {
+		result, found := EvaluateDocPath(rootCtx, "variables.userId")
+		if !found || result != float64(42) {
+			t.Errorf("expected 42, got %v (found=%v)", result, found)
+		}
+	})
+
+	t.Run("resolves $.variables.nested.key", func(t *testing.T) {
+		result, found := EvaluateDocPath(rootCtx, "variables.nested.key")
+		if !found || result != "val" {
+			t.Errorf("expected val, got %v (found=%v)", result, found)
+		}
+	})
+
+	t.Run("resolves $.traffic[0].to", func(t *testing.T) {
+		result, found := EvaluateDocPath(rootCtx, "traffic[0].to")
+		if !found || result != "api" {
+			t.Errorf("expected api, got %v (found=%v)", result, found)
+		}
+	})
+
+	t.Run("resolves $.consoleLogs[0].level", func(t *testing.T) {
+		result, found := EvaluateDocPath(rootCtx, "consoleLogs[0].level")
+		if !found || result != "info" {
+			t.Errorf("expected info, got %v (found=%v)", result, found)
+		}
+	})
+
+	t.Run("resolves $.dbLogs length via array index", func(t *testing.T) {
+		result, found := EvaluateDocPath(rootCtx, "dbLogs[0].database")
+		if !found || result != "mydb" {
+			t.Errorf("expected mydb, got %v (found=%v)", result, found)
+		}
+	})
+
+	t.Run("resolves $.timeline[0].type", func(t *testing.T) {
+		result, found := EvaluateDocPath(rootCtx, "timeline[0].type")
+		if !found || result != "httpTraffic" {
+			t.Errorf("expected httpTraffic, got %v (found=%v)", result, found)
+		}
+	})
+
+	t.Run("resolves $.timeline[1].type", func(t *testing.T) {
+		result, found := EvaluateDocPath(rootCtx, "timeline[1].type")
+		if !found || result != "dbQuery" {
+			t.Errorf("expected dbQuery, got %v (found=%v)", result, found)
+		}
+	})
+}
+
 func TestCompareValues(t *testing.T) {
 	t.Run("eq passes for equal numbers", func(t *testing.T) {
 		r := CompareValues("eq", float64(200), float64(200))

@@ -281,6 +281,51 @@ func TestAssembleRootContext(t *testing.T) {
 		}
 	})
 
+	t.Run("assembles root context for UI step with stepResp", func(t *testing.T) {
+		varCtx := NewVariableContext()
+		varCtx.Set("token", "abc123")
+		step := TestStep{Action: StepAction{Type: "ui", Target: "frontend"}}
+		stepResp := map[string]interface{}{
+			"target":  "frontend",
+			"baseURL": "http://frontend:3000",
+			"extracted": map[string]interface{}{
+				"pageTitle": "Dashboard",
+			},
+		}
+		doc := AssembleRootContext(step, stepExec, nil, nil, nil, varCtx, stepResp)
+		resp, ok := doc["response"].(map[string]interface{})
+		if !ok {
+			t.Fatal("expected response in doc")
+		}
+		if resp["target"] != "frontend" {
+			t.Errorf("expected response.target=frontend, got %v", resp["target"])
+		}
+		extracted := resp["extracted"].(map[string]interface{})
+		if extracted["pageTitle"] != "Dashboard" {
+			t.Errorf("expected extracted.pageTitle=Dashboard, got %v", extracted["pageTitle"])
+		}
+		vars := doc["variables"].(map[string]interface{})
+		if vars["token"] != "abc123" {
+			t.Errorf("expected variables.token=abc123, got %v", vars["token"])
+		}
+		if doc["responseTime"] != nil {
+			t.Errorf("expected responseTime=nil for UI step, got %v", doc["responseTime"])
+		}
+	})
+
+	t.Run("assembles root context for UI step without stepResp", func(t *testing.T) {
+		varCtx := NewVariableContext()
+		step := TestStep{Action: StepAction{Type: "ui", Target: "frontend"}}
+		doc := AssembleRootContext(step, stepExec, nil, nil, nil, varCtx, nil)
+		resp, ok := doc["response"].(map[string]interface{})
+		if !ok {
+			t.Fatal("expected response in doc")
+		}
+		if len(resp) != 0 {
+			t.Errorf("expected empty response for nil stepResp, got %v", resp)
+		}
+	})
+
 	t.Run("includes timeline sorted by timestamp", func(t *testing.T) {
 		target := "api"
 		status := 200

@@ -313,6 +313,111 @@ describe('validateTests', () => {
     });
   });
 
+  describe('parallel step warnings', () => {
+    it('warns when extract is used on a parallel step', () => {
+      const r = makeResult();
+      validateTests(
+        [
+          {
+            name: 'test',
+            steps: [
+              {
+                action: {
+                  type: 'parallel',
+                  actions: [
+                    { type: 'httpRequest', method: 'GET', url: '/api' },
+                  ],
+                },
+                extract: { id: '$.response.body.id' },
+              },
+            ],
+          },
+        ],
+        r,
+        defFile,
+        mockFs,
+      );
+      expect(
+        r.warnings.some((w) =>
+          w.includes('"extract" on a parallel step will always receive an empty response'),
+        ),
+      ).toBe(true);
+    });
+
+    it('warns when self-block assertions are used on a parallel step', () => {
+      const r = makeResult();
+      validateTests(
+        [
+          {
+            name: 'test',
+            steps: [
+              {
+                action: {
+                  type: 'parallel',
+                  actions: [
+                    { type: 'httpRequest', method: 'GET', url: '/api' },
+                  ],
+                },
+                assertions: [
+                  {
+                    assertions: [
+                      { path: '$.response.status', operator: 'eq', value: 200 },
+                    ],
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+        r,
+        defFile,
+        mockFs,
+      );
+      expect(
+        r.warnings.some((w) =>
+          w.includes('self-block assertions on a parallel step'),
+        ),
+      ).toBe(true);
+    });
+
+    it('does not warn when only match-block assertions are used on a parallel step', () => {
+      const r = makeResult();
+      validateTests(
+        [
+          {
+            name: 'test',
+            steps: [
+              {
+                action: {
+                  type: 'parallel',
+                  actions: [
+                    { type: 'httpRequest', method: 'GET', url: '/api' },
+                  ],
+                },
+                assertions: [
+                  {
+                    match: { origin: 'svc-a' },
+                    assertions: [
+                      { path: '$.response.status', operator: 'eq', value: 200 },
+                    ],
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+        r,
+        defFile,
+        mockFs,
+      );
+      expect(
+        r.warnings.some((w) =>
+          w.includes('self-block assertions on a parallel step'),
+        ),
+      ).toBe(false);
+    });
+  });
+
   describe('screenshot name uniqueness across UI sub-steps', () => {
     it('accepts unique screenshot names across multiple UI actions', () => {
       const r = makeResult();

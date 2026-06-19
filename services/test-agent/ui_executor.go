@@ -502,7 +502,7 @@ func (e *UIStepExecutor) runSubStepGroup(
 
 		for j, sub := range group.Steps {
 			selector := subStepSelector(sub)
-			pos := SubStepPosition{StepIndex: stepIndex, SubStepIndex: subStepIndex*10000000 + iterIdx*10000 + j}
+			pos := SubStepPosition{StepIndex: stepIndex, SubStepIndex: subStepIndex*100_000_000 + iterIdx*10_000 + j}
 			start := time.Now()
 			e.logger.LogUISubStepStarted(stepIndex, pos.SubStepIndex, string(sub.Kind), selector, target)
 

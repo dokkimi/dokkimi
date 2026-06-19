@@ -7,9 +7,9 @@ import (
 )
 
 // ValidateSelfBlock validates assertions against the step's own action result.
-func ValidateSelfBlock(block AssertionBlock, stepDoc map[string]interface{}) []AssertionResult {
-	resp, _ := stepDoc["response"].(map[string]interface{})
-	responseEmpty := len(stepDoc) == 0 || (resp != nil && len(resp) == 0)
+func ValidateSelfBlock(block AssertionBlock, rootCtx map[string]interface{}) []AssertionResult {
+	resp, _ := rootCtx["response"].(map[string]interface{})
+	responseEmpty := len(rootCtx) == 0 || (resp != nil && len(resp) == 0)
 
 	var results []AssertionResult
 	for _, a := range block.Assertions {
@@ -26,7 +26,7 @@ func ValidateSelfBlock(block AssertionBlock, stepDoc map[string]interface{}) []A
 			})
 			continue
 		}
-		r := ValidateAssertion(a, stepDoc)
+		r := ValidateAssertion(a, rootCtx)
 		r.Path = a.Path
 		r.Operator = a.Operator
 		r.ResultKind = "field"

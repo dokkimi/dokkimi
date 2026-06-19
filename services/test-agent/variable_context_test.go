@@ -190,6 +190,109 @@ func TestExtract_RegexPattern_GroupOutOfRange(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
+// Dotted and bracketed variable path resolution
+// ---------------------------------------------------------------------------
+
+func TestVariableContext_DottedPathResolution(t *testing.T) {
+	t.Run("resolves {{user.email}}", func(t *testing.T) {
+		vc := NewVariableContext()
+		vc.Set("user", map[string]interface{}{
+			"name":  "Alice",
+			"email": "alice@test.com",
+		})
+		result, err := vc.Resolve("{{user.email}}")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if result != "alice@test.com" {
+			t.Errorf("expected alice@test.com, got %v", result)
+		}
+	})
+
+	t.Run("resolves {{users[0].name}}", func(t *testing.T) {
+		vc := NewVariableContext()
+		vc.Set("users", []interface{}{
+			map[string]interface{}{"name": "Alice"},
+			map[string]interface{}{"name": "Bob"},
+		})
+		result, err := vc.Resolve("{{users[0].name}}")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if result != "Alice" {
+			t.Errorf("expected Alice, got %v", result)
+		}
+	})
+
+	t.Run("resolves {{users[1].name}}", func(t *testing.T) {
+		vc := NewVariableContext()
+		vc.Set("users", []interface{}{
+			map[string]interface{}{"name": "Alice"},
+			map[string]interface{}{"name": "Bob"},
+		})
+		result, err := vc.Resolve("{{users[1].name}}")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if result != "Bob" {
+			t.Errorf("expected Bob, got %v", result)
+		}
+	})
+
+	t.Run("ResolveTyped returns typed value for {{user.email}}", func(t *testing.T) {
+		vc := NewVariableContext()
+		vc.Set("user", map[string]interface{}{
+			"email": "alice@test.com",
+			"age":   float64(30),
+		})
+		result, err := vc.ResolveTyped("{{user.age}}")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if result != float64(30) {
+			t.Errorf("expected 30, got %v (%T)", result, result)
+		}
+	})
+
+	t.Run("resolves deeply nested {{a.b.c}}", func(t *testing.T) {
+		vc := NewVariableContext()
+		vc.Set("a", map[string]interface{}{
+			"b": map[string]interface{}{
+				"c": "deep",
+			},
+		})
+		result, err := vc.Resolve("{{a.b.c}}")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if result != "deep" {
+			t.Errorf("expected deep, got %v", result)
+		}
+	})
+
+	t.Run("errors on missing dotted path", func(t *testing.T) {
+		vc := NewVariableContext()
+		vc.Set("user", map[string]interface{}{"name": "Alice"})
+		_, err := vc.Resolve("{{user.missing}}")
+		if err == nil {
+			t.Error("expected error for missing path")
+		}
+	})
+
+	t.Run("mixed text with dotted path", func(t *testing.T) {
+		vc := NewVariableContext()
+		vc.Set("user", map[string]interface{}{"name": "Alice"})
+		result, err := vc.Resolve("Hello {{user.name}}!")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if result != "Hello Alice!" {
+			t.Errorf("expected Hello Alice!, got %v", result)
+		}
+	})
+}
+
+// ---------------------------------------------------------------------------
 // Full step unmarshal with mixed extract rules
 // ---------------------------------------------------------------------------
 

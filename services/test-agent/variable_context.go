@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"regexp"
-	"strings"
 	"sync"
 )
 
@@ -317,83 +316,3 @@ func valueToString(value interface{}) string {
 	}
 }
 
-// EvaluateJsonPath evaluates a simple JSONPath expression against parsed JSON data.
-// Supports: $, $.field, $.nested.field, $.array[0], $.array[0].field
-func EvaluateJsonPath(data interface{}, path string) (interface{}, error) {
-	if path == "$" {
-		return data, nil
-	}
-
-	var dotPath string
-	if strings.HasPrefix(path, "$.") {
-		dotPath = path[2:]
-	} else {
-		// Support bare dotted paths (e.g., "body.user.id")
-		dotPath = path
-	}
-
-	parts := strings.Split(dotPath, ".")
-	current := data
-
-	for _, part := range parts {
-		if current == nil {
-			return nil, fmt.Errorf("path '%s' not found: encountered null", path)
-		}
-
-		// Check for array access: field[0], [0], or chained field[0][1][2]
-		if idx := strings.Index(part, "["); idx >= 0 {
-			fieldName := part[:idx]
-
-			// Access field first if present
-			if fieldName != "" {
-				obj, ok := current.(map[string]interface{})
-				if !ok {
-					return nil, fmt.Errorf("path '%s' not found: expected object at '%s'", path, fieldName)
-				}
-				current, ok = obj[fieldName]
-				if !ok {
-					return nil, fmt.Errorf("path '%s' not found: key '%s' does not exist", path, fieldName)
-				}
-			}
-
-			// Process all chained bracket accesses: [0], [0][1], etc.
-			bracketPart := part[idx:]
-			for bracketPart != "" {
-				if bracketPart[0] != '[' {
-					return nil, fmt.Errorf("invalid JSONPath at '%s': expected '[' in '%s'", path, part)
-				}
-				closeIdx := strings.Index(bracketPart, "]")
-				if closeIdx < 0 {
-					return nil, fmt.Errorf("invalid JSONPath at '%s': missing ']' in '%s'", path, part)
-				}
-				indexStr := bracketPart[1:closeIdx]
-
-				arr, ok := current.([]interface{})
-				if !ok {
-					return nil, fmt.Errorf("path '%s' not found: expected array at '%s'", path, part)
-				}
-				var index int
-				if _, err := fmt.Sscanf(indexStr, "%d", &index); err != nil {
-					return nil, fmt.Errorf("invalid array index in path '%s': %s", path, indexStr)
-				}
-				if index < 0 || index >= len(arr) {
-					return nil, fmt.Errorf("path '%s' not found: array index %d out of bounds (length %d)", path, index, len(arr))
-				}
-				current = arr[index]
-
-				bracketPart = bracketPart[closeIdx+1:]
-			}
-		} else {
-			obj, ok := current.(map[string]interface{})
-			if !ok {
-				return nil, fmt.Errorf("path '%s' not found: expected object at '%s'", path, part)
-			}
-			current, ok = obj[part]
-			if !ok {
-				return nil, fmt.Errorf("path '%s' not found: key '%s' does not exist", path, part)
-			}
-		}
-	}
-
-	return current, nil
-}
