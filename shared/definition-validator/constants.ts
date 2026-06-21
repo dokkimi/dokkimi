@@ -268,11 +268,7 @@ export type UiExtractUrlPart = (typeof VALID_UI_EXTRACT_URL_PARTS)[number];
 export const VALID_ASSERTION_BLOCK_KEYS = new Set([
   'assertions',
   'match',
-  'service',
-  'consoleAssertions',
   'extract',
-  'assertionScope',
-  'count',
   'forEach',
   'for',
   'repeat',
@@ -280,6 +276,11 @@ export const VALID_ASSERTION_BLOCK_KEYS = new Set([
 
 export const VALID_ASSERTION_KEYS = new Set([
   'path',
+  'count',
+  'type',
+  'keys',
+  'values',
+  'entries',
   'operator',
   'value',
   'disabled',
@@ -302,50 +303,69 @@ export const VALID_ASSERTION_OPERATORS = [
   'notExists',
   'in',
   'notIn',
-  'type',
-  'length',
   'isEmpty',
   'notEmpty',
-  'arrayContains',
-  'arrayNotContains',
 ] as const;
 
-export const VALID_ASSERTION_SCOPES = ['all', 'first', 'last', 'any'] as const;
+export const VALID_MATCH_CRITERIA_KEYS = new Set([
+  'path',
+  'where',
+  'count',
+  'as',
+]);
 
-export const VALID_MATCH_CRITERIA_KEYS = new Set(['origin', 'method', 'url']);
+export const VALID_WHERE_ENTRY_KEYS = new Set([
+  'path',
+  'operator',
+  'value',
+  'or',
+  'and',
+  'not',
+]);
+
+export const VALID_TRANSFORMS = [
+  'length',
+  'type',
+  'keys',
+  'values',
+  'entries',
+] as const;
+
+export const VALID_SOURCE_FIELDS = [
+  'path',
+  'count',
+  'type',
+  'keys',
+  'values',
+  'entries',
+] as const;
 
 export const VALID_COUNT_OPERATORS = ['eq', 'gte', 'lte', 'gt', 'lt'] as const;
 
 export const VALID_COUNT_ASSERTION_KEYS = new Set(['operator', 'value']);
 
-export const VALID_CONSOLE_LOG_ASSERTION_KEYS = new Set([
-  'level',
-  'message',
-  'count',
-  'disabled',
-]);
-
-export const VALID_CONSOLE_LOG_LEVELS = [
-  'INFO',
-  'WARN',
-  'ERROR',
-  'DEBUG',
-] as const;
-
-export const VALID_MESSAGE_FILTER_KEYS = new Set(['operator', 'value']);
-
-export const VALID_MESSAGE_OPERATORS = [
-  'eq',
-  'contains',
-  'containsIgnoreCase',
-  'matches',
-] as const;
-
 // ---------------------------------------------------------------------------
 // Loop modifier valid keys
 // ---------------------------------------------------------------------------
 
-export const VALID_FOR_EACH_KEYS = new Set(['items', 'as', 'name', 'delayMs']);
+export const VALID_LOOP_BODY_KEYS = [
+  'match',
+  'assertions',
+  'extract',
+  'forEach',
+  'for',
+  'repeat',
+  'action',
+  'steps',
+] as const;
+
+export const VALID_FOR_EACH_KEYS = new Set([
+  'items',
+  'as',
+  'name',
+  'delayMs',
+  ...VALID_LOOP_BODY_KEYS,
+]);
 export const VALID_FOR_KEYS = new Set([
   'from',
   'to',
@@ -353,6 +373,7 @@ export const VALID_FOR_KEYS = new Set([
   'as',
   'name',
   'delayMs',
+  ...VALID_LOOP_BODY_KEYS,
 ]);
 export const VALID_REPEAT_KEYS = new Set([
   'count',
@@ -360,6 +381,7 @@ export const VALID_REPEAT_KEYS = new Set([
   'name',
   'delayMs',
   'until',
+  ...VALID_LOOP_BODY_KEYS,
 ]);
 
 export const VALID_EXTRACT_TRANSFORMS = ['keys', 'values', 'entries'] as const;

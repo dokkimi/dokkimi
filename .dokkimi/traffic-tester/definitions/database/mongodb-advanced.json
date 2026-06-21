@@ -75,13 +75,13 @@
                   "value": 50
                 },
                 {
-                  "path": "$.response.data[0].items",
-                  "operator": "type",
+                  "type": "$.response.data[0].items",
+                  "operator": "eq",
                   "value": "array"
                 },
                 {
-                  "path": "$.response.data[0].items",
-                  "operator": "length",
+                  "count": "$.response.data[0].items",
+                  "operator": "eq",
                   "value": 1
                 }
               ]

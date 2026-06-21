@@ -148,6 +148,25 @@ func TestEvaluateDocPath(t *testing.T) {
 			t.Error("expected not found")
 		}
 	})
+
+	t.Run("resolves negative array index [-1]", func(t *testing.T) {
+		result, found := EvaluateDocPath(doc, "response.body.users[-1].name")
+		if !found || result != "Bob" {
+			t.Errorf("expected Bob, got %v (found=%v)", result, found)
+		}
+	})
+	t.Run("resolves negative array index [-2]", func(t *testing.T) {
+		result, found := EvaluateDocPath(doc, "response.body.users[-2].name")
+		if !found || result != "Alice" {
+			t.Errorf("expected Alice, got %v (found=%v)", result, found)
+		}
+	})
+	t.Run("returns not-found for negative out-of-bounds", func(t *testing.T) {
+		_, found := EvaluateDocPath(doc, "response.body.users[-5].name")
+		if found {
+			t.Error("expected not found")
+		}
+	})
 }
 
 func TestEvaluateDocPath_RootContextPaths(t *testing.T) {
@@ -514,114 +533,44 @@ func TestCompareValues(t *testing.T) {
 		}
 	})
 
-	t.Run("type detects string type", func(t *testing.T) {
-		r := CompareValues("type", "hello", "string")
+	t.Run("contains passes for array element membership", func(t *testing.T) {
+		r := CompareValues("contains", []interface{}{float64(1), float64(2), float64(3)}, float64(2))
 		if !r.Passed {
 			t.Error("expected pass")
 		}
 	})
 
-	t.Run("type detects number type", func(t *testing.T) {
-		r := CompareValues("type", float64(42), "number")
-		if !r.Passed {
-			t.Error("expected pass")
-		}
-	})
-
-	t.Run("type detects array type", func(t *testing.T) {
-		r := CompareValues("type", []interface{}{float64(1), float64(2)}, "array")
-		if !r.Passed {
-			t.Error("expected pass")
-		}
-	})
-
-	t.Run("type detects object type", func(t *testing.T) {
-		r := CompareValues("type", map[string]interface{}{"a": float64(1)}, "object")
-		if !r.Passed {
-			t.Error("expected pass")
-		}
-	})
-
-	t.Run("type fails for mismatched type", func(t *testing.T) {
-		r := CompareValues("type", "hello", "number")
+	t.Run("contains fails for missing array element", func(t *testing.T) {
+		r := CompareValues("contains", []interface{}{float64(1), float64(2)}, float64(5))
 		if r.Passed {
 			t.Error("expected fail")
 		}
 	})
 
-	t.Run("length passes for correct array length", func(t *testing.T) {
-		r := CompareValues("length", []interface{}{float64(1), float64(2), float64(3)}, float64(3))
+	t.Run("contains passes for object key membership", func(t *testing.T) {
+		r := CompareValues("contains", map[string]interface{}{"name": "Alice", "age": float64(30)}, "name")
 		if !r.Passed {
 			t.Error("expected pass")
 		}
 	})
 
-	t.Run("length passes for correct string length", func(t *testing.T) {
-		r := CompareValues("length", "hello", float64(5))
-		if !r.Passed {
-			t.Error("expected pass")
-		}
-	})
-
-	t.Run("length fails for wrong length", func(t *testing.T) {
-		r := CompareValues("length", []interface{}{float64(1), float64(2)}, float64(5))
+	t.Run("contains errors on nil", func(t *testing.T) {
+		r := CompareValues("contains", nil, "x")
 		if r.Passed {
 			t.Error("expected fail")
 		}
+		if r.Error == "" {
+			t.Error("expected type error")
+		}
 	})
 
-	t.Run("length fails for non-array/non-string", func(t *testing.T) {
-		r := CompareValues("length", float64(42), float64(2))
+	t.Run("contains errors on number", func(t *testing.T) {
+		r := CompareValues("contains", float64(42), "x")
 		if r.Passed {
 			t.Error("expected fail")
 		}
-	})
-
-	t.Run("arrayContains passes when item present", func(t *testing.T) {
-		r := CompareValues("arrayContains", []interface{}{float64(1), float64(2), float64(3)}, float64(2))
-		if !r.Passed {
-			t.Error("expected pass")
-		}
-	})
-
-	t.Run("arrayContains fails when item missing", func(t *testing.T) {
-		r := CompareValues("arrayContains", []interface{}{float64(1), float64(2), float64(3)}, float64(5))
-		if r.Passed {
-			t.Error("expected fail")
-		}
-	})
-
-	t.Run("arrayContains fails for non-array", func(t *testing.T) {
-		r := CompareValues("arrayContains", "not-array", "a")
-		if r.Passed {
-			t.Error("expected fail")
-		}
-		if r.Error != "Value is not an array" {
-			t.Errorf("expected 'Value is not an array', got %s", r.Error)
-		}
-	})
-
-	t.Run("arrayNotContains passes when item missing", func(t *testing.T) {
-		r := CompareValues("arrayNotContains", []interface{}{float64(1), float64(2)}, float64(5))
-		if !r.Passed {
-			t.Error("expected pass")
-		}
-	})
-
-	t.Run("arrayNotContains fails when item present", func(t *testing.T) {
-		r := CompareValues("arrayNotContains", []interface{}{float64(1), float64(2)}, float64(2))
-		if r.Passed {
-			t.Error("expected fail")
-		}
-	})
-
-	t.Run("arrayNotContains fails for non-array", func(t *testing.T) {
-		r := CompareValues("arrayNotContains", "not-array", "a")
-		if r.Passed {
-			t.Error("expected fail")
-		}
-		if r.Error != "Value is not an array" {
-			t.Errorf("expected 'Value is not an array', got %s", r.Error)
+		if r.Error == "" {
+			t.Error("expected type error")
 		}
 	})
 
@@ -1083,6 +1032,390 @@ func TestResolveExtractRule(t *testing.T) {
 		_, err := ResolveExtractRule(d, "keys", ExtractRule{From: "{{missing}}", Transform: "keys"})
 		if err == nil {
 			t.Fatal("expected error for missing variable")
+		}
+	})
+}
+
+func TestEvaluateDocPath_ScopedContext(t *testing.T) {
+	doc := map[string]interface{}{
+		"variables": map[string]interface{}{"x": float64(1)},
+	}
+	scoped := map[string]interface{}{
+		"origin":  "service-a",
+		"request": map[string]interface{}{"method": "POST", "url": "/api"},
+	}
+
+	t.Run("$$ resolves against scoped context", func(t *testing.T) {
+		result, found := EvaluateDocPath(doc, "$$.origin", scoped)
+		if !found || result != "service-a" {
+			t.Errorf("expected service-a, got %v (found=%v)", result, found)
+		}
+	})
+	t.Run("$$ nested path", func(t *testing.T) {
+		result, found := EvaluateDocPath(doc, "$$.request.method", scoped)
+		if !found || result != "POST" {
+			t.Errorf("expected POST, got %v (found=%v)", result, found)
+		}
+	})
+	t.Run("$$ without scoped context returns not-found", func(t *testing.T) {
+		_, found := EvaluateDocPath(doc, "$$.origin")
+		if found {
+			t.Error("expected not found without scoped context")
+		}
+	})
+	t.Run("$$ with nil scoped context returns not-found", func(t *testing.T) {
+		_, found := EvaluateDocPath(doc, "$$.origin", nil)
+		if found {
+			t.Error("expected not found with nil scoped context")
+		}
+	})
+	t.Run("bare $$ returns not-found", func(t *testing.T) {
+		_, found := EvaluateDocPath(doc, "$$", scoped)
+		if found {
+			t.Error("expected not found for bare $$")
+		}
+	})
+}
+
+func TestResolveSource(t *testing.T) {
+	t.Run("string path", func(t *testing.T) {
+		a := Assertion{Path: "$.response.status"}
+		p, tr, err := resolveSource(a)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if p != "$.response.status" || tr != "" {
+			t.Errorf("got path=%q transform=%q", p, tr)
+		}
+	})
+	t.Run("PathWithTransform object", func(t *testing.T) {
+		a := Assertion{Path: map[string]interface{}{"from": "$.response.body.items", "transform": "length"}}
+		p, tr, err := resolveSource(a)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if p != "$.response.body.items" || tr != "length" {
+			t.Errorf("got path=%q transform=%q", p, tr)
+		}
+	})
+	t.Run("count shorthand", func(t *testing.T) {
+		a := Assertion{Count: "$.response.body.items"}
+		p, tr, err := resolveSource(a)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if p != "$.response.body.items" || tr != "length" {
+			t.Errorf("got path=%q transform=%q", p, tr)
+		}
+	})
+	t.Run("type shorthand", func(t *testing.T) {
+		a := Assertion{Type: "$.response.body.value"}
+		p, tr, err := resolveSource(a)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if p != "$.response.body.value" || tr != "type" {
+			t.Errorf("got path=%q transform=%q", p, tr)
+		}
+	})
+	t.Run("keys shorthand", func(t *testing.T) {
+		a := Assertion{Keys: "$.response.body"}
+		p, tr, err := resolveSource(a)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if p != "$.response.body" || tr != "keys" {
+			t.Errorf("got path=%q transform=%q", p, tr)
+		}
+	})
+	t.Run("values shorthand", func(t *testing.T) {
+		a := Assertion{Values: "$.response.body"}
+		p, tr, err := resolveSource(a)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if p != "$.response.body" || tr != "values" {
+			t.Errorf("got path=%q transform=%q", p, tr)
+		}
+	})
+	t.Run("entries shorthand", func(t *testing.T) {
+		a := Assertion{Entries: "$.response.body"}
+		p, tr, err := resolveSource(a)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if p != "$.response.body" || tr != "entries" {
+			t.Errorf("got path=%q transform=%q", p, tr)
+		}
+	})
+	t.Run("no source field returns error", func(t *testing.T) {
+		a := Assertion{Operator: "eq", Value: float64(1)}
+		_, _, err := resolveSource(a)
+		if err == nil {
+			t.Error("expected error for missing source")
+		}
+	})
+	t.Run("invalid path.from returns error", func(t *testing.T) {
+		a := Assertion{Path: map[string]interface{}{"from": "noprefix"}}
+		_, _, err := resolveSource(a)
+		if err == nil {
+			t.Error("expected error for non-$. from")
+		}
+	})
+}
+
+func TestApplyAssertionTransform(t *testing.T) {
+	t.Run("length of array", func(t *testing.T) {
+		r, err := applyAssertionTransform([]interface{}{1, 2, 3}, "length")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if r != float64(3) {
+			t.Errorf("expected 3, got %v", r)
+		}
+	})
+	t.Run("length of string", func(t *testing.T) {
+		r, err := applyAssertionTransform("hello", "length")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if r != float64(5) {
+			t.Errorf("expected 5, got %v", r)
+		}
+	})
+	t.Run("length of wrong type errors", func(t *testing.T) {
+		_, err := applyAssertionTransform(float64(42), "length")
+		if err == nil {
+			t.Error("expected error")
+		}
+	})
+	t.Run("type of string", func(t *testing.T) {
+		r, err := applyAssertionTransform("hello", "type")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if r != "string" {
+			t.Errorf("expected 'string', got %v", r)
+		}
+	})
+	t.Run("type of number", func(t *testing.T) {
+		r, err := applyAssertionTransform(float64(42), "type")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if r != "number" {
+			t.Errorf("expected 'number', got %v", r)
+		}
+	})
+	t.Run("type of array", func(t *testing.T) {
+		r, err := applyAssertionTransform([]interface{}{}, "type")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if r != "array" {
+			t.Errorf("expected 'array', got %v", r)
+		}
+	})
+	t.Run("type of object", func(t *testing.T) {
+		r, err := applyAssertionTransform(map[string]interface{}{}, "type")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if r != "object" {
+			t.Errorf("expected 'object', got %v", r)
+		}
+	})
+	t.Run("type of nil", func(t *testing.T) {
+		r, err := applyAssertionTransform(nil, "type")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if r != "null" {
+			t.Errorf("expected 'null', got %v", r)
+		}
+	})
+	t.Run("type of bool", func(t *testing.T) {
+		r, err := applyAssertionTransform(true, "type")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if r != "boolean" {
+			t.Errorf("expected 'boolean', got %v", r)
+		}
+	})
+	t.Run("keys of object", func(t *testing.T) {
+		r, err := applyAssertionTransform(map[string]interface{}{"a": 1, "b": 2}, "keys")
+		if err != nil {
+			t.Fatal(err)
+		}
+		arr := r.([]interface{})
+		if len(arr) != 2 {
+			t.Errorf("expected 2, got %d", len(arr))
+		}
+	})
+	t.Run("keys of non-object errors", func(t *testing.T) {
+		_, err := applyAssertionTransform([]interface{}{}, "keys")
+		if err == nil {
+			t.Error("expected error")
+		}
+	})
+	t.Run("values of object", func(t *testing.T) {
+		r, err := applyAssertionTransform(map[string]interface{}{"x": float64(10)}, "values")
+		if err != nil {
+			t.Fatal(err)
+		}
+		arr := r.([]interface{})
+		if len(arr) != 1 || arr[0] != float64(10) {
+			t.Errorf("got %v", arr)
+		}
+	})
+	t.Run("entries of object", func(t *testing.T) {
+		r, err := applyAssertionTransform(map[string]interface{}{"k": "v"}, "entries")
+		if err != nil {
+			t.Fatal(err)
+		}
+		arr := r.([]interface{})
+		entry := arr[0].(map[string]interface{})
+		if entry["key"] != "k" || entry["value"] != "v" {
+			t.Errorf("got %v", entry)
+		}
+	})
+	t.Run("unknown transform errors", func(t *testing.T) {
+		_, err := applyAssertionTransform("x", "unknown")
+		if err == nil {
+			t.Error("expected error")
+		}
+	})
+}
+
+func TestResolveValue(t *testing.T) {
+	doc := map[string]interface{}{
+		"response": map[string]interface{}{
+			"body": map[string]interface{}{"items": []interface{}{1, 2, 3}},
+		},
+	}
+
+	t.Run("literal value passes through", func(t *testing.T) {
+		r, err := resolveValue(float64(42), doc)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if r != float64(42) {
+			t.Errorf("expected 42, got %v", r)
+		}
+	})
+	t.Run("literal string passes through", func(t *testing.T) {
+		r, err := resolveValue("hello", doc)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if r != "hello" {
+			t.Errorf("expected hello, got %v", r)
+		}
+	})
+	t.Run("ValueRef resolves path", func(t *testing.T) {
+		ref := map[string]interface{}{"from": "$.response.body.items"}
+		r, err := resolveValue(ref, doc)
+		if err != nil {
+			t.Fatal(err)
+		}
+		arr := r.([]interface{})
+		if len(arr) != 3 {
+			t.Errorf("expected 3 items, got %d", len(arr))
+		}
+	})
+	t.Run("ValueRef with transform", func(t *testing.T) {
+		ref := map[string]interface{}{"from": "$.response.body.items", "transform": "length"}
+		r, err := resolveValue(ref, doc)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if r != float64(3) {
+			t.Errorf("expected 3, got %v", r)
+		}
+	})
+	t.Run("non-$. from is literal object", func(t *testing.T) {
+		obj := map[string]interface{}{"from": "$50", "to": "$100"}
+		r, err := resolveValue(obj, doc)
+		if err != nil {
+			t.Fatal(err)
+		}
+		// Should be returned as-is
+		m := r.(map[string]interface{})
+		if m["from"] != "$50" {
+			t.Errorf("expected literal, got %v", r)
+		}
+	})
+	t.Run("ValueRef with missing path returns error", func(t *testing.T) {
+		ref := map[string]interface{}{"from": "$.response.missing"}
+		_, err := resolveValue(ref, doc)
+		if err == nil {
+			t.Error("expected error")
+		}
+	})
+}
+
+func TestValidateAssertion_Pipeline(t *testing.T) {
+	doc := map[string]interface{}{
+		"response": map[string]interface{}{
+			"body": map[string]interface{}{
+				"items":  []interface{}{"a", "b", "c"},
+				"config": map[string]interface{}{"timeout": float64(30)},
+				"name":   "Alice",
+			},
+			"status": float64(200),
+		},
+	}
+
+	t.Run("count shorthand checks array length", func(t *testing.T) {
+		r := ValidateAssertion(Assertion{Count: "$.response.body.items", Operator: "eq", Value: float64(3)}, doc)
+		if !r.Passed {
+			t.Errorf("expected pass, got error: %s", r.Error)
+		}
+	})
+	t.Run("count shorthand fails for wrong length", func(t *testing.T) {
+		r := ValidateAssertion(Assertion{Count: "$.response.body.items", Operator: "eq", Value: float64(5)}, doc)
+		if r.Passed {
+			t.Error("expected fail")
+		}
+	})
+	t.Run("type shorthand checks value type", func(t *testing.T) {
+		r := ValidateAssertion(Assertion{Type: "$.response.body.items", Operator: "eq", Value: "array"}, doc)
+		if !r.Passed {
+			t.Errorf("expected pass, got error: %s", r.Error)
+		}
+	})
+	t.Run("type shorthand string", func(t *testing.T) {
+		r := ValidateAssertion(Assertion{Type: "$.response.body.name", Operator: "eq", Value: "string"}, doc)
+		if !r.Passed {
+			t.Errorf("expected pass, got error: %s", r.Error)
+		}
+	})
+	t.Run("keys shorthand", func(t *testing.T) {
+		r := ValidateAssertion(Assertion{Keys: "$.response.body.config", Operator: "contains", Value: "timeout"}, doc)
+		if !r.Passed {
+			t.Errorf("expected pass, got error: %s", r.Error)
+		}
+	})
+	t.Run("PathWithTransform object form", func(t *testing.T) {
+		a := Assertion{
+			Path:     map[string]interface{}{"from": "$.response.body.items", "transform": "length"},
+			Operator: "gte", Value: float64(2),
+		}
+		r := ValidateAssertion(a, doc)
+		if !r.Passed {
+			t.Errorf("expected pass, got error: %s", r.Error)
+		}
+	})
+	t.Run("ValueRef compares against document path", func(t *testing.T) {
+		a := Assertion{
+			Path:     "$.response.status",
+			Operator: "eq",
+			Value:    map[string]interface{}{"from": "$.response.status"},
+		}
+		r := ValidateAssertion(a, doc)
+		if !r.Passed {
+			t.Errorf("expected pass, got error: %s", r.Error)
 		}
 	})
 }

@@ -267,6 +267,9 @@ func parseLogTimestamp(ts string) time.Time {
 
 // AssembleRootContext builds the unified root context document ($) for a step.
 // One document, one path system, used for both extract and assertion evaluation.
+// The second return value is false when the action's sidecar log (interceptor
+// or db-proxy) has not arrived yet — callers should retry rather than evaluate
+// assertions against the incomplete context.
 func AssembleRootContext(
 	step TestStep,
 	stepExec StepExecution,
@@ -275,18 +278,23 @@ func AssembleRootContext(
 	consoleLogs []ConsoleLogMessage,
 	varCtx *VariableContext,
 	stepResp map[string]interface{},
-) map[string]interface{} {
+) (map[string]interface{}, bool) {
 	traffic, httpTimeline := assembleTrafficList(httpLogs, stepExec)
 	consoleLogList, consoleTimeline := assembleConsoleLogList(consoleLogs, stepExec)
 	dbLogList, dbTimeline := assembleDbLogList(dbLogs, stepExec)
+
+	timeline := mergeTimeline(httpTimeline, consoleTimeline, dbTimeline)
+	annotateTimelineIndices(traffic, timeline)
 
 	rootCtx := map[string]interface{}{
 		"variables":   varCtx.Snapshot(),
 		"traffic":     traffic,
 		"consoleLogs": consoleLogList,
 		"dbLogs":      dbLogList,
-		"timeline":    mergeTimeline(httpTimeline, consoleTimeline, dbTimeline),
+		"timeline":    timeline,
 	}
+
+	actionLogFound := true
 
 	switch step.Action.Type {
 	case "wait":
@@ -311,6 +319,7 @@ func AssembleRootContext(
 		} else {
 			rootCtx["response"] = map[string]interface{}{}
 			rootCtx["responseTime"] = nil
+			actionLogFound = false
 		}
 	case "ui":
 		rootCtx["request"] = map[string]interface{}{}
@@ -331,10 +340,11 @@ func AssembleRootContext(
 			rootCtx["request"] = map[string]interface{}{}
 			rootCtx["response"] = map[string]interface{}{}
 			rootCtx["responseTime"] = nil
+			actionLogFound = false
 		}
 	}
 
-	return rootCtx
+	return rootCtx, actionLogFound
 }
 
 func assembleTrafficList(httpLogs []HttpLogMessage, stepExec StepExecution) ([]interface{}, []timelineEntry) {
@@ -361,8 +371,10 @@ func assembleTrafficList(httpLogs []HttpLogMessage, stepExec StepExecution) ([]i
 			to = *l.Target
 		}
 
+		trafficIdx := float64(len(traffic))
 		entry := map[string]interface{}{
 			"timestamp": ts,
+			"origin":    from,
 			"from":      from,
 			"to":        to,
 			"request": map[string]interface{}{
@@ -381,15 +393,30 @@ func assembleTrafficList(httpLogs []HttpLogMessage, stepExec StepExecution) ([]i
 		timeline = append(timeline, timelineEntry{
 			timestamp: logTime,
 			entry: map[string]interface{}{
-				"type":      "httpTraffic",
-				"timestamp": ts,
-				"from":      from,
-				"to":        to,
-				"method":    l.Method,
-				"url":       l.URL,
-				"status":    ptrIntToFloat(l.StatusCode),
+				"type":         "httpRequest",
+				"timestamp":    ts,
+				"trafficIndex": trafficIdx,
+				"direction":    "request",
+				"from":         from,
+				"to":           to,
+				"method":       l.Method,
+				"url":          l.URL,
 			},
 		})
+		if l.StatusCode != nil {
+			timeline = append(timeline, timelineEntry{
+				timestamp: logTime,
+				entry: map[string]interface{}{
+					"type":         "httpResponse",
+					"timestamp":    ts,
+					"trafficIndex": trafficIdx,
+					"direction":    "response",
+					"from":         from,
+					"to":           to,
+					"status":       ptrIntToFloat(l.StatusCode),
+				},
+			})
+		}
 	}
 	if traffic == nil {
 		traffic = []interface{}{}
@@ -513,4 +540,37 @@ func ptrInt64ToFloat(p *int64) interface{} {
 		return nil
 	}
 	return float64(*p)
+}
+
+func annotateTimelineIndices(traffic []interface{}, timeline []interface{}) {
+	for i, t := range traffic {
+		entry, ok := t.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		reqIdx, _ := findTimelineIndex(timeline, i, "request")
+		entry["requestTimelineIndex"] = float64(reqIdx)
+
+		respIdx, found := findTimelineIndex(timeline, i, "response")
+		if !found {
+			entry["responseTimelineIndex"] = nil
+		} else {
+			entry["responseTimelineIndex"] = float64(respIdx)
+		}
+	}
+}
+
+func findTimelineIndex(timeline []interface{}, trafficIdx int, direction string) (int, bool) {
+	for i, t := range timeline {
+		entry, ok := t.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		ti, ok1 := entry["trafficIndex"]
+		dir, ok2 := entry["direction"]
+		if ok1 && ok2 && ti == float64(trafficIdx) && dir == direction {
+			return i, true
+		}
+	}
+	return 0, false
 }

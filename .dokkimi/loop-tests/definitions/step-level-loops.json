@@ -33,28 +33,32 @@
               { "title": "Second Post", "content": "More content" },
               { "title": "Third Post", "content": "Even more" }
             ],
-            "as": "post"
-          },
-          "action": {
-            "type": "httpRequest",
-            "method": "POST",
-            "url": "api-service/api/profile/posts",
-            "headers": {
-              "Authorization": "Bearer {{sessionToken}}",
-              "Content-Type": "application/json"
+            "as": "post",
+            "action": {
+              "type": "httpRequest",
+              "method": "POST",
+              "url": "api-service/api/profile/posts",
+              "headers": {
+                "Authorization": "Bearer {{sessionToken}}",
+                "Content-Type": "application/json"
+              },
+              "body": {
+                "title": "{{post.title}}",
+                "content": "{{post.content}}"
+              }
             },
-            "body": {
-              "title": "{{post.title}}",
-              "content": "{{post.content}}"
-            }
-          },
-          "assertions": [
-            {
-              "assertions": [
-                { "path": "$.response.status", "operator": "eq", "value": 201 }
-              ]
-            }
-          ]
+            "assertions": [
+              {
+                "assertions": [
+                  {
+                    "path": "$.response.status",
+                    "operator": "eq",
+                    "value": 201
+                  }
+                ]
+              }
+            ]
+          }
         },
         {
           "name": "Verify all 3 new posts exist in profile",
@@ -71,8 +75,8 @@
               "assertions": [
                 { "path": "$.response.status", "operator": "eq", "value": 200 },
                 {
-                  "path": "$.response.body.profile.posts",
-                  "operator": "length",
+                  "count": "$.response.body.profile.posts",
+                  "operator": "eq",
                   "value": 3
                 }
               ]
@@ -102,7 +106,7 @@
                   "operator": "eq",
                   "value": true
                 },
-                { "path": "$.response.data", "operator": "length", "value": 2 }
+                { "count": "$.response.data", "operator": "eq", "value": 2 }
               ]
             }
           ]
@@ -111,25 +115,29 @@
           "name": "Verify post {{post.title}} via API",
           "forEach": {
             "items": "{{posts}}",
-            "as": "post"
-          },
-          "action": {
-            "type": "httpRequest",
-            "method": "GET",
-            "url": "api-service/api/posts/{{post.id}}"
-          },
-          "assertions": [
-            {
-              "assertions": [
-                { "path": "$.response.status", "operator": "eq", "value": 200 },
-                {
-                  "path": "$.response.body.title",
-                  "operator": "eq",
-                  "value": "{{post.title}}"
-                }
-              ]
-            }
-          ]
+            "as": "post",
+            "action": {
+              "type": "httpRequest",
+              "method": "GET",
+              "url": "api-service/api/posts/{{post.id}}"
+            },
+            "assertions": [
+              {
+                "assertions": [
+                  {
+                    "path": "$.response.status",
+                    "operator": "eq",
+                    "value": 200
+                  },
+                  {
+                    "path": "$.response.body.title",
+                    "operator": "eq",
+                    "value": "{{post.title}}"
+                  }
+                ]
+              }
+            ]
+          }
         }
       ]
     },
@@ -141,24 +149,24 @@
           "for": {
             "from": 1,
             "to": 3,
-            "as": "i"
+            "as": "i",
+            "assertions": [
+              {
+                "assertions": [
+                  {
+                    "path": "$.response.success",
+                    "operator": "eq",
+                    "value": true
+                  }
+                ]
+              }
+            ]
           },
           "action": {
             "type": "dbQuery",
             "database": "postgres-db",
             "query": "INSERT INTO posts (title, content, published, author_id) VALUES ('Loop Post {{i}}', 'Content {{i}}', true, 'a1b2c3d4-0000-0000-0000-000000000001') RETURNING id"
-          },
-          "assertions": [
-            {
-              "assertions": [
-                {
-                  "path": "$.response.success",
-                  "operator": "eq",
-                  "value": true
-                }
-              ]
-            }
-          ]
+          }
         },
         {
           "name": "Verify all 3 loop-inserted posts exist",
@@ -244,20 +252,24 @@
           "repeat": {
             "count": 3,
             "as": "round",
-            "name": "roundLoop"
+            "name": "roundLoop",
+            "assertions": [
+              {
+                "assertions": [
+                  {
+                    "path": "$.response.status",
+                    "operator": "eq",
+                    "value": 200
+                  }
+                ]
+              }
+            ]
           },
           "action": {
             "type": "httpRequest",
             "method": "GET",
             "url": "api-service/health"
-          },
-          "assertions": [
-            {
-              "assertions": [
-                { "path": "$.response.status", "operator": "eq", "value": 200 }
-              ]
-            }
-          ]
+          }
         },
         {
           "name": "Verify all 3 iterations ran",

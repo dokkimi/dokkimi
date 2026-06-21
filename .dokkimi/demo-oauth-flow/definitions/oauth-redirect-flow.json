@@ -68,19 +68,25 @@
               ]
             },
             {
-              "service": "api-service",
-              "consoleAssertions": [
-                {
-                  "message": {
+              "match": {
+                "path": "$.consoleLogs",
+                "where": [
+                  {
+                    "path": "$$.service",
+                    "operator": "eq",
+                    "value": "api-service"
+                  },
+                  {
+                    "path": "$$.message",
                     "operator": "contains",
                     "value": "Redirecting to OAuth provider"
-                  },
-                  "count": {
-                    "operator": "eq",
-                    "value": 1
                   }
+                ],
+                "count": {
+                  "operator": "eq",
+                  "value": 1
                 }
-              ]
+              }
             }
           ]
         }
@@ -130,131 +136,211 @@
             },
             {
               "match": {
-                "origin": "api-service",
-                "method": "POST",
-                "url": "{{oauthDomain}}/oauth/token"
-              },
-              "count": {
-                "operator": "eq",
-                "value": 1
+                "path": "$.traffic",
+                "where": [
+                  {
+                    "path": "$$.origin",
+                    "operator": "eq",
+                    "value": "api-service"
+                  },
+                  {
+                    "path": "$$.request.method",
+                    "operator": "eq",
+                    "value": "POST"
+                  },
+                  {
+                    "path": "$$.request.url",
+                    "operator": "contains",
+                    "value": "{{oauthDomain}}/oauth/token"
+                  }
+                ],
+                "count": {
+                  "operator": "eq",
+                  "value": 1
+                }
               },
               "assertions": [
                 {
-                  "path": "$.request.body.grant_type",
+                  "path": "$.match.request.body.grant_type",
                   "operator": "eq",
                   "value": "authorization_code"
                 },
                 {
-                  "path": "$.request.body.code",
+                  "path": "$.match.request.body.code",
                   "operator": "eq",
                   "value": "{{mockCode}}"
                 },
                 {
-                  "path": "$.request.body.client_id",
+                  "path": "$.match.request.body.client_id",
                   "operator": "eq",
                   "value": "{{clientId}}"
                 },
                 {
-                  "path": "$.request.body.client_secret",
+                  "path": "$.match.request.body.client_secret",
                   "operator": "exists"
                 },
                 {
-                  "path": "$.request.body.redirect_uri",
+                  "path": "$.match.request.body.redirect_uri",
                   "operator": "exists"
                 },
                 {
-                  "path": "$.response.status",
+                  "path": "$.match.response.status",
                   "operator": "eq",
                   "value": 200
                 },
                 {
-                  "path": "$.response.body.access_token",
+                  "path": "$.match.response.body.access_token",
                   "operator": "exists"
                 }
               ]
             },
             {
               "match": {
-                "origin": "api-service",
-                "method": "GET",
-                "url": "{{oauthDomain}}/userinfo"
-              },
-              "count": {
-                "operator": "eq",
-                "value": 1
+                "path": "$.traffic",
+                "where": [
+                  {
+                    "path": "$$.origin",
+                    "operator": "eq",
+                    "value": "api-service"
+                  },
+                  {
+                    "path": "$$.request.method",
+                    "operator": "eq",
+                    "value": "GET"
+                  },
+                  {
+                    "path": "$$.request.url",
+                    "operator": "contains",
+                    "value": "{{oauthDomain}}/userinfo"
+                  }
+                ],
+                "count": {
+                  "operator": "eq",
+                  "value": 1
+                }
               },
               "assertions": [
                 {
-                  "path": "$.request.headers.authorization",
+                  "path": "$.match.request.headers.authorization",
                   "operator": "eq",
                   "value": "Bearer mock_access_token_abc123"
                 },
                 {
-                  "path": "$.response.status",
+                  "path": "$.match.response.status",
                   "operator": "eq",
                   "value": 200
                 },
                 {
-                  "path": "$.response.body.email",
+                  "path": "$.match.response.body.email",
                   "operator": "eq",
                   "value": "bob@example.com"
                 }
               ]
             },
             {
-              "service": "api-service",
-              "consoleAssertions": [
-                {
-                  "message": {
+              "match": {
+                "path": "$.consoleLogs",
+                "where": [
+                  {
+                    "path": "$$.service",
+                    "operator": "eq",
+                    "value": "api-service"
+                  },
+                  {
+                    "path": "$$.message",
                     "operator": "contains",
                     "value": "Exchanging authorization code"
-                  },
-                  "count": {
-                    "operator": "gte",
-                    "value": 1
                   }
-                },
-                {
-                  "message": {
+                ],
+                "count": {
+                  "operator": "gte",
+                  "value": 1
+                }
+              }
+            },
+            {
+              "match": {
+                "path": "$.consoleLogs",
+                "where": [
+                  {
+                    "path": "$$.service",
+                    "operator": "eq",
+                    "value": "api-service"
+                  },
+                  {
+                    "path": "$$.message",
                     "operator": "contains",
                     "value": "Token exchange successful"
-                  },
-                  "count": {
-                    "operator": "gte",
-                    "value": 1
                   }
-                },
-                {
-                  "message": {
+                ],
+                "count": {
+                  "operator": "gte",
+                  "value": 1
+                }
+              }
+            },
+            {
+              "match": {
+                "path": "$.consoleLogs",
+                "where": [
+                  {
+                    "path": "$$.service",
+                    "operator": "eq",
+                    "value": "api-service"
+                  },
+                  {
+                    "path": "$$.message",
                     "operator": "contains",
                     "value": "Fetching user info"
-                  },
-                  "count": {
-                    "operator": "gte",
-                    "value": 1
                   }
-                },
-                {
-                  "message": {
+                ],
+                "count": {
+                  "operator": "gte",
+                  "value": 1
+                }
+              }
+            },
+            {
+              "match": {
+                "path": "$.consoleLogs",
+                "where": [
+                  {
+                    "path": "$$.service",
+                    "operator": "eq",
+                    "value": "api-service"
+                  },
+                  {
+                    "path": "$$.message",
                     "operator": "contains",
                     "value": "Creating new user"
-                  },
-                  "count": {
-                    "operator": "eq",
-                    "value": 1
                   }
-                },
-                {
-                  "message": {
+                ],
+                "count": {
+                  "operator": "eq",
+                  "value": 1
+                }
+              }
+            },
+            {
+              "match": {
+                "path": "$.consoleLogs",
+                "where": [
+                  {
+                    "path": "$$.service",
+                    "operator": "eq",
+                    "value": "api-service"
+                  },
+                  {
+                    "path": "$$.message",
                     "operator": "contains",
                     "value": "OAuth flow complete"
-                  },
-                  "count": {
-                    "operator": "gte",
-                    "value": 1
                   }
+                ],
+                "count": {
+                  "operator": "gte",
+                  "value": 1
                 }
-              ]
+              }
             }
           ]
         },
@@ -274,8 +360,8 @@
                   "value": true
                 },
                 {
-                  "path": "$.response.data",
-                  "operator": "length",
+                  "count": "$.response.data",
+                  "operator": "eq",
                   "value": 1
                 },
                 {
@@ -386,17 +472,32 @@
             },
             {
               "match": {
-                "origin": "api-service",
-                "method": "POST",
-                "url": "{{oauthDomain}}/oauth/token"
-              },
-              "count": {
-                "operator": "eq",
-                "value": 1
+                "path": "$.traffic",
+                "where": [
+                  {
+                    "path": "$$.origin",
+                    "operator": "eq",
+                    "value": "api-service"
+                  },
+                  {
+                    "path": "$$.request.method",
+                    "operator": "eq",
+                    "value": "POST"
+                  },
+                  {
+                    "path": "$$.request.url",
+                    "operator": "contains",
+                    "value": "{{oauthDomain}}/oauth/token"
+                  }
+                ],
+                "count": {
+                  "operator": "eq",
+                  "value": 1
+                }
               },
               "assertions": [
                 {
-                  "path": "$.request.body.grant_type",
+                  "path": "$.match.request.body.grant_type",
                   "operator": "eq",
                   "value": "authorization_code"
                 }
@@ -404,29 +505,50 @@
             },
             {
               "match": {
-                "origin": "api-service",
-                "method": "GET",
-                "url": "{{oauthDomain}}/userinfo"
-              },
-              "count": {
-                "operator": "eq",
-                "value": 1
+                "path": "$.traffic",
+                "where": [
+                  {
+                    "path": "$$.origin",
+                    "operator": "eq",
+                    "value": "api-service"
+                  },
+                  {
+                    "path": "$$.request.method",
+                    "operator": "eq",
+                    "value": "GET"
+                  },
+                  {
+                    "path": "$$.request.url",
+                    "operator": "contains",
+                    "value": "{{oauthDomain}}/userinfo"
+                  }
+                ],
+                "count": {
+                  "operator": "eq",
+                  "value": 1
+                }
               }
             },
             {
-              "service": "api-service",
-              "consoleAssertions": [
-                {
-                  "message": {
+              "match": {
+                "path": "$.consoleLogs",
+                "where": [
+                  {
+                    "path": "$$.service",
+                    "operator": "eq",
+                    "value": "api-service"
+                  },
+                  {
+                    "path": "$$.message",
                     "operator": "contains",
                     "value": "Found existing user"
-                  },
-                  "count": {
-                    "operator": "gte",
-                    "value": 1
                   }
+                ],
+                "count": {
+                  "operator": "gte",
+                  "value": 1
                 }
-              ]
+              }
             }
           ]
         },

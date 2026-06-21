@@ -22,10 +22,27 @@ type AssertionResult struct {
 }
 
 type Assertion struct {
-	Path     string      `json:"path"`
+	// Source fields — exactly one must be set
+	Path    interface{} `json:"path,omitempty"`    // string or PathWithTransform
+	Count   string      `json:"count,omitempty"`   // shorthand for transform:"length"
+	Type    string      `json:"type,omitempty"`    // shorthand for transform:"type"
+	Keys    string      `json:"keys,omitempty"`    // shorthand for transform:"keys"
+	Values  string      `json:"values,omitempty"`  // shorthand for transform:"values"
+	Entries string      `json:"entries,omitempty"` // shorthand for transform:"entries"
+
 	Operator string      `json:"operator"`
-	Value    interface{} `json:"value"`
+	Value    interface{} `json:"value,omitempty"` // literal, or ValueRef object
 	Disabled bool        `json:"disabled,omitempty"`
+}
+
+type PathWithTransform struct {
+	From      string `json:"from"`
+	Transform string `json:"transform"`
+}
+
+type ValueRef struct {
+	From      string `json:"from"`
+	Transform string `json:"transform,omitempty"`
 }
 
 type CountAssertion struct {
@@ -34,9 +51,10 @@ type CountAssertion struct {
 }
 
 // EvaluateDocPath resolves a dotted path against an assembled document.
-// Supports: "response.body.user.name", "data[0].email", "responseTime", "success"
+// Supports: "response.body.user.name", "data[0].email", "data[-1].email", "responseTime"
 // Unlike EvaluateJsonPath, this returns (value, found) with case-insensitive key fallback.
-func EvaluateDocPath(doc interface{}, path string) (interface{}, bool) {
+// Optional scopedCtx: when provided and path starts with "$$.", resolves against scopedCtx[0].
+func EvaluateDocPath(doc interface{}, path string, scopedCtx ...interface{}) (interface{}, bool) {
 	if path == "" {
 		return nil, false
 	}
@@ -44,7 +62,19 @@ func EvaluateDocPath(doc interface{}, path string) (interface{}, bool) {
 		return nil, false
 	}
 
-	if strings.HasPrefix(path, "$.") {
+	// Reject bare "$$" without trailing ".field"
+	if path == "$$" {
+		return nil, false
+	}
+
+	// Handle "$$." prefix — resolve against scoped context
+	if strings.HasPrefix(path, "$$.") {
+		if len(scopedCtx) == 0 || scopedCtx[0] == nil {
+			return nil, false
+		}
+		path = path[3:]
+		doc = scopedCtx[0]
+	} else if strings.HasPrefix(path, "$.") {
 		path = path[2:]
 	}
 
@@ -59,22 +89,15 @@ func EvaluateDocPath(doc interface{}, path string) (interface{}, bool) {
 			return nil, false
 		}
 
-		if seg == "length" {
-			switch v := value.(type) {
-			case []interface{}:
-				value = float64(len(v))
-			case string:
-				value = float64(len([]rune(v)))
-			default:
-				return nil, false
-			}
-		} else if arrayMatch := arrayIndexPattern.FindStringSubmatch(seg); arrayMatch != nil {
+		if arrayMatch := arrayIndexPattern.FindStringSubmatch(seg); arrayMatch != nil {
 			arr, ok := toSlice(value)
 			if !ok {
 				return nil, false
 			}
-			var index int
-			fmt.Sscanf(arrayMatch[1], "%d", &index)
+			index, _ := strconv.Atoi(arrayMatch[1])
+			if index < 0 {
+				index = len(arr) + index
+			}
 			if index < 0 || index >= len(arr) {
 				return nil, false
 			}
@@ -106,19 +129,19 @@ func EvaluateDocPath(doc interface{}, path string) (interface{}, bool) {
 	return value, true
 }
 
-var arrayIndexPattern = regexp.MustCompile(`^\[(\d+)\]$`)
+var arrayIndexPattern = regexp.MustCompile(`^\[(-?\d+)\]$`)
 
 func parsePathSegments(path string) []string {
 	var segments []string
 	current := ""
 	for i := 0; i < len(path); i++ {
-		ch := path[i]
-		if ch == '.' {
+		switch path[i] {
+		case '.':
 			if current != "" {
 				segments = append(segments, current)
 			}
 			current = ""
-		} else if ch == '[' {
+		case '[':
 			if current != "" {
 				segments = append(segments, current)
 			}
@@ -129,8 +152,8 @@ func parsePathSegments(path string) []string {
 			segments = append(segments, path[i:i+closeIdx+1])
 			i += closeIdx
 			current = ""
-		} else {
-			current += string(ch)
+		default:
+			current += string(path[i])
 		}
 	}
 	if current != "" {
@@ -247,11 +270,9 @@ func CompareValues(operator string, actual, expected interface{}) AssertionResul
 		}
 		return AssertionResult{Passed: af <= ef, Expected: expected, Actual: actual}
 	case "contains":
-		passed := strings.Contains(fmt.Sprintf("%v", actual), fmt.Sprintf("%v", expected))
-		return AssertionResult{Passed: passed, Expected: expected, Actual: actual}
+		return containsDispatch(actual, expected, false)
 	case "notContains":
-		passed := !strings.Contains(fmt.Sprintf("%v", actual), fmt.Sprintf("%v", expected))
-		return AssertionResult{Passed: passed, Expected: expected, Actual: actual}
+		return containsDispatch(actual, expected, true)
 	case "containsIgnoreCase":
 		passed := strings.Contains(
 			strings.ToLower(fmt.Sprintf("%v", actual)),
@@ -297,42 +318,6 @@ func CompareValues(operator string, actual, expected interface{}) AssertionResul
 			}
 		}
 		return AssertionResult{Passed: !found, Expected: expected, Actual: actual}
-	case "type":
-		actualType := goTypeLabel(actual)
-		return AssertionResult{Passed: actualType == expected, Expected: expected, Actual: actualType}
-	case "length":
-		length := getLength(actual)
-		if length == -1 {
-			return AssertionResult{Passed: false, Expected: expected, Actual: nil}
-		}
-		ef, _ := toFloat(expected)
-		return AssertionResult{Passed: float64(length) == ef, Expected: expected, Actual: float64(length)}
-	case "arrayContains":
-		arr, ok := toSlice(actual)
-		if !ok {
-			return AssertionResult{Passed: false, Error: "Value is not an array", Expected: expected, Actual: actual}
-		}
-		found := false
-		for _, item := range arr {
-			if reflect.DeepEqual(item, expected) {
-				found = true
-				break
-			}
-		}
-		return AssertionResult{Passed: found, Expected: expected, Actual: actual}
-	case "arrayNotContains":
-		arr, ok := toSlice(actual)
-		if !ok {
-			return AssertionResult{Passed: false, Error: "Value is not an array", Expected: expected, Actual: actual}
-		}
-		found := false
-		for _, item := range arr {
-			if reflect.DeepEqual(item, expected) {
-				found = true
-				break
-			}
-		}
-		return AssertionResult{Passed: !found, Expected: expected, Actual: actual}
 	case "isEmpty":
 		empty := isEmptyValue(actual)
 		actualLabel := "not empty"
@@ -352,9 +337,54 @@ func CompareValues(operator string, actual, expected interface{}) AssertionResul
 	}
 }
 
+func containsDispatch(actual, expected interface{}, negate bool) AssertionResult {
+	if actual == nil {
+		return AssertionResult{
+			Passed:   false,
+			Error:    fmt.Sprintf("cannot use contains on %s — expected string, array, or object", goTypeLabel(actual)),
+			Expected: expected,
+			Actual:   actual,
+		}
+	}
+	switch v := actual.(type) {
+	case string:
+		passed := strings.Contains(v, fmt.Sprintf("%v", expected))
+		if negate {
+			passed = !passed
+		}
+		return AssertionResult{Passed: passed, Expected: expected, Actual: actual}
+	case []interface{}:
+		found := false
+		for _, item := range v {
+			if reflect.DeepEqual(item, expected) {
+				found = true
+				break
+			}
+		}
+		if negate {
+			found = !found
+		}
+		return AssertionResult{Passed: found, Expected: expected, Actual: actual}
+	case map[string]interface{}:
+		key := fmt.Sprintf("%v", expected)
+		_, found := v[key]
+		if negate {
+			found = !found
+		}
+		return AssertionResult{Passed: found, Expected: expected, Actual: actual}
+	default:
+		return AssertionResult{
+			Passed:   false,
+			Error:    fmt.Sprintf("cannot use contains on %s — expected string, array, or object", goTypeLabel(actual)),
+			Expected: expected,
+			Actual:   actual,
+		}
+	}
+}
+
 func goTypeLabel(v interface{}) string {
 	if v == nil {
-		return "undefined"
+		return "null"
 	}
 	switch v.(type) {
 	case string:
@@ -372,15 +402,22 @@ func goTypeLabel(v interface{}) string {
 	}
 }
 
-func getLength(v interface{}) int {
-	switch val := v.(type) {
-	case []interface{}:
-		return len(val)
-	case string:
-		return len(val)
-	default:
-		return -1
+func sortedMapKeys(m map[string]interface{}) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
 	}
+	sort.Strings(keys)
+	return keys
+}
+
+func sortedExtractKeys(m map[string]ExtractRule) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 func isEmptyValue(v interface{}) bool {
@@ -399,8 +436,116 @@ func isEmptyValue(v interface{}) bool {
 	}
 }
 
-func ValidateAssertion(assertion Assertion, doc map[string]interface{}) AssertionResult {
-	actual, found := EvaluateDocPath(doc, assertion.Path)
+func resolveSource(a Assertion) (sourcePath string, transform string, err error) {
+	switch p := a.Path.(type) {
+	case string:
+		if p != "" {
+			return p, "", nil
+		}
+	case map[string]interface{}:
+		from, _ := p["from"].(string)
+		t, _ := p["transform"].(string)
+		if from == "" || !strings.HasPrefix(from, "$.") {
+			return "", "", fmt.Errorf("path.from must be a $.-prefixed path (e.g., \"$.response.body\")")
+		}
+		return from, t, nil
+	}
+	if a.Count != "" {
+		return a.Count, "length", nil
+	}
+	if a.Type != "" {
+		return a.Type, "type", nil
+	}
+	if a.Keys != "" {
+		return a.Keys, "keys", nil
+	}
+	if a.Values != "" {
+		return a.Values, "values", nil
+	}
+	if a.Entries != "" {
+		return a.Entries, "entries", nil
+	}
+	return "", "", fmt.Errorf("assertion must have exactly one source field")
+}
+
+func applyAssertionTransform(value interface{}, transform string) (interface{}, error) {
+	switch transform {
+	case "length":
+		switch v := value.(type) {
+		case []interface{}:
+			return float64(len(v)), nil
+		case string:
+			return float64(len([]rune(v))), nil
+		default:
+			return nil, fmt.Errorf("transform 'length' requires array or string, got %s", goTypeLabel(value))
+		}
+	case "type":
+		return goTypeLabel(value), nil
+	case "keys":
+		obj, ok := value.(map[string]interface{})
+		if !ok {
+			return nil, fmt.Errorf("transform 'keys' requires object, got %s", goTypeLabel(value))
+		}
+		keys := sortedMapKeys(obj)
+		result := make([]interface{}, len(keys))
+		for i, k := range keys {
+			result[i] = k
+		}
+		return result, nil
+	case "values":
+		obj, ok := value.(map[string]interface{})
+		if !ok {
+			return nil, fmt.Errorf("transform 'values' requires object, got %s", goTypeLabel(value))
+		}
+		keys := sortedMapKeys(obj)
+		result := make([]interface{}, len(keys))
+		for i, k := range keys {
+			result[i] = obj[k]
+		}
+		return result, nil
+	case "entries":
+		obj, ok := value.(map[string]interface{})
+		if !ok {
+			return nil, fmt.Errorf("transform 'entries' requires object, got %s", goTypeLabel(value))
+		}
+		keys := sortedMapKeys(obj)
+		result := make([]interface{}, len(keys))
+		for i, k := range keys {
+			result[i] = map[string]interface{}{"key": k, "value": obj[k]}
+		}
+		return result, nil
+	default:
+		return nil, fmt.Errorf("unknown transform: %s", transform)
+	}
+}
+
+func resolveValue(v interface{}, doc map[string]interface{}, scopedCtx ...interface{}) (interface{}, error) {
+	m, ok := v.(map[string]interface{})
+	if !ok {
+		return v, nil
+	}
+	from, _ := m["from"].(string)
+	if from == "" || !strings.HasPrefix(from, "$.") {
+		return v, nil
+	}
+	resolved, found := EvaluateDocPath(doc, from, scopedCtx...)
+	if !found {
+		return nil, fmt.Errorf("value.from path not found: %s", from)
+	}
+	transform, _ := m["transform"].(string)
+	if transform != "" {
+		return applyAssertionTransform(resolved, transform)
+	}
+	return resolved, nil
+}
+
+func ValidateAssertion(assertion Assertion, doc map[string]interface{}, scopedCtx ...interface{}) AssertionResult {
+	sourcePath, transform, err := resolveSource(assertion)
+	if err != nil {
+		return AssertionResult{Passed: false, Error: err.Error()}
+	}
+
+	actual, found := EvaluateDocPath(doc, sourcePath, scopedCtx...)
 
 	// For exists/notExists, treat null the same as not-found
 	presentAndNonNil := found && actual != nil
@@ -414,6 +559,7 @@ func ValidateAssertion(assertion Assertion, doc map[string]interface{}) Assertio
 			Passed:   presentAndNonNil,
 			Expected: "exists",
 			Actual:   actualLabel,
+			Path:     sourcePath,
 		}
 	}
 
@@ -426,19 +572,35 @@ func ValidateAssertion(assertion Assertion, doc map[string]interface{}) Assertio
 			Passed:   !presentAndNonNil,
 			Expected: "not exists",
 			Actual:   actualLabel,
+			Path:     sourcePath,
 		}
 	}
 
 	if !found {
 		return AssertionResult{
 			Passed:   false,
-			Error:    fmt.Sprintf("Path '%s' not found in document", assertion.Path),
+			Error:    fmt.Sprintf("Path '%s' not found in document", sourcePath),
 			Expected: assertion.Value,
 			Actual:   nil,
+			Path:     sourcePath,
 		}
 	}
 
-	return CompareValues(assertion.Operator, actual, assertion.Value)
+	if transform != "" {
+		actual, err = applyAssertionTransform(actual, transform)
+		if err != nil {
+			return AssertionResult{Passed: false, Error: err.Error(), Path: sourcePath}
+		}
+	}
+
+	expected, err := resolveValue(assertion.Value, doc, scopedCtx...)
+	if err != nil {
+		return AssertionResult{Passed: false, Error: err.Error(), Path: sourcePath}
+	}
+
+	result := CompareValues(assertion.Operator, actual, expected)
+	result.Path = sourcePath
+	return result
 }
 
 func ValidateCount(actual int, count CountAssertion) AssertionResult {

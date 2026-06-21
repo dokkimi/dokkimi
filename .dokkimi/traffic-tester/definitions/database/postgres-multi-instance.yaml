@@ -113,8 +113,8 @@ tests:
           query: "SELECT name, email FROM users WHERE email = 'dave@example.com'"
         assertions:
           - assertions:
-              - path: $.response.data
-                operator: length
+              - count: $.response.data
+                operator: eq
                 value: 1
               - path: $.response.data[0].name
                 operator: eq
@@ -129,8 +129,8 @@ tests:
           query: "SELECT customer_name, total_cents, status FROM orders WHERE customer_name = 'Dave'"
         assertions:
           - assertions:
-              - path: $.response.data
-                operator: length
+              - count: $.response.data
+                operator: eq
                 value: 1
               - path: $.response.data[0].total_cents
                 operator: eq
@@ -147,8 +147,8 @@ tests:
           query: 'SELECT id, name FROM users WHERE id = 1'
         assertions:
           - assertions:
-              - path: $.response.data
-                operator: length
+              - count: $.response.data
+                operator: eq
                 value: 1
               - path: $.response.data[0].id
                 operator: eq
@@ -160,8 +160,8 @@ tests:
           query: 'SELECT id, total_cents FROM orders WHERE id = 1'
         assertions:
           - assertions:
-              - path: $.response.data
-                operator: length
+              - count: $.response.data
+                operator: eq
                 value: 1
               - path: $.response.data[0].id
                 operator: eq

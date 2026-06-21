@@ -2,17 +2,18 @@ import {
   VALID_ASSERTION_BLOCK_KEYS,
   VALID_ASSERTION_KEYS,
   VALID_ASSERTION_OPERATORS,
-  VALID_ASSERTION_SCOPES,
   VALID_MATCH_CRITERIA_KEYS,
   VALID_COUNT_OPERATORS,
   VALID_COUNT_ASSERTION_KEYS,
-  VALID_CONSOLE_LOG_ASSERTION_KEYS,
-  VALID_CONSOLE_LOG_LEVELS,
-  VALID_MESSAGE_FILTER_KEYS,
-  VALID_MESSAGE_OPERATORS,
+  VALID_WHERE_ENTRY_KEYS,
+  VALID_TRANSFORMS,
+  VALID_SOURCE_FIELDS,
   VALID_EXTRACT_TRANSFORMS,
 } from './constants';
-import { validateLoopModifiers } from './validate-loops';
+import {
+  validateLoopModifiers,
+  validateBlockLoopSiblingConflicts,
+} from './validate-loops';
 import {
   ValidationResult,
   err,
@@ -53,61 +54,142 @@ export function validateCountAssertion(
 }
 
 // ---------------------------------------------------------------------------
-// Console log assertion
+// Match count (accepts number shorthand or object)
 // ---------------------------------------------------------------------------
 
-export function validateConsoleLogAssertion(
-  item: unknown,
+function validateMatchCount(
+  count: unknown,
   ctx: string,
   r: ValidationResult,
 ): void {
-  if (!item || typeof item !== 'object' || Array.isArray(item)) {
+  if (typeof count === 'number') {
+    if (!Number.isInteger(count) || count < 0) {
+      err(r, `${ctx}: count must be a non-negative integer`);
+    }
+    return;
+  }
+  if (count && typeof count === 'object' && !Array.isArray(count)) {
+    validateCountAssertion(count, ctx, r);
+    return;
+  }
+  err(r, `${ctx}: count must be a number or {operator, value} object`);
+}
+
+// ---------------------------------------------------------------------------
+// Where entry (recursive)
+// ---------------------------------------------------------------------------
+
+export function validateWhereEntry(
+  entry: unknown,
+  ctx: string,
+  r: ValidationResult,
+): void {
+  if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
     err(r, `${ctx}: must be an object`);
     return;
   }
-  const a = item as Record<string, unknown>;
-  checkUnknownKeys(a, VALID_CONSOLE_LOG_ASSERTION_KEYS, ctx, r);
+  const e = entry as Record<string, unknown>;
+  checkUnknownKeys(e, VALID_WHERE_ENTRY_KEYS, ctx, r);
 
-  if (a.level !== undefined) {
+  const hasPath = e.path !== undefined;
+  const hasOr = e.or !== undefined;
+  const hasAnd = e.and !== undefined;
+  const hasNot = e.not !== undefined;
+
+  const formCount = [hasPath, hasOr, hasAnd, hasNot].filter(Boolean).length;
+  if (formCount === 0) {
+    err(r, `${ctx}: must have one of: path, or, and, not`);
+    return;
+  }
+  if (formCount > 1 && !(hasPath && !hasOr && !hasAnd && !hasNot)) {
+    err(r, `${ctx}: only one of path, or, and, not may be specified`);
+    return;
+  }
+
+  if (hasPath) {
+    if (typeof e.path !== 'string') {
+      err(r, `${ctx}: path must be a string`);
+    } else if (!e.path.startsWith('$$.')) {
+      err(r, `${ctx}: where path must start with "$$." (scoped element)`);
+    }
     if (
-      !VALID_CONSOLE_LOG_LEVELS.includes(
-        a.level as (typeof VALID_CONSOLE_LOG_LEVELS)[number],
+      e.operator !== undefined &&
+      !VALID_ASSERTION_OPERATORS.includes(
+        e.operator as (typeof VALID_ASSERTION_OPERATORS)[number],
       )
     ) {
       err(
         r,
-        `${ctx}: level must be one of: ${VALID_CONSOLE_LOG_LEVELS.join(', ')}`,
+        `${ctx}: operator must be one of: ${VALID_ASSERTION_OPERATORS.join(', ')}`,
       );
     }
   }
-  if (a.message !== undefined) {
-    if (
-      !a.message ||
-      typeof a.message !== 'object' ||
-      Array.isArray(a.message)
-    ) {
-      err(r, `${ctx}: "message" must be an object`);
+
+  if (hasOr) {
+    if (!Array.isArray(e.or) || e.or.length === 0) {
+      err(r, `${ctx}.or: must be a non-empty array`);
     } else {
-      const m = a.message as Record<string, unknown>;
-      checkUnknownKeys(m, VALID_MESSAGE_FILTER_KEYS, `${ctx}.message`, r);
-      if (
-        m.operator !== undefined &&
-        !VALID_MESSAGE_OPERATORS.includes(
-          m.operator as (typeof VALID_MESSAGE_OPERATORS)[number],
-        )
-      ) {
-        err(
-          r,
-          `${ctx}.message: operator must be one of: ${VALID_MESSAGE_OPERATORS.join(', ')}`,
-        );
-      }
-      if (m.value !== undefined && typeof m.value !== 'string') {
-        err(r, `${ctx}.message: value must be a string`);
+      for (let i = 0; i < e.or.length; i++) {
+        validateWhereEntry(e.or[i], `${ctx}.or[${i}]`, r);
       }
     }
   }
-  if (a.count !== undefined) {
-    validateCountAssertion(a.count, `${ctx}.count`, r);
+
+  if (hasAnd) {
+    if (!Array.isArray(e.and) || e.and.length === 0) {
+      err(r, `${ctx}.and: must be a non-empty array`);
+    } else {
+      for (let i = 0; i < e.and.length; i++) {
+        validateWhereEntry(e.and[i], `${ctx}.and[${i}]`, r);
+      }
+    }
+  }
+
+  if (hasNot) {
+    validateWhereEntry(e.not, `${ctx}.not`, r);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Match criteria
+// ---------------------------------------------------------------------------
+
+export function validateMatchCriteria(
+  match: unknown,
+  ctx: string,
+  r: ValidationResult,
+): void {
+  if (!match || typeof match !== 'object' || Array.isArray(match)) {
+    err(r, `${ctx}: "match" must be an object`);
+    return;
+  }
+  const m = match as Record<string, unknown>;
+  checkUnknownKeys(m, VALID_MATCH_CRITERIA_KEYS, `${ctx}`, r);
+
+  if (typeof m.path !== 'string' || !m.path) {
+    err(r, `${ctx}: "path" is required and must be a non-empty string`);
+  } else if (!m.path.startsWith('$.')) {
+    err(r, `${ctx}: path must start with "$."`);
+  }
+
+  if (m.where !== undefined) {
+    if (!Array.isArray(m.where) || m.where.length === 0) {
+      err(r, `${ctx}.where: must be a non-empty array`);
+    } else {
+      for (let i = 0; i < m.where.length; i++) {
+        validateWhereEntry(m.where[i], `${ctx}.where[${i}]`, r);
+      }
+    }
+  }
+
+  if (m.count !== undefined) {
+    validateMatchCount(m.count, `${ctx}.count`, r);
+  }
+
+  if (m.as !== undefined) {
+    if (typeof m.as !== 'string' || !m.as) {
+      err(r, `${ctx}: "as" must be a non-empty string`);
+    }
   }
 }
 
@@ -138,7 +220,6 @@ export function validateExtractRules(
       const hasPattern = rule.pattern !== undefined;
 
       if (hasTransform) {
-        // Transform form: path+transform or from+transform.
         const validKeys = new Set(['path', 'from', 'transform']);
         for (const k of Object.keys(rule)) {
           if (!validKeys.has(k)) {
@@ -176,7 +257,6 @@ export function validateExtractRules(
           }
         }
       } else {
-        // Regex form: path+pattern+group.
         const validKeys = new Set(['path', 'pattern', 'group']);
         for (const k of Object.keys(rule)) {
           if (!validKeys.has(k)) {
@@ -217,6 +297,85 @@ export function validateExtractRules(
 }
 
 // ---------------------------------------------------------------------------
+// Individual assertion
+// ---------------------------------------------------------------------------
+
+export function validateAssertion(
+  a: Record<string, unknown>,
+  ctx: string,
+  r: ValidationResult,
+): void {
+  checkUnknownKeys(a, VALID_ASSERTION_KEYS, ctx, r);
+
+  // Exactly one source field
+  const sourceFields = (VALID_SOURCE_FIELDS as readonly string[]).filter(
+    (f) => a[f] !== undefined,
+  );
+  if (sourceFields.length === 0) {
+    err(
+      r,
+      `${ctx}: must have exactly one source field (${VALID_SOURCE_FIELDS.join(', ')})`,
+    );
+  } else if (sourceFields.length > 1) {
+    err(
+      r,
+      `${ctx}: only one source field allowed, found: ${sourceFields.join(', ')}`,
+    );
+  }
+
+  // Validate path field
+  if (a.path !== undefined) {
+    if (typeof a.path === 'string') {
+      validatePathFormat(a.path, ctx, r);
+    } else if (a.path && typeof a.path === 'object' && !Array.isArray(a.path)) {
+      const pathObj = a.path as Record<string, unknown>;
+      if (typeof pathObj.from !== 'string' || !pathObj.from) {
+        err(r, `${ctx}.path: "from" must be a non-empty string`);
+      } else {
+        validatePathFormat(pathObj.from, `${ctx}.path.from`, r);
+      }
+      if (
+        pathObj.transform !== undefined &&
+        !(VALID_TRANSFORMS as readonly string[]).includes(
+          pathObj.transform as string,
+        )
+      ) {
+        err(
+          r,
+          `${ctx}.path: "transform" must be one of: ${VALID_TRANSFORMS.join(', ')}`,
+        );
+      }
+    } else {
+      err(r, `${ctx}: "path" must be a string or {from, transform?} object`);
+    }
+  }
+
+  // Validate shorthand source fields (count, type, keys, values, entries)
+  for (const field of ['count', 'type', 'keys', 'values', 'entries']) {
+    if (a[field] !== undefined && field !== 'path') {
+      if (typeof a[field] !== 'string') {
+        err(r, `${ctx}: "${field}" must be a string (path)`);
+      } else {
+        validatePathFormat(a[field] as string, `${ctx}.${field}`, r);
+      }
+    }
+  }
+
+  // Validate operator
+  if (
+    a.operator !== undefined &&
+    !VALID_ASSERTION_OPERATORS.includes(
+      a.operator as (typeof VALID_ASSERTION_OPERATORS)[number],
+    )
+  ) {
+    err(
+      r,
+      `${ctx}: operator must be one of: ${VALID_ASSERTION_OPERATORS.join(', ')}`,
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Assertion block
 // ---------------------------------------------------------------------------
 
@@ -227,40 +386,8 @@ export function validateAssertionBlock(
 ): void {
   checkUnknownKeys(block, VALID_ASSERTION_BLOCK_KEYS, ctx, r);
 
-  if (block.assertionScope !== undefined) {
-    if (
-      !VALID_ASSERTION_SCOPES.includes(
-        block.assertionScope as (typeof VALID_ASSERTION_SCOPES)[number],
-      )
-    ) {
-      err(
-        r,
-        `${ctx}: assertionScope must be one of: ${VALID_ASSERTION_SCOPES.join(', ')}`,
-      );
-    }
-  }
-
   if (block.match !== undefined) {
-    if (
-      !block.match ||
-      typeof block.match !== 'object' ||
-      Array.isArray(block.match)
-    ) {
-      err(r, `${ctx}: "match" must be an object`);
-    } else {
-      const m = block.match as Record<string, unknown>;
-      checkUnknownKeys(m, VALID_MATCH_CRITERIA_KEYS, `${ctx}.match`, r);
-      if (typeof m.url === 'string' && /^[^/]+:\d+/.test(m.url)) {
-        warn(
-          r,
-          `${ctx}.match: url "${m.url}" contains a port — ports are not needed and are likely to cause test failures`,
-        );
-      }
-    }
-  }
-
-  if (block.count !== undefined) {
-    validateCountAssertion(block.count, `${ctx}.count`, r);
+    validateMatchCriteria(block.match, `${ctx}.match`, r);
   }
 
   if (block.extract !== undefined) {
@@ -274,67 +401,19 @@ export function validateAssertionBlock(
       for (let i = 0; i < block.assertions.length; i++) {
         const a = block.assertions[i] as Record<string, unknown>;
         if (a && typeof a === 'object') {
-          checkUnknownKeys(
-            a,
-            VALID_ASSERTION_KEYS,
-            `${ctx}.assertions[${i}]`,
-            r,
-          );
-          if (typeof a.path === 'string') {
-            validatePathFormat(a.path, `${ctx}.assertions[${i}]`, r);
-          }
-          if (
-            a.operator !== undefined &&
-            !VALID_ASSERTION_OPERATORS.includes(
-              a.operator as (typeof VALID_ASSERTION_OPERATORS)[number],
-            )
-          ) {
-            err(
-              r,
-              `${ctx}.assertions[${i}]: operator must be one of: ${VALID_ASSERTION_OPERATORS.join(', ')}`,
-            );
-          }
+          validateAssertion(a, `${ctx}.assertions[${i}]`, r);
         }
       }
     }
   }
 
-  if (block.consoleAssertions !== undefined) {
-    if (!Array.isArray(block.consoleAssertions)) {
-      err(r, `${ctx}: "consoleAssertions" must be an array`);
-    } else {
-      for (let i = 0; i < block.consoleAssertions.length; i++) {
-        validateConsoleLogAssertion(
-          block.consoleAssertions[i],
-          `${ctx}.consoleAssertions[${i}]`,
-          r,
-        );
-      }
-    }
-  }
-
-  // for and repeat are not supported at the assertion-block level.
-  if (block.for !== undefined) {
-    err(
-      r,
-      `${ctx}: "for" is not supported on assertion blocks — only "forEach" is allowed`,
-    );
-  }
-  if (block.repeat !== undefined) {
-    err(
-      r,
-      `${ctx}: "repeat" is not supported on assertion blocks — only "forEach" is allowed`,
-    );
-  }
-
-  // Validate forEach on assertion blocks.
-  if (block.forEach !== undefined) {
+  // Validate loop modifiers on assertion blocks (forEach, for, repeat)
+  if (
+    block.forEach !== undefined ||
+    block.for !== undefined ||
+    block.repeat !== undefined
+  ) {
     validateLoopModifiers(block, ctx, r, { allowDocPaths: true });
-    if (block.match !== undefined || block.service !== undefined) {
-      err(
-        r,
-        `${ctx}: "forEach" cannot be combined with "match" or "service" on an assertion block`,
-      );
-    }
+    validateBlockLoopSiblingConflicts(block, ctx, r);
   }
 }

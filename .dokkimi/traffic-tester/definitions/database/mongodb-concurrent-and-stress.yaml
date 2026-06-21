@@ -70,8 +70,8 @@ tests:
               - path: $.response.success
                 operator: eq
                 value: true
-              - path: $.response.data
-                operator: length
+              - count: $.response.data
+                operator: eq
                 value: 5
 
   - name: Sequential insert then find with variable extraction

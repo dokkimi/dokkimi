@@ -70,28 +70,43 @@ After all steps in a test complete, the assertion engine queries the captured tr
 
 ```yaml
 - match:
-    origin: order-service
-    method: POST
-    url: payment-service/v1/charges
+    path: '$.traffic'
+    where:
+      - path: '$$.origin'
+        operator: eq
+        value: order-service
+      - path: '$$.request.method'
+        operator: eq
+        value: POST
+      - path: '$$.request.url'
+        operator: contains
+        value: payment-service/v1/charges
+    count: 1
   assertions:
-    - path: $.request.body.amount
+    - path: $.match.request.body.amount
       operator: eq
       value: 1998
 ```
 
-The engine finds all captured HTTP calls matching the `origin`, `method`, and `url` pattern, then evaluates each assertion against the matched traffic. If no calls match, or if any assertion fails, the test fails with a clear message showing what was expected vs. what was captured.
+The engine filters captured HTTP calls using the `where` clauses (each using `$$` to reference the candidate entry), then evaluates assertions against `$.match` (the first matched entry). If no calls match, or if any assertion fails, the test fails with a clear message showing what was expected vs. what was captured.
 
 ## Console log capture
 
 Beyond HTTP traffic, the interceptor also captures stdout/stderr from your service containers. This enables assertions on log output:
 
 ```yaml
-- service: order-service
-  consoleAssertions:
-    - level: ERROR
-      count:
+- match:
+    path: '$.consoleLogs'
+    where:
+      - path: '$$.service'
         operator: eq
-        value: 0
+        value: order-service
+      - path: '$$.level'
+        operator: eq
+        value: ERROR
+    count:
+      operator: eq
+      value: 0
 ```
 
 Log levels are auto-detected from common patterns (JSON structured logs, log4j-style prefixes, etc.), so you don't need to configure anything.

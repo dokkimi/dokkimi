@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"testing"
+	"time"
 )
 
 func TestResolveForEachItems(t *testing.T) {
@@ -650,4 +651,374 @@ func TestValueToString(t *testing.T) {
 			t.Errorf("valueToString(%v) = %q, want %q", tt.input, result, tt.expected)
 		}
 	}
+}
+
+func TestRunLoop_NestedLoopBody(t *testing.T) {
+	t.Run("forEach with assertions inside its body executes correctly", func(t *testing.T) {
+		buf := NewStepLogBuffer()
+		now := time.Now()
+		status := 200
+
+		// Add traffic entries for matching
+		for _, origin := range []string{"svc-a", "svc-b", "svc-c"} {
+			o := origin
+			buf.AddHttpLog(HttpLogMessage{
+				Method:          "GET",
+				URL:             "/api",
+				StatusCode:      &status,
+				Timestamp:       now.Format(time.RFC3339Nano),
+				RequestHeaders:  map[string]interface{}{},
+				ResponseHeaders: map[string]interface{}{},
+				ResponseBody:    map[string]interface{}{},
+				Origin:          &o,
+			})
+		}
+
+		varCtx := NewVariableContext()
+		sv := NewStepValidator(buf, varCtx)
+
+		// A forEach loop with assertions nested inside its body (not as siblings)
+		step := TestStep{
+			Action: StepAction{Type: "wait"},
+			Assertions: []AssertionBlock{
+				{
+					ForEach: &ForEachLoop{
+						Items: []interface{}{"svc-a", "svc-b", "svc-c"},
+						As:    "svcName",
+						Assertions: LoopAssertions{Blocks: []AssertionBlock{
+							{
+								Match: &MatchCriteria{
+									Path: "$.traffic",
+									Where: []WhereEntry{
+										{Path: "$$.origin", Operator: "eq", Value: "svc-a"},
+									},
+								},
+								Assertions: []Assertion{
+									{Path: "$.match.request.method", Operator: "eq", Value: "GET"},
+								},
+							},
+						}},
+					},
+				},
+			},
+		}
+		stepExec := StepExecution{
+			StartTime: now.Add(-200 * time.Millisecond).Format(time.RFC3339Nano),
+			EndTime:   now.Add(200 * time.Millisecond).Format(time.RFC3339Nano),
+		}
+
+		results, passed := sv.validateStep(step, stepExec, nil)
+		if !passed {
+			t.Errorf("expected step to pass, got failing results:")
+			for _, r := range results {
+				if !r.Passed {
+					t.Errorf("  path=%s op=%s err=%s actual=%v expected=%v", r.Path, r.Operator, r.Error, r.Actual, r.Expected)
+				}
+			}
+		}
+
+		// Should have 3 iterations * 1 assertion = 3 results (plus possible count results)
+		fieldResults := 0
+		for _, r := range results {
+			if r.ResultKind == "field" && r.Path == "$.match.request.method" {
+				fieldResults++
+			}
+		}
+		if fieldResults != 3 {
+			t.Errorf("expected 3 field assertion results (one per iteration), got %d", fieldResults)
+		}
+	})
+
+	t.Run("forEach with extract inside body saves variables per iteration", func(t *testing.T) {
+		buf := NewStepLogBuffer()
+		now := time.Now()
+		status := 200
+
+		buf.AddHttpLog(HttpLogMessage{
+			Method:          "GET",
+			URL:             "/data",
+			StatusCode:      &status,
+			Timestamp:       now.Format(time.RFC3339Nano),
+			RequestHeaders:  map[string]interface{}{},
+			ResponseHeaders: map[string]interface{}{},
+			ResponseBody:    map[string]interface{}{},
+		})
+
+		varCtx := NewVariableContext()
+		sv := NewStepValidator(buf, varCtx)
+
+		// forEach with extract in the nested body
+		step := TestStep{
+			Action: StepAction{Type: "wait"},
+			Assertions: []AssertionBlock{
+				{
+					ForEach: &ForEachLoop{
+						Items: []interface{}{float64(10), float64(20), float64(30)},
+						As:    "num",
+						// Nested body: extract saves a computed path
+						Assertions: LoopAssertions{Flat: []Assertion{
+							{Path: "$.variables.num", Operator: "exists"},
+						}},
+					},
+				},
+			},
+		}
+		stepExec := StepExecution{
+			StartTime: now.Add(-200 * time.Millisecond).Format(time.RFC3339Nano),
+			EndTime:   now.Add(200 * time.Millisecond).Format(time.RFC3339Nano),
+		}
+
+		results, passed := sv.validateStep(step, stepExec, nil)
+		if !passed {
+			t.Errorf("expected step to pass, got failing results:")
+			for _, r := range results {
+				if !r.Passed {
+					t.Errorf("  path=%s op=%s err=%s", r.Path, r.Operator, r.Error)
+				}
+			}
+		}
+
+		// After the loop completes, the loop variable should be cleaned up
+		if _, ok := varCtx.variables["num"]; ok {
+			t.Error("expected loop variable 'num' to be cleaned up after loop")
+		}
+	})
+}
+
+func TestRunLoop_NestedForEachInsideForEach(t *testing.T) {
+	t.Run("nested forEach inside forEach body executes all iterations", func(t *testing.T) {
+		buf := NewStepLogBuffer()
+		now := time.Now()
+		status := 200
+
+		buf.AddHttpLog(HttpLogMessage{
+			Method:          "GET",
+			URL:             "/api",
+			StatusCode:      &status,
+			Timestamp:       now.Format(time.RFC3339Nano),
+			RequestHeaders:  map[string]interface{}{},
+			ResponseHeaders: map[string]interface{}{},
+			ResponseBody:    map[string]interface{}{},
+		})
+
+		varCtx := NewVariableContext()
+		sv := NewStepValidator(buf, varCtx)
+
+		// Outer forEach iterates ["a", "b"], inner forEach iterates [1, 2]
+		// Each inner iteration asserts that both variables exist
+		step := TestStep{
+			Action: StepAction{Type: "wait"},
+			Assertions: []AssertionBlock{
+				{
+					ForEach: &ForEachLoop{
+						Items: []interface{}{"a", "b"},
+						As:    "outer",
+						// Nested inner forEach inside the outer body
+						ForEach: &ForEachLoop{
+							Items: []interface{}{float64(1), float64(2)},
+							As:    "inner",
+							Assertions: LoopAssertions{Flat: []Assertion{
+								{Path: "$.variables.outer", Operator: "exists"},
+								{Path: "$.variables.inner", Operator: "exists"},
+							}},
+						},
+					},
+				},
+			},
+		}
+		stepExec := StepExecution{
+			StartTime: now.Add(-200 * time.Millisecond).Format(time.RFC3339Nano),
+			EndTime:   now.Add(200 * time.Millisecond).Format(time.RFC3339Nano),
+		}
+
+		results, passed := sv.validateStep(step, stepExec, nil)
+		if !passed {
+			t.Errorf("expected step to pass, got failing results:")
+			for _, r := range results {
+				if !r.Passed {
+					t.Errorf("  path=%s op=%s err=%s actual=%v", r.Path, r.Operator, r.Error, r.Actual)
+				}
+			}
+		}
+
+		// 2 outer iterations * 2 inner iterations * 2 assertions = 8 results
+		fieldResults := 0
+		for _, r := range results {
+			if r.ResultKind == "field" {
+				fieldResults++
+			}
+		}
+		if fieldResults != 8 {
+			t.Errorf("expected 8 field results (2 outer * 2 inner * 2 assertions), got %d", fieldResults)
+		}
+	})
+
+	t.Run("inner forEach can reference outer loop variable", func(t *testing.T) {
+		buf := NewStepLogBuffer()
+		now := time.Now()
+		status := 200
+
+		buf.AddHttpLog(HttpLogMessage{
+			Method:          "GET",
+			URL:             "/test",
+			StatusCode:      &status,
+			Timestamp:       now.Format(time.RFC3339Nano),
+			RequestHeaders:  map[string]interface{}{},
+			ResponseHeaders: map[string]interface{}{},
+			ResponseBody:    map[string]interface{}{},
+		})
+
+		varCtx := NewVariableContext()
+		sv := NewStepValidator(buf, varCtx)
+
+		// Outer sets "letter" to "x", inner checks that "letter" is still accessible
+		step := TestStep{
+			Action: StepAction{Type: "wait"},
+			Assertions: []AssertionBlock{
+				{
+					ForEach: &ForEachLoop{
+						Items: []interface{}{"x"},
+						As:    "letter",
+						ForEach: &ForEachLoop{
+							Items: []interface{}{float64(1)},
+							As:    "num",
+							Assertions: LoopAssertions{Flat: []Assertion{
+								{Path: "$.variables.letter", Operator: "eq", Value: "x"},
+								{Path: "$.variables.num", Operator: "eq", Value: float64(1)},
+							}},
+						},
+					},
+				},
+			},
+		}
+		stepExec := StepExecution{
+			StartTime: now.Add(-200 * time.Millisecond).Format(time.RFC3339Nano),
+			EndTime:   now.Add(200 * time.Millisecond).Format(time.RFC3339Nano),
+		}
+
+		results, passed := sv.validateStep(step, stepExec, nil)
+		if !passed {
+			t.Errorf("expected step to pass, got failing results:")
+			for _, r := range results {
+				if !r.Passed {
+					t.Errorf("  path=%s op=%s err=%s actual=%v expected=%v", r.Path, r.Operator, r.Error, r.Actual, r.Expected)
+				}
+			}
+		}
+	})
+}
+
+func TestRunLoop_RepeatUntilWithSourceFieldShorthands(t *testing.T) {
+	t.Run("repeat until with type source field stops when type matches", func(t *testing.T) {
+		varCtx := NewVariableContext()
+		plan := IterationPlan{
+			Iterations: []Iteration{
+				{Label: "[0]", SetupFn: func() {}},
+				{Label: "[1]", SetupFn: func() {}},
+				{Label: "[2]", SetupFn: func() {}},
+			},
+			LoopName: "typePoll",
+			Repeat: &RepeatLoop{
+				Count: 3,
+				As:    "attempt",
+				Until: []Assertion{
+					{Type: "$.response.body.result", Operator: "eq", Value: "array"},
+				},
+			},
+		}
+
+		var calls int
+		result, err := runLoop(plan, varCtx, func(iterIdx int, iter Iteration) (map[string]interface{}, error) {
+			iter.SetupFn()
+			calls++
+			if iterIdx == 0 {
+				return map[string]interface{}{"body": map[string]interface{}{"result": "waiting"}}, nil
+			}
+			return map[string]interface{}{"body": map[string]interface{}{"result": []interface{}{"a", "b"}}}, nil
+		})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if calls != 2 {
+			t.Errorf("expected 2 calls (until met at idx 1 with type=array), got %d", calls)
+		}
+		if !result.Completed {
+			t.Error("expected completed=true when until triggers")
+		}
+	})
+
+	t.Run("repeat until with count source field stops when count matches", func(t *testing.T) {
+		varCtx := NewVariableContext()
+		plan := IterationPlan{
+			Iterations: []Iteration{
+				{Label: "[0]", SetupFn: func() {}},
+				{Label: "[1]", SetupFn: func() {}},
+				{Label: "[2]", SetupFn: func() {}},
+			},
+			LoopName: "countPoll",
+			Repeat: &RepeatLoop{
+				Count: 3,
+				As:    "attempt",
+				Until: []Assertion{
+					{Count: "$.response.body.items", Operator: "gte", Value: float64(3)},
+				},
+			},
+		}
+
+		var calls int
+		result, err := runLoop(plan, varCtx, func(iterIdx int, iter Iteration) (map[string]interface{}, error) {
+			iter.SetupFn()
+			calls++
+			items := make([]interface{}, iterIdx+1)
+			for i := range items {
+				items[i] = float64(i)
+			}
+			return map[string]interface{}{"body": map[string]interface{}{"items": items}}, nil
+		})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if calls != 3 {
+			t.Errorf("expected 3 calls (until met at idx 2 with count>=3), got %d", calls)
+		}
+		if !result.Completed {
+			t.Error("expected completed=true when until triggers")
+		}
+	})
+}
+
+func TestRunLoop_ExtractWithDynamicKeys(t *testing.T) {
+	t.Run("forEach extract with interpolated keys saves per-iteration variables", func(t *testing.T) {
+		varCtx := NewVariableContext()
+		plan := IterationPlan{
+			Iterations: []Iteration{
+				{Label: "user-0", SetupFn: func() { varCtx.Set("idx", float64(0)) }},
+				{Label: "user-1", SetupFn: func() { varCtx.Set("idx", float64(1)) }},
+				{Label: "user-2", SetupFn: func() { varCtx.Set("idx", float64(2)) }},
+			},
+			LoopName: "users",
+		}
+
+		_, err := runLoop(plan, varCtx, func(iterIdx int, iter Iteration) (map[string]interface{}, error) {
+			iter.SetupFn()
+			// Simulate that variable extraction happens with dynamic key "user_{{idx}}"
+			key := fmt.Sprintf("user_%d", iterIdx)
+			varCtx.Set(key, fmt.Sprintf("result_%d", iterIdx))
+			return nil, nil
+		})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		// Verify dynamic keys were stored correctly
+		for i := 0; i < 3; i++ {
+			key := fmt.Sprintf("user_%d", i)
+			val, ok := varCtx.variables[key]
+			if !ok {
+				t.Errorf("expected variable %q to exist", key)
+			} else if val != fmt.Sprintf("result_%d", i) {
+				t.Errorf("variable %q = %v, want result_%d", key, val, i)
+			}
+		}
+	})
 }

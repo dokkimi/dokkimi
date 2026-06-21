@@ -33,8 +33,14 @@ tests:
                 operator: contains
                 value: title is required
           - match:
-              method: POST
-              url: traffic-tester/query
-            count:
-              operator: eq
-              value: 0
+              path: "$.traffic"
+              where:
+                - path: "$$.request.method"
+                  operator: eq
+                  value: POST
+                - path: "$$.request.url"
+                  operator: contains
+                  value: traffic-tester/query
+              count:
+                operator: eq
+                value: 0

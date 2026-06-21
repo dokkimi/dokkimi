@@ -1,3 +1,5 @@
+> **Superseded** by [`docs/proposed/consistent-root-document.md`](../proposed/consistent-root-document.md) — loops now use nested body structure (assertions/extract inside the loop object) instead of sibling keys.
+
 # Design: Loop Support in Test Definitions
 
 ## Problem

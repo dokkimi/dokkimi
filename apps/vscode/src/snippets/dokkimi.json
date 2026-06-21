@@ -381,19 +381,22 @@
     ]
   },
 
-  "Dokkimi: Assertion Block (HTTP Call)": {
+  "Dokkimi: Assertion Block (HTTP Traffic)": {
     "prefix": "dok-assert-traffic",
-    "description": "Assert on observed inter-service HTTP traffic",
+    "description": "Assert on observed inter-service HTTP traffic using match/where",
     "body": [
       "{",
       "  \"match\": {",
-      "    \"origin\": \"${1:source-service}\",",
-      "    \"method\": \"${2|GET,POST,PUT,DELETE,PATCH|}\",",
-      "    \"url\": \"${3:target-service/path}\"",
+      "    \"path\": \"\\$.traffic\",",
+      "    \"where\": [",
+      "      { \"path\": \"\\$\\$.origin\", \"operator\": \"eq\", \"value\": \"${1:source-service}\" },",
+      "      { \"path\": \"\\$\\$.request.method\", \"operator\": \"eq\", \"value\": \"${2|GET,POST,PUT,DELETE,PATCH|}\" },",
+      "      { \"path\": \"\\$\\$.request.url\", \"operator\": \"contains\", \"value\": \"${3:target-service/path}\" }",
+      "    ],",
+      "    \"count\": ${4:1}",
       "  },",
-      "  \"count\": { \"operator\": \"${4|eq,gte,lte,gt,lt|}\", \"value\": ${5:1} },",
       "  \"assertions\": [",
-      "    { \"path\": \"$.response.status\", \"operator\": \"eq\", \"value\": ${6:200} }",
+      "    { \"path\": \"\\$.match.response.status\", \"operator\": \"eq\", \"value\": ${5:200} }",
       "  ]",
       "}"
     ]
@@ -401,17 +404,18 @@
 
   "Dokkimi: Assertion Block (Console Log)": {
     "prefix": "dok-assert-logs",
-    "description": "Assert on a service's console log output",
+    "description": "Assert on a service's console log output using match/where",
     "body": [
       "{",
-      "  \"service\": \"${1:service-name}\",",
-      "  \"consoleAssertions\": [",
-      "    {",
-      "      \"level\": \"${2|INFO,WARN,ERROR,DEBUG|}\",",
-      "      \"message\": { \"operator\": \"${3|contains,eq,matches|}\", \"value\": \"${4:expected message}\" },",
-      "      \"count\": { \"operator\": \"${5|gte,eq,lte,gt,lt|}\", \"value\": ${6:1} }",
-      "    }",
-      "  ]",
+      "  \"match\": {",
+      "    \"path\": \"\\$.consoleLogs\",",
+      "    \"where\": [",
+      "      { \"path\": \"\\$\\$.service\", \"operator\": \"eq\", \"value\": \"${1:service-name}\" },",
+      "      { \"path\": \"\\$\\$.level\", \"operator\": \"eq\", \"value\": \"${2|INFO,WARN,ERROR,DEBUG|}\" },",
+      "      { \"path\": \"\\$\\$.message\", \"operator\": \"${3|contains,eq,matches|}\", \"value\": \"${4:expected message}\" }",
+      "    ],",
+      "    \"count\": { \"operator\": \"${5|gte,eq,lte,gt,lt|}\", \"value\": ${6:1} }",
+      "  }",
       "}"
     ]
   },

@@ -733,7 +733,6 @@
 
     "TestStep": {
       "type": "object",
-      "required": ["action"],
       "additionalProperties": false,
       "not": {
         "anyOf": [
@@ -1390,16 +1389,24 @@
       "properties": {
         "forEach": {
           "$ref": "#/definitions/ForEachLoop",
-          "description": "Assertion-block forEach — run these assertions once per item. items can be a $.path into the response or a {{variable}} reference."
+          "description": "Assertion-block forEach — run these assertions once per item. items can be a $.path into the document or a {{variable}} reference."
+        },
+        "for": {
+          "$ref": "#/definitions/ForLoop",
+          "description": "Assertion-block for — run these assertions for each value in a numeric range."
+        },
+        "repeat": {
+          "$ref": "#/definitions/RepeatLoop",
+          "description": "Assertion-block repeat — run assertions up to N times with optional until condition."
         },
         "assertions": {
           "type": "array",
-          "description": "Field assertions using dotted paths.",
+          "description": "Field assertions evaluated against the root document ($.response, $.match, $.variables, etc.).",
           "items": { "$ref": "#/definitions/Assertion" }
         },
         "extract": {
           "type": "object",
-          "description": "Extract variables from the matched result.",
+          "description": "Extract variables from the current document context.",
           "additionalProperties": {
             "oneOf": [
               {
@@ -1433,50 +1440,51 @@
         },
         "match": {
           "$ref": "#/definitions/MatchCriteria"
-        },
-        "count": { "$ref": "#/definitions/CountAssertion" },
-        "assertionScope": {
-          "type": "string",
-          "description": "Which matching entries to validate.",
-          "enum": ["all", "first", "last", "any"]
-        },
-        "service": {
-          "type": "string",
-          "description": "Service whose console logs to check (makes this a consoleLog block)."
-        },
-        "consoleAssertions": {
-          "type": "array",
-          "description": "Console log assertions.",
-          "items": { "$ref": "#/definitions/ConsoleLogAssertion" }
         }
       }
     },
 
     "MatchCriteria": {
       "type": "object",
-      "description": "Filter criteria for matching observed HTTP traffic (makes this an httpCall block).",
-      "additionalProperties": false,
-      "properties": {
-        "origin": {
-          "type": "string",
-          "description": "Name of the service that made the request."
-        },
-        "method": { "type": "string", "description": "HTTP method to match." },
-        "url": {
-          "type": "string",
-          "description": "Target URL pattern: 'service-name/path'."
-        }
-      }
-    },
-
-    "Assertion": {
-      "type": "object",
-      "required": ["path", "operator"],
+      "description": "Filter an array in the root document. Use where clauses with $$ to reference each candidate entry.",
+      "required": ["path"],
       "additionalProperties": false,
       "properties": {
         "path": {
           "type": "string",
-          "description": "Dotted path to the value (e.g., '$.response.status', '$.response.body.user.id')."
+          "description": "Root document path to the array to filter (e.g. '$.traffic', '$.consoleLogs')."
+        },
+        "where": {
+          "type": "array",
+          "description": "Filter conditions. Each entry uses $$.field to reference the candidate element.",
+          "items": { "$ref": "#/definitions/WhereEntry" }
+        },
+        "count": {
+          "oneOf": [
+            {
+              "type": "integer",
+              "description": "Exact expected count of matched entries.",
+              "minimum": 0
+            },
+            { "$ref": "#/definitions/CountAssertion" }
+          ],
+          "description": "Assert on the number of matched entries. Integer for exact match, or {operator, value} object."
+        },
+        "as": {
+          "type": "string",
+          "description": "Save matched entries to a variable accessible as $.variables.<name> in subsequent blocks."
+        }
+      }
+    },
+
+    "WhereEntry": {
+      "type": "object",
+      "description": "A filter condition for match.where. Use path for assertion form, or or/and/not for combinators.",
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Path into the candidate entry (must start with '$$.')."
         },
         "operator": {
           "type": "string",
@@ -1498,16 +1506,106 @@
             "notExists",
             "in",
             "notIn",
-            "type",
-            "length",
             "isEmpty",
-            "notEmpty",
-            "arrayContains",
-            "arrayNotContains"
+            "notEmpty"
           ]
         },
         "value": {
           "description": "Expected value. Supports {{variable}} interpolation in strings."
+        },
+        "or": {
+          "type": "array",
+          "description": "Logical OR — at least one entry must match.",
+          "items": { "$ref": "#/definitions/WhereEntry" }
+        },
+        "and": {
+          "type": "array",
+          "description": "Logical AND — all entries must match.",
+          "items": { "$ref": "#/definitions/WhereEntry" }
+        },
+        "not": {
+          "$ref": "#/definitions/WhereEntry",
+          "description": "Logical NOT — entry must not match."
+        }
+      }
+    },
+
+    "Assertion": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "An assertion with exactly one source field (path, count, type, keys, values, or entries) plus an operator and optional value.",
+      "properties": {
+        "path": {
+          "oneOf": [
+            {
+              "type": "string",
+              "description": "Dotted path to the value (e.g. '$.response.status', '$.match.request.body.amount')."
+            },
+            {
+              "type": "object",
+              "description": "Path with transform — resolve a path and apply a transform before comparing.",
+              "required": ["from"],
+              "additionalProperties": false,
+              "properties": {
+                "from": {
+                  "type": "string",
+                  "description": "Source path (must start with $.)."
+                },
+                "transform": {
+                  "type": "string",
+                  "description": "Transform to apply before comparison.",
+                  "enum": ["length", "type", "keys", "values", "entries"]
+                }
+              }
+            }
+          ]
+        },
+        "count": {
+          "type": "string",
+          "description": "Source field shorthand — get the length of the array/object at this path."
+        },
+        "type": {
+          "type": "string",
+          "description": "Source field shorthand — get the JS type of the value at this path."
+        },
+        "keys": {
+          "type": "string",
+          "description": "Source field shorthand — get the keys of the object at this path."
+        },
+        "values": {
+          "type": "string",
+          "description": "Source field shorthand — get the values of the object at this path."
+        },
+        "entries": {
+          "type": "string",
+          "description": "Source field shorthand — get [key, value] pairs of the object at this path."
+        },
+        "operator": {
+          "type": "string",
+          "description": "Comparison operator.",
+          "enum": [
+            "eq",
+            "eqIgnoreCase",
+            "ne",
+            "gt",
+            "gte",
+            "lt",
+            "lte",
+            "contains",
+            "containsIgnoreCase",
+            "notContains",
+            "notContainsIgnoreCase",
+            "matches",
+            "exists",
+            "notExists",
+            "in",
+            "notIn",
+            "isEmpty",
+            "notEmpty"
+          ]
+        },
+        "value": {
+          "description": "Expected value. Can be a literal, {{variable}}, or a ValueRef object {from, transform?}."
         },
         "disabled": {
           "type": "boolean",
@@ -1516,41 +1614,48 @@
       }
     },
 
-    "ConsoleLogAssertion": {
-      "type": "object",
-      "additionalProperties": false,
+    "LoopBodyProperties": {
+      "description": "Properties that can appear inside any loop body. Which ones are valid depends on the level (test, step, assertion-block) — the CLI validator enforces level rules.",
       "properties": {
-        "level": {
-          "type": "string",
-          "description": "Filter by log level.",
-          "enum": ["INFO", "WARN", "ERROR", "DEBUG"]
+        "steps": {
+          "type": "array",
+          "description": "Steps to execute per iteration (test-level loops).",
+          "items": { "$ref": "#/definitions/TestStep" }
         },
-        "message": {
-          "type": "object",
-          "description": "Filter by message content.",
-          "additionalProperties": false,
-          "properties": {
-            "operator": {
-              "type": "string",
-              "description": "Match mode: 'eq' (exact), 'contains' (substring), 'containsIgnoreCase', 'matches' (regex).",
-              "enum": ["eq", "contains", "containsIgnoreCase", "matches"]
-            },
-            "value": {
-              "type": "string",
-              "description": "Message text to match. Supports {{variable}} interpolation."
-            }
+        "action": { "$ref": "#/definitions/AnyAction" },
+        "assertions": {
+          "type": "array",
+          "description": "Assertions to validate per iteration. At step level these are AssertionBlock objects; at assertion-block level these are flat Assertion objects.",
+          "items": {
+            "oneOf": [
+              { "$ref": "#/definitions/AssertionBlock" },
+              { "$ref": "#/definitions/Assertion" }
+            ]
           }
         },
-        "count": { "$ref": "#/definitions/CountAssertion" },
-        "disabled": { "type": "boolean", "description": "Skip this assertion." }
+        "extract": {
+          "type": "object",
+          "description": "Extract variables per iteration.",
+          "additionalProperties": {
+            "oneOf": [
+              { "type": "string" },
+              { "$ref": "#/definitions/ExtractRuleWithTransform" }
+            ]
+          }
+        },
+        "match": { "$ref": "#/definitions/MatchCriteria" },
+        "forEach": { "$ref": "#/definitions/ForEachLoop" },
+        "for": { "$ref": "#/definitions/ForLoop" },
+        "repeat": { "$ref": "#/definitions/RepeatLoop" }
       }
     },
 
     "ForEachLoop": {
       "type": "object",
-      "description": "Iterate over an array of items. Each iteration sets the loop variable (as) to the current item.",
+      "description": "Iterate over an array of items. Each iteration sets the loop variable (as) to the current item. Place loop body content (steps, assertions, extract) inside this object.",
       "required": ["items", "as"],
       "additionalProperties": false,
+      "allOf": [{ "$ref": "#/definitions/LoopBodyProperties" }],
       "properties": {
         "items": {
           "oneOf": [
@@ -1576,15 +1681,24 @@
           "type": "integer",
           "description": "Milliseconds to wait between iterations.",
           "minimum": 0
-        }
+        },
+        "steps": true,
+        "action": true,
+        "assertions": true,
+        "extract": true,
+        "match": true,
+        "forEach": true,
+        "for": true,
+        "repeat": true
       }
     },
 
     "ForLoop": {
       "type": "object",
-      "description": "Numeric range loop. Iterates from 'from' to 'to' (inclusive) with optional step.",
+      "description": "Numeric range loop. Iterates from 'from' to 'to' (inclusive) with optional step. Place loop body content (steps, assertions, extract) inside this object.",
       "required": ["from", "to", "as"],
       "additionalProperties": false,
+      "allOf": [{ "$ref": "#/definitions/LoopBodyProperties" }],
       "properties": {
         "from": {
           "type": "integer",
@@ -1611,15 +1725,24 @@
           "type": "integer",
           "description": "Milliseconds to wait between iterations.",
           "minimum": 0
-        }
+        },
+        "steps": true,
+        "action": true,
+        "assertions": true,
+        "extract": true,
+        "match": true,
+        "forEach": true,
+        "for": true,
+        "repeat": true
       }
     },
 
     "RepeatLoop": {
       "type": "object",
-      "description": "Repeat a fixed number of times, optionally stopping early when 'until' assertions all pass.",
+      "description": "Repeat a fixed number of times, optionally stopping early when 'until' assertions all pass. Place loop body content (steps, assertions, extract) inside this object.",
       "required": ["count", "as"],
       "additionalProperties": false,
+      "allOf": [{ "$ref": "#/definitions/LoopBodyProperties" }],
       "properties": {
         "count": {
           "type": "integer",
@@ -1643,7 +1766,15 @@
           "type": "array",
           "description": "Assertions checked after each iteration. When ALL pass, the loop stops early. The loop always executes at least once.",
           "items": { "$ref": "#/definitions/Assertion" }
-        }
+        },
+        "steps": true,
+        "action": true,
+        "assertions": true,
+        "extract": true,
+        "match": true,
+        "forEach": true,
+        "for": true,
+        "repeat": true
       }
     },
 

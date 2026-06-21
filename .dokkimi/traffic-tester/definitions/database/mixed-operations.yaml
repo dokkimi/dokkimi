@@ -38,8 +38,8 @@ tests:
               - path: $.response.status
                 operator: eq
                 value: 200
-              - path: $.response.body.queryResults
-                operator: length
+              - count: $.response.body.queryResults
+                operator: eq
                 value: 3
   - name: Mixed HTTP call and database queries with logging
     variables:
@@ -78,33 +78,51 @@ tests:
               - path: $.response.status
                 operator: eq
                 value: 200
-              - path: $.response.body.results
-                operator: length
+              - count: $.response.body.results
+                operator: eq
                 value: 1
               - path: $.response.body.results[0].pong
                 operator: eq
                 value: true
-              - path: $.response.body.queryResults
-                operator: length
+              - count: $.response.body.queryResults
+                operator: eq
                 value: 2
           - match:
-              origin: service-a
-              method: POST
-              url: service-b/ping
-            count:
-              operator: eq
-              value: 1
-          - service: service-a
-            consoleAssertions:
-              - message:
+              path: "$.traffic"
+              where:
+                - path: "$$.origin"
+                  operator: eq
+                  value: service-a
+                - path: "$$.request.method"
+                  operator: eq
+                  value: POST
+                - path: "$$.request.url"
+                  operator: contains
+                  value: service-b/ping
+              count:
+                operator: eq
+                value: 1
+          - match:
+              path: "$.consoleLogs"
+              where:
+                - path: "$$.service"
+                  operator: eq
+                  value: service-a
+                - path: "$$.message"
                   operator: contains
                   value: 'MIXED: Starting combined operation'
-                count:
-                  operator: gte
-                  value: 1
-              - message:
+              count:
+                operator: gte
+                value: 1
+          - match:
+              path: "$.consoleLogs"
+              where:
+                - path: "$$.service"
+                  operator: eq
+                  value: service-a
+                - path: "$$.message"
                   operator: contains
                   value: 'MIXED: Operation complete'
-                count:
-                  operator: gte
-                  value: 1
+              count:
+                operator: gte
+                value: 1

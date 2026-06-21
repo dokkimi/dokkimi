@@ -2,7 +2,8 @@ import {
   validateAssertionBlock,
   validateExtractRules,
   validateCountAssertion,
-  validateConsoleLogAssertion,
+  validateMatchCriteria,
+  validateWhereEntry,
 } from './validate-assertions';
 import { makeResult } from './test-helpers';
 
@@ -441,17 +442,52 @@ describe('validateCountAssertion', () => {
 });
 
 // ---------------------------------------------------------------------------
-// validateConsoleLogAssertion
+// validateWhereEntry
 // ---------------------------------------------------------------------------
 
-describe('validateConsoleLogAssertion', () => {
-  it('accepts a valid console log assertion', () => {
+describe('validateWhereEntry', () => {
+  it('accepts a valid assertion-form where entry', () => {
     const r = makeResult();
-    validateConsoleLogAssertion(
+    validateWhereEntry(
+      { path: '$$.origin', operator: 'eq', value: 'svc-a' },
+      'ctx',
+      r,
+    );
+    expect(r.errors).toHaveLength(0);
+  });
+
+  it('errors when path does not start with $$.', () => {
+    const r = makeResult();
+    validateWhereEntry(
+      { path: '$.origin', operator: 'eq', value: 'svc-a' },
+      'ctx',
+      r,
+    );
+    expect(r.errors.some((e) => e.includes('must start with "$$."'))).toBe(
+      true,
+    );
+  });
+
+  it('errors when entry is not an object', () => {
+    const r = makeResult();
+    validateWhereEntry('bad', 'ctx', r);
+    expect(r.errors[0]).toContain('must be an object');
+  });
+
+  it('errors when no form is specified', () => {
+    const r = makeResult();
+    validateWhereEntry({}, 'ctx', r);
+    expect(r.errors.some((e) => e.includes('must have one of'))).toBe(true);
+  });
+
+  it('accepts or combinator', () => {
+    const r = makeResult();
+    validateWhereEntry(
       {
-        level: 'INFO',
-        message: { operator: 'contains', value: 'hello' },
-        count: { operator: 'gte', value: 1 },
+        or: [
+          { path: '$$.origin', operator: 'eq', value: 'a' },
+          { path: '$$.origin', operator: 'eq', value: 'b' },
+        ],
       },
       'ctx',
       r,
@@ -459,97 +495,152 @@ describe('validateConsoleLogAssertion', () => {
     expect(r.errors).toHaveLength(0);
   });
 
-  it('accepts all valid levels', () => {
-    for (const level of ['INFO', 'WARN', 'ERROR', 'DEBUG']) {
-      const r = makeResult();
-      validateConsoleLogAssertion(
-        {
-          level,
-          count: { operator: 'eq', value: 0 },
-        },
-        'ctx',
-        r,
-      );
-      expect(r.errors).toHaveLength(0);
-    }
+  it('errors when or is empty', () => {
+    const r = makeResult();
+    validateWhereEntry({ or: [] }, 'ctx', r);
+    expect(r.errors.some((e) => e.includes('must be a non-empty array'))).toBe(
+      true,
+    );
   });
 
-  it('errors when not an object', () => {
+  it('accepts and combinator', () => {
     const r = makeResult();
-    validateConsoleLogAssertion('bad', 'ctx', r);
-    expect(r.errors[0]).toContain('must be an object');
-  });
-
-  it('errors on invalid level', () => {
-    const r = makeResult();
-    validateConsoleLogAssertion(
+    validateWhereEntry(
       {
-        level: 'TRACE',
-        count: { operator: 'eq', value: 0 },
+        and: [
+          { path: '$$.method', operator: 'eq', value: 'POST' },
+          { path: '$$.origin', operator: 'eq', value: 'svc-a' },
+        ],
       },
       'ctx',
       r,
     );
-    expect(r.errors.some((e) => e.includes('level must be one of'))).toBe(true);
+    expect(r.errors).toHaveLength(0);
   });
 
-  it('errors when message is not an object', () => {
+  it('accepts not combinator', () => {
     const r = makeResult();
-    validateConsoleLogAssertion(
+    validateWhereEntry(
+      { not: { path: '$$.origin', operator: 'eq', value: 'svc-a' } },
+      'ctx',
+      r,
+    );
+    expect(r.errors).toHaveLength(0);
+  });
+
+  it('recurses into nested or entries', () => {
+    const r = makeResult();
+    validateWhereEntry(
       {
-        message: 'bad',
-        count: { operator: 'eq', value: 0 },
+        or: [{ path: 'bad', operator: 'eq', value: 'x' }],
       },
       'ctx',
       r,
     );
+    expect(r.errors.some((e) => e.includes('must start with "$$."'))).toBe(
+      true,
+    );
+  });
+
+  it('errors on invalid operator in assertion form', () => {
+    const r = makeResult();
+    validateWhereEntry(
+      { path: '$$.origin', operator: 'bogus', value: 'x' },
+      'ctx',
+      r,
+    );
+    expect(r.errors.some((e) => e.includes('operator must be one of'))).toBe(
+      true,
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// validateMatchCriteria
+// ---------------------------------------------------------------------------
+
+describe('validateMatchCriteria', () => {
+  it('accepts a valid match with path and where', () => {
+    const r = makeResult();
+    validateMatchCriteria(
+      {
+        path: '$.traffic',
+        where: [{ path: '$$.origin', operator: 'eq', value: 'svc-a' }],
+      },
+      'ctx',
+      r,
+    );
+    expect(r.errors).toHaveLength(0);
+  });
+
+  it('accepts match with only path (no where = match all)', () => {
+    const r = makeResult();
+    validateMatchCriteria({ path: '$.traffic' }, 'ctx', r);
+    expect(r.errors).toHaveLength(0);
+  });
+
+  it('errors when path is missing', () => {
+    const r = makeResult();
+    validateMatchCriteria({ where: [] }, 'ctx', r);
+    expect(r.errors.some((e) => e.includes('"path" is required'))).toBe(true);
+  });
+
+  it('errors when path does not start with $.', () => {
+    const r = makeResult();
+    validateMatchCriteria({ path: 'traffic' }, 'ctx', r);
+    expect(r.errors.some((e) => e.includes('must start with "$."'))).toBe(true);
+  });
+
+  it('errors when match is not an object', () => {
+    const r = makeResult();
+    validateMatchCriteria('bad', 'ctx', r);
+    expect(r.errors.some((e) => e.includes('"match" must be an object'))).toBe(
+      true,
+    );
+  });
+
+  it('accepts count as a number', () => {
+    const r = makeResult();
+    validateMatchCriteria({ path: '$.traffic', count: 3 }, 'ctx', r);
+    expect(r.errors).toHaveLength(0);
+  });
+
+  it('accepts count as an object', () => {
+    const r = makeResult();
+    validateMatchCriteria(
+      { path: '$.traffic', count: { operator: 'gte', value: 1 } },
+      'ctx',
+      r,
+    );
+    expect(r.errors).toHaveLength(0);
+  });
+
+  it('errors on negative count number', () => {
+    const r = makeResult();
+    validateMatchCriteria({ path: '$.traffic', count: -1 }, 'ctx', r);
     expect(
-      r.errors.some((e) => e.includes('"message" must be an object')),
+      r.errors.some((e) => e.includes('must be a non-negative integer')),
     ).toBe(true);
   });
 
-  it('errors on invalid message operator', () => {
+  it('accepts as field', () => {
     const r = makeResult();
-    validateConsoleLogAssertion(
-      {
-        message: { operator: 'bogus', value: 'hi' },
-        count: { operator: 'eq', value: 0 },
-      },
-      'ctx',
-      r,
-    );
-    expect(r.errors.some((e) => e.includes('operator must be one of'))).toBe(
+    validateMatchCriteria({ path: '$.traffic', as: 'myMatches' }, 'ctx', r);
+    expect(r.errors).toHaveLength(0);
+  });
+
+  it('errors when as is empty string', () => {
+    const r = makeResult();
+    validateMatchCriteria({ path: '$.traffic', as: '' }, 'ctx', r);
+    expect(r.errors.some((e) => e.includes('"as" must be a non-empty'))).toBe(
       true,
     );
   });
 
-  it('errors when message value is not a string', () => {
+  it('warns on unknown keys', () => {
     const r = makeResult();
-    validateConsoleLogAssertion(
-      {
-        message: { operator: 'contains', value: 123 },
-        count: { operator: 'eq', value: 0 },
-      },
-      'ctx',
-      r,
-    );
-    expect(r.errors.some((e) => e.includes('value must be a string'))).toBe(
-      true,
-    );
-  });
-
-  it('validates nested count assertion', () => {
-    const r = makeResult();
-    validateConsoleLogAssertion(
-      {
-        count: { operator: 'bogus', value: 1 },
-      },
-      'ctx',
-      r,
-    );
-    expect(r.errors.some((e) => e.includes('operator must be one of'))).toBe(
-      true,
-    );
+    validateMatchCriteria({ path: '$.traffic', bogus: true }, 'ctx', r);
+    expect(r.warnings.some((w) => w.includes('unknown property'))).toBe(true);
   });
 });
 
@@ -570,14 +661,6 @@ describe('validateAssertionBlock', () => {
     expect(r.errors).toHaveLength(0);
   });
 
-  it('errors on invalid assertionScope', () => {
-    const r = makeResult();
-    validateAssertionBlock({ assertionScope: 'bogus' }, 'ctx', r);
-    expect(
-      r.errors.some((e) => e.includes('assertionScope must be one of')),
-    ).toBe(true);
-  });
-
   it('errors when match is not an object', () => {
     const r = makeResult();
     validateAssertionBlock({ match: 'bad' }, 'ctx', r);
@@ -590,33 +673,13 @@ describe('validateAssertionBlock', () => {
     const r = makeResult();
     validateAssertionBlock(
       {
-        match: { origin: 'svc-a', method: 'POST', url: 'svc-b/api' },
-        assertions: [{ path: '$.response.status', operator: 'eq', value: 200 }],
-      },
-      'ctx',
-      r,
-    );
-    expect(r.errors).toHaveLength(0);
-  });
-
-  it('warns when match url contains a port', () => {
-    const r = makeResult();
-    validateAssertionBlock(
-      {
-        match: { url: 'svc:3000/api' },
-      },
-      'ctx',
-      r,
-    );
-    expect(r.warnings.some((w) => w.includes('contains a port'))).toBe(true);
-  });
-
-  it('validates count in assertion block', () => {
-    const r = makeResult();
-    validateAssertionBlock(
-      {
-        match: { origin: 'svc' },
-        count: { operator: 'eq', value: 1 },
+        match: {
+          path: '$.traffic',
+          where: [{ path: '$$.origin', operator: 'eq', value: 'svc-a' }],
+        },
+        assertions: [
+          { path: '$.match.response.status', operator: 'eq', value: 200 },
+        ],
       },
       'ctx',
       r,
@@ -668,31 +731,6 @@ describe('validateAssertionBlock', () => {
     ).toBe(true);
   });
 
-  it('validates consoleAssertions', () => {
-    const r = makeResult();
-    validateAssertionBlock(
-      {
-        consoleAssertions: [
-          {
-            level: 'INFO',
-            count: { operator: 'gte', value: 1 },
-          },
-        ],
-      },
-      'ctx',
-      r,
-    );
-    expect(r.errors).toHaveLength(0);
-  });
-
-  it('errors when consoleAssertions is not an array', () => {
-    const r = makeResult();
-    validateAssertionBlock({ consoleAssertions: 'bad' }, 'ctx', r);
-    expect(
-      r.errors.some((e) => e.includes('"consoleAssertions" must be an array')),
-    ).toBe(true);
-  });
-
   it('warns on unknown keys', () => {
     const r = makeResult();
     validateAssertionBlock({ bogus: true }, 'ctx', r);
@@ -701,15 +739,106 @@ describe('validateAssertionBlock', () => {
     );
   });
 
-  describe('forEach', () => {
-    it('accepts a valid forEach with inline items array and assertions', () => {
+  describe('assertion source fields', () => {
+    it('accepts assertion with path string', () => {
       const r = makeResult();
       validateAssertionBlock(
         {
-          forEach: { items: ['a', 'b', 'c'], as: 'item' },
           assertions: [
             { path: '$.response.status', operator: 'eq', value: 200 },
           ],
+        },
+        'ctx',
+        r,
+      );
+      expect(r.errors).toHaveLength(0);
+    });
+
+    it('accepts assertion with path object (PathWithTransform)', () => {
+      const r = makeResult();
+      validateAssertionBlock(
+        {
+          assertions: [
+            {
+              path: { from: '$.response.body.items', transform: 'length' },
+              operator: 'eq',
+              value: 3,
+            },
+          ],
+        },
+        'ctx',
+        r,
+      );
+      expect(r.errors).toHaveLength(0);
+    });
+
+    it('accepts assertion with count shorthand', () => {
+      const r = makeResult();
+      validateAssertionBlock(
+        {
+          assertions: [{ count: '$.traffic', operator: 'gte', value: 1 }],
+        },
+        'ctx',
+        r,
+      );
+      expect(r.errors).toHaveLength(0);
+    });
+
+    it('accepts assertion with type shorthand', () => {
+      const r = makeResult();
+      validateAssertionBlock(
+        {
+          assertions: [
+            { type: '$.response.body.id', operator: 'eq', value: 'number' },
+          ],
+        },
+        'ctx',
+        r,
+      );
+      expect(r.errors).toHaveLength(0);
+    });
+
+    it('errors when no source field is present', () => {
+      const r = makeResult();
+      validateAssertionBlock(
+        {
+          assertions: [{ operator: 'eq', value: 200 }],
+        },
+        'ctx',
+        r,
+      );
+      expect(
+        r.errors.some((e) => e.includes('must have exactly one source field')),
+      ).toBe(true);
+    });
+
+    it('errors when multiple source fields are present', () => {
+      const r = makeResult();
+      validateAssertionBlock(
+        {
+          assertions: [{ path: '$.x', count: '$.y', operator: 'eq', value: 1 }],
+        },
+        'ctx',
+        r,
+      );
+      expect(
+        r.errors.some((e) => e.includes('only one source field allowed')),
+      ).toBe(true);
+    });
+  });
+
+  describe('forEach', () => {
+    it('accepts a valid forEach with inline items array and nested assertions', () => {
+      const r = makeResult();
+      validateAssertionBlock(
+        {
+          forEach: {
+            items: ['a', 'b', 'c'],
+            as: 'item',
+            assertions: [
+              { path: '$.response.status', operator: 'eq', value: 200 },
+            ],
+          },
         },
         'ctx',
         r,
@@ -721,47 +850,18 @@ describe('validateAssertionBlock', () => {
       const r = makeResult();
       validateAssertionBlock(
         {
-          forEach: { items: '{{myList}}', as: 'item' },
-          assertions: [
-            { path: '$.response.status', operator: 'eq', value: 200 },
-          ],
+          forEach: {
+            items: '{{myList}}',
+            as: 'item',
+            assertions: [
+              { path: '$.response.status', operator: 'eq', value: 200 },
+            ],
+          },
         },
         'ctx',
         r,
       );
       expect(r.errors).toHaveLength(0);
-    });
-
-    it('errors when forEach is present with for', () => {
-      const r = makeResult();
-      validateAssertionBlock(
-        {
-          for: { from: 0, to: 5, as: 'i' },
-        },
-        'ctx',
-        r,
-      );
-      expect(
-        r.errors.some((e) =>
-          e.includes('"for" is not supported on assertion blocks'),
-        ),
-      ).toBe(true);
-    });
-
-    it('errors when forEach is present with repeat', () => {
-      const r = makeResult();
-      validateAssertionBlock(
-        {
-          repeat: { count: 3, as: 'i' },
-        },
-        'ctx',
-        r,
-      );
-      expect(
-        r.errors.some((e) =>
-          e.includes('"repeat" is not supported on assertion blocks'),
-        ),
-      ).toBe(true);
     });
 
     it('errors when forEach is missing items', () => {
@@ -817,9 +917,65 @@ describe('validateAssertionBlock', () => {
             as: 'val',
             name: 'myLoop',
             delayMs: 100,
+            assertions: [
+              { path: '$.response.status', operator: 'eq', value: 200 },
+            ],
           },
+        },
+        'ctx',
+        r,
+      );
+      expect(r.errors).toHaveLength(0);
+    });
+
+    it('errors when assertions are a sibling of forEach', () => {
+      const r = makeResult();
+      validateAssertionBlock(
+        {
+          forEach: { items: ['a', 'b'], as: 'item' },
           assertions: [
             { path: '$.response.status', operator: 'eq', value: 200 },
+          ],
+        },
+        'ctx',
+        r,
+      );
+      expect(r.errors).toHaveLength(1);
+      expect(r.errors[0]).toContain(
+        '"assertions" must be inside "forEach" body',
+      );
+    });
+  });
+
+  describe('ValueRef detection', () => {
+    it('treats value with $.-prefixed from as ValueRef (no error)', () => {
+      const r = makeResult();
+      validateAssertionBlock(
+        {
+          assertions: [
+            {
+              path: '$.response.status',
+              operator: 'eq',
+              value: { from: '$.variables.expected' },
+            },
+          ],
+        },
+        'ctx',
+        r,
+      );
+      expect(r.errors).toHaveLength(0);
+    });
+
+    it('treats value with non-$. from as literal object (no error)', () => {
+      const r = makeResult();
+      validateAssertionBlock(
+        {
+          assertions: [
+            {
+              path: '$.response.body.price',
+              operator: 'eq',
+              value: { from: '$50', to: '$100' },
+            },
           ],
         },
         'ctx',
@@ -830,6 +986,22 @@ describe('validateAssertionBlock', () => {
   });
 
   describe('path format validation', () => {
+    it('rejects $$ prefix in assertion path (only valid in where)', () => {
+      const r = makeResult();
+      validateAssertionBlock(
+        {
+          assertions: [
+            { path: '$$.origin', operator: 'eq', value: 'service-a' },
+          ],
+        },
+        'ctx',
+        r,
+      );
+      expect(r.errors.some((e) => e.includes('must start with "$."'))).toBe(
+        true,
+      );
+    });
+
     it('errors on assertion path without $. prefix', () => {
       const r = makeResult();
       validateAssertionBlock(

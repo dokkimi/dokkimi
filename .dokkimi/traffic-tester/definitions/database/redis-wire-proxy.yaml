@@ -50,8 +50,8 @@ tests:
               - path: $.response.success
                 operator: eq
                 value: true
-              - path: $.response.data
-                operator: length
+              - count: $.response.data
+                operator: eq
                 value: 0
 
   - name: INCR returns a numeric value
@@ -79,8 +79,8 @@ tests:
               - path: $.response.data[0].value
                 operator: eq
                 value: 11
-              - path: $.response.data[0].value
-                operator: type
+              - type: $.response.data[0].value
+                operator: eq
                 value: number
 
   - name: SET then overwrite and verify
@@ -144,8 +144,8 @@ tests:
               - path: $.response.data[0].value
                 operator: eq
                 value: 1
-              - path: $.response.data[0].value
-                operator: type
+              - type: $.response.data[0].value
+                operator: eq
                 value: number
       - name: Confirm key is gone
         action:
@@ -157,8 +157,8 @@ tests:
               - path: $.response.success
                 operator: eq
                 value: true
-              - path: $.response.data
-                operator: length
+              - count: $.response.data
+                operator: eq
                 value: 0
 
   - name: Hash operations with HSET and HGETALL
@@ -205,8 +205,8 @@ tests:
               - path: $.response.success
                 operator: eq
                 value: true
-              - path: $.response.data[0].value
-                operator: type
+              - type: $.response.data[0].value
+                operator: eq
                 value: number
               - path: $.response.data[0].value
                 operator: eq
@@ -221,8 +221,8 @@ tests:
               - path: $.response.success
                 operator: eq
                 value: true
-              - path: $.response.data
-                operator: length
+              - count: $.response.data
+                operator: eq
                 value: 3
               - path: $.response.data[0].value
                 operator: eq

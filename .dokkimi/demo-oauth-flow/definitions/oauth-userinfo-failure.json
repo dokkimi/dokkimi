@@ -58,83 +58,141 @@
             },
             {
               "match": {
-                "origin": "api-service",
-                "method": "POST",
-                "url": "auth.provider.com/oauth/token"
-              },
-              "count": {
-                "operator": "eq",
-                "value": 1
+                "path": "$.traffic",
+                "where": [
+                  {
+                    "path": "$$.origin",
+                    "operator": "eq",
+                    "value": "api-service"
+                  },
+                  {
+                    "path": "$$.request.method",
+                    "operator": "eq",
+                    "value": "POST"
+                  },
+                  {
+                    "path": "$$.request.url",
+                    "operator": "contains",
+                    "value": "auth.provider.com/oauth/token"
+                  }
+                ],
+                "count": {
+                  "operator": "eq",
+                  "value": 1
+                }
               },
               "assertions": [
                 {
-                  "path": "$.response.status",
+                  "path": "$.match.response.status",
                   "operator": "eq",
                   "value": 200
                 },
                 {
-                  "path": "$.response.body.access_token",
+                  "path": "$.match.response.body.access_token",
                   "operator": "exists"
                 }
               ]
             },
             {
               "match": {
-                "origin": "api-service",
-                "method": "GET",
-                "url": "auth.provider.com/userinfo"
-              },
-              "count": {
-                "operator": "eq",
-                "value": 1
+                "path": "$.traffic",
+                "where": [
+                  {
+                    "path": "$$.origin",
+                    "operator": "eq",
+                    "value": "api-service"
+                  },
+                  {
+                    "path": "$$.request.method",
+                    "operator": "eq",
+                    "value": "GET"
+                  },
+                  {
+                    "path": "$$.request.url",
+                    "operator": "contains",
+                    "value": "auth.provider.com/userinfo"
+                  }
+                ],
+                "count": {
+                  "operator": "eq",
+                  "value": 1
+                }
               },
               "assertions": [
                 {
-                  "path": "$.response.status",
+                  "path": "$.match.response.status",
                   "operator": "eq",
                   "value": 401
                 },
                 {
-                  "path": "$.response.body.error",
+                  "path": "$.match.response.body.error",
                   "operator": "eq",
                   "value": "invalid_token"
                 }
               ]
             },
             {
-              "service": "api-service",
-              "consoleAssertions": [
-                {
-                  "message": {
+              "match": {
+                "path": "$.consoleLogs",
+                "where": [
+                  {
+                    "path": "$$.service",
+                    "operator": "eq",
+                    "value": "api-service"
+                  },
+                  {
+                    "path": "$$.message",
                     "operator": "contains",
                     "value": "Token exchange successful"
-                  },
-                  "count": {
-                    "operator": "eq",
-                    "value": 1
                   }
-                },
-                {
-                  "message": {
+                ],
+                "count": {
+                  "operator": "eq",
+                  "value": 1
+                }
+              }
+            },
+            {
+              "match": {
+                "path": "$.consoleLogs",
+                "where": [
+                  {
+                    "path": "$$.service",
+                    "operator": "eq",
+                    "value": "api-service"
+                  },
+                  {
+                    "path": "$$.message",
                     "operator": "contains",
                     "value": "Userinfo fetch failed"
-                  },
-                  "count": {
-                    "operator": "gte",
-                    "value": 1
                   }
-                },
-                {
-                  "message": {
+                ],
+                "count": {
+                  "operator": "gte",
+                  "value": 1
+                }
+              }
+            },
+            {
+              "match": {
+                "path": "$.consoleLogs",
+                "where": [
+                  {
+                    "path": "$$.service",
+                    "operator": "eq",
+                    "value": "api-service"
+                  },
+                  {
+                    "path": "$$.message",
                     "operator": "contains",
                     "value": "OAuth callback failed"
-                  },
-                  "count": {
-                    "operator": "gte",
-                    "value": 1
                   }
+                ],
+                "count": {
+                  "operator": "gte",
+                  "value": 1
                 }
-              ]
+              }
             }
           ]
         },

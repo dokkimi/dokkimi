@@ -178,55 +178,55 @@
                 "expectedContent": "I don't understand."
               }
             ],
-            "as": "prompt"
-          },
-          "action": {
-            "type": "httpRequest",
-            "method": "POST",
-            "url": "service-a/external-call",
-            "headers": {
-              "Content-Type": "application/json"
-            },
-            "body": {
-              "requests": [
-                {
-                  "baseURL": "http://api.llm-provider.com",
-                  "url": "/v1/chat/completions",
-                  "method": "POST",
-                  "data": {
-                    "model": "gpt-4o",
-                    "messages": [
-                      {
-                        "role": "user",
-                        "content": "{{prompt.content}}"
-                      }
-                    ]
+            "as": "prompt",
+            "action": {
+              "type": "httpRequest",
+              "method": "POST",
+              "url": "service-a/external-call",
+              "headers": {
+                "Content-Type": "application/json"
+              },
+              "body": {
+                "requests": [
+                  {
+                    "baseURL": "http://api.llm-provider.com",
+                    "url": "/v1/chat/completions",
+                    "method": "POST",
+                    "data": {
+                      "model": "gpt-4o",
+                      "messages": [
+                        {
+                          "role": "user",
+                          "content": "{{prompt.content}}"
+                        }
+                      ]
+                    }
                   }
-                }
-              ]
-            }
-          },
-          "assertions": [
-            {
-              "assertions": [
-                {
-                  "path": "$.response.status",
-                  "operator": "eq",
-                  "value": 200
-                },
-                {
-                  "path": "$.response.body.results[0].id",
-                  "operator": "eq",
-                  "value": "{{prompt.expectedId}}"
-                },
-                {
-                  "path": "$.response.body.results[0].choices[0].message.content",
-                  "operator": "contains",
-                  "value": "{{prompt.expectedContent}}"
-                }
-              ]
-            }
-          ]
+                ]
+              }
+            },
+            "assertions": [
+              {
+                "assertions": [
+                  {
+                    "path": "$.response.status",
+                    "operator": "eq",
+                    "value": 200
+                  },
+                  {
+                    "path": "$.response.body.results[0].id",
+                    "operator": "eq",
+                    "value": "{{prompt.expectedId}}"
+                  },
+                  {
+                    "path": "$.response.body.results[0].choices[0].message.content",
+                    "operator": "contains",
+                    "value": "{{prompt.expectedContent}}"
+                  }
+                ]
+              }
+            ]
+          }
         }
       ]
     },
@@ -336,45 +336,45 @@
                 "expectedResult": "email sent successfully"
               }
             ],
-            "as": "tool"
-          },
-          "action": {
-            "type": "httpRequest",
-            "method": "POST",
-            "url": "service-a/external-call",
-            "headers": {
-              "Content-Type": "application/json"
-            },
-            "body": {
-              "requests": [
-                {
-                  "baseURL": "http://api.llm-provider.com",
-                  "url": "/v1/tool-calls",
-                  "method": "POST",
-                  "data": {
-                    "tool": "{{tool.name}}",
-                    "args": "{{tool.args}}"
+            "as": "tool",
+            "action": {
+              "type": "httpRequest",
+              "method": "POST",
+              "url": "service-a/external-call",
+              "headers": {
+                "Content-Type": "application/json"
+              },
+              "body": {
+                "requests": [
+                  {
+                    "baseURL": "http://api.llm-provider.com",
+                    "url": "/v1/tool-calls",
+                    "method": "POST",
+                    "data": {
+                      "tool": "{{tool.name}}",
+                      "args": "{{tool.args}}"
+                    }
                   }
-                }
-              ]
-            }
-          },
-          "assertions": [
-            {
-              "assertions": [
-                {
-                  "path": "$.response.status",
-                  "operator": "eq",
-                  "value": 200
-                },
-                {
-                  "path": "$.response.body.results[0].result",
-                  "operator": "eq",
-                  "value": "{{tool.expectedResult}}"
-                }
-              ]
-            }
-          ]
+                ]
+              }
+            },
+            "assertions": [
+              {
+                "assertions": [
+                  {
+                    "path": "$.response.status",
+                    "operator": "eq",
+                    "value": 200
+                  },
+                  {
+                    "path": "$.response.body.results[0].result",
+                    "operator": "eq",
+                    "value": "{{tool.expectedResult}}"
+                  }
+                ]
+              }
+            ]
+          }
         }
       ]
     },
@@ -511,13 +511,28 @@
             },
             {
               "match": {
-                "origin": "service-a",
-                "method": "POST",
-                "url": "api.llm-provider.com/v1/chat/completions"
-              },
-              "count": {
-                "operator": "eq",
-                "value": 3
+                "path": "$.traffic",
+                "where": [
+                  {
+                    "path": "$$.origin",
+                    "operator": "eq",
+                    "value": "service-a"
+                  },
+                  {
+                    "path": "$$.request.method",
+                    "operator": "eq",
+                    "value": "POST"
+                  },
+                  {
+                    "path": "$$.request.url",
+                    "operator": "contains",
+                    "value": "api.llm-provider.com/v1/chat/completions"
+                  }
+                ],
+                "count": {
+                  "operator": "eq",
+                  "value": 3
+                }
               }
             }
           ]

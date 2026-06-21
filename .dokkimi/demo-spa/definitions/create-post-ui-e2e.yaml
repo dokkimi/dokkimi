@@ -40,16 +40,22 @@ tests:
             - screenshot: post-created
         assertions:
           - match:
-              method: POST
-              url: traffic-tester/query
+              path: "$.traffic"
+              where:
+                - path: "$$.request.method"
+                  operator: eq
+                  value: POST
+                - path: "$$.request.url"
+                  operator: contains
+                  value: traffic-tester/query
             assertions:
-              - path: $.response.status
+              - path: $.match.response.status
                 operator: eq
                 value: 200
-              - path: $.request.body.queries[0].command
+              - path: $.match.request.body.queries[0].command
                 operator: contains
                 value: 'INSERT INTO posts'
-              - path: $.request.body.queries[0].command
+              - path: $.match.request.body.queries[0].command
                 operator: contains
                 value: '{{postTitle}}'
       - name: Verify the post row exists in postgres

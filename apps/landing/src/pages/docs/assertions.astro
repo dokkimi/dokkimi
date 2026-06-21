@@ -10,7 +10,7 @@ import CodeBlock from '../../components/CodeBlock.astro';
   <p>Each step can have an <code>assertions</code> array of blocks. Block type is determined by shape — there are three kinds:</p>
 
   <h2>Self block</h2>
-  <p>Asserts on the step's own response (HTTP response or DB query result). A self block has no <code>match</code> or <code>service</code> field.</p>
+  <p>Asserts on the step's own response (HTTP response or DB query result). A self block has no <code>match</code> field.</p>
   <CodeBlock code={`{
   "assertions": [
     { "path": "$.response.status", "operator": "eq", "value": 201 },
@@ -21,92 +21,133 @@ import CodeBlock from '../../components/CodeBlock.astro';
   ]
 }`} lang="json" />
 
-  <h2>HTTP call block</h2>
-  <p>Asserts on inter-service traffic captured by the interceptor sidecar. Identified by the presence of a <code>match</code> field.</p>
+  <h2>Match block</h2>
+  <p>Asserts on inter-service traffic captured by the interceptor sidecar. A match block uses the <code>match</code> field with a <code>path</code> to select the data source and <code>where</code> clauses to filter entries.</p>
   <CodeBlock code={`{
   "match": {
-    "origin": "api-gateway",
-    "method": "POST",
-    "url": "user-service/api/users"
+    "path": "$.traffic",
+    "where": [
+      { "path": "$$.origin", "operator": "eq", "value": "api-gateway" },
+      { "path": "$$.method", "operator": "eq", "value": "POST" },
+      { "path": "$$.url", "operator": "contains", "value": "user-service/api/users" }
+    ],
+    "count": 1
   },
-  "count": { "operator": "eq", "value": 1 },
-  "assertionScope": "all",
   "assertions": [
-    { "path": "$.request.body.email", "operator": "eq", "value": "{{email}}" },
-    { "path": "$.response.status", "operator": "eq", "value": 201 },
-    { "path": "$.response.body.id", "operator": "exists" }
+    { "path": "$.match.request.body.email", "operator": "eq", "value": "{{email}}" },
+    { "path": "$.match.response.status", "operator": "eq", "value": 201 },
+    { "path": "$.match.response.body.id", "operator": "exists" }
   ]
 }`} lang="json" />
 
   <h3>Match fields</h3>
-  <p>All optional, all support <code>&#123;&#123;variables&#125;&#125;</code>:</p>
-  <table>
-    <thead>
-      <tr><th>Field</th><th>Description</th></tr>
-    </thead>
-    <tbody>
-      <tr><td><code>origin</code></td><td>Service name that made the request</td></tr>
-      <tr><td><code>method</code></td><td>HTTP method to match</td></tr>
-      <tr><td><code>url</code></td><td>Target URL: <code>service-name/path</code>, <code>service-name</code>, or <code>/path</code></td></tr>
-    </tbody>
-  </table>
-
-  <h3>assertionScope</h3>
-  <p>Determines which matching traffic entries are validated:</p>
-  <table>
-    <thead>
-      <tr><th>Value</th><th>Behavior</th></tr>
-    </thead>
-    <tbody>
-      <tr><td><code>all</code> (default)</td><td>All matching entries must pass all assertions</td></tr>
-      <tr><td><code>first</code></td><td>Only the first matching entry is validated</td></tr>
-      <tr><td><code>last</code></td><td>Only the last matching entry is validated</td></tr>
-      <tr><td><code>any</code></td><td>At least one matching entry must pass all assertions</td></tr>
-    </tbody>
-  </table>
-
-  <h3>count</h3>
-  <p>Asserts on the number of matching traffic entries:</p>
-  <CodeBlock code={`"count": { "operator": "eq", "value": 1 }`} lang="json" />
-  <p>Operators: <code>eq</code>, <code>gt</code>, <code>gte</code>, <code>lt</code>, <code>lte</code>. Default: <code>&#123; "operator": "gte", "value": 1 &#125;</code> (at least one match expected).</p>
-
-  <h2>Console log block</h2>
-  <p>Asserts on console output from a specific service during the step's execution. Identified by the presence of a <code>service</code> field.</p>
-  <CodeBlock code={`{
-  "service": "user-service",
-  "consoleAssertions": [
-    {
-      "level": "INFO",
-      "message": { "operator": "contains", "value": "User created" },
-      "count": { "operator": "gte", "value": 1 }
-    },
-    {
-      "level": "ERROR",
-      "count": { "operator": "eq", "value": 0 }
-    },
-    {
-      "message": { "operator": "matches", "value": "Processing order \\\\d+" },
-      "count": { "operator": "gte", "value": 1 }
-    }
-  ]
-}`} lang="json" />
-
-  <h3>ConsoleLogAssertion fields</h3>
   <table>
     <thead>
       <tr><th>Field</th><th>Type</th><th>Required</th><th>Description</th></tr>
     </thead>
     <tbody>
-      <tr><td><code>level</code></td><td>enum</td><td>No</td><td>Filter by log level: <code>INFO</code>, <code>WARN</code>, <code>ERROR</code>, <code>DEBUG</code>. If omitted, matches all levels.</td></tr>
-      <tr><td><code>message</code></td><td>object</td><td>No</td><td>Filter by message content. Has <code>operator</code> (<code>eq</code>, <code>contains</code>, <code>matches</code>) and <code>value</code> (supports <code>&#123;&#123;variables&#125;&#125;</code>).</td></tr>
-      <tr><td><code>count</code></td><td>object</td><td>Yes</td><td>Assert on count of matching logs: <code>&#123; "operator": "eq", "value": 0 &#125;</code></td></tr>
+      <tr><td><code>path</code></td><td>string</td><td>Yes</td><td>Data source to query: <code>$.traffic</code> for HTTP traffic, <code>$.consoleLogs</code> for console output</td></tr>
+      <tr><td><code>where</code></td><td>array</td><td>No</td><td>Filter entries. Each clause uses <code>$$.</code> prefix to reference fields on the matched entry</td></tr>
+      <tr><td><code>count</code></td><td>integer</td><td>No</td><td>Assert exactly this many entries match. If omitted, at least one match is expected.</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Where clauses</h3>
+  <p>Each where clause filters entries using <code>$$.</code>-prefixed paths that reference the candidate entry's fields. All clauses must pass for an entry to match (AND logic). All support <code>&#123;&#123;variables&#125;&#125;</code>:</p>
+  <CodeBlock code={`"where": [
+  { "path": "$$.origin", "operator": "eq", "value": "api-gateway" },
+  { "path": "$$.method", "operator": "eq", "value": "POST" },
+  { "path": "$$.url", "operator": "contains", "value": "/api/users" }
+]`} lang="json" />
+
+  <p>You can use combinators for complex filtering:</p>
+  <CodeBlock code={`"where": [
+  { "or": [
+    { "path": "$$.method", "operator": "eq", "value": "POST" },
+    { "path": "$$.method", "operator": "eq", "value": "PUT" }
+  ]},
+  { "not": { "path": "$$.url", "operator": "contains", "value": "/health" } }
+]`} lang="json" />
+
+  <h3>Assertion paths inside match blocks</h3>
+  <p>Inside a match block, assertion paths reference the matched entry via <code>$.match.*</code> (the first/default match) or <code>$.lastMatch.*</code> (the last match):</p>
+  <CodeBlock code={`"assertions": [
+  { "path": "$.match.response.status", "operator": "eq", "value": 200 },
+  { "path": "$.match.request.body.name", "operator": "exists" }
+]`} lang="json" />
+
+  <h3>Iterating over multiple matches</h3>
+  <p>To assert on each matching entry individually, use a <code>forEach</code> block:</p>
+  <CodeBlock code={`{
+  "match": {
+    "path": "$.traffic",
+    "where": [
+      { "path": "$$.origin", "operator": "eq", "value": "api-gateway" }
+    ]
+  },
+  "forEach": {
+    "items": "$.matches",
+    "as": "entry",
+    "assertions": [
+      { "path": "$.variables.entry.response.status", "operator": "eq", "value": 200 }
+    ]
+  }
+}`} lang="json" />
+
+  <h2>Console log block</h2>
+  <p>Asserts on console output from a specific service during the step's execution. Console assertions use the same <code>match</code> structure with <code>path: "$.consoleLogs"</code>:</p>
+  <CodeBlock code={`{
+  "match": {
+    "path": "$.consoleLogs",
+    "where": [
+      { "path": "$$.service", "operator": "eq", "value": "user-service" },
+      { "path": "$$.level", "operator": "eq", "value": "INFO" },
+      { "path": "$$.message", "operator": "contains", "value": "User created" }
+    ],
+    "count": 1
+  }
+}`} lang="json" />
+
+  <p>To assert zero errors from a service:</p>
+  <CodeBlock code={`{
+  "match": {
+    "path": "$.consoleLogs",
+    "where": [
+      { "path": "$$.service", "operator": "eq", "value": "user-service" },
+      { "path": "$$.level", "operator": "eq", "value": "ERROR" }
+    ],
+    "count": 0
+  }
+}`} lang="json" />
+
+  <p>To assert on message content with regex:</p>
+  <CodeBlock code={`{
+  "match": {
+    "path": "$.consoleLogs",
+    "where": [
+      { "path": "$$.service", "operator": "eq", "value": "user-service" },
+      { "path": "$$.message", "operator": "matches", "value": "Processing order \\\\d+" }
+    ],
+    "count": 1
+  }
+}`} lang="json" />
+
+  <h3>Console log where fields</h3>
+  <table>
+    <thead>
+      <tr><th>Path</th><th>Type</th><th>Description</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>$$.service</code></td><td>string</td><td>Service name that emitted the log</td></tr>
+      <tr><td><code>$$.level</code></td><td>enum</td><td>Log level: <code>INFO</code>, <code>WARN</code>, <code>ERROR</code>, <code>DEBUG</code></td></tr>
+      <tr><td><code>$$.message</code></td><td>string</td><td>Log message content</td></tr>
     </tbody>
   </table>
 
   <h2>Assertion paths</h2>
   <p>All assertion and extract paths use the unified root context. Paths must start with <code>$.</code> followed by the document root field.</p>
 
-  <h3>HTTP responses (self block or HTTP call block)</h3>
+  <h3>HTTP responses (self block or match block)</h3>
   <table>
     <thead>
       <tr><th>Path</th><th>Description</th></tr>
@@ -153,8 +194,8 @@ import CodeBlock from '../../components/CodeBlock.astro';
       <tr><td><code>gte</code></td><td>Yes</td><td>number</td><td>Greater than or equal</td></tr>
       <tr><td><code>lt</code></td><td>Yes</td><td>number</td><td>Less than</td></tr>
       <tr><td><code>lte</code></td><td>Yes</td><td>number</td><td>Less than or equal</td></tr>
-      <tr><td><code>contains</code></td><td>Yes</td><td>string</td><td>Substring match (case-sensitive)</td></tr>
-      <tr><td><code>notContains</code></td><td>Yes</td><td>string</td><td>Substring does NOT match (case-sensitive)</td></tr>
+      <tr><td><code>contains</code></td><td>Yes</td><td>any</td><td>Unified containment: substring match for strings, element check for arrays, key check for objects (case-sensitive)</td></tr>
+      <tr><td><code>notContains</code></td><td>Yes</td><td>any</td><td>Inverse of <code>contains</code> (case-sensitive)</td></tr>
       <tr><td><code>containsIgnoreCase</code></td><td>Yes</td><td>string</td><td>Substring match (case-insensitive)</td></tr>
       <tr><td><code>notContainsIgnoreCase</code></td><td>Yes</td><td>string</td><td>Substring does NOT match (case-insensitive)</td></tr>
       <tr><td><code>matches</code></td><td>Yes</td><td>string (regex)</td><td>Regular expression match</td></tr>
@@ -162,12 +203,8 @@ import CodeBlock from '../../components/CodeBlock.astro';
       <tr><td><code>notExists</code></td><td>No</td><td>—</td><td>Value does not exist</td></tr>
       <tr><td><code>in</code></td><td>Yes</td><td>array</td><td>Value is in the given array</td></tr>
       <tr><td><code>notIn</code></td><td>Yes</td><td>array</td><td>Value is NOT in the given array</td></tr>
-      <tr><td><code>type</code></td><td>Yes</td><td>string</td><td>Type check: <code>string</code>, <code>number</code>, <code>boolean</code>, <code>object</code>, <code>array</code>, <code>null</code></td></tr>
-      <tr><td><code>length</code></td><td>Yes</td><td>number</td><td>Array or string length equals value</td></tr>
       <tr><td><code>isEmpty</code></td><td>No</td><td>—</td><td>Value is empty/null/undefined/empty array/empty object</td></tr>
       <tr><td><code>notEmpty</code></td><td>No</td><td>—</td><td>Value is not empty</td></tr>
-      <tr><td><code>arrayContains</code></td><td>Yes</td><td>any</td><td>Array contains the given element</td></tr>
-      <tr><td><code>arrayNotContains</code></td><td>Yes</td><td>any</td><td>Array does NOT contain the given element</td></tr>
     </tbody>
   </table>
 
@@ -212,7 +249,7 @@ import CodeBlock from '../../components/CodeBlock.astro';
   </table>
 
   <div class="callout">
-    <p><strong><code>ne</code> inherits coercion.</strong> Because <code>ne</code> is <code>!eq</code>, coercion works in reverse: <code>"42" ne 42</code> <em>fails</em> (they're considered equal). If you need to distinguish the string <code>"42"</code> from the number <code>42</code>, use the <code>type</code> operator instead.</p>
+    <p><strong><code>ne</code> inherits coercion.</strong> Because <code>ne</code> is <code>!eq</code>, coercion works in reverse: <code>"42" ne 42</code> <em>fails</em> (they're considered equal). If you need to distinguish the string <code>"42"</code> from the number <code>42</code>, use the <code>type</code> source field instead.</p>
   </div>
 
   <h3>Numeric operators (<code>gt</code>, <code>gte</code>, <code>lt</code>, <code>lte</code>)</h3>
@@ -222,8 +259,38 @@ import CodeBlock from '../../components/CodeBlock.astro';
   <p>Both sides are converted to their string representation before comparison. This means non-string values are stringified: numbers become <code>"42"</code>, booleans become <code>"true"</code>/<code>"false"</code>, objects become their Go <code>fmt.Sprintf("%v")</code> representation (which may not match JSON). For reliable results, use string operators on string values.</p>
 
   <div class="callout">
-    <p><strong>Tip:</strong> If you're unsure about a value's type, use the <code>type</code> operator to assert it explicitly before comparing: <code>&#123; "path": "$.response.body.count", "operator": "type", "value": "number" &#125;</code></p>
+    <p><strong>Tip:</strong> If you're unsure about a value's type, use the <code>type</code> source field to assert it explicitly before comparing: <code>&#123; "type": "$.response.body.count", "operator": "eq", "value": "number" &#125;</code></p>
   </div>
+
+  <h2>Source fields</h2>
+  <p>Source fields are alternatives to <code>path</code> that transform the resolved value before the operator is applied:</p>
+  <table>
+    <thead>
+      <tr><th>Source field</th><th>Resolves to</th><th>Description</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>type</code></td><td>string</td><td>The JavaScript type of the value at the given path: <code>string</code>, <code>number</code>, <code>boolean</code>, <code>object</code>, <code>array</code>, <code>null</code></td></tr>
+      <tr><td><code>count</code></td><td>number</td><td>Length of an array or string at the given path</td></tr>
+      <tr><td><code>keys</code></td><td>array</td><td>Array of key strings from an object at the given path</td></tr>
+      <tr><td><code>values</code></td><td>array</td><td>Array of values from an object at the given path</td></tr>
+      <tr><td><code>entries</code></td><td>array</td><td>Array of <code>&#123; key, value &#125;</code> objects from an object at the given path</td></tr>
+    </tbody>
+  </table>
+
+  <p>Examples:</p>
+  <CodeBlock code={`// Type check (replaces the old "type" operator)
+{ "type": "$.response.body.items", "operator": "eq", "value": "array" }
+
+// Length check (replaces the old "length" operator)
+{ "count": "$.response.body.items", "operator": "eq", "value": 3 }
+
+// Object keys
+{ "keys": "$.response.body.config", "operator": "contains", "value": "timeout" }`} lang="json" />
+
+  <h2>ValueRef</h2>
+  <p>Instead of a literal <code>value</code>, you can compare against another path in the document using <code>&#123; "from": "$.path" &#125;</code>:</p>
+  <CodeBlock code={`{ "path": "$.response.body.createdAt", "operator": "eq", "value": { "from": "$.response.body.updatedAt" } }`} lang="json" />
+  <p>This resolves both sides before comparing, enabling dynamic assertions that compare two fields against each other.</p>
 
   <div class="nav-links">
     <a href="/docs/variables">← Variables</a>

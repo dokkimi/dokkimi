@@ -24,22 +24,22 @@
           "name": "Verify post {{postId}} in API and DB",
           "forEach": {
             "items": "{{seedPostIds}}",
-            "as": "postId"
-          },
-          "action": {
-            "type": "parallel",
-            "actions": [
-              {
-                "type": "httpRequest",
-                "method": "GET",
-                "url": "api-service/api/posts/{{postId}}"
-              },
-              {
-                "type": "dbQuery",
-                "database": "postgres-db",
-                "query": "SELECT * FROM posts WHERE id = '{{postId}}'"
-              }
-            ]
+            "as": "postId",
+            "action": {
+              "type": "parallel",
+              "actions": [
+                {
+                  "type": "httpRequest",
+                  "method": "GET",
+                  "url": "api-service/api/posts/{{postId}}"
+                },
+                {
+                  "type": "dbQuery",
+                  "database": "postgres-db",
+                  "query": "SELECT * FROM posts WHERE id = '{{postId}}'"
+                }
+              ]
+            }
           }
         }
       ]
@@ -52,40 +52,44 @@
           "forEach": {
             "items": "{{seedPostIds}}",
             "as": "postId",
-            "name": "postIdLoop"
-          },
-          "action": {
-            "type": "httpRequest",
-            "method": "GET",
-            "url": "api-service/api/posts/{{postId}}"
-          },
-          "assertions": [
-            {
-              "assertions": [
-                { "path": "$.response.status", "operator": "eq", "value": 200 },
-                {
-                  "path": "$.variables.postIdLoop.index",
-                  "operator": "type",
-                  "value": "number"
-                },
-                {
-                  "path": "$.variables.postIdLoop.index",
-                  "operator": "gte",
-                  "value": 0
-                },
-                {
-                  "path": "$.variables.postIdLoop.items",
-                  "operator": "type",
-                  "value": "array"
-                },
-                {
-                  "path": "$.variables.postIdLoop.items",
-                  "operator": "length",
-                  "value": 2
-                }
-              ]
-            }
-          ]
+            "name": "postIdLoop",
+            "action": {
+              "type": "httpRequest",
+              "method": "GET",
+              "url": "api-service/api/posts/{{postId}}"
+            },
+            "assertions": [
+              {
+                "assertions": [
+                  {
+                    "path": "$.response.status",
+                    "operator": "eq",
+                    "value": 200
+                  },
+                  {
+                    "type": "$.variables.postIdLoop.index",
+                    "operator": "eq",
+                    "value": "number"
+                  },
+                  {
+                    "path": "$.variables.postIdLoop.index",
+                    "operator": "gte",
+                    "value": 0
+                  },
+                  {
+                    "type": "$.variables.postIdLoop.items",
+                    "operator": "eq",
+                    "value": "array"
+                  },
+                  {
+                    "count": "$.variables.postIdLoop.items",
+                    "operator": "eq",
+                    "value": 2
+                  }
+                ]
+              }
+            ]
+          }
         }
       ]
     },
@@ -93,30 +97,34 @@
       "name": "Test-level forEach with step-level for inside",
       "forEach": {
         "items": "{{seedPostIds}}",
-        "as": "postId"
-      },
-      "steps": [
-        {
-          "name": "Fetch same post 2 times to verify consistency",
-          "for": {
-            "from": 1,
-            "to": 2,
-            "as": "attempt"
-          },
-          "action": {
-            "type": "httpRequest",
-            "method": "GET",
-            "url": "api-service/api/posts/{{postId}}"
-          },
-          "assertions": [
-            {
+        "as": "postId",
+        "steps": [
+          {
+            "name": "Fetch same post 2 times to verify consistency",
+            "for": {
+              "from": 1,
+              "to": 2,
+              "as": "attempt",
               "assertions": [
-                { "path": "$.response.status", "operator": "eq", "value": 200 }
+                {
+                  "assertions": [
+                    {
+                      "path": "$.response.status",
+                      "operator": "eq",
+                      "value": 200
+                    }
+                  ]
+                }
               ]
+            },
+            "action": {
+              "type": "httpRequest",
+              "method": "GET",
+              "url": "api-service/api/posts/{{postId}}"
             }
-          ]
-        }
-      ]
+          }
+        ]
+      }
     },
     {
       "name": "for loop with extract — create posts and verify last",
@@ -137,7 +145,21 @@
           "for": {
             "from": 1,
             "to": 3,
-            "as": "i"
+            "as": "i",
+            "extract": {
+              "lastPostTitle": "$.response.body.post.title"
+            },
+            "assertions": [
+              {
+                "assertions": [
+                  {
+                    "path": "$.response.status",
+                    "operator": "eq",
+                    "value": 201
+                  }
+                ]
+              }
+            ]
           },
           "action": {
             "type": "httpRequest",
@@ -151,17 +173,7 @@
               "title": "Combined Post {{i}}",
               "content": "Content {{i}}"
             }
-          },
-          "extract": {
-            "lastPostTitle": "$.response.body.post.title"
-          },
-          "assertions": [
-            {
-              "assertions": [
-                { "path": "$.response.status", "operator": "eq", "value": 201 }
-              ]
-            }
-          ]
+          }
         },
         {
           "name": "Verify last created post title",
@@ -246,12 +258,12 @@
           "forEach": {
             "items": "{{emptyList}}",
             "as": "item",
-            "name": "emptyLoop"
-          },
-          "action": {
-            "type": "httpRequest",
-            "method": "GET",
-            "url": "api-service/api/posts/nonexistent-should-never-run"
+            "name": "emptyLoop",
+            "action": {
+              "type": "httpRequest",
+              "method": "GET",
+              "url": "api-service/api/posts/nonexistent-should-never-run"
+            }
           }
         },
         {
@@ -288,21 +300,25 @@
             "from": 42,
             "to": 42,
             "as": "val",
-            "name": "singleLoop"
+            "name": "singleLoop",
+            "assertions": [
+              {
+                "assertions": [
+                  {
+                    "path": "$.response.status",
+                    "operator": "eq",
+                    "value": 200
+                  },
+                  { "path": "$.variables.val", "operator": "eq", "value": 42 }
+                ]
+              }
+            ]
           },
           "action": {
             "type": "httpRequest",
             "method": "GET",
             "url": "api-service/health"
-          },
-          "assertions": [
-            {
-              "assertions": [
-                { "path": "$.response.status", "operator": "eq", "value": 200 },
-                { "path": "$.variables.val", "operator": "eq", "value": 42 }
-              ]
-            }
-          ]
+          }
         },
         {
           "name": "Verify exactly 1 iteration",
@@ -334,20 +350,24 @@
             "to": 1,
             "step": -1,
             "as": "countdown",
-            "name": "countdownLoop"
+            "name": "countdownLoop",
+            "assertions": [
+              {
+                "assertions": [
+                  {
+                    "path": "$.response.status",
+                    "operator": "eq",
+                    "value": 200
+                  }
+                ]
+              }
+            ]
           },
           "action": {
             "type": "httpRequest",
             "method": "GET",
             "url": "api-service/health"
-          },
-          "assertions": [
-            {
-              "assertions": [
-                { "path": "$.response.status", "operator": "eq", "value": 200 }
-              ]
-            }
-          ]
+          }
         },
         {
           "name": "Verify 3 iterations and last value was 1",
@@ -383,20 +403,24 @@
           "forEach": {
             "items": ["nonexistent-id-aaa", "nonexistent-id-bbb"],
             "as": "badId",
-            "name": "failLoop"
+            "name": "failLoop",
+            "assertions": [
+              {
+                "assertions": [
+                  {
+                    "path": "$.response.status",
+                    "operator": "eq",
+                    "value": 200
+                  }
+                ]
+              }
+            ]
           },
           "action": {
             "type": "httpRequest",
             "method": "GET",
             "url": "api-service/api/posts/{{badId}}"
-          },
-          "assertions": [
-            {
-              "assertions": [
-                { "path": "$.response.status", "operator": "eq", "value": 200 }
-              ]
-            }
-          ]
+          }
         },
         {
           "name": "Verify both iterations ran despite failures",

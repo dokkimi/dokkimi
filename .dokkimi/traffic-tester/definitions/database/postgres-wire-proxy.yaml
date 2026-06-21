@@ -21,8 +21,8 @@ tests:
               - path: $.response.success
                 operator: eq
                 value: true
-              - path: $.response.data[0].id
-                operator: type
+              - type: $.response.data[0].id
+                operator: eq
                 value: number
               - path: $.response.data[0].id
                 operator: eq
@@ -43,8 +43,8 @@ tests:
               - path: $.response.success
                 operator: eq
                 value: true
-              - path: $.response.data
-                operator: length
+              - count: $.response.data
+                operator: eq
                 value: 0
 
   - name: COUNT returns a numeric value
@@ -59,8 +59,8 @@ tests:
               - path: $.response.success
                 operator: eq
                 value: true
-              - path: $.response.data[0].total
-                operator: type
+              - type: $.response.data[0].total
+                operator: eq
                 value: number
               - path: $.response.data[0].total
                 operator: gte
@@ -86,8 +86,8 @@ tests:
               - path: $.response.data[0].email
                 operator: eq
                 value: eve@example.com
-              - path: $.response.data[0].id
-                operator: type
+              - type: $.response.data[0].id
+                operator: eq
                 value: number
 
   - name: UPDATE affects rows and read-back confirms change
@@ -154,8 +154,8 @@ tests:
               - path: $.response.success
                 operator: eq
                 value: true
-              - path: $.response.data
-                operator: length
+              - count: $.response.data
+                operator: eq
                 value: 0
 
   - name: Parameterised query with two positional args
@@ -173,8 +173,8 @@ tests:
               - path: $.response.success
                 operator: eq
                 value: true
-              - path: $.response.data
-                operator: length
+              - count: $.response.data
+                operator: eq
                 value: 2
               - path: $.response.data[0].name
                 operator: eq
@@ -216,8 +216,8 @@ tests:
               - path: $.response.data[0].flag_true
                 operator: eq
                 value: true
-              - path: $.response.data[0].flag_true
-                operator: type
+              - type: $.response.data[0].flag_true
+                operator: eq
                 value: boolean
               - path: $.response.data[0].flag_false
                 operator: eq

@@ -36,8 +36,8 @@ tests:
               - path: $.response.success
                 operator: eq
                 value: true
-              - path: $.response.data
-                operator: length
+              - count: $.response.data
+                operator: eq
                 value: 1
               - path: $.response.data[0].source
                 operator: eq
@@ -52,8 +52,8 @@ tests:
               - path: $.response.success
                 operator: eq
                 value: true
-              - path: $.response.data
-                operator: length
+              - count: $.response.data
+                operator: eq
                 value: 1
               - path: $.response.data[0].source
                 operator: eq
@@ -80,8 +80,8 @@ tests:
               - path: $.response.success
                 operator: eq
                 value: true
-              - path: $.response.data
-                operator: length
+              - count: $.response.data
+                operator: eq
                 value: 0
 
   - name: Parallel writes to both instances
@@ -103,8 +103,8 @@ tests:
           query: '{"operation":"find","collection":"parallel","filter":{"id":"p1"}}'
         assertions:
           - assertions:
-              - path: $.response.data
-                operator: length
+              - count: $.response.data
+                operator: eq
                 value: 1
               - path: $.response.data[0].instance
                 operator: eq
@@ -116,8 +116,8 @@ tests:
           query: '{"operation":"find","collection":"parallel","filter":{"id":"p1"}}'
         assertions:
           - assertions:
-              - path: $.response.data
-                operator: length
+              - count: $.response.data
+                operator: eq
                 value: 1
               - path: $.response.data[0].instance
                 operator: eq
@@ -141,8 +141,8 @@ tests:
           query: '{"operation":"find","collection":"shipments","filter":{"trackingId":"TRK-001"}}'
         assertions:
           - assertions:
-              - path: $.response.data
-                operator: length
+              - count: $.response.data
+                operator: eq
                 value: 1
               - path: $.response.data[0].carrier
                 operator: eq
@@ -154,8 +154,8 @@ tests:
           query: '{"operation":"find","collection":"metrics","filter":{"metric":"pageviews"}}'
         assertions:
           - assertions:
-              - path: $.response.data
-                operator: length
+              - count: $.response.data
+                operator: eq
                 value: 1
               - path: $.response.data[0].value
                 operator: eq

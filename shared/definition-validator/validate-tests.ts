@@ -19,7 +19,11 @@ import {
   validateExtractRules,
 } from './validate-assertions';
 import { validateUiAction } from './validate-ui-action';
-import { validateLoopModifiers } from './validate-loops';
+import {
+  validateLoopModifiers,
+  validateLoopSiblingConflicts,
+  validateTestLoopSiblingConflicts,
+} from './validate-loops';
 
 // ---------------------------------------------------------------------------
 // Variable $ref resolution
@@ -200,8 +204,19 @@ export function validateStep(
 
   checkUnknownKeys(step, VALID_STEP_KEYS, ctx, r);
 
+  // When a step-level loop is present, action lives inside the loop body
+  const hasLoopModifier =
+    step.forEach !== undefined ||
+    step.for !== undefined ||
+    step.repeat !== undefined;
+
   if (!step.action || typeof step.action !== 'object') {
-    err(r, `${ctx}: missing "action" object`);
+    if (!hasLoopModifier) {
+      err(r, `${ctx}: missing "action" object`);
+    }
+    // Validate loop modifiers and siblings even without step-level action
+    validateLoopModifiers(step, ctx, r);
+    validateLoopSiblingConflicts(step, ctx, r);
     return;
   }
 
@@ -280,6 +295,7 @@ export function validateStep(
 
   // Validate loop modifiers on the step itself.
   validateLoopModifiers(step, ctx, r);
+  validateLoopSiblingConflicts(step, ctx, r);
 
   // Validate loop modifiers on the action (action-level loops).
   if (action.type !== 'parallel' && action.type !== 'ui') {
@@ -368,7 +384,8 @@ export function validateTests(
     validateVariablesField(test.variables, ctx, filePath, r, fs);
 
     // Validate loop modifiers on the test itself.
-    validateLoopModifiers(test, ctx, r);
+    validateLoopModifiers(test, ctx, r, { level: 'test' });
+    validateTestLoopSiblingConflicts(test, ctx, r);
 
     if (test.steps !== undefined) {
       if (!Array.isArray(test.steps)) {

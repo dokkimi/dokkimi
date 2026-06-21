@@ -74,8 +74,8 @@ tests:
               - path: $.response.success
                 operator: eq
                 value: true
-              - path: $.response.data
-                operator: length
+              - count: $.response.data
+                operator: eq
                 value: 0
 
   - name: Parallel writes and reads back correct values
@@ -132,8 +132,8 @@ tests:
               - path: $.response.success
                 operator: eq
                 value: true
-              - path: $.response.data
-                operator: length
+              - count: $.response.data
+                operator: eq
                 value: 1
       - name: LRANGE returns list items from session-db
         action:
@@ -145,8 +145,8 @@ tests:
               - path: $.response.success
                 operator: eq
                 value: true
-              - path: $.response.data
-                operator: length
+              - count: $.response.data
+                operator: eq
                 value: 3
   - name: DEL in one instance does not affect the other
     steps:
@@ -180,8 +180,8 @@ tests:
           query: GET del-test
         assertions:
           - assertions:
-              - path: $.response.data
-                operator: length
+              - count: $.response.data
+                operator: eq
                 value: 0
       - name: GET del-test from session-db still returns present
         action:

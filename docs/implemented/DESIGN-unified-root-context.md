@@ -1,3 +1,5 @@
+> **Superseded** by [`docs/proposed/consistent-root-document.md`](../proposed/consistent-root-document.md) — the consistent root refactor extends and replaces portions of this design (match engine, assertion paths, `$$` scoping).
+
 # Design: Unified Root Context (`$`)
 
 ## Problem

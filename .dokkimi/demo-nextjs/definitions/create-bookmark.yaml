@@ -81,16 +81,22 @@ tests:
                 operator: eq
                 value: '{{countryCode}}'
           - match:
-              method: POST
-              url: nextjs-demo/api/bookmarks
-            count:
-              operator: eq
-              value: 1
+              path: "$.traffic"
+              where:
+                - path: "$$.request.method"
+                  operator: eq
+                  value: POST
+                - path: "$$.request.url"
+                  operator: contains
+                  value: nextjs-demo/api/bookmarks
+              count:
+                operator: eq
+                value: 1
             assertions:
-              - path: $.response.status
+              - path: $.match.response.status
                 operator: eq
                 value: 303
-              - path: $.request.body
+              - path: $.match.request.body
                 operator: contains
                 value: country={{countryCode}}
       - name: Verify the bookmark row was inserted with the chosen country

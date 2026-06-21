@@ -106,11 +106,20 @@ tests:
         assertions:
           # Verify the API call went through correctly
           - match:
-              origin: web-app
-              method: POST
-              url: api-gateway/v1/posts
+              path: '$.traffic'
+              where:
+                - path: '$$.origin'
+                  operator: eq
+                  value: web-app
+                - path: '$$.request.method'
+                  operator: eq
+                  value: POST
+                - path: '$$.request.url'
+                  operator: contains
+                  value: api-gateway/v1/posts
+              count: 1
             assertions:
-              - path: response.status
+              - path: '$.match.response.status'
                 operator: eq
                 value: 201
 

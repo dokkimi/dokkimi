@@ -61,8 +61,8 @@ tests:
               - path: $.response.success
                 operator: eq
                 value: true
-              - path: $.response.data
-                operator: length
+              - count: $.response.data
+                operator: eq
                 value: 3
               - path: $.response.data[0].value
                 operator: eq
@@ -109,8 +109,8 @@ tests:
               - path: $.response.success
                 operator: eq
                 value: true
-              - path: $.response.data
-                operator: length
+              - count: $.response.data
+                operator: eq
                 value: 20
               - path: $.response.data[0].value
                 operator: eq

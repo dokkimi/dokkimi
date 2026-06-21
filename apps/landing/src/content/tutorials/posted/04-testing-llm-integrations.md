@@ -183,38 +183,53 @@ tests:
           url: api-gateway/v1/tickets/1/process
         assertions:
           - assertions:
-              - path: response.status
+              - path: $.response.status
                 operator: eq
                 value: 200
-              - path: response.body.classification
+              - path: $.response.body.classification
                 operator: eq
                 value: billing
-              - path: response.body.draftResponse
+              - path: $.response.body.draftResponse
                 operator: contains
                 value: refund
 
           # Verify the classify call was made with the right prompt
           - match:
-              origin: agent-service
-              method: POST
-              url: api.openai.com/v1/chat/completions
-            assertionScope: first
+              path: '$.traffic'
+              where:
+                - path: '$$.origin'
+                  operator: eq
+                  value: agent-service
+                - path: '$$.method'
+                  operator: eq
+                  value: POST
+                - path: '$$.url'
+                  operator: eq
+                  value: api.openai.com/v1/chat/completions
             assertions:
-              - path: request.body.model
+              - path: $.match.request.body.model
                 operator: eq
                 value: gpt-4o
-              - path: request.body.messages[0].content
+              - path: $.match.request.body.messages[0].content
                 operator: contains
                 value: classify this ticket
 
           # Verify all three LLM calls happened
           - match:
-              origin: agent-service
-              method: POST
-              url: api.openai.com/v1/chat/completions
-            count:
-              operator: eq
-              value: 3
+              path: '$.traffic'
+              where:
+                - path: '$$.origin'
+                  operator: eq
+                  value: agent-service
+                - path: '$$.method'
+                  operator: eq
+                  value: POST
+                - path: '$$.url'
+                  operator: eq
+                  value: api.openai.com/v1/chat/completions
+              count:
+                operator: eq
+                value: 3
 
       # Verify the ticket was updated in the database
       - action:
@@ -223,13 +238,13 @@ tests:
           query: 'SELECT classification, entities, draft_response, status FROM tickets WHERE id = 1'
         assertions:
           - assertions:
-              - path: data[0].classification
+              - path: $.data[0].classification
                 operator: eq
                 value: billing
-              - path: data[0].draft_response
+              - path: $.data[0].draft_response
                 operator: contains
                 value: refund
-              - path: data[0].status
+              - path: $.data[0].status
                 operator: eq
                 value: processed
 
@@ -240,21 +255,21 @@ tests:
           query: 'SELECT action FROM audit_log WHERE ticket_id = 1 ORDER BY created_at'
         assertions:
           - assertions:
-              - path: data.length
+              - count: $.data
                 operator: gte
                 value: 3
-              - path: data[0].action
+              - path: $.data[0].action
                 operator: eq
                 value: classified
-              - path: data[1].action
+              - path: $.data[1].action
                 operator: eq
                 value: entities_extracted
-              - path: data[2].action
+              - path: $.data[2].action
                 operator: eq
                 value: response_drafted
 ```
 
-The `assertionScope: first` on the classify assertion is important — there are three LLM calls to the same URL, and you only want to assert on the first one's prompt. The `count` assertion on the third block verifies all three calls happened.
+The `$.match` path prefix on the classify assertion is important — there are three LLM calls to the same URL, and you only want to assert on the first one's prompt. The `count` on the second match block verifies all three calls happened.
 
 ## Testing tool calls
 
@@ -316,17 +331,24 @@ tests:
           method: POST
           url: api-gateway/v1/tickets/1/process
         assertions:
-          # The tool call was made
+          # The tool call was made — narrow the match with where clauses
           - match:
-              origin: agent-service
-              method: POST
-              url: api.openai.com/v1/chat/completions
-            assertionScope: any
+              path: '$.traffic'
+              where:
+                - path: '$$.origin'
+                  operator: eq
+                  value: agent-service
+                - path: '$$.method'
+                  operator: eq
+                  value: POST
+                - path: '$$.url'
+                  operator: eq
+                  value: api.openai.com/v1/chat/completions
+                - path: '$$.response.body.choices[0].finish_reason'
+                  operator: eq
+                  value: tool_calls
             assertions:
-              - path: response.body.choices[0].finish_reason
-                operator: eq
-                value: tool_calls
-              - path: response.body.choices[0].message.tool_calls[0].function.name
+              - path: $.match.response.body.choices[0].message.tool_calls[0].function.name
                 operator: eq
                 value: search_knowledge_base
 ```
@@ -373,10 +395,10 @@ tests:
           url: api-gateway/v1/tickets/1/process
         assertions:
           - assertions:
-              - path: response.status
+              - path: $.response.status
                 operator: eq
                 value: 503
-              - path: response.body.error
+              - path: $.response.body.error
                 operator: contains
                 value: temporarily unavailable
 
@@ -387,7 +409,7 @@ tests:
           query: 'SELECT status FROM tickets WHERE id = 1'
         assertions:
           - assertions:
-              - path: data[0].status
+              - path: $.data[0].status
                 operator: eq
                 value: open
 ```
@@ -431,10 +453,10 @@ tests:
           url: api-gateway/v1/tickets/1/process
         assertions:
           - assertions:
-              - path: response.status
+              - path: $.response.status
                 operator: eq
                 value: 200
-              - path: response.body.status
+              - path: $.response.body.status
                 operator: eq
                 value: needs_review
 
@@ -444,7 +466,7 @@ tests:
           query: 'SELECT status FROM tickets WHERE id = 1'
         assertions:
           - assertions:
-              - path: data[0].status
+              - path: $.data[0].status
                 operator: eq
                 value: needs_review
 
@@ -454,7 +476,7 @@ tests:
           query: "SELECT action, details FROM audit_log WHERE ticket_id = 1 AND action = 'content_filter'"
         assertions:
           - assertions:
-              - path: data.length
+              - count: $.data
                 operator: eq
                 value: 1
 ```
@@ -523,16 +545,25 @@ mockResponseBody:
 This mock has no `mockRequestBodyContains`, so it has lower specificity than any body-matching mock. It only fires when no other mock matches. This is useful in two ways: it prevents your test from hanging when the agent sends an unexpected prompt, and you can assert that the fallback was never hit (meaning every LLM call matched an expected prompt):
 
 ```yaml
-# Inside a step's assertions
+# Inside a step's assertions — verify no call hit the fallback
 - match:
-    origin: agent-service
-    method: POST
-    url: api.openai.com/v1/chat/completions
-  assertionScope: any
-  assertions:
-    - path: response.body.id
-      operator: ne
-      value: chatcmpl-fallback
+    path: '$.traffic'
+    where:
+      - path: '$$.origin'
+        operator: eq
+        value: agent-service
+      - path: '$$.method'
+        operator: eq
+        value: POST
+      - path: '$$.url'
+        operator: eq
+        value: api.openai.com/v1/chat/completions
+      - path: '$$.response.body.id'
+        operator: eq
+        value: chatcmpl-fallback
+    count:
+      operator: eq
+      value: 0
 ```
 
 ## Testing multiple LLM providers
@@ -573,7 +604,7 @@ Each mock targets a different hostname, so there's no conflict. Body matching wo
 - **Match on the unique part of your prompt template.** If your classify prompt starts with "You are a ticket classifier. classify this ticket:", match on "classify this ticket" — it's the stable, distinctive substring. Don't match on boilerplate like "You are a helpful assistant."
 - **Use `mockRequestBodyContains` for most cases.** Substring matching is simpler and handles JSON formatting variations. Reserve `mockRequestBodyMatches` (regex) for cases where you need to match structural patterns like tool call names.
 - **Mock realistic response shapes.** Copy a real response from the LLM provider's docs. Include `usage`, `finish_reason`, and `id` fields — your code might check any of them.
-- **Test the pipeline in order.** Use `assertionScope: first`, `last`, or `any` to target specific LLM calls when multiple calls hit the same endpoint.
+- **Test the pipeline in order.** Use `$.match.*`, `$.lastMatch.*`, or forEach over `$.matches` to target specific LLM calls when multiple calls hit the same endpoint.
 - **Always add a fallback mock.** A body-matching mock with no match only fires when nothing else matches. Use it to catch regressions where a prompt template changes and stops matching its mock.
 - **Test error scenarios individually.** Rate limits, content filters, timeouts, and malformed responses each deserve their own test definition with a dedicated error mock.
 - **Verify side effects in the database.** Don't just check the HTTP response — confirm that classifications, entities, and draft responses were persisted correctly, and that failed pipelines don't leave tickets in a bad state.

@@ -11,7 +11,9 @@ import (
 // When inline validation is configured, it also waits for quiescence, validates assertions,
 // and reports results after each step. Handles step-level loop modifiers.
 func (e *TestExecutor) executeStepAt(ctx context.Context, fs flatStep) (StepExecution, error) {
-	forEach, forLoop, repeat := getStepLoop(fs.step)
+	forEach := fs.step.ForEach
+	forLoop := fs.step.For
+	repeat := fs.step.Repeat
 	hasLoop := forEach != nil || forLoop != nil || repeat != nil
 
 	if !hasLoop {
@@ -35,6 +37,24 @@ func (e *TestExecutor) executeStepAt(ctx context.Context, fs flatStep) (StepExec
 		return stepExec, err
 	}
 
+	// Extract the loop body's action, assertions, and extract (nested inside the loop struct)
+	var loopAction *StepAction
+	var loopAssertions []AssertionBlock
+	var loopExtract map[string]ExtractRule
+	if forEach != nil {
+		loopAction = forEach.Action
+		loopAssertions, loopExtract = stepLoopBody(forEach.Assertions, forEach.Match, forEach.Extract,
+			forEach.ForEach, forEach.For, forEach.Repeat)
+	} else if forLoop != nil {
+		loopAction = forLoop.Action
+		loopAssertions, loopExtract = stepLoopBody(forLoop.Assertions, forLoop.Match, forLoop.Extract,
+			forLoop.ForEach, forLoop.For, forLoop.Repeat)
+	} else if repeat != nil {
+		loopAction = repeat.Action
+		loopAssertions, loopExtract = stepLoopBody(repeat.Assertions, repeat.Match, repeat.Extract,
+			repeat.ForEach, repeat.For, repeat.Repeat)
+	}
+
 	result, loopErr := runLoop(plan, e.varCtx, func(iterIdx int, iter Iteration) (map[string]interface{}, error) {
 		iter.SetupFn()
 		iterFS := fs
@@ -42,8 +62,16 @@ func (e *TestExecutor) executeStepAt(ctx context.Context, fs flatStep) (StepExec
 
 		log.Printf("Step loop iteration %d: %s", iterIdx, iterFS.label())
 
+		// Build a step using the loop body's action
+		iterStep := iterFS.step
+		if loopAction != nil {
+			iterStep.Action = *loopAction
+		}
+		iterStep.Assertions = loopAssertions
+		iterStep.Extract = loopExtract
+
 		iterStart := time.Now().Format(time.RFC3339Nano)
-		resp, err := e.executeStep(ctx, iterFS.step, si)
+		resp, err := e.executeStep(ctx, iterStep, si)
 		iterEnd := time.Now().Format(time.RFC3339Nano)
 
 		if err != nil {
@@ -59,21 +87,21 @@ func (e *TestExecutor) executeStepAt(ctx context.Context, fs flatStep) (StepExec
 			EndTime:   iterEnd,
 		}
 
-		if e.stepValidator == nil && resp != nil && len(fs.step.Extract) > 0 {
-			if extractErr := e.varCtx.Extract(fs.step.Extract, resp); extractErr != nil {
+		if e.stepValidator == nil && resp != nil && len(iterStep.Extract) > 0 {
+			if extractErr := e.varCtx.Extract(iterStep.Extract, resp); extractErr != nil {
 				stepExec.EndTime = iterEnd
 				return nil, fmt.Errorf("variable extraction failed: %w", extractErr)
 			}
 		}
 
-		if e.stepValidator != nil && (len(fs.step.Assertions) > 0 || len(fs.step.Extract) > 0) {
-			results, passed := e.stepValidator.ValidateStepWithRetry(fs.step, iterExec, resp)
+		if e.stepValidator != nil && (len(iterStep.Assertions) > 0 || len(iterStep.Extract) > 0) {
+			results, passed := e.stepValidator.ValidateStepWithRetry(iterStep, iterExec, resp)
 			if e.validationReporter != nil {
 				e.validationReporter.ReportStepResultsAsync(e.instanceID, si, results, passed)
 			}
 			if !passed {
 				summary := FormatStepResult(si, iterFS.label(), results, passed)
-				stopOnFailure := fs.step.StopOnFailure == nil || *fs.step.StopOnFailure
+				stopOnFailure := iterStep.StopOnFailure == nil || *iterStep.StopOnFailure
 				if stopOnFailure {
 					e.testExecutionLogger.LogEvent("STEP_FAILED", summary, &si, nil)
 					stepExec.EndTime = iterEnd
@@ -172,11 +200,11 @@ func (e *TestExecutor) executeStep(ctx context.Context, step TestStep, stepIndex
 		step.Description = resolved
 	}
 
-	forEach, forLoop, repeat := getActionLoop(step.Action)
-	hasActionLoop := forEach != nil || forLoop != nil || repeat != nil
+	hasActionLoop := step.Action.ForEach != nil || step.Action.For != nil || step.Action.Repeat != nil
 
 	if hasActionLoop {
-		resp, err := e.executeActionLoop(ctx, step, stepIndex, forEach, forLoop, repeat)
+		resp, err := e.executeActionLoop(ctx, step, stepIndex,
+			step.Action.ForEach, step.Action.For, step.Action.Repeat)
 		e.lastStepResponse = resp
 		return resp, err
 	}
@@ -309,4 +337,29 @@ func (e *TestExecutor) executeParallelAction(ctx context.Context, action StepAct
 	}
 
 	return nil, firstError
+}
+
+// stepLoopBody extracts assertion blocks from a step-level loop body.
+// When the loop has assertion blocks (Blocks), they are used directly with extract at step level.
+// When the loop has flat assertions, a single AssertionBlock is built from all body fields
+// so match/assertions/extract/nested-loops execute in the correct order via validateBlock.
+func stepLoopBody(la LoopAssertions, match *MatchCriteria, extract map[string]ExtractRule,
+	forEach *ForEachLoop, forLoop *ForLoop, repeat *RepeatLoop) ([]AssertionBlock, map[string]ExtractRule) {
+	if len(la.Blocks) > 0 {
+		return la.Blocks, extract
+	}
+	body := AssertionBlock{
+		Match:      match,
+		Assertions: la.Flat,
+		Extract:    extract,
+		ForEach:    forEach,
+		For:        forLoop,
+		Repeat:     repeat,
+	}
+	hasContent := len(body.Assertions) > 0 || body.Match != nil || body.Extract != nil ||
+		body.ForEach != nil || body.For != nil || body.Repeat != nil
+	if hasContent {
+		return []AssertionBlock{body}, nil
+	}
+	return nil, extract
 }

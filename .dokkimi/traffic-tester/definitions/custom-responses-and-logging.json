@@ -114,29 +114,46 @@
               ]
             },
             {
-              "service": "service-a",
-              "consoleAssertions": [
-                {
-                  "message": {
+              "match": {
+                "path": "$.consoleLogs",
+                "where": [
+                  {
+                    "path": "$$.service",
+                    "operator": "eq",
+                    "value": "service-a"
+                  },
+                  {
+                    "path": "$$.message",
                     "operator": "contains",
                     "value": "PRE: Starting request processing"
-                  },
-                  "count": {
-                    "operator": "gte",
-                    "value": 1
                   }
-                },
-                {
-                  "message": {
+                ],
+                "count": {
+                  "operator": "gte",
+                  "value": 1
+                }
+              }
+            },
+            {
+              "match": {
+                "path": "$.consoleLogs",
+                "where": [
+                  {
+                    "path": "$$.service",
+                    "operator": "eq",
+                    "value": "service-a"
+                  },
+                  {
+                    "path": "$$.message",
                     "operator": "contains",
                     "value": "POST: Request complete"
-                  },
-                  "count": {
-                    "operator": "gte",
-                    "value": 1
                   }
+                ],
+                "count": {
+                  "operator": "gte",
+                  "value": 1
                 }
-              ]
+              }
             }
           ]
         }
@@ -165,8 +182,8 @@
                   "value": 200
                 },
                 {
-                  "path": "$.response.body.queryResults",
-                  "operator": "type",
+                  "type": "$.response.body.queryResults",
+                  "operator": "eq",
                   "value": "array"
                 },
                 {
@@ -174,8 +191,8 @@
                   "operator": "isEmpty"
                 },
                 {
-                  "path": "$.response.body.results",
-                  "operator": "type",
+                  "type": "$.response.body.results",
+                  "operator": "eq",
                   "value": "array"
                 },
                 {

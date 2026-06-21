@@ -135,7 +135,7 @@
       ]
     },
     {
-      "name": "Array operators: in, notIn, arrayContains, arrayNotContains",
+      "name": "Array operators: in, notIn, contains, notContains",
       "steps": [
         {
           "name": "Service-a returns an array and we validate with array operators",
@@ -181,17 +181,17 @@
                 },
                 {
                   "path": "$.response.body.tags",
-                  "operator": "arrayContains",
+                  "operator": "contains",
                   "value": "critical"
                 },
                 {
                   "path": "$.response.body.tags",
-                  "operator": "arrayNotContains",
+                  "operator": "notContains",
                   "value": "deprecated"
                 },
                 {
-                  "path": "$.response.body.tags",
-                  "operator": "length",
+                  "count": "$.response.body.tags",
+                  "operator": "eq",
                   "value": 3
                 },
                 {
@@ -233,8 +233,8 @@
                   "value": 0
                 },
                 {
-                  "path": "$.responseTime",
-                  "operator": "type",
+                  "type": "$.responseTime",
+                  "operator": "eq",
                   "value": "number"
                 }
               ]
@@ -279,16 +279,27 @@
             },
             {
               "match": {
-                "origin": "service-a",
-                "url": "service-b/timed"
-              },
-              "count": {
-                "operator": "eq",
-                "value": 1
+                "path": "$.traffic",
+                "where": [
+                  {
+                    "path": "$$.origin",
+                    "operator": "eq",
+                    "value": "service-a"
+                  },
+                  {
+                    "path": "$$.request.url",
+                    "operator": "contains",
+                    "value": "service-b/timed"
+                  }
+                ],
+                "count": {
+                  "operator": "eq",
+                  "value": 1
+                }
               },
               "assertions": [
                 {
-                  "path": "$.response.status",
+                  "path": "$.match.response.status",
                   "operator": "eq",
                   "value": 200
                 }
@@ -329,28 +340,28 @@
             {
               "assertions": [
                 {
-                  "path": "$.response.body.stringField",
-                  "operator": "type",
+                  "type": "$.response.body.stringField",
+                  "operator": "eq",
                   "value": "string"
                 },
                 {
-                  "path": "$.response.body.numberField",
-                  "operator": "type",
+                  "type": "$.response.body.numberField",
+                  "operator": "eq",
                   "value": "number"
                 },
                 {
-                  "path": "$.response.body.boolField",
-                  "operator": "type",
+                  "type": "$.response.body.boolField",
+                  "operator": "eq",
                   "value": "boolean"
                 },
                 {
-                  "path": "$.response.body.arrayField",
-                  "operator": "type",
+                  "type": "$.response.body.arrayField",
+                  "operator": "eq",
                   "value": "array"
                 },
                 {
-                  "path": "$.response.body.objectField",
-                  "operator": "type",
+                  "type": "$.response.body.objectField",
+                  "operator": "eq",
                   "value": "object"
                 },
                 {

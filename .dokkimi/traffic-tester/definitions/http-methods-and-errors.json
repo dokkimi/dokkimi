@@ -57,30 +57,45 @@
                   "value": true
                 },
                 {
-                  "path": "$.response.body.results[0].version",
-                  "operator": "type",
+                  "type": "$.response.body.results[0].version",
+                  "operator": "eq",
                   "value": "number"
                 }
               ]
             },
             {
               "match": {
-                "origin": "service-a",
-                "method": "PUT",
-                "url": "service-b/update-resource"
-              },
-              "count": {
-                "operator": "eq",
-                "value": 1
+                "path": "$.traffic",
+                "where": [
+                  {
+                    "path": "$$.origin",
+                    "operator": "eq",
+                    "value": "service-a"
+                  },
+                  {
+                    "path": "$$.request.method",
+                    "operator": "eq",
+                    "value": "PUT"
+                  },
+                  {
+                    "path": "$$.request.url",
+                    "operator": "contains",
+                    "value": "service-b/update-resource"
+                  }
+                ],
+                "count": {
+                  "operator": "eq",
+                  "value": 1
+                }
               },
               "assertions": [
                 {
-                  "path": "$.request.method",
+                  "path": "$.match.request.method",
                   "operator": "eq",
                   "value": "PUT"
                 },
                 {
-                  "path": "$.response.status",
+                  "path": "$.match.response.status",
                   "operator": "eq",
                   "value": 200
                 }
@@ -130,17 +145,32 @@
             },
             {
               "match": {
-                "origin": "service-a",
-                "method": "DELETE",
-                "url": "service-b/delete-resource/item-42"
-              },
-              "count": {
-                "operator": "eq",
-                "value": 1
+                "path": "$.traffic",
+                "where": [
+                  {
+                    "path": "$$.origin",
+                    "operator": "eq",
+                    "value": "service-a"
+                  },
+                  {
+                    "path": "$$.request.method",
+                    "operator": "eq",
+                    "value": "DELETE"
+                  },
+                  {
+                    "path": "$$.request.url",
+                    "operator": "contains",
+                    "value": "service-b/delete-resource/item-42"
+                  }
+                ],
+                "count": {
+                  "operator": "eq",
+                  "value": 1
+                }
               },
               "assertions": [
                 {
-                  "path": "$.response.status",
+                  "path": "$.match.response.status",
                   "operator": "eq",
                   "value": 204
                 }
@@ -203,13 +233,28 @@
             },
             {
               "match": {
-                "origin": "service-a",
-                "method": "PATCH",
-                "url": "service-b/patch-resource"
-              },
-              "count": {
-                "operator": "eq",
-                "value": 1
+                "path": "$.traffic",
+                "where": [
+                  {
+                    "path": "$$.origin",
+                    "operator": "eq",
+                    "value": "service-a"
+                  },
+                  {
+                    "path": "$$.request.method",
+                    "operator": "eq",
+                    "value": "PATCH"
+                  },
+                  {
+                    "path": "$$.request.url",
+                    "operator": "contains",
+                    "value": "service-b/patch-resource"
+                  }
+                ],
+                "count": {
+                  "operator": "eq",
+                  "value": 1
+                }
               }
             }
           ]
@@ -317,13 +362,13 @@
                   "value": 500
                 },
                 {
-                  "path": "$.response.body.details",
-                  "operator": "type",
+                  "type": "$.response.body.details",
+                  "operator": "eq",
                   "value": "array"
                 },
                 {
-                  "path": "$.response.body.details",
-                  "operator": "length",
+                  "count": "$.response.body.details",
+                  "operator": "eq",
                   "value": 2
                 },
                 {
@@ -390,20 +435,26 @@
               ]
             },
             {
-              "service": "service-a",
-              "consoleAssertions": [
-                {
-                  "level": "ERROR",
-                  "message": {
+              "match": {
+                "path": "$.consoleLogs",
+                "where": [
+                  {
+                    "path": "$$.service",
+                    "operator": "eq",
+                    "value": "service-a"
+                  },
+                  { "path": "$$.level", "operator": "eq", "value": "ERROR" },
+                  {
+                    "path": "$$.message",
                     "operator": "contains",
                     "value": "Something went wrong"
-                  },
-                  "count": {
-                    "operator": "gte",
-                    "value": 1
                   }
+                ],
+                "count": {
+                  "operator": "gte",
+                  "value": 1
                 }
-              ]
+              }
             }
           ]
         }

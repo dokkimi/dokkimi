@@ -81,36 +81,50 @@
                   "value": 200
                 },
                 {
-                  "path": "$.response.body.results",
-                  "operator": "length",
+                  "count": "$.response.body.results",
+                  "operator": "eq",
                   "value": 3
                 }
               ]
             },
             {
               "match": {
-                "origin": "service-a",
-                "method": "POST",
-                "url": "service-b/batch"
+                "path": "$.traffic",
+                "where": [
+                  {
+                    "path": "$$.origin",
+                    "operator": "eq",
+                    "value": "service-a"
+                  },
+                  {
+                    "path": "$$.request.method",
+                    "operator": "eq",
+                    "value": "POST"
+                  },
+                  {
+                    "path": "$$.request.url",
+                    "operator": "contains",
+                    "value": "service-b/batch"
+                  }
+                ],
+                "count": {
+                  "operator": "eq",
+                  "value": 3
+                }
               },
-              "count": {
-                "operator": "eq",
-                "value": 3
-              },
-              "assertionScope": "first",
               "assertions": [
                 {
-                  "path": "$.response.body.index",
+                  "path": "$.match.response.body.index",
                   "operator": "in",
                   "value": [1, 2, 3]
                 },
                 {
-                  "path": "$.response.body.batch",
+                  "path": "$.match.response.body.batch",
                   "operator": "in",
                   "value": ["first", "second", "third"]
                 },
                 {
-                  "path": "$.response.status",
+                  "path": "$.match.response.status",
                   "operator": "eq",
                   "value": 200
                 }
@@ -176,22 +190,34 @@
           "assertions": [
             {
               "match": {
-                "origin": "service-a",
-                "method": "POST",
-                "url": "service-b/sequence"
-              },
-              "count": {
-                "operator": "gte",
-                "value": 3
-              },
-              "assertionScope": "any",
-              "assertions": [
-                {
-                  "path": "$.response.body.seq",
-                  "operator": "eq",
-                  "value": 3
+                "path": "$.traffic",
+                "where": [
+                  {
+                    "path": "$$.origin",
+                    "operator": "eq",
+                    "value": "service-a"
+                  },
+                  {
+                    "path": "$$.request.method",
+                    "operator": "eq",
+                    "value": "POST"
+                  },
+                  {
+                    "path": "$$.request.url",
+                    "operator": "contains",
+                    "value": "service-b/sequence"
+                  },
+                  {
+                    "path": "$$.response.body.seq",
+                    "operator": "eq",
+                    "value": 3
+                  }
+                ],
+                "count": {
+                  "operator": "gte",
+                  "value": 1
                 }
-              ]
+              }
             }
           ]
         }
@@ -241,23 +267,37 @@
           "assertions": [
             {
               "match": {
-                "origin": "service-a",
-                "method": "POST",
-                "url": "service-b/ordered"
+                "path": "$.traffic",
+                "where": [
+                  {
+                    "path": "$$.origin",
+                    "operator": "eq",
+                    "value": "service-a"
+                  },
+                  {
+                    "path": "$$.request.method",
+                    "operator": "eq",
+                    "value": "POST"
+                  },
+                  {
+                    "path": "$$.request.url",
+                    "operator": "contains",
+                    "value": "service-b/ordered"
+                  }
+                ],
+                "count": {
+                  "operator": "eq",
+                  "value": 2
+                }
               },
-              "count": {
-                "operator": "eq",
-                "value": 2
-              },
-              "assertionScope": "last",
               "assertions": [
                 {
-                  "path": "$.response.status",
+                  "path": "$.lastMatch.response.status",
                   "operator": "eq",
                   "value": 200
                 },
                 {
-                  "path": "$.response.body.step",
+                  "path": "$.lastMatch.response.body.step",
                   "operator": "in",
                   "value": ["first", "second"]
                 }
@@ -323,22 +363,34 @@
           "assertions": [
             {
               "match": {
-                "origin": "service-a",
-                "method": "POST",
-                "url": "service-b/varied"
-              },
-              "count": {
-                "operator": "gt",
-                "value": 2
-              },
-              "assertionScope": "any",
-              "assertions": [
-                {
-                  "path": "$.response.body.role",
-                  "operator": "eq",
-                  "value": "admin"
+                "path": "$.traffic",
+                "where": [
+                  {
+                    "path": "$$.origin",
+                    "operator": "eq",
+                    "value": "service-a"
+                  },
+                  {
+                    "path": "$$.request.method",
+                    "operator": "eq",
+                    "value": "POST"
+                  },
+                  {
+                    "path": "$$.request.url",
+                    "operator": "contains",
+                    "value": "service-b/varied"
+                  },
+                  {
+                    "path": "$$.response.body.role",
+                    "operator": "eq",
+                    "value": "admin"
+                  }
+                ],
+                "count": {
+                  "operator": "gte",
+                  "value": 1
                 }
-              ]
+              }
             }
           ]
         }
@@ -388,40 +440,76 @@
           "assertions": [
             {
               "match": {
-                "origin": "service-a",
-                "url": "service-b/counted"
-              },
-              "count": {
-                "operator": "gte",
-                "value": 1
+                "path": "$.traffic",
+                "where": [
+                  {
+                    "path": "$$.origin",
+                    "operator": "eq",
+                    "value": "service-a"
+                  },
+                  {
+                    "path": "$$.request.url",
+                    "operator": "contains",
+                    "value": "service-b/counted"
+                  }
+                ],
+                "count": {
+                  "operator": "gte",
+                  "value": 1
+                }
               }
             },
             {
               "match": {
-                "origin": "service-a",
-                "url": "service-c/counted"
-              },
-              "count": {
-                "operator": "lte",
-                "value": 1
+                "path": "$.traffic",
+                "where": [
+                  {
+                    "path": "$$.origin",
+                    "operator": "eq",
+                    "value": "service-a"
+                  },
+                  {
+                    "path": "$$.request.url",
+                    "operator": "contains",
+                    "value": "service-c/counted"
+                  }
+                ],
+                "count": {
+                  "operator": "lte",
+                  "value": 1
+                }
               }
             },
             {
               "match": {
-                "origin": "service-a"
-              },
-              "count": {
-                "operator": "gte",
-                "value": 2
+                "path": "$.traffic",
+                "where": [
+                  {
+                    "path": "$$.origin",
+                    "operator": "eq",
+                    "value": "service-a"
+                  }
+                ],
+                "count": {
+                  "operator": "gte",
+                  "value": 2
+                }
               }
             },
             {
               "match": {
-                "origin": "service-b"
-              },
-              "count": {
-                "operator": "eq",
-                "value": 0
+                "path": "$.traffic",
+                "where": [
+                  {
+                    "path": "$$.origin",
+                    "operator": "eq",
+                    "value": "service-b"
+                  }
+                ],
+                "count": {
+                  "operator": "eq",
+                  "value": 0
+                }
               }
             }
           ]

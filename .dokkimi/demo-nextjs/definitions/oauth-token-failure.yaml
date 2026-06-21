@@ -58,29 +58,51 @@ tests:
                 operator: contains
                 value: error=oauth_failed
           - match:
-              method: GET
-              url: accounts.google.com/o/oauth2/v2/auth
-            count:
-              operator: eq
-              value: 1
+              path: "$.traffic"
+              where:
+                - path: "$$.request.method"
+                  operator: eq
+                  value: GET
+                - path: "$$.request.url"
+                  operator: contains
+                  value: accounts.google.com/o/oauth2/v2/auth
+              count:
+                operator: eq
+                value: 1
           - match:
-              origin: nextjs-demo
-              method: POST
-              url: oauth2.googleapis.com/token
-            count:
-              operator: eq
-              value: 1
+              path: "$.traffic"
+              where:
+                - path: "$$.origin"
+                  operator: eq
+                  value: nextjs-demo
+                - path: "$$.request.method"
+                  operator: eq
+                  value: POST
+                - path: "$$.request.url"
+                  operator: contains
+                  value: oauth2.googleapis.com/token
+              count:
+                operator: eq
+                value: 1
             assertions:
-              - path: $.response.status
+              - path: $.match.response.status
                 operator: eq
                 value: 401
           - match:
-              origin: nextjs-demo
-              method: GET
-              url: www.googleapis.com/oauth2/v3/userinfo
-            count:
-              operator: eq
-              value: 0
+              path: "$.traffic"
+              where:
+                - path: "$$.origin"
+                  operator: eq
+                  value: nextjs-demo
+                - path: "$$.request.method"
+                  operator: eq
+                  value: GET
+                - path: "$$.request.url"
+                  operator: contains
+                  value: www.googleapis.com/oauth2/v3/userinfo
+              count:
+                operator: eq
+                value: 0
       - name: Dashboard remains inaccessible after the failed sign-in
         action:
           type: ui

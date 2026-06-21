@@ -49,16 +49,22 @@ tests:
                 operator: eq
                 value: '10'
           - match:
-              method: GET
-              url: nextjs-demo/api/bookmarks
-            count:
-              operator: eq
-              value: 1
+              path: "$.traffic"
+              where:
+                - path: "$$.request.method"
+                  operator: eq
+                  value: GET
+                - path: "$$.request.url"
+                  operator: contains
+                  value: nextjs-demo/api/bookmarks
+              count:
+                operator: eq
+                value: 1
             assertions:
-              - path: $.response.status
+              - path: $.match.response.status
                 operator: eq
                 value: 200
-              - path: $.response.body.items
+              - path: $.match.response.body.items
                 operator: exists
       - name: Scroll sentinel into view and assert the second page fired
         action:
@@ -94,12 +100,18 @@ tests:
           # match.url doesn't expose the query string for assertion, so
           # the count + rendered-row delta carries the load here.
           - match:
-              method: GET
-              url: nextjs-demo/api/bookmarks
-            count:
-              operator: eq
-              value: 1
+              path: "$.traffic"
+              where:
+                - path: "$$.request.method"
+                  operator: eq
+                  value: GET
+                - path: "$$.request.url"
+                  operator: contains
+                  value: nextjs-demo/api/bookmarks
+              count:
+                operator: eq
+                value: 1
             assertions:
-              - path: $.response.status
+              - path: $.match.response.status
                 operator: eq
                 value: 200

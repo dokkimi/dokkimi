@@ -322,3 +322,97 @@ func TestTestStep_UnmarshalExtract_Mixed(t *testing.T) {
 		t.Errorf("unexpected pattern: %s", step.Extract["withRegex"].Pattern)
 	}
 }
+
+func TestResolveWhereEntries(t *testing.T) {
+	t.Run("resolves {{var}} in where entry values", func(t *testing.T) {
+		vc := NewVariableContext()
+		vc.Set("svcName", "service-a")
+		entries := []WhereEntry{
+			{Path: "$$.origin", Operator: "eq", Value: "{{svcName}}"},
+		}
+		resolved := vc.resolveWhereEntries(entries)
+		if resolved[0].Value != "service-a" {
+			t.Errorf("expected service-a, got %v", resolved[0].Value)
+		}
+	})
+
+	t.Run("does NOT resolve $$ paths (left for match time)", func(t *testing.T) {
+		vc := NewVariableContext()
+		entries := []WhereEntry{
+			{Path: "$$.request.method", Operator: "eq", Value: "POST"},
+		}
+		resolved := vc.resolveWhereEntries(entries)
+		if resolved[0].Path != "$$.request.method" {
+			t.Errorf("expected $$.request.method, got %v", resolved[0].Path)
+		}
+	})
+
+	t.Run("recurses into or", func(t *testing.T) {
+		vc := NewVariableContext()
+		vc.Set("target", "api")
+		entries := []WhereEntry{
+			{Or: []WhereEntry{
+				{Path: "$$.origin", Operator: "eq", Value: "{{target}}"},
+			}},
+		}
+		resolved := vc.resolveWhereEntries(entries)
+		if resolved[0].Or[0].Value != "api" {
+			t.Errorf("expected api in or clause, got %v", resolved[0].Or[0].Value)
+		}
+	})
+
+	t.Run("recurses into and", func(t *testing.T) {
+		vc := NewVariableContext()
+		vc.Set("method", "GET")
+		entries := []WhereEntry{
+			{And: []WhereEntry{
+				{Path: "$$.request.method", Operator: "eq", Value: "{{method}}"},
+			}},
+		}
+		resolved := vc.resolveWhereEntries(entries)
+		if resolved[0].And[0].Value != "GET" {
+			t.Errorf("expected GET in and clause, got %v", resolved[0].And[0].Value)
+		}
+	})
+
+	t.Run("recurses into not", func(t *testing.T) {
+		vc := NewVariableContext()
+		vc.Set("excluded", "internal")
+		not := WhereEntry{Path: "$$.origin", Operator: "eq", Value: "{{excluded}}"}
+		entries := []WhereEntry{
+			{Not: &not},
+		}
+		resolved := vc.resolveWhereEntries(entries)
+		if resolved[0].Not.Value != "internal" {
+			t.Errorf("expected internal in not clause, got %v", resolved[0].Not.Value)
+		}
+	})
+}
+
+func TestExtractKeyInterpolation(t *testing.T) {
+	vc := NewVariableContext()
+	vc.Set("prefix", "user")
+	vc.Set("idx", "0")
+
+	t.Run("resolves variable in extract key", func(t *testing.T) {
+		key := "{{prefix}}_id"
+		resolved, err := vc.Resolve(key)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if resolved != "user_id" {
+			t.Errorf("expected user_id, got %v", resolved)
+		}
+	})
+
+	t.Run("resolves multiple variables in key", func(t *testing.T) {
+		key := "{{prefix}}_{{idx}}"
+		resolved, err := vc.Resolve(key)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if resolved != "user_0" {
+			t.Errorf("expected user_0, got %v", resolved)
+		}
+	})
+}

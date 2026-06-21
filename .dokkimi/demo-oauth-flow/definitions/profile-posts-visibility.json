@@ -63,8 +63,8 @@
                   "value": 200
                 },
                 {
-                  "path": "$.response.body.profile.posts",
-                  "operator": "length",
+                  "count": "$.response.body.profile.posts",
+                  "operator": "eq",
                   "value": 0
                 }
               ]
@@ -78,37 +78,37 @@
               { "title": "First Post", "content": "Hello world" },
               { "title": "Second Post", "content": "More content" }
             ],
-            "as": "post"
-          },
-          "action": {
-            "type": "httpRequest",
-            "method": "POST",
-            "url": "api-service/api/profile/posts",
-            "headers": {
-              "Authorization": "Bearer {{sessionToken}}",
-              "Content-Type": "application/json"
+            "as": "post",
+            "action": {
+              "type": "httpRequest",
+              "method": "POST",
+              "url": "api-service/api/profile/posts",
+              "headers": {
+                "Authorization": "Bearer {{sessionToken}}",
+                "Content-Type": "application/json"
+              },
+              "body": {
+                "title": "{{post.title}}",
+                "content": "{{post.content}}"
+              }
             },
-            "body": {
-              "title": "{{post.title}}",
-              "content": "{{post.content}}"
-            }
-          },
-          "assertions": [
-            {
-              "assertions": [
-                {
-                  "path": "$.response.status",
-                  "operator": "eq",
-                  "value": 201
-                },
-                {
-                  "path": "$.response.body.post.authorId",
-                  "operator": "eq",
-                  "value": "{{userId}}"
-                }
-              ]
-            }
-          ]
+            "assertions": [
+              {
+                "assertions": [
+                  {
+                    "path": "$.response.status",
+                    "operator": "eq",
+                    "value": 201
+                  },
+                  {
+                    "path": "$.response.body.post.authorId",
+                    "operator": "eq",
+                    "value": "{{userId}}"
+                  }
+                ]
+              }
+            ]
+          }
         },
         {
           "name": "Profile now shows exactly 2 posts",
@@ -129,8 +129,8 @@
                   "value": 200
                 },
                 {
-                  "path": "$.response.body.profile.posts",
-                  "operator": "length",
+                  "count": "$.response.body.profile.posts",
+                  "operator": "eq",
                   "value": 2
                 }
               ]
@@ -153,8 +153,8 @@
                   "value": 200
                 },
                 {
-                  "path": "$.response.body.posts",
-                  "operator": "length",
+                  "count": "$.response.body.posts",
+                  "operator": "eq",
                   "value": 4
                 }
               ]

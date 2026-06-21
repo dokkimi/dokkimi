@@ -77,26 +77,32 @@
                   "value": "Bob Smith"
                 },
                 {
-                  "path": "$.response.body.profile.posts",
-                  "operator": "length",
+                  "count": "$.response.body.profile.posts",
+                  "operator": "eq",
                   "value": 0
                 }
               ]
             },
             {
-              "service": "api-service",
-              "consoleAssertions": [
-                {
-                  "message": {
+              "match": {
+                "path": "$.consoleLogs",
+                "where": [
+                  {
+                    "path": "$$.service",
+                    "operator": "eq",
+                    "value": "api-service"
+                  },
+                  {
+                    "path": "$$.message",
                     "operator": "contains",
                     "value": "Authenticated user: bob@example.com"
-                  },
-                  "count": {
-                    "operator": "gte",
-                    "value": 1
                   }
+                ],
+                "count": {
+                  "operator": "gte",
+                  "value": 1
                 }
-              ]
+              }
             }
           ]
         },
@@ -161,8 +167,8 @@
                   "value": 200
                 },
                 {
-                  "path": "$.response.body.posts",
-                  "operator": "length",
+                  "count": "$.response.body.posts",
+                  "operator": "eq",
                   "value": 3
                 }
               ]
@@ -303,19 +309,25 @@
               ]
             },
             {
-              "service": "api-service",
-              "consoleAssertions": [
-                {
-                  "message": {
+              "match": {
+                "path": "$.consoleLogs",
+                "where": [
+                  {
+                    "path": "$$.service",
+                    "operator": "eq",
+                    "value": "api-service"
+                  },
+                  {
+                    "path": "$$.message",
                     "operator": "contains",
                     "value": "Invalid session token"
-                  },
-                  "count": {
-                    "operator": "gte",
-                    "value": 1
                   }
+                ],
+                "count": {
+                  "operator": "gte",
+                  "value": 1
                 }
-              ]
+              }
             }
           ]
         }

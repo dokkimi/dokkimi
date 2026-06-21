@@ -60,31 +60,37 @@
                   "value": 200
                 },
                 {
-                  "path": "$.response.body.posts",
-                  "operator": "type",
+                  "type": "$.response.body.posts",
+                  "operator": "eq",
                   "value": "array"
                 },
                 {
-                  "path": "$.response.body.posts",
-                  "operator": "length",
+                  "count": "$.response.body.posts",
+                  "operator": "eq",
                   "value": 2
                 }
               ]
             },
             {
-              "service": "api-service",
-              "consoleAssertions": [
-                {
-                  "message": {
+              "match": {
+                "path": "$.consoleLogs",
+                "where": [
+                  {
+                    "path": "$$.service",
+                    "operator": "eq",
+                    "value": "api-service"
+                  },
+                  {
+                    "path": "$$.message",
                     "operator": "contains",
                     "value": "Fetching published posts"
-                  },
-                  "count": {
-                    "operator": "gte",
-                    "value": 1
                   }
+                ],
+                "count": {
+                  "operator": "gte",
+                  "value": 1
                 }
-              ]
+              }
             }
           ]
         },

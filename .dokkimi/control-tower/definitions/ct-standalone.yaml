@@ -41,8 +41,8 @@ tests:
                   - 201
               - path: $.response.body.runId
                 operator: exists
-              - path: $.response.body.instances
-                operator: length
+              - count: $.response.body.instances
+                operator: eq
                 value: 1
               - path: $.response.body.instances[0].name
                 operator: eq
@@ -65,8 +65,8 @@ tests:
                 value: '{{runId}}'
               - path: $.response.body.status
                 operator: exists
-              - path: $.response.body.instances
-                operator: length
+              - count: $.response.body.instances
+                operator: eq
                 value: 1
       - name: Get latest run matches created run
         action:
@@ -149,8 +149,8 @@ tests:
               - path: $.response.status
                 operator: eq
                 value: 200
-              - path: $.response.body
-                operator: type
+              - type: $.response.body
+                operator: eq
                 value: array
   - name: Log query endpoints return empty results for unknown instance
     variables:

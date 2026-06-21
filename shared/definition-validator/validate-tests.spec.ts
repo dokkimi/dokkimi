@@ -789,9 +789,12 @@ describe('validateStep', () => {
           action: { type: 'httpRequest', method: 'GET', url: '/api' },
           assertions: [
             {
-              match: { origin: 'svc-a', method: 'POST', url: 'svc-b/api' },
+              match: {
+                path: '$.traffic',
+                where: [{ path: '$$.origin', operator: 'eq', value: 'svc-a' }],
+              },
               assertions: [
-                { path: '$.response.status', operator: 'eq', value: 200 },
+                { path: '$.match.response.status', operator: 'eq', value: 200 },
               ],
             },
           ],
@@ -815,77 +818,6 @@ describe('validateStep', () => {
       expect(
         r.errors.some((e) => e.includes('"match" must be an object')),
       ).toBe(true);
-    });
-
-    it('validates assertionScope', () => {
-      const r = makeResult();
-      validateStep(
-        {
-          action: { type: 'httpRequest', method: 'GET', url: '/api' },
-          assertions: [{ assertionScope: 'bogus' }],
-        },
-        'ctx',
-        r,
-      );
-      expect(
-        r.errors.some((e) => e.includes('assertionScope must be one of')),
-      ).toBe(true);
-    });
-
-    it('validates count assertion', () => {
-      const r = makeResult();
-      validateStep(
-        {
-          action: { type: 'httpRequest', method: 'GET', url: '/api' },
-          assertions: [
-            {
-              match: { origin: 'svc' },
-              count: { operator: 'eq', value: 1 },
-            },
-          ],
-        },
-        'ctx',
-        r,
-      );
-      expect(r.errors).toHaveLength(0);
-    });
-
-    it('errors on invalid count operator', () => {
-      const r = makeResult();
-      validateStep(
-        {
-          action: { type: 'httpRequest', method: 'GET', url: '/api' },
-          assertions: [
-            {
-              count: { operator: 'bogus', value: 1 },
-            },
-          ],
-        },
-        'ctx',
-        r,
-      );
-      expect(r.errors.some((e) => e.includes('operator must be one of'))).toBe(
-        true,
-      );
-    });
-
-    it('errors when count value is not an integer', () => {
-      const r = makeResult();
-      validateStep(
-        {
-          action: { type: 'httpRequest', method: 'GET', url: '/api' },
-          assertions: [
-            {
-              count: { operator: 'eq', value: 'one' },
-            },
-          ],
-        },
-        'ctx',
-        r,
-      );
-      expect(r.errors.some((e) => e.includes('value must be an integer'))).toBe(
-        true,
-      );
     });
 
     it('validates extract in assertion block', () => {
@@ -931,172 +863,6 @@ describe('validateStep', () => {
         r,
       );
       expect(r.errors.some((e) => e.includes('must be a string'))).toBe(true);
-    });
-  });
-
-  describe('console log assertions', () => {
-    it('validates a valid console assertion block', () => {
-      const r = makeResult();
-      validateStep(
-        {
-          action: { type: 'httpRequest', method: 'GET', url: '/api' },
-          assertions: [
-            {
-              service: 'my-svc',
-              consoleAssertions: [
-                {
-                  level: 'INFO',
-                  message: { operator: 'contains', value: 'hello' },
-                  count: { operator: 'gte', value: 1 },
-                },
-              ],
-            },
-          ],
-        },
-        'ctx',
-        r,
-      );
-      expect(r.errors).toHaveLength(0);
-    });
-
-    it('errors when consoleAssertions is not an array', () => {
-      const r = makeResult();
-      validateStep(
-        {
-          action: { type: 'httpRequest', method: 'GET', url: '/api' },
-          assertions: [
-            {
-              service: 'my-svc',
-              consoleAssertions: 'bad',
-            },
-          ],
-        },
-        'ctx',
-        r,
-      );
-      expect(
-        r.errors.some((e) =>
-          e.includes('"consoleAssertions" must be an array'),
-        ),
-      ).toBe(true);
-    });
-
-    it('errors on invalid console log level', () => {
-      const r = makeResult();
-      validateStep(
-        {
-          action: { type: 'httpRequest', method: 'GET', url: '/api' },
-          assertions: [
-            {
-              service: 'my-svc',
-              consoleAssertions: [
-                {
-                  level: 'TRACE',
-                  count: { operator: 'eq', value: 0 },
-                },
-              ],
-            },
-          ],
-        },
-        'ctx',
-        r,
-      );
-      expect(r.errors.some((e) => e.includes('level must be one of'))).toBe(
-        true,
-      );
-    });
-
-    it('errors when message filter is not an object', () => {
-      const r = makeResult();
-      validateStep(
-        {
-          action: { type: 'httpRequest', method: 'GET', url: '/api' },
-          assertions: [
-            {
-              service: 'my-svc',
-              consoleAssertions: [
-                {
-                  message: 'bad',
-                  count: { operator: 'eq', value: 0 },
-                },
-              ],
-            },
-          ],
-        },
-        'ctx',
-        r,
-      );
-      expect(
-        r.errors.some((e) => e.includes('"message" must be an object')),
-      ).toBe(true);
-    });
-
-    it('errors on invalid message operator', () => {
-      const r = makeResult();
-      validateStep(
-        {
-          action: { type: 'httpRequest', method: 'GET', url: '/api' },
-          assertions: [
-            {
-              service: 'my-svc',
-              consoleAssertions: [
-                {
-                  message: { operator: 'bogus', value: 'hi' },
-                  count: { operator: 'eq', value: 0 },
-                },
-              ],
-            },
-          ],
-        },
-        'ctx',
-        r,
-      );
-      expect(r.errors.some((e) => e.includes('operator must be one of'))).toBe(
-        true,
-      );
-    });
-
-    it('errors when message value is not a string', () => {
-      const r = makeResult();
-      validateStep(
-        {
-          action: { type: 'httpRequest', method: 'GET', url: '/api' },
-          assertions: [
-            {
-              service: 'my-svc',
-              consoleAssertions: [
-                {
-                  message: { operator: 'contains', value: 123 },
-                  count: { operator: 'eq', value: 0 },
-                },
-              ],
-            },
-          ],
-        },
-        'ctx',
-        r,
-      );
-      expect(r.errors.some((e) => e.includes('value must be a string'))).toBe(
-        true,
-      );
-    });
-
-    it('errors when console assertion is not an object', () => {
-      const r = makeResult();
-      validateStep(
-        {
-          action: { type: 'httpRequest', method: 'GET', url: '/api' },
-          assertions: [
-            {
-              service: 'my-svc',
-              consoleAssertions: ['bad'],
-            },
-          ],
-        },
-        'ctx',
-        r,
-      );
-      expect(r.errors.some((e) => e.includes('must be an object'))).toBe(true);
     });
   });
 });

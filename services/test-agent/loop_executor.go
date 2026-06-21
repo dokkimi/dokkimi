@@ -236,16 +236,6 @@ func runLoop(plan IterationPlan, varCtx *VariableContext, body LoopBody) (LoopRe
 	return LoopResult{completed, iterationsRan}, nil
 }
 
-// getStepLoop returns the loop modifier on a step (if any). At most one is non-nil.
-func getStepLoop(step TestStep) (forEach *ForEachLoop, forLoop *ForLoop, repeat *RepeatLoop) {
-	return step.ForEach, step.For, step.Repeat
-}
-
-// getActionLoop returns the loop modifier on an action (if any).
-func getActionLoop(action StepAction) (forEach *ForEachLoop, forLoop *ForLoop, repeat *RepeatLoop) {
-	return action.ForEach, action.For, action.Repeat
-}
-
 // evaluateUntil checks the until assertions against the root context.
 // Returns true if all until assertions pass.
 func evaluateUntil(until []Assertion, rootCtx map[string]interface{}, varCtx *VariableContext) bool {
@@ -255,13 +245,34 @@ func evaluateUntil(until []Assertion, rootCtx map[string]interface{}, varCtx *Va
 	for _, a := range until {
 		// Resolve variable references in the assertion path and value.
 		resolvedPath := a.Path
-		if path, err := varCtx.Resolve(a.Path); err == nil {
-			resolvedPath = path
+		if pathStr, ok := a.Path.(string); ok {
+			if path, err := varCtx.Resolve(pathStr); err == nil {
+				resolvedPath = path
+			}
 		}
 		resolvedAssertion := Assertion{
 			Path:     resolvedPath,
+			Count:    a.Count,
+			Type:     a.Type,
+			Keys:     a.Keys,
+			Values:   a.Values,
+			Entries:  a.Entries,
 			Operator: a.Operator,
 			Value:    a.Value,
+		}
+		// Resolve variable references in source field shorthand paths.
+		for _, resolveField := range []*string{
+			&resolvedAssertion.Count,
+			&resolvedAssertion.Type,
+			&resolvedAssertion.Keys,
+			&resolvedAssertion.Values,
+			&resolvedAssertion.Entries,
+		} {
+			if *resolveField != "" {
+				if resolved, err := varCtx.Resolve(*resolveField); err == nil {
+					*resolveField = resolved
+				}
+			}
 		}
 		if a.Value != nil {
 			if s, ok := a.Value.(string); ok {

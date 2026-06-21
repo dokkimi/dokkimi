@@ -27,11 +27,11 @@ tests:
               - path: $.response.status
                 operator: eq
                 value: 200
-              - path: $.response.body.queryResults
-                operator: type
+              - type: $.response.body.queryResults
+                operator: eq
                 value: array
-              - path: $.response.body.queryResults[0][0].result
-                operator: type
+              - type: $.response.body.queryResults[0][0].result
+                operator: eq
                 value: array
               - path: $.response.body.queryResults[0][0].result[0].name
                 operator: eq

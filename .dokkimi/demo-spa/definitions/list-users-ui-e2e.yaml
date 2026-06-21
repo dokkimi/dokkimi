@@ -42,21 +42,27 @@ tests:
                 match: true
         assertions:
           - match:
-              method: POST
-              url: traffic-tester/query
+              path: "$.traffic"
+              where:
+                - path: "$$.request.method"
+                  operator: eq
+                  value: POST
+                - path: "$$.request.url"
+                  operator: contains
+                  value: traffic-tester/query
             assertions:
-              - path: $.response.status
+              - path: $.match.response.status
                 operator: eq
                 value: 200
-              - path: $.request.body.queries[0].databaseType
+              - path: $.match.request.body.queries[0].databaseType
                 operator: eq
                 value: postgres
-              - path: $.request.body.queries[0].command
+              - path: $.match.request.body.queries[0].command
                 operator: contains
                 value: SELECT
-              - path: $.request.body.queries[0].command
+              - path: $.match.request.body.queries[0].command
                 operator: contains
                 value: users
-              - path: $.response.body.queryResults[0][0].result[0].name
+              - path: $.match.response.body.queryResults[0][0].result[0].name
                 operator: eq
                 value: Alice

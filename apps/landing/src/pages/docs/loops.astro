@@ -179,7 +179,7 @@ import CodeBlock from '../../components/CodeBlock.astro';
       <tr><td>Test-level</td><td><code>forEach</code>/<code>for</code>/<code>repeat</code> on a test</td><td>All steps repeat per iteration</td></tr>
       <tr><td>Step-level</td><td><code>forEach</code>/<code>for</code>/<code>repeat</code> on a step</td><td>Action + extract + assertions repeat per iteration</td></tr>
       <tr><td>Action-level</td><td><code>forEach</code>/<code>for</code>/<code>repeat</code> inside an action</td><td>Only the action repeats; extract + assertions run once after</td></tr>
-      <tr><td>Assertion-block</td><td><code>forEach</code> on an assertion block</td><td>Assertions run once per item</td></tr>
+      <tr><td>Assertion-block</td><td><code>forEach</code> on an assertion block</td><td>Assertions nested inside the loop body run once per item</td></tr>
       <tr><td>UI sub-step group</td><td><code>forEach</code>/<code>for</code>/<code>repeat</code> with nested <code>steps</code> inside a UI action</td><td>Sub-steps repeat per iteration</td></tr>
     </tbody>
   </table>
@@ -210,6 +210,23 @@ import CodeBlock from '../../components/CodeBlock.astro';
   "extract": {
     "lastUserId": "$.response.body.id"
   }
+}`} lang="json" />
+
+  <h3>Assertion-block loop</h3>
+  <p>When a <code>forEach</code> is used inside an assertion block, the assertions are nested inside the loop object:</p>
+  <CodeBlock code={`{
+  "assertions": [
+    {
+      "forEach": {
+        "items": "$.response.body.users",
+        "as": "user",
+        "assertions": [
+          { "path": "$.variables.user.email", "operator": "exists" },
+          { "path": "$.variables.user.active", "operator": "eq", "value": true }
+        ]
+      }
+    }
+  ]
 }`} lang="json" />
 
   <h3>UI sub-step group</h3>

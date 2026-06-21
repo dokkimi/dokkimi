@@ -167,64 +167,94 @@ func (vc *VariableContext) ResolveAction(action StepAction) (StepAction, error) 
 	return resolved, nil
 }
 
-// resolveValue recursively resolves variables in a value.
-// ResolveAssertionBlocks resolves variable templates in assertion expected values,
-// match criteria, and console assertion message filters.
+// ResolveAssertionBlocks resolves variable templates in assertion paths/values
+// and match where entry values. Does NOT resolve $$-prefixed paths.
 func (vc *VariableContext) ResolveAssertionBlocks(blocks []AssertionBlock) []AssertionBlock {
 	resolved := make([]AssertionBlock, len(blocks))
 	for i, block := range blocks {
 		resolved[i] = block
 
-		// Resolve assertion values
+		// Resolve assertion values and string-form paths
 		if len(block.Assertions) > 0 {
-			resolvedAssertions := make([]Assertion, len(block.Assertions))
-			for j, a := range block.Assertions {
-				resolvedAssertions[j] = a
-				if a.Path != "" {
-					if rv, err := vc.Resolve(a.Path); err == nil {
-						resolvedAssertions[j].Path = rv
-					}
-				}
-				if a.Value != nil {
-					if rv, err := vc.resolveValue(a.Value); err == nil {
-						resolvedAssertions[j].Value = rv
-					}
-				}
-			}
-			resolved[i].Assertions = resolvedAssertions
+			resolved[i].Assertions = vc.resolveAssertions(block.Assertions)
 		}
 
-		// Resolve match criteria
+		// Resolve match where entry values
 		if block.Match != nil {
 			m := *block.Match
-			if m.URL != "" {
-				if rv, err := vc.Resolve(m.URL); err == nil {
-					m.URL = rv
-				}
-			}
-			if m.Origin != "" {
-				if rv, err := vc.Resolve(m.Origin); err == nil {
-					m.Origin = rv
-				}
+			if len(m.Where) > 0 {
+				m.Where = vc.resolveWhereEntries(m.Where)
 			}
 			resolved[i].Match = &m
 		}
 
-		// Resolve console assertion message filters
-		if len(block.ConsoleAssertions) > 0 {
-			resolvedCA := make([]ConsoleLogAssertion, len(block.ConsoleAssertions))
-			for j, ca := range block.ConsoleAssertions {
-				resolvedCA[j] = ca
-				if ca.Message != nil && ca.Message.Value != "" {
-					if rv, err := vc.Resolve(ca.Message.Value); err == nil {
-						resolvedCA[j].Message = &MessageFilter{
-							Operator: ca.Message.Operator,
-							Value:    rv,
-						}
-					}
-				}
+		// Resolve nested loop bodies recursively
+		if block.ForEach != nil {
+			fe := *block.ForEach
+			fe.Assertions = vc.resolveLoopAssertions(fe.Assertions)
+			resolved[i].ForEach = &fe
+		}
+		if block.For != nil {
+			f := *block.For
+			f.Assertions = vc.resolveLoopAssertions(f.Assertions)
+			resolved[i].For = &f
+		}
+		if block.Repeat != nil {
+			r := *block.Repeat
+			r.Assertions = vc.resolveLoopAssertions(r.Assertions)
+			resolved[i].Repeat = &r
+		}
+	}
+	return resolved
+}
+
+func (vc *VariableContext) resolveLoopAssertions(la LoopAssertions) LoopAssertions {
+	if len(la.Blocks) > 0 {
+		la.Blocks = vc.ResolveAssertionBlocks(la.Blocks)
+	}
+	if len(la.Flat) > 0 {
+		la.Flat = vc.resolveAssertions(la.Flat)
+	}
+	return la
+}
+
+func (vc *VariableContext) resolveAssertions(assertions []Assertion) []Assertion {
+	resolvedAssertions := make([]Assertion, len(assertions))
+	for j, a := range assertions {
+		resolvedAssertions[j] = a
+		if pathStr, ok := a.Path.(string); ok && pathStr != "" {
+			if rv, err := vc.Resolve(pathStr); err == nil {
+				resolvedAssertions[j].Path = rv
 			}
-			resolved[i].ConsoleAssertions = resolvedCA
+		}
+		if a.Value != nil {
+			if rv, err := vc.resolveValue(a.Value); err == nil {
+				resolvedAssertions[j].Value = rv
+			}
+		}
+	}
+	return resolvedAssertions
+}
+
+func (vc *VariableContext) resolveWhereEntries(entries []WhereEntry) []WhereEntry {
+	resolved := make([]WhereEntry, len(entries))
+	for i, e := range entries {
+		resolved[i] = e
+		// Do NOT resolve $$-prefixed paths — they resolve at match time
+		if e.Value != nil {
+			if rv, err := vc.resolveValue(e.Value); err == nil {
+				resolved[i].Value = rv
+			}
+		}
+		if len(e.Or) > 0 {
+			resolved[i].Or = vc.resolveWhereEntries(e.Or)
+		}
+		if len(e.And) > 0 {
+			resolved[i].And = vc.resolveWhereEntries(e.And)
+		}
+		if e.Not != nil {
+			notEntries := vc.resolveWhereEntries([]WhereEntry{*e.Not})
+			resolved[i].Not = &notEntries[0]
 		}
 	}
 	return resolved
