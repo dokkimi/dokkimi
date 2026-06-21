@@ -216,6 +216,7 @@ Companion to `consistent-root-document.md` (design) and `consistent-root-impleme
 ### Migration rules (apply to all files)
 
 For each file:
+
 - [ ] `match: { origin, method, url }` → `match: { path: "$.traffic", where: [...] }` with `$$`-prefixed paths
 - [ ] `$.response.*` in match-block assertions → `$.match.response.*`
 - [ ] `$.request.*` in match-block assertions → `$.match.request.*`

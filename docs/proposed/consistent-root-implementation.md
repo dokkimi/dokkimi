@@ -9,6 +9,7 @@ Companion to `consistent-root-document.md`. This document specifies exact code c
 ### `MatchCriteria` → full rewrite
 
 Current (lines 108–113):
+
 ```go
 type MatchCriteria struct {
     Origin string `json:"origin,omitempty"`
@@ -18,6 +19,7 @@ type MatchCriteria struct {
 ```
 
 New:
+
 ```go
 type MatchCriteria struct {
     Path  string          `json:"path"`
@@ -46,6 +48,7 @@ type WhereEntry struct {
 ### `Assertion` → add source fields and object-form support
 
 Current (lines 24–29 of `assertion_engine.go`):
+
 ```go
 type Assertion struct {
     Path     string      `json:"path"`
@@ -56,6 +59,7 @@ type Assertion struct {
 ```
 
 New:
+
 ```go
 type Assertion struct {
     // Source fields — exactly one must be set
@@ -136,6 +140,7 @@ func resolveValue(v interface{}, doc map[string]interface{}) (interface{}, error
 ### `AssertionBlock` → remove deprecated fields, support nested loops
 
 Current (lines 96–106):
+
 ```go
 type AssertionBlock struct {
     Extract           map[string]ExtractRule `json:"extract,omitempty"`
@@ -150,6 +155,7 @@ type AssertionBlock struct {
 ```
 
 New:
+
 ```go
 type AssertionBlock struct {
     Extract    map[string]ExtractRule `json:"extract,omitempty"`
@@ -167,6 +173,7 @@ Added: `For`, `Repeat` (loops are now nested, so all three loop types are suppor
 ### Loop types → add nested body fields
 
 Current `ForEachLoop` (lines 69–75):
+
 ```go
 type ForEachLoop struct {
     Items   interface{} `json:"items"`
@@ -177,6 +184,7 @@ type ForEachLoop struct {
 ```
 
 New — add nested body fields:
+
 ```go
 type ForEachLoop struct {
     Items      interface{}            `json:"items"`
@@ -203,6 +211,7 @@ type ForEachLoop struct {
 Same pattern for `ForLoop` and `RepeatLoop` — add the same nested body fields.
 
 The body level is determined by context:
+
 - Test-level loop: `Steps` is populated, `Action`/`Match`/`Assertions` are not
 - Step-level loop: `Action` may be populated, `Match`/`Assertions`/`Extract` may be populated
 - Assertion-block loop: `Match`/`Assertions`/`Extract` may be populated, `Action` is not
@@ -224,6 +233,7 @@ When a step has `ForEach`/`For`/`Repeat` set, the step's own `Assertions` and `E
 ### Remove `.length` special case
 
 Current (lines 62–70):
+
 ```go
 if seg == "length" {
     if arr, ok := toSlice(current); ok {
@@ -240,6 +250,7 @@ Delete this entire block. After removal, `"length"` is treated as a normal objec
 ### Add negative indexing
 
 Current array index handling (lines 71–81):
+
 ```go
 if idxMatch := regexp.MustCompile(`^\[(\d+)\]$`).FindStringSubmatch(seg); idxMatch != nil {
     idx, _ := strconv.Atoi(idxMatch[1])
@@ -248,6 +259,7 @@ if idxMatch := regexp.MustCompile(`^\[(\d+)\]$`).FindStringSubmatch(seg); idxMat
 ```
 
 New — update regex to accept negative indices:
+
 ```go
 if idxMatch := regexp.MustCompile(`^\[(-?\d+)\]$`).FindStringSubmatch(seg); idxMatch != nil {
     idx, _ := strconv.Atoi(idxMatch[1])
@@ -271,6 +283,7 @@ if idxMatch := regexp.MustCompile(`^\[(-?\d+)\]$`).FindStringSubmatch(seg); idxM
 `EvaluateDocPath` currently only handles `$` prefix. Add `$$` support by accepting an optional scoped context parameter.
 
 Change signature:
+
 ```go
 // Before
 func EvaluateDocPath(doc interface{}, path string) (interface{}, bool)
@@ -280,6 +293,7 @@ func EvaluateDocPath(doc interface{}, path string, scopedCtx ...interface{}) (in
 ```
 
 At the top of the function, before stripping the `$.` prefix:
+
 ```go
 if path == "$$" {
     return nil, false // bare $$ is invalid — must be $$.field
@@ -311,6 +325,7 @@ Delete the following cases from the switch statement:
 ### Unify `contains` / `notContains`
 
 Current (lines 249–254):
+
 ```go
 case "contains":
     return boolResult(strings.Contains(fmt.Sprintf("%v", actual), fmt.Sprintf("%v", expected)))
@@ -319,6 +334,7 @@ case "notContains":
 ```
 
 New — dispatch on actual type:
+
 ```go
 case "contains":
     return containsDispatch(actual, expected, false)
@@ -358,6 +374,7 @@ func containsDispatch(actual, expected interface{}, negate bool) AssertionResult
 ```
 
 Handle the case where `actual` is `nil` — treat as type error, not silent false:
+
 ```go
 if actual == nil {
     return AssertionResult{
@@ -827,6 +844,7 @@ func findTimelineIndex(timeline []interface{}, trafficIdx int, direction string)
 ### Remove self-block vs match-block distinction
 
 Current `validateStep` (lines 143–231) dispatches to three different validators:
+
 1. `ValidateConsoleLogBlock` (if `service` + `consoleAssertions`)
 2. `ValidateHttpCallBlock` (if `match`)
 3. `ValidateSelfBlock` (fallback)
@@ -1168,7 +1186,7 @@ func (sv *StepValidator) executeExtract(rules map[string]ExtractRule, rootCtx ma
 // Before
 export interface AssertionBlock {
   extract?: Record<string, ExtractRule>;
-  match?: { origin?: string; method?: string; url?: string; };
+  match?: { origin?: string; method?: string; url?: string };
   count?: CountAssertion;
   assertionScope?: 'all' | 'first' | 'last' | 'any';
   assertions: Assertion[];
@@ -1205,7 +1223,7 @@ export interface MatchCriteria {
 export type WhereEntry = WhereAssertion | WhereOr | WhereAnd | WhereNot;
 
 export interface WhereAssertion {
-  path: string;        // must start with $$
+  path: string; // must start with $$
   operator: string;
   value?: any;
 }
@@ -1250,12 +1268,12 @@ export interface Assertion {
 }
 
 export interface PathWithTransform {
-  from: string;        // must start with $
+  from: string; // must start with $
   transform: string;
 }
 
 export interface ValueRef {
-  from: string;         // must start with $
+  from: string; // must start with $
   transform?: string;
 }
 ```
@@ -1265,13 +1283,24 @@ export interface ValueRef {
 ```typescript
 // Remove: 'type', 'length', 'arrayContains', 'arrayNotContains'
 export type AssertionOperator =
-  | 'eq' | 'eqIgnoreCase' | 'ne'
-  | 'gt' | 'gte' | 'lt' | 'lte'
-  | 'contains' | 'notContains'
-  | 'containsIgnoreCase' | 'notContainsIgnoreCase'
-  | 'matches' | 'exists' | 'notExists'
-  | 'in' | 'notIn'
-  | 'isEmpty' | 'notEmpty';
+  | 'eq'
+  | 'eqIgnoreCase'
+  | 'ne'
+  | 'gt'
+  | 'gte'
+  | 'lt'
+  | 'lte'
+  | 'contains'
+  | 'notContains'
+  | 'containsIgnoreCase'
+  | 'notContainsIgnoreCase'
+  | 'matches'
+  | 'exists'
+  | 'notExists'
+  | 'in'
+  | 'notIn'
+  | 'isEmpty'
+  | 'notEmpty';
 ```
 
 ### Loop types — add nested body fields
@@ -1349,214 +1378,255 @@ Delete the `ConsoleLogAssertion` interface entirely. Console log filtering now u
 #### `validateAssertionBlock` — rewrite
 
 ```typescript
-export function validateAssertionBlock(block: Record<string, unknown>, ctx: string, r: ValidationResult): void {
-    // Check for unknown keys
-    validateKeys(block, VALID_ASSERTION_BLOCK_KEYS, ctx, r);
+export function validateAssertionBlock(
+  block: Record<string, unknown>,
+  ctx: string,
+  r: ValidationResult,
+): void {
+  // Check for unknown keys
+  validateKeys(block, VALID_ASSERTION_BLOCK_KEYS, ctx, r);
 
-    // Match (optional)
-    if ('match' in block) {
-        validateMatchCriteria(block.match, `${ctx}.match`, r);
-    }
+  // Match (optional)
+  if ('match' in block) {
+    validateMatchCriteria(block.match, `${ctx}.match`, r);
+  }
 
-    // Extract (optional)
-    if ('extract' in block) {
-        validateExtractRules(block.extract, `${ctx}.extract`, r);
-    }
+  // Extract (optional)
+  if ('extract' in block) {
+    validateExtractRules(block.extract, `${ctx}.extract`, r);
+  }
 
-    // Assertions (optional)
-    if ('assertions' in block) {
-        validateAssertions(block.assertions, ctx, r);
-    }
+  // Assertions (optional)
+  if ('assertions' in block) {
+    validateAssertions(block.assertions, ctx, r);
+  }
 
-    // Loop modifiers (at most one)
-    validateLoopModifiers(block, ctx, r, { allowDocPaths: true, level: 'assertion-block' });
+  // Loop modifiers (at most one)
+  validateLoopModifiers(block, ctx, r, {
+    allowDocPaths: true,
+    level: 'assertion-block',
+  });
 }
 ```
 
 #### `validateMatchCriteria` — new function
 
 ```typescript
-function validateMatchCriteria(match: unknown, ctx: string, r: ValidationResult): void {
-    if (!isPlainObject(match)) {
-        r.error(`${ctx} must be an object`);
-        return;
-    }
+function validateMatchCriteria(
+  match: unknown,
+  ctx: string,
+  r: ValidationResult,
+): void {
+  if (!isPlainObject(match)) {
+    r.error(`${ctx} must be an object`);
+    return;
+  }
 
-    validateKeys(match, VALID_MATCH_CRITERIA_KEYS, ctx, r);
+  validateKeys(match, VALID_MATCH_CRITERIA_KEYS, ctx, r);
 
-    // path (required)
-    if (!('path' in match) || typeof match.path !== 'string' || !match.path) {
-        r.error(`${ctx}.path is required and must be a non-empty string`);
-    } else if (!match.path.startsWith('$.')) {
-        r.error(`${ctx}.path must start with "$." (e.g., "$.traffic", "$.consoleLogs")`);
-    }
+  // path (required)
+  if (!('path' in match) || typeof match.path !== 'string' || !match.path) {
+    r.error(`${ctx}.path is required and must be a non-empty string`);
+  } else if (!match.path.startsWith('$.')) {
+    r.error(
+      `${ctx}.path must start with "$." (e.g., "$.traffic", "$.consoleLogs")`,
+    );
+  }
 
-    // where (optional, non-empty if present)
-    if ('where' in match) {
-        if (!Array.isArray(match.where)) {
-            r.error(`${ctx}.where must be an array`);
-        } else if (match.where.length === 0) {
-            r.error(`${ctx}.where must be non-empty; omit where entirely to match all elements`);
-        } else {
-            match.where.forEach((entry, i) => {
-                validateWhereEntry(entry, `${ctx}.where[${i}]`, r);
-            });
-        }
+  // where (optional, non-empty if present)
+  if ('where' in match) {
+    if (!Array.isArray(match.where)) {
+      r.error(`${ctx}.where must be an array`);
+    } else if (match.where.length === 0) {
+      r.error(
+        `${ctx}.where must be non-empty; omit where entirely to match all elements`,
+      );
+    } else {
+      match.where.forEach((entry, i) => {
+        validateWhereEntry(entry, `${ctx}.where[${i}]`, r);
+      });
     }
+  }
 
-    // count (optional)
-    if ('count' in match) {
-        if (typeof match.count === 'number') {
-            if (!Number.isInteger(match.count) || match.count < 0) {
-                r.error(`${ctx}.count must be a non-negative integer`);
-            }
-        } else if (isPlainObject(match.count)) {
-            validateCountAssertion(match.count, `${ctx}.count`, r);
-        } else {
-            r.error(`${ctx}.count must be a number or {operator, value} object`);
-        }
+  // count (optional)
+  if ('count' in match) {
+    if (typeof match.count === 'number') {
+      if (!Number.isInteger(match.count) || match.count < 0) {
+        r.error(`${ctx}.count must be a non-negative integer`);
+      }
+    } else if (isPlainObject(match.count)) {
+      validateCountAssertion(match.count, `${ctx}.count`, r);
+    } else {
+      r.error(`${ctx}.count must be a number or {operator, value} object`);
     }
+  }
 
-    // as (optional)
-    if ('as' in match) {
-        if (typeof match.as !== 'string' || !match.as || !/^\w+$/.test(match.as)) {
-            r.error(`${ctx}.as must be a non-empty alphanumeric string`);
-        }
+  // as (optional)
+  if ('as' in match) {
+    if (typeof match.as !== 'string' || !match.as || !/^\w+$/.test(match.as)) {
+      r.error(`${ctx}.as must be a non-empty alphanumeric string`);
     }
+  }
 }
 ```
 
 #### `validateWhereEntry` — new function (recursive)
 
 ```typescript
-function validateWhereEntry(entry: unknown, ctx: string, r: ValidationResult): void {
-    if (!isPlainObject(entry)) {
-        r.error(`${ctx} must be an object`);
-        return;
-    }
+function validateWhereEntry(
+  entry: unknown,
+  ctx: string,
+  r: ValidationResult,
+): void {
+  if (!isPlainObject(entry)) {
+    r.error(`${ctx} must be an object`);
+    return;
+  }
 
-    validateKeys(entry, VALID_WHERE_ENTRY_KEYS, ctx, r);
+  validateKeys(entry, VALID_WHERE_ENTRY_KEYS, ctx, r);
 
-    const hasAssertion = 'path' in entry;
-    const hasOr = 'or' in entry;
-    const hasAnd = 'and' in entry;
-    const hasNot = 'not' in entry;
+  const hasAssertion = 'path' in entry;
+  const hasOr = 'or' in entry;
+  const hasAnd = 'and' in entry;
+  const hasNot = 'not' in entry;
 
-    // Must be exactly one of: assertion, or, and, not
-    const typeCount = [hasAssertion, hasOr, hasAnd, hasNot].filter(Boolean).length;
-    if (typeCount === 0) {
-        r.error(`${ctx} must have 'path' (assertion), 'or', 'and', or 'not'`);
-        return;
-    }
-    if (typeCount > 1) {
-        r.error(`${ctx} cannot mix assertion fields with 'or'/'and'/'not'`);
-        return;
-    }
+  // Must be exactly one of: assertion, or, and, not
+  const typeCount = [hasAssertion, hasOr, hasAnd, hasNot].filter(
+    Boolean,
+  ).length;
+  if (typeCount === 0) {
+    r.error(`${ctx} must have 'path' (assertion), 'or', 'and', or 'not'`);
+    return;
+  }
+  if (typeCount > 1) {
+    r.error(`${ctx} cannot mix assertion fields with 'or'/'and'/'not'`);
+    return;
+  }
 
-    if (hasAssertion) {
-        // Validate as assertion with $$ prefix
-        const path = entry.path;
-        if (typeof path !== 'string' || !path.startsWith('$$.')) {
-            r.error(`${ctx}.path must start with "$$." (e.g., "$$.request.method")`);
-        }
-        if ('operator' in entry) {
-            validateOperator(entry.operator, ctx, r);
-        }
-    } else if (hasOr) {
-        if (!Array.isArray(entry.or) || entry.or.length === 0) {
-            r.error(`${ctx}.or must be a non-empty array`);
-        } else {
-            entry.or.forEach((child, i) => {
-                validateWhereEntry(child, `${ctx}.or[${i}]`, r);
-            });
-        }
-    } else if (hasAnd) {
-        if (!Array.isArray(entry.and) || entry.and.length === 0) {
-            r.error(`${ctx}.and must be a non-empty array`);
-        } else {
-            entry.and.forEach((child, i) => {
-                validateWhereEntry(child, `${ctx}.and[${i}]`, r);
-            });
-        }
-    } else if (hasNot) {
-        if (!isPlainObject(entry.not)) {
-            r.error(`${ctx}.not must be a where entry object`);
-        } else {
-            validateWhereEntry(entry.not, `${ctx}.not`, r);
-        }
+  if (hasAssertion) {
+    // Validate as assertion with $$ prefix
+    const path = entry.path;
+    if (typeof path !== 'string' || !path.startsWith('$$.')) {
+      r.error(`${ctx}.path must start with "$$." (e.g., "$$.request.method")`);
     }
+    if ('operator' in entry) {
+      validateOperator(entry.operator, ctx, r);
+    }
+  } else if (hasOr) {
+    if (!Array.isArray(entry.or) || entry.or.length === 0) {
+      r.error(`${ctx}.or must be a non-empty array`);
+    } else {
+      entry.or.forEach((child, i) => {
+        validateWhereEntry(child, `${ctx}.or[${i}]`, r);
+      });
+    }
+  } else if (hasAnd) {
+    if (!Array.isArray(entry.and) || entry.and.length === 0) {
+      r.error(`${ctx}.and must be a non-empty array`);
+    } else {
+      entry.and.forEach((child, i) => {
+        validateWhereEntry(child, `${ctx}.and[${i}]`, r);
+      });
+    }
+  } else if (hasNot) {
+    if (!isPlainObject(entry.not)) {
+      r.error(`${ctx}.not must be a where entry object`);
+    } else {
+      validateWhereEntry(entry.not, `${ctx}.not`, r);
+    }
+  }
 }
 ```
 
 #### `validateAssertion` — update for source fields and transforms
 
 ```typescript
-function validateAssertion(assertion: Record<string, unknown>, ctx: string, r: ValidationResult): void {
-    validateKeys(assertion, VALID_ASSERTION_KEYS, ctx, r);
+function validateAssertion(
+  assertion: Record<string, unknown>,
+  ctx: string,
+  r: ValidationResult,
+): void {
+  validateKeys(assertion, VALID_ASSERTION_KEYS, ctx, r);
 
-    // Exactly one source field
-    const sourceFields = ['path', 'count', 'type', 'keys', 'values', 'entries'];
-    const present = sourceFields.filter(f => f in assertion);
-    if (present.length === 0) {
-        r.error(`${ctx} must have exactly one source field (${sourceFields.join(', ')})`);
-    } else if (present.length > 1) {
-        r.error(`${ctx} has multiple source fields (${present.join(', ')}); only one is allowed`);
-    }
+  // Exactly one source field
+  const sourceFields = ['path', 'count', 'type', 'keys', 'values', 'entries'];
+  const present = sourceFields.filter((f) => f in assertion);
+  if (present.length === 0) {
+    r.error(
+      `${ctx} must have exactly one source field (${sourceFields.join(', ')})`,
+    );
+  } else if (present.length > 1) {
+    r.error(
+      `${ctx} has multiple source fields (${present.join(', ')}); only one is allowed`,
+    );
+  }
 
-    // Validate the source field
-    const sourceField = present[0];
-    if (sourceField === 'path') {
-        const path = assertion.path;
-        if (typeof path === 'string') {
-            validatePathFormat(path, `${ctx}.path`, r);
-        } else if (isPlainObject(path)) {
-            // Object form: { from, transform }
-            validatePathWithTransform(path, `${ctx}.path`, r);
-        } else {
-            r.error(`${ctx}.path must be a string or {from, transform} object`);
-        }
+  // Validate the source field
+  const sourceField = present[0];
+  if (sourceField === 'path') {
+    const path = assertion.path;
+    if (typeof path === 'string') {
+      validatePathFormat(path, `${ctx}.path`, r);
+    } else if (isPlainObject(path)) {
+      // Object form: { from, transform }
+      validatePathWithTransform(path, `${ctx}.path`, r);
     } else {
-        // Shorthand — must be a string path
-        const val = assertion[sourceField];
-        if (typeof val !== 'string') {
-            r.error(`${ctx}.${sourceField} must be a string path`);
-        } else {
-            validatePathFormat(val, `${ctx}.${sourceField}`, r);
-        }
+      r.error(`${ctx}.path must be a string or {from, transform} object`);
     }
+  } else {
+    // Shorthand — must be a string path
+    const val = assertion[sourceField];
+    if (typeof val !== 'string') {
+      r.error(`${ctx}.${sourceField} must be a string path`);
+    } else {
+      validatePathFormat(val, `${ctx}.${sourceField}`, r);
+    }
+  }
 
-    // Operator
-    if ('operator' in assertion) {
-        validateOperator(assertion.operator, ctx, r);
-    }
+  // Operator
+  if ('operator' in assertion) {
+    validateOperator(assertion.operator, ctx, r);
+  }
 
-    // Value — check for ValueRef form
-    if ('value' in assertion && isPlainObject(assertion.value)) {
-        const val = assertion.value as Record<string, unknown>;
-        if ('from' in val && typeof val.from === 'string' && val.from.startsWith('$.')) {
-            validatePathFormat(val.from, `${ctx}.value.from`, r);
-            if ('transform' in val) {
-                if (!VALID_TRANSFORMS.has(val.transform as string)) {
-                    r.error(`${ctx}.value.transform must be one of: ${[...VALID_TRANSFORMS].join(', ')}`);
-                }
-            }
+  // Value — check for ValueRef form
+  if ('value' in assertion && isPlainObject(assertion.value)) {
+    const val = assertion.value as Record<string, unknown>;
+    if (
+      'from' in val &&
+      typeof val.from === 'string' &&
+      val.from.startsWith('$.')
+    ) {
+      validatePathFormat(val.from, `${ctx}.value.from`, r);
+      if ('transform' in val) {
+        if (!VALID_TRANSFORMS.has(val.transform as string)) {
+          r.error(
+            `${ctx}.value.transform must be one of: ${[...VALID_TRANSFORMS].join(', ')}`,
+          );
         }
-        // Otherwise treat as literal object — no validation needed
+      }
     }
+    // Otherwise treat as literal object — no validation needed
+  }
 }
 
-function validatePathWithTransform(obj: Record<string, unknown>, ctx: string, r: ValidationResult): void {
-    if (!('from' in obj) || typeof obj.from !== 'string') {
-        r.error(`${ctx}.from is required and must be a string`);
-    } else if (!obj.from.startsWith('$.')) {
-        r.error(`${ctx}.from must start with "$."`);
-    } else {
-        validatePathFormat(obj.from, `${ctx}.from`, r);
-    }
+function validatePathWithTransform(
+  obj: Record<string, unknown>,
+  ctx: string,
+  r: ValidationResult,
+): void {
+  if (!('from' in obj) || typeof obj.from !== 'string') {
+    r.error(`${ctx}.from is required and must be a string`);
+  } else if (!obj.from.startsWith('$.')) {
+    r.error(`${ctx}.from must start with "$."`);
+  } else {
+    validatePathFormat(obj.from, `${ctx}.from`, r);
+  }
 
-    if (!('transform' in obj) || !VALID_TRANSFORMS.has(obj.transform as string)) {
-        r.error(`${ctx}.transform is required and must be one of: ${[...VALID_TRANSFORMS].join(', ')}`);
-    }
+  if (!('transform' in obj) || !VALID_TRANSFORMS.has(obj.transform as string)) {
+    r.error(
+      `${ctx}.transform is required and must be one of: ${[...VALID_TRANSFORMS].join(', ')}`,
+    );
+  }
 }
 ```
 
@@ -1568,87 +1638,114 @@ The key change: loops now contain their body. Validation must check the body fie
 
 ```typescript
 export function validateLoopModifiers(
-    obj: Record<string, unknown>,
-    ctx: string,
-    r: ValidationResult,
-    options?: LoopValidationOptions & { level?: 'test' | 'step' | 'assertion-block' }
+  obj: Record<string, unknown>,
+  ctx: string,
+  r: ValidationResult,
+  options?: LoopValidationOptions & {
+    level?: 'test' | 'step' | 'assertion-block';
+  },
 ): 'forEach' | 'for' | 'repeat' | null {
-    // ... existing mutual exclusion check ...
+  // ... existing mutual exclusion check ...
 
-    if (obj.forEach) {
-        validateForEachLoop(obj.forEach, `${ctx}.forEach`, r, options);
-        validateLoopBody(obj.forEach, `${ctx}.forEach`, r, options?.level ?? 'assertion-block');
-    }
-    // Same for for, repeat
+  if (obj.forEach) {
+    validateForEachLoop(obj.forEach, `${ctx}.forEach`, r, options);
+    validateLoopBody(
+      obj.forEach,
+      `${ctx}.forEach`,
+      r,
+      options?.level ?? 'assertion-block',
+    );
+  }
+  // Same for for, repeat
 
-    // When a loop is present at step level, the parent step must not also have
-    // assertions/extract as sibling keys — those belong inside the loop body.
-    if (options?.level === 'step' && (obj.forEach || obj.for || obj.repeat)) {
-        if ('assertions' in obj && obj.assertions) {
-            r.error(`${ctx}: step-level loop body contains its own assertions; remove top-level 'assertions'`);
-        }
-        if ('extract' in obj && obj.extract) {
-            r.error(`${ctx}: step-level loop body contains its own extract; remove top-level 'extract'`);
-        }
+  // When a loop is present at step level, the parent step must not also have
+  // assertions/extract as sibling keys — those belong inside the loop body.
+  if (options?.level === 'step' && (obj.forEach || obj.for || obj.repeat)) {
+    if ('assertions' in obj && obj.assertions) {
+      r.error(
+        `${ctx}: step-level loop body contains its own assertions; remove top-level 'assertions'`,
+      );
     }
+    if ('extract' in obj && obj.extract) {
+      r.error(
+        `${ctx}: step-level loop body contains its own extract; remove top-level 'extract'`,
+      );
+    }
+  }
 }
 
 function validateLoopBody(
-    loop: Record<string, unknown>,
-    ctx: string,
-    r: ValidationResult,
-    level: 'test' | 'step' | 'assertion-block'
+  loop: Record<string, unknown>,
+  ctx: string,
+  r: ValidationResult,
+  level: 'test' | 'step' | 'assertion-block',
 ): void {
-    const hasAction = 'action' in loop;
-    const hasSteps = 'steps' in loop;
-    const hasAssertions = 'assertions' in loop || 'match' in loop || 'extract' in loop;
+  const hasAction = 'action' in loop;
+  const hasSteps = 'steps' in loop;
+  const hasAssertions =
+    'assertions' in loop || 'match' in loop || 'extract' in loop;
 
-    // Level-specific validation
-    if (level === 'test') {
-        if (!hasSteps) {
-            r.error(`${ctx} at test level must have a 'steps' array`);
-        }
-        if (hasAction) r.error(`${ctx} at test level cannot have 'action'`);
-        if (hasAssertions) r.error(`${ctx} at test level cannot have 'match'/'assertions'/'extract'`);
-        if (hasSteps) {
-            // Validate each step in the steps array
-            validateStepsArray(loop.steps, `${ctx}.steps`, r);
-        }
-    } else if (level === 'step') {
-        if (hasSteps) r.error(`${ctx} at step level cannot have 'steps'`);
-        if (hasAction) {
-            validateAction(loop.action, `${ctx}.action`, r);
-        }
-        if ('match' in loop) validateMatchCriteria(loop.match, `${ctx}.match`, r);
-        if ('assertions' in loop) validateAssertions(loop.assertions, ctx, r);
-        if ('extract' in loop) validateExtractRules(loop.extract, `${ctx}.extract`, r);
-    } else {
-        // assertion-block level
-        if (hasSteps) r.error(`${ctx} at assertion-block level cannot have 'steps'`);
-        if (hasAction) r.error(`${ctx} at assertion-block level cannot have 'action'`);
-        if ('match' in loop) validateMatchCriteria(loop.match, `${ctx}.match`, r);
-        if ('assertions' in loop) validateAssertions(loop.assertions, ctx, r);
-        if ('extract' in loop) validateExtractRules(loop.extract, `${ctx}.extract`, r);
+  // Level-specific validation
+  if (level === 'test') {
+    if (!hasSteps) {
+      r.error(`${ctx} at test level must have a 'steps' array`);
     }
-
-    // repeat.until — validate entries as standard assertions (same struct, supports transforms and ValueRef)
-    if ('until' in loop && Array.isArray(loop.until)) {
-        (loop.until as unknown[]).forEach((entry, i) => {
-            validateAssertion(entry as Record<string, unknown>, `${ctx}.until[${i}]`, r);
-        });
+    if (hasAction) r.error(`${ctx} at test level cannot have 'action'`);
+    if (hasAssertions)
+      r.error(
+        `${ctx} at test level cannot have 'match'/'assertions'/'extract'`,
+      );
+    if (hasSteps) {
+      // Validate each step in the steps array
+      validateStepsArray(loop.steps, `${ctx}.steps`, r);
     }
+  } else if (level === 'step') {
+    if (hasSteps) r.error(`${ctx} at step level cannot have 'steps'`);
+    if (hasAction) {
+      validateAction(loop.action, `${ctx}.action`, r);
+    }
+    if ('match' in loop) validateMatchCriteria(loop.match, `${ctx}.match`, r);
+    if ('assertions' in loop) validateAssertions(loop.assertions, ctx, r);
+    if ('extract' in loop)
+      validateExtractRules(loop.extract, `${ctx}.extract`, r);
+  } else {
+    // assertion-block level
+    if (hasSteps)
+      r.error(`${ctx} at assertion-block level cannot have 'steps'`);
+    if (hasAction)
+      r.error(`${ctx} at assertion-block level cannot have 'action'`);
+    if ('match' in loop) validateMatchCriteria(loop.match, `${ctx}.match`, r);
+    if ('assertions' in loop) validateAssertions(loop.assertions, ctx, r);
+    if ('extract' in loop)
+      validateExtractRules(loop.extract, `${ctx}.extract`, r);
+  }
 
-    // Nested loops (recursive)
-    validateLoopModifiers(loop, ctx, r, { allowDocPaths: true, level: level === 'test' ? 'step' : 'assertion-block' });
+  // repeat.until — validate entries as standard assertions (same struct, supports transforms and ValueRef)
+  if ('until' in loop && Array.isArray(loop.until)) {
+    (loop.until as unknown[]).forEach((entry, i) => {
+      validateAssertion(
+        entry as Record<string, unknown>,
+        `${ctx}.until[${i}]`,
+        r,
+      );
+    });
+  }
+
+  // Nested loops (recursive)
+  validateLoopModifiers(loop, ctx, r, {
+    allowDocPaths: true,
+    level: level === 'test' ? 'step' : 'assertion-block',
+  });
 }
 ```
 
 #### Remove forEach+match mutual exclusion
 
 Current (lines 333–338 of `validate-assertions.ts`):
+
 ```typescript
 if (block.forEach && (block.match || block.service)) {
-    r.error(`${ctx}: forEach cannot be combined with match or service`);
+  r.error(`${ctx}: forEach cannot be combined with match or service`);
 }
 ```
 
@@ -1661,9 +1758,10 @@ Delete this check. Nesting makes forEach+match composable — a loop body can co
 The validator must enforce that `$$` paths only appear inside `where` arrays. This is handled naturally by `validateWhereEntry` (requires `$$.` prefix) and the existing assertion path validation (requires `$.` prefix). No additional global check needed — if someone writes `$$` in a regular assertion, `validatePathFormat` already rejects it since it doesn't start with `$.`.
 
 Add to `validatePathFormat`:
+
 ```typescript
 if (path.startsWith('$$') && !inWhereContext) {
-    r.error(`${ctx}: $$ paths are only valid inside match.where`);
+  r.error(`${ctx}: $$ paths are only valid inside match.where`);
 }
 ```
 
@@ -1676,6 +1774,7 @@ Where `inWhereContext` is a boolean parameter threaded through validation. In pr
 Current `ResolveAssertionBlocks` (lines 173–231) resolves `{{var}}` in assertion paths, values, match URL/origin, and console assertion messages.
 
 After the change:
+
 - Remove match URL/origin resolution (match no longer has those fields)
 - Remove console assertion resolution (console assertions removed)
 - Add resolution for `where` entry values

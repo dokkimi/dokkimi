@@ -7,6 +7,7 @@
 `$` means different things depending on whether an assertion is in a "self-block" (an assertion block with no `match` — asserts against the step's own request/response) or a "match block" (an assertion block with a `match` — asserts against matched traffic entries).
 
 **Without `match`** — `$` is the unified root context:
+
 ```json
 {
   "response": { "status": 201, "body": { "id": "abc" } },
@@ -21,6 +22,7 @@
 ```
 
 **With `match`** — `$` silently switches to a per-log document:
+
 ```json
 {
   "request": { ... },
@@ -85,18 +87,21 @@ Inside the `where` array, `$$` refers to the current element being tested. `wher
     "where": [
       { "path": "$$.origin", "operator": "eq", "value": "api-gateway" },
       { "path": "$$.request.method", "operator": "eq", "value": "POST" },
-      { "path": "$$.request.url", "operator": "contains", "value": "/api/users" },
+      {
+        "path": "$$.request.url",
+        "operator": "contains",
+        "value": "/api/users"
+      },
       { "path": "$$.response.status", "operator": "gte", "value": 200 }
     ],
     "count": 1
   },
-  "assertions": [
-    { "path": "$.match.response.body.id", "operator": "exists" }
-  ]
+  "assertions": [{ "path": "$.match.response.body.id", "operator": "exists" }]
 }
 ```
 
 This solves several problems at once:
+
 - **Full operator support in filters** — `gte`, `contains`, `regex`, etc. all work because `where` uses real assertions
 - **Response-side filtering** — `$$.response.status`, `$$.response.body.*` are just paths
 - **Variable references in filters** — `"value": "{{expectedOrigin}}"` works the same as in assertions
@@ -108,6 +113,7 @@ This solves several problems at once:
 `where` is AND by default — all entries must pass for an element to be included. For OR logic, use an `or` block; for explicit AND grouping inside an `or`, use an `and` block.
 
 Simple OR:
+
 ```json
 {
   "where": [
@@ -154,17 +160,23 @@ Top-level `where` is implicitly AND, so an explicit `and` block is only needed i
 Negation in `where` uses individual negation operators (`ne`, `notContains`, `notExists`, `notIn`, etc.) for simple cases. For negating a group of conditions, use a `not` block:
 
 Simple negation (single assertion):
+
 ```json
 { "path": "$$.request.headers.x-internal", "operator": "notExists" }
 ```
 
 Group negation with `not`:
+
 ```json
 {
   "not": {
     "and": [
       { "path": "$$.request.method", "operator": "eq", "value": "POST" },
-      { "path": "$$.request.url", "operator": "contains", "value": "/api/users" }
+      {
+        "path": "$$.request.url",
+        "operator": "contains",
+        "value": "/api/users"
+      }
     ]
   }
 }
@@ -179,7 +191,11 @@ Where entry values support the same ValueRef form as standard assertions: `"valu
 ```json
 {
   "where": [
-    { "path": "$$.response.body.id", "operator": "eq", "value": { "from": "$.variables.expectedId" } }
+    {
+      "path": "$$.response.body.id",
+      "operator": "eq",
+      "value": { "from": "$.variables.expectedId" }
+    }
   ]
 }
 ```
@@ -189,16 +205,19 @@ Where entry values support the same ValueRef form as standard assertions: `"valu
 Match supports an optional `count` field that asserts on the number of matched entries. This is sugar — it desugars into a standard count assertion on `$.matches`, but co-locates the cardinality expectation with the filter.
 
 A number means `eq`:
+
 ```json
 "match": { "path": "$.traffic", "where": [...], "count": 1 }
 ```
 
 Object form for other operators:
+
 ```json
 "match": { "path": "$.traffic", "where": [...], "count": { "operator": "gte", "value": 2 } }
 ```
 
 When `count` on match fails, the error includes the full match context:
+
 > `match count failed: expected exactly 1 entry matching {path: $.traffic, where: [origin eq "api-gateway", method eq "POST", url contains "/api/users"]}, found 3`
 
 Both `count` on match and the `count` assertion shorthand (`{ "count": "$.matches", ... }`) are supported. Use `count` on match for the common case; use the assertion shorthand when asserting count of a different source (e.g., `as`-named results from a previous match).
@@ -216,11 +235,14 @@ These keys are scoped to the block that produced them. When a nested block runs 
 `$.matches`/`$.match`/`$.lastMatch` do not persist to subsequent blocks or steps — they are always cleared when the block that set them completes.
 
 Example — nested match with stack behavior:
+
 ```json
 {
   "match": {
     "path": "$.traffic",
-    "where": [{ "path": "$$.request.method", "operator": "eq", "value": "POST" }],
+    "where": [
+      { "path": "$$.request.method", "operator": "eq", "value": "POST" }
+    ],
     "as": "postRequests"
   },
   "forEach": {
@@ -228,11 +250,11 @@ Example — nested match with stack behavior:
     "as": "entry",
     "match": {
       "path": "$.dbLogs",
-      "where": [{ "path": "$$.query", "operator": "contains", "value": "INSERT" }]
+      "where": [
+        { "path": "$$.query", "operator": "contains", "value": "INSERT" }
+      ]
     },
-    "assertions": [
-      { "path": "$.match.query", "operator": "exists" }
-    ]
+    "assertions": [{ "path": "$.match.query", "operator": "exists" }]
   }
 }
 ```
@@ -308,25 +330,31 @@ An assertion resolves a value from the root context, then compares it with `oper
 #### `path` — direct value (string or object form)
 
 String form resolves the path and uses the value directly:
+
 ```json
 { "path": "$.response.status", "operator": "eq", "value": 200 }
 ```
 
 Object form resolves a path and applies a transform:
+
 ```json
-{ "path": { "from": "$.response.body.users", "transform": "length" }, "operator": "gte", "value": 1 }
+{
+  "path": { "from": "$.response.body.users", "transform": "length" },
+  "operator": "gte",
+  "value": 1
+}
 ```
 
 #### Transform shorthands
 
 Each transform has a top-level shorthand that replaces `path`. These are sugar for the object form with the corresponding `transform`:
 
-| Shorthand | Equivalent `path` object | Example |
-|---|---|---|
-| `count` | `{ "from": "...", "transform": "length" }` | `{ "count": "$.matches", "operator": "gte", "value": 2 }` |
-| `type` | `{ "from": "...", "transform": "type" }` | `{ "type": "$.val", "operator": "eq", "value": "string" }` |
-| `keys` | `{ "from": "...", "transform": "keys" }` | `{ "keys": "$.response.body", "operator": "contains", "value": "id" }` |
-| `values` | `{ "from": "...", "transform": "values" }` | `{ "values": "$.response.body", "operator": "contains", "value": "Alice" }` |
+| Shorthand | Equivalent `path` object                    | Example                                                                                                  |
+| --------- | ------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| `count`   | `{ "from": "...", "transform": "length" }`  | `{ "count": "$.matches", "operator": "gte", "value": 2 }`                                                |
+| `type`    | `{ "from": "...", "transform": "type" }`    | `{ "type": "$.val", "operator": "eq", "value": "string" }`                                               |
+| `keys`    | `{ "from": "...", "transform": "keys" }`    | `{ "keys": "$.response.body", "operator": "contains", "value": "id" }`                                   |
+| `values`  | `{ "from": "...", "transform": "values" }`  | `{ "values": "$.response.body", "operator": "contains", "value": "Alice" }`                              |
 | `entries` | `{ "from": "...", "transform": "entries" }` | `{ "entries": "$.response.body", "operator": "contains", "value": { "key": "name", "value": "Alice" } }` |
 
 All shorthands accept a string (path to resolve). The assertion object must have exactly one source field (`path`, `count`, `type`, `keys`, `values`, or `entries`).
@@ -340,16 +368,23 @@ Note: `count` appears in three contexts with different roles. As an **assertion 
 `from` must be a `$.`-prefixed path (e.g., `"from": "$.traffic[1].request.body"`). If `value` is an object but does not contain a `from` key starting with `$.`, it is treated as a literal value. The `$.` prefix (with the dot) is required to avoid false positives — a literal value like `{ "from": "$50", "amount": 500 }` is correctly treated as a literal object, not a document-path reference.
 
 Literal:
+
 ```json
 { "path": "$.response.status", "operator": "eq", "value": 200 }
 ```
 
 Document path:
+
 ```json
-{ "path": "$.traffic[0].request.body", "operator": "eq", "value": { "from": "$.traffic[1].request.body" } }
+{
+  "path": "$.traffic[0].request.body",
+  "operator": "eq",
+  "value": { "from": "$.traffic[1].request.body" }
+}
 ```
 
 Document path with transform:
+
 ```json
 {
   "path": { "from": "$.response.body.users", "transform": "length" },
@@ -366,30 +401,33 @@ Document path with transform:
 4. Compare with `operator`
 
 **Transform errors:** If a transform receives the wrong input type, it must fail with a clear error describing the type mismatch — not silently return null. Specific cases:
+
 - `length` on a number, boolean, object, or null → error
 - `keys`, `values`, `entries` on a non-object (including array) → error
 - `type` accepts any input (never errors)
 
 #### Supported transforms
 
-| Transform  | Input        | Output                                              |
-|------------|--------------|-----------------------------------------------------|
-| `length`   | array/string | numeric length                                      |
-| `type`     | any          | type label: `"string"`, `"number"`, `"boolean"`, `"array"`, `"object"`, `"null"` |
-| `keys`     | object       | sorted array of key names                           |
-| `values`   | object       | array of values (in sorted key order)               |
-| `entries`  | object       | array of `{ "key": "...", "value": ... }` objects   |
+| Transform | Input        | Output                                                                           |
+| --------- | ------------ | -------------------------------------------------------------------------------- |
+| `length`  | array/string | numeric length                                                                   |
+| `type`    | any          | type label: `"string"`, `"number"`, `"boolean"`, `"array"`, `"object"`, `"null"` |
+| `keys`    | object       | sorted array of key names                                                        |
+| `values`  | object       | array of values (in sorted key order)                                            |
+| `entries` | object       | array of `{ "key": "...", "value": ... }` objects                                |
 
 ### 5. Remove `count` as a standalone block field
 
 The `count` field on assertion blocks (the sibling key to `match` and `assertions`) is removed. Count validation is expressed in two ways:
 
 **`count` on match** (preferred for match cardinality):
+
 ```json
 "match": { "path": "$.traffic", "where": [...], "count": 1 }
 ```
 
 **`count` assertion shorthand** (for non-match arrays or `as`-named results):
+
 ```json
 { "count": "$.variables.postRequests", "operator": "gte", "value": 2 }
 ```
@@ -398,12 +436,12 @@ The `count` field on assertion blocks (the sibling key to `match` and `assertion
 
 The `assertionScope` field (`all`, `first`, `last`, `any`) is removed. With `$.matches` as an array on the root document, users express scope through paths and loops:
 
-| Old `assertionScope` | New equivalent |
-|---|---|
-| `"first"` (or single-match) | `$.match.*` |
-| `"last"` | `$.lastMatch.*` or `$.matches[-1].*` |
-| `"all"` | forEach over `$.matches` |
-| `"any"` | not needed — `where` is expressive enough to filter to the exact entries you want |
+| Old `assertionScope`        | New equivalent                                                                    |
+| --------------------------- | --------------------------------------------------------------------------------- |
+| `"first"` (or single-match) | `$.match.*`                                                                       |
+| `"last"`                    | `$.lastMatch.*` or `$.matches[-1].*`                                              |
+| `"all"`                     | forEach over `$.matches`                                                          |
+| `"any"`                     | not needed — `where` is expressive enough to filter to the exact entries you want |
 
 `$.match` covers the most common case (single expected match). For multi-match scenarios, forEach over `$.matches` composes naturally with the loop system.
 
@@ -426,6 +464,7 @@ The `consoleAssertions` field on assertion blocks is removed. Console log filter
 ```
 
 Example — asserting on matched console log content:
+
 ```json
 {
   "match": {
@@ -433,12 +472,20 @@ Example — asserting on matched console log content:
     "where": [
       { "path": "$$.service", "operator": "eq", "value": "payment-service" },
       { "path": "$$.level", "operator": "eq", "value": "INFO" },
-      { "path": "$$.message", "operator": "contains", "value": "charge completed" }
+      {
+        "path": "$$.message",
+        "operator": "contains",
+        "value": "charge completed"
+      }
     ],
     "count": 1
   },
   "assertions": [
-    { "path": "$.match.message", "operator": "contains", "value": "{{orderId}}" }
+    {
+      "path": "$.match.message",
+      "operator": "contains",
+      "value": "{{orderId}}"
+    }
   ]
 }
 ```
@@ -458,23 +505,33 @@ Loops (`forEach`, `for`, `repeat`) are no longer inline modifiers. The loop body
 #### forEach (nested)
 
 Before (inline modifier):
+
 ```json
 {
   "forEach": { "items": "$.matches", "as": "entry" },
   "assertions": [
-    { "path": "$.variables.entry.response.status", "operator": "eq", "value": 200 }
+    {
+      "path": "$.variables.entry.response.status",
+      "operator": "eq",
+      "value": 200
+    }
   ]
 }
 ```
 
 After (nested content):
+
 ```json
 {
   "forEach": {
     "items": "$.matches",
     "as": "entry",
     "assertions": [
-      { "path": "$.variables.entry.response.status", "operator": "eq", "value": 200 }
+      {
+        "path": "$.variables.entry.response.status",
+        "operator": "eq",
+        "value": 200
+      }
     ]
   }
 }
@@ -490,7 +547,11 @@ After (nested content):
     "match": {
       "path": "$.traffic",
       "where": [
-        { "path": "$$.request.url", "operator": "contains", "value": "{{endpoint}}" }
+        {
+          "path": "$$.request.url",
+          "operator": "contains",
+          "value": "{{endpoint}}"
+        }
       ],
       "count": { "operator": "gte", "value": 1 }
     },
@@ -515,7 +576,11 @@ After (nested content):
     "items": "$.matches",
     "as": "entry",
     "assertions": [
-      { "path": "$.variables.entry.response.status", "operator": "lt", "value": 400 }
+      {
+        "path": "$.variables.entry.response.status",
+        "operator": "lt",
+        "value": 400
+      }
     ]
   }
 }
@@ -544,8 +609,14 @@ After (nested content):
 ```json
 {
   "for": {
-    "from": 0, "to": 5, "as": "i",
-    "action": { "type": "httpRequest", "method": "GET", "url": "api/items/{{i}}" },
+    "from": 0,
+    "to": 5,
+    "as": "i",
+    "action": {
+      "type": "httpRequest",
+      "method": "GET",
+      "url": "api/items/{{i}}"
+    },
     "assertions": [
       { "path": "$.response.status", "operator": "eq", "value": 200 }
     ]
@@ -556,7 +627,8 @@ After (nested content):
 ```json
 {
   "repeat": {
-    "count": 3, "as": "attempt",
+    "count": 3,
+    "as": "attempt",
     "until": [{ "path": "$.response.status", "operator": "eq", "value": 200 }],
     "action": { "type": "httpRequest", "method": "GET", "url": "api/health" }
   }
@@ -576,7 +648,12 @@ The loop body contains a `steps` array, matching the level it wraps:
     "as": "user",
     "steps": [
       {
-        "action": { "type": "httpRequest", "method": "POST", "url": "api/users", "body": { "name": "{{user.name}}" } }
+        "action": {
+          "type": "httpRequest",
+          "method": "POST",
+          "url": "api/users",
+          "body": { "name": "{{user.name}}" }
+        }
       },
       {
         "assertions": [
@@ -613,7 +690,11 @@ Extract inside a loop body runs per iteration. Extract keys support `{{var}}` in
     "items": "$.matches",
     "as": "entry",
     "assertions": [
-      { "path": "$.variables.entry.response.status", "operator": "eq", "value": 200 }
+      {
+        "path": "$.variables.entry.response.status",
+        "operator": "eq",
+        "value": 200
+      }
     ],
     "extract": {
       "userId_{{entry.index}}": "$.variables.entry.response.body.id"
@@ -629,9 +710,14 @@ Extract paths in a match block resolve against the root context (same as asserti
 ### Full before/after example
 
 Before:
+
 ```json
 {
-  "match": { "origin": "api-gateway", "method": "POST", "url": "user-service/api/users" },
+  "match": {
+    "origin": "api-gateway",
+    "method": "POST",
+    "url": "user-service/api/users"
+  },
   "count": { "operator": "eq", "value": 1 },
   "assertionScope": "first",
   "assertions": [
@@ -642,6 +728,7 @@ Before:
 ```
 
 After:
+
 ```json
 {
   "match": {
@@ -649,32 +736,43 @@ After:
     "where": [
       { "path": "$$.origin", "operator": "eq", "value": "api-gateway" },
       { "path": "$$.request.method", "operator": "eq", "value": "POST" },
-      { "path": "$$.request.url", "operator": "contains", "value": "/api/users" }
+      {
+        "path": "$$.request.url",
+        "operator": "contains",
+        "value": "/api/users"
+      }
     ],
     "count": 1
   },
   "assertions": [
-    { "path": "$.match.request.body.email", "operator": "eq", "value": "{{email}}" },
+    {
+      "path": "$.match.request.body.email",
+      "operator": "eq",
+      "value": "{{email}}"
+    },
     { "path": "$.match.response.status", "operator": "eq", "value": 201 }
   ]
 }
 ```
 
 Example — filtering on response (previously impossible):
+
 ```json
 {
   "match": {
     "path": "$.traffic",
     "where": [
       { "path": "$$.request.method", "operator": "eq", "value": "POST" },
-      { "path": "$$.request.url", "operator": "contains", "value": "/api/users" },
+      {
+        "path": "$$.request.url",
+        "operator": "contains",
+        "value": "/api/users"
+      },
       { "path": "$$.response.status", "operator": "eq", "value": 201 }
     ],
     "count": { "operator": "gte", "value": 1 }
   },
-  "assertions": [
-    { "path": "$.match.response.body.id", "operator": "exists" }
-  ]
+  "assertions": [{ "path": "$.match.response.body.id", "operator": "exists" }]
 }
 ```
 
@@ -689,11 +787,13 @@ The `length` assertion operator is redundant with the `count` shorthand / `trans
 The `type` assertion operator is redundant with the `type` shorthand / `transform: "type"`. With the shorthand, `type` checks compose with any operator (`eq`, `ne`, `in`), making a dedicated `type` operator unnecessary.
 
 Before:
+
 ```json
 { "path": "$.val", "operator": "type", "value": "string" }
 ```
 
 After (equivalent options):
+
 ```json
 { "type": "$.val", "operator": "eq", "value": "string" }
 { "type": "$.val", "operator": "ne", "value": "string" }
@@ -703,6 +803,7 @@ After (equivalent options):
 ### Unify `contains` / `arrayContains`
 
 Currently three separate operators exist:
+
 - `contains` / `notContains` — string substring match
 - `arrayContains` / `arrayNotContains` — array element membership
 - (no `objContains` exists)
@@ -710,10 +811,10 @@ Currently three separate operators exist:
 These should be unified into `contains` / `notContains` that dispatch based on the type of the actual value:
 
 | Actual type | `contains` behavior |
-|---|---|
-| string | substring match |
-| array | element membership |
-| object | key membership |
+| ----------- | ------------------- |
+| string      | substring match     |
+| array       | element membership  |
+| object      | key membership      |
 
 For any other actual type (`number`, `boolean`, `null`), `contains` fails with a type error — not a silent false. The error should name the actual type and suggest the correct approach. This catches cases where a path resolves to an unexpected type rather than silently passing or failing.
 
@@ -749,11 +850,13 @@ Note: `arrayContains` / `arrayNotContains` predate this branch. This cleanup can
 All `.dokkimi/` definition files need migration:
 
 Loop restructuring:
+
 - Inline loop modifiers (`forEach`/`for`/`repeat` as sibling keys) → nested loop objects with body content inside
 - Step-level and action-level loop modifiers → nested loop at appropriate level
 - Test-level loop modifiers → nested loop with `steps` array
 
 Match block migration:
+
 - `match: { origin, method, url }` → `match: { path: "$.traffic", where: [...] }` with `$$`-prefixed assertion paths
 - `$.response.*` in match-block assertions → `$.match.response.*`
 - `$.request.*` in match-block assertions → `$.match.request.*`
@@ -763,10 +866,12 @@ Match block migration:
 - Extract rules inside match blocks: `$.response.*` → `$.match.response.*`
 
 Console log / service migration:
+
 - `consoleAssertions` with `service`/`level`/`message` → `match: { path: "$.consoleLogs", where: [...] }` + regular `assertions`
 - `service` field on assertion blocks → `$$.origin` in match `where`
 
 Other assertion migrations:
+
 - `$.x.y.length` → `{ "count": "$.x.y", ... }` or `{ "path": { "from": "$.x.y", "transform": "length" }, ... }`
 - `{ "operator": "type", ... }` → `{ "type": "$.x.y", "operator": "eq", ... }`
 - `arrayContains` → `contains`
@@ -775,32 +880,40 @@ Other assertion migrations:
 ### Documentation changes
 
 Primary reference:
+
 - **`shared/docs/dokkimi-instructions.md`** — Update assertion block section, assertion paths table, match block examples, operator table, remove count/assertionScope/consoleAssertions/service docs, add source resolution and transform docs, add negative indexing, add `$$` and `where` docs, add `or` in `where`, add `as` on match, update loop docs for nested structure
 
 Design docs (superseded — add "superseded by consistent-root-document.md" note):
+
 - **`docs/implemented/DESIGN-unified-root-context.md`** — Root context assembly; superseded by `$.match`/`$.matches` injection and `$$` scoping
 - **`docs/implemented/DESIGN-loops.md`** — Loop design; superseded by nested loop structure
 - **`docs/implemented/DESIGN-inline-validation.md`** — References `assertionScope` and `consoleAssertions`
 
 npm/CLI:
+
 - **`scripts/npm-readme.md`** — Update match block example
 
 Astro doc pages:
+
 - **`apps/landing/src/pages/docs/assertions.astro`** — Assertion syntax, operators, match blocks, transforms, `$$`/`where`
 - **`apps/landing/src/pages/docs/loops.astro`** — Nested loop structure, forEach/for/repeat body content
 - **`apps/landing/src/pages/docs/tests-and-steps.astro`** — Step-level assertion blocks, match blocks within steps
 
 Astro blog posts (contain removed concepts):
+
 - **`apps/landing/src/content/blog/posted/03-how-traffic-interception-works.md`** — Uses `consoleAssertions`, per-log `$` paths in match blocks
 - **`apps/landing/src/content/blog/posted/10-console-log-assertions.md`** — Heavily uses `consoleAssertions`; needs full rewrite to use `match: { path: "$.consoleLogs", where: [...] }` pattern
 
 Astro tutorials (contain removed concepts):
+
 - **`apps/landing/src/content/tutorials/posted/04-testing-llm-integrations.md`** — Uses `assertionScope`, `arrayContains`, `consoleAssertions`
 
 VSCode extension:
+
 - **`apps/vscode`** — Update autocomplete, snippets, and validation for new match structure, `$$`, removed fields/operators
 
 Build artifacts (regenerated from source — no manual edits, but verify after build):
+
 - `.publish-staging/shared/docs/dokkimi-instructions.md`
 - `.publish-staging/apps/cli/dist/dokkimi-instructions.md`
 - `apps/cli/dist/dokkimi-instructions.md`
