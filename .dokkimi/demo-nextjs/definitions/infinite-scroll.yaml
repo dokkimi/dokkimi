@@ -49,12 +49,12 @@ tests:
                 operator: eq
                 value: '10'
           - match:
-              path: "$.traffic"
+              path: '$.traffic'
               where:
-                - path: "$$.request.method"
+                - path: '$$.request.method'
                   operator: eq
                   value: GET
-                - path: "$$.request.url"
+                - path: '$$.request.url'
                   operator: contains
                   value: nextjs-demo/api/bookmarks
               count:
@@ -100,12 +100,12 @@ tests:
           # match.url doesn't expose the query string for assertion, so
           # the count + rendered-row delta carries the load here.
           - match:
-              path: "$.traffic"
+              path: '$.traffic'
               where:
-                - path: "$$.request.method"
+                - path: '$$.request.method'
                   operator: eq
                   value: GET
-                - path: "$$.request.url"
+                - path: '$$.request.url'
                   operator: contains
                   value: nextjs-demo/api/bookmarks
               count:

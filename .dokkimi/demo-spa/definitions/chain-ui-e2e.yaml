@@ -38,15 +38,15 @@ tests:
                 value: '3'
           # Outer hop: UI → traffic-tester (kicked off by the SPA's fetch).
           - match:
-              path: "$.traffic"
+              path: '$.traffic'
               where:
-                - path: "$$.origin"
+                - path: '$$.origin'
                   operator: eq
                   value: routing-test-ui
-                - path: "$$.request.method"
+                - path: '$$.request.method'
                   operator: eq
                   value: POST
-                - path: "$$.request.url"
+                - path: '$$.request.url'
                   operator: contains
                   value: traffic-tester/chain
               count:
@@ -55,15 +55,15 @@ tests:
           # Inner hop: traffic-tester → downstream-svc (made by axios inside
           # traffic-tester when handling the requests[] array).
           - match:
-              path: "$.traffic"
+              path: '$.traffic'
               where:
-                - path: "$$.origin"
+                - path: '$$.origin'
                   operator: eq
                   value: traffic-tester
-                - path: "$$.request.method"
+                - path: '$$.request.method'
                   operator: eq
                   value: POST
-                - path: "$$.request.url"
+                - path: '$$.request.url'
                   operator: contains
                   value: downstream-svc/inner
               count:

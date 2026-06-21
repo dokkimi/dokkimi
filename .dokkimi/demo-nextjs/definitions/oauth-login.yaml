@@ -65,12 +65,12 @@ tests:
                 value: alice@example.com
           # 2. Browser-initiated authorize redirect (caught by interceptor).
           - match:
-              path: "$.traffic"
+              path: '$.traffic'
               where:
-                - path: "$$.request.method"
+                - path: '$$.request.method'
                   operator: eq
                   value: GET
-                - path: "$$.request.url"
+                - path: '$$.request.url'
                   operator: contains
                   value: accounts.google.com/o/oauth2/v2/auth
               count:
@@ -85,15 +85,15 @@ tests:
                 value: /api/auth/callback?code=mock-code-abc123
           # 3. Server-side code-exchange call from Next.js.
           - match:
-              path: "$.traffic"
+              path: '$.traffic'
               where:
-                - path: "$$.origin"
+                - path: '$$.origin'
                   operator: eq
                   value: nextjs-demo
-                - path: "$$.request.method"
+                - path: '$$.request.method'
                   operator: eq
                   value: POST
-                - path: "$$.request.url"
+                - path: '$$.request.url'
                   operator: contains
                   value: oauth2.googleapis.com/token
               count:
@@ -111,15 +111,15 @@ tests:
                 value: grant_type=authorization_code
           # 4. Server-side userinfo lookup using the access token.
           - match:
-              path: "$.traffic"
+              path: '$.traffic'
               where:
-                - path: "$$.origin"
+                - path: '$$.origin'
                   operator: eq
                   value: nextjs-demo
-                - path: "$$.request.method"
+                - path: '$$.request.method'
                   operator: eq
                   value: GET
-                - path: "$$.request.url"
+                - path: '$$.request.url'
                   operator: contains
                   value: www.googleapis.com/oauth2/v3/userinfo
               count:

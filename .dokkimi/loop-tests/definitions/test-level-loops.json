@@ -37,7 +37,11 @@
             "assertions": [
               {
                 "assertions": [
-                  { "path": "$.response.status", "operator": "eq", "value": 200 },
+                  {
+                    "path": "$.response.status",
+                    "operator": "eq",
+                    "value": 200
+                  },
                   {
                     "path": "$.response.body.title",
                     "operator": "eq",
@@ -109,7 +113,11 @@
             "assertions": [
               {
                 "assertions": [
-                  { "path": "$.response.status", "operator": "eq", "value": 200 },
+                  {
+                    "path": "$.response.status",
+                    "operator": "eq",
+                    "value": 200
+                  },
                   {
                     "path": "$.response.body.title",
                     "operator": "contains",

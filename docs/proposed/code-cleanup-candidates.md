@@ -12,12 +12,12 @@ God object handling 4 database types with duplicated connect → execute → nor
 
 **Extract into:**
 
-| New file | Contents |
-|----------|----------|
-| `postgres_executor.go` | `PostgresPool`, `executePostgresQuery`, row scanning |
-| `mysql_executor.go` | `MysqlPool`, `executeMysqlQuery`, row scanning |
-| `redis_executor.go` | `executeRedisCommand`, `parseRedisCommand`, `normalizeRedisResult` |
-| `mongo_executor.go` | `executeMongoCommand`, BSON parsing/encoding utilities |
+| New file                     | Contents                                                              |
+| ---------------------------- | --------------------------------------------------------------------- |
+| `postgres_executor.go`       | `PostgresPool`, `executePostgresQuery`, row scanning                  |
+| `mysql_executor.go`          | `MysqlPool`, `executeMysqlQuery`, row scanning                        |
+| `redis_executor.go`          | `executeRedisCommand`, `parseRedisCommand`, `normalizeRedisResult`    |
+| `mongo_executor.go`          | `executeMongoCommand`, BSON parsing/encoding utilities                |
 | `database_query_executor.go` | Thin dispatcher: resolves DB type → delegates to the correct executor |
 
 Each executor would implement a common interface:
@@ -37,12 +37,12 @@ Three distinct concerns in one file: path traversal, operator evaluation, and va
 
 **Extract into:**
 
-| New file | Contents |
-|----------|----------|
-| `doc_path.go` | `EvaluateDocPath`, array index resolution, case-insensitive key fallback |
-| `assertion_operators.go` | `applyOperator` and all comparison implementations (eq, contains, matches, in, etc.) |
-| `assertion_transforms.go` | `resolveSource`, `applyTransform` (length, type, keys, values, entries) |
-| `assertion_engine.go` | `ValidateAssertion` pipeline: resolve source → apply transform → resolve value → apply operator |
+| New file                  | Contents                                                                                        |
+| ------------------------- | ----------------------------------------------------------------------------------------------- |
+| `doc_path.go`             | `EvaluateDocPath`, array index resolution, case-insensitive key fallback                        |
+| `assertion_operators.go`  | `applyOperator` and all comparison implementations (eq, contains, matches, in, etc.)            |
+| `assertion_transforms.go` | `resolveSource`, `applyTransform` (length, type, keys, values, entries)                         |
+| `assertion_engine.go`     | `ValidateAssertion` pipeline: resolve source → apply transform → resolve value → apply operator |
 
 ---
 
@@ -52,12 +52,12 @@ Four separable phases executed in sequence.
 
 **Extract into:**
 
-| New file | Contents |
-|----------|----------|
-| `config-loader.ts` | `loadConfig`, `mergeConfigDefaults`, config file discovery |
-| `glob-resolver.ts` | `resolveTargets`, glob/pattern matching, file enumeration |
-| `env-substitution.ts` | `${{VAR}}` interpolation, env variable resolution |
-| `resolve.ts` | Orchestrator: load config → resolve targets → substitute → return |
+| New file              | Contents                                                          |
+| --------------------- | ----------------------------------------------------------------- |
+| `config-loader.ts`    | `loadConfig`, `mergeConfigDefaults`, config file discovery        |
+| `glob-resolver.ts`    | `resolveTargets`, glob/pattern matching, file enumeration         |
+| `env-substitution.ts` | `${{VAR}}` interpolation, env variable resolution                 |
+| `resolve.ts`          | Orchestrator: load config → resolve targets → substitute → return |
 
 ---
 
@@ -67,11 +67,11 @@ CLI entry point that also handles orchestration, polling, and output formatting.
 
 **Extract into:**
 
-| New file | Contents |
-|----------|----------|
-| `run-poller.ts` | `pollUntilComplete`, status checking, timeout handling |
-| `run-formatter.ts` | Console output formatting, progress display, summary tables |
-| `run.ts` | CLI argument parsing, validation, and delegation to poller/formatter |
+| New file           | Contents                                                             |
+| ------------------ | -------------------------------------------------------------------- |
+| `run-poller.ts`    | `pollUntilComplete`, status checking, timeout handling               |
+| `run-formatter.ts` | Console output formatting, progress display, summary tables          |
+| `run.ts`           | CLI argument parsing, validation, and delegation to poller/formatter |
 
 ---
 
@@ -83,10 +83,10 @@ Single file dispatching to 10+ UI sub-step type validators (visit, click, type, 
 
 **Extract into:**
 
-| New file | Contents |
-|----------|----------|
+| New file                  | Contents                                        |
+| ------------------------- | ----------------------------------------------- |
 | `validate-ui-substeps.ts` | Per-substep validation functions (one per type) |
-| `validate-ui-action.ts` | Top-level dispatch + shared helpers |
+| `validate-ui-action.ts`   | Top-level dispatch + shared helpers             |
 
 Alternatively, one file per sub-step group if the per-type validators grow further.
 
@@ -98,12 +98,12 @@ Multiple operations (upload, diff, download, merge, approve) co-located but shar
 
 **Extract into:**
 
-| New file | Contents |
-|----------|----------|
-| `baselines/upload.ts` | Upload and artifact management |
-| `baselines/diff.ts` | Visual diff comparison |
-| `baselines/approve.ts` | Approval and merge logic |
-| `baselines.ts` | CLI entry point delegating to sub-commands |
+| New file               | Contents                                   |
+| ---------------------- | ------------------------------------------ |
+| `baselines/upload.ts`  | Upload and artifact management             |
+| `baselines/diff.ts`    | Visual diff comparison                     |
+| `baselines/approve.ts` | Approval and merge logic                   |
+| `baselines.ts`         | CLI entry point delegating to sub-commands |
 
 ---
 
@@ -113,12 +113,12 @@ Assembles the unified root document from multiple data sources.
 
 **Extract into:**
 
-| New file | Contents |
-|----------|----------|
-| `document_assembler_traffic.go` | `assembleTrafficEntries`, timeline index calculation |
-| `document_assembler_console.go` | `assembleConsoleLogs`, level detection |
-| `document_assembler_db.go` | `assembleDatabaseLogs` |
-| `document_assembler.go` | `AssembleDocument` orchestrator + response/variables sections |
+| New file                        | Contents                                                      |
+| ------------------------------- | ------------------------------------------------------------- |
+| `document_assembler_traffic.go` | `assembleTrafficEntries`, timeline index calculation          |
+| `document_assembler_console.go` | `assembleConsoleLogs`, level detection                        |
+| `document_assembler_db.go`      | `assembleDatabaseLogs`                                        |
+| `document_assembler.go`         | `AssembleDocument` orchestrator + response/variables sections |
 
 ---
 
@@ -128,11 +128,11 @@ Run lifecycle management mixed with cleanup, deployment, and credential handling
 
 **Extract into:**
 
-| New file | Contents |
-|----------|----------|
-| `run-cleanup.service.ts` | Cleanup orchestration, recovery, orphan detection |
+| New file                    | Contents                                                |
+| --------------------------- | ------------------------------------------------------- |
+| `run-cleanup.service.ts`    | Cleanup orchestration, recovery, orphan detection       |
 | `run-deployment.service.ts` | Namespace creation, container deployment, image pulling |
-| `runs.service.ts` | CRUD operations, status management, coordination |
+| `runs.service.ts`           | CRUD operations, status management, coordination        |
 
 ---
 
@@ -142,28 +142,28 @@ Monolithic daemon manager intertwining state persistence, process lifecycle, and
 
 **Extract into:**
 
-| New file | Contents |
-|----------|----------|
-| `daemon-state.ts` | PID file read/write, file locking, state serialization |
-| `process-lifecycle.ts` | Spawn, kill, waitForReady, signal handling |
-| `health-checker.ts` | HTTP health polling, timeout logic, retry |
-| `index.ts` | Public API composing the three modules |
+| New file               | Contents                                               |
+| ---------------------- | ------------------------------------------------------ |
+| `daemon-state.ts`      | PID file read/write, file locking, state serialization |
+| `process-lifecycle.ts` | Spawn, kill, waitForReady, signal handling             |
+| `health-checker.ts`    | HTTP health polling, timeout logic, retry              |
+| `index.ts`             | Public API composing the three modules                 |
 
 ---
 
 ## Tier 3 — Large but cohesive (monitor, don't split yet)
 
-| File | Lines | Why it's OK for now |
-|------|-------|---------------------|
-| `services/db-proxy/mongo/protocol.go` | 954 | Specialized wire protocol decoder — inherently complex, rarely touched. Could extract BSON utilities if it grows further. |
-| `services/test-agent/ui_executor.go` | 689 | Many sub-step types sharing context (browser session, varCtx). Splitting would add plumbing without reducing complexity. |
-| `services/test-agent/ui_types.go` | 567 | Struct definitions — large surface area but low cognitive load. |
-| `services/test-agent/ui_browser.go` | 537 | Chromedp wrapper — single responsibility, cohesive. |
-| `services/test-agent/main.go` | 463 | Entry point + routing. Could extract an `Orchestrator` but not urgent. |
-| `apps/cli/src/commands/clean.ts` | 442 | Multiple cleanup targets but all follow the same pattern. |
-| `apps/cli/src/commands/doctor.ts` | 430 | Multiple diagnostic checks but simple linear flow. |
-| `services/test-agent/step_validator.go` | 423 | Per-step-type dispatch — could split but each branch is small. |
-| `shared/definition-validator/validate-assertions.ts` | 415 | Focused on assertion schema validation, recently refactored. |
+| File                                                 | Lines | Why it's OK for now                                                                                                       |
+| ---------------------------------------------------- | ----- | ------------------------------------------------------------------------------------------------------------------------- |
+| `services/db-proxy/mongo/protocol.go`                | 954   | Specialized wire protocol decoder — inherently complex, rarely touched. Could extract BSON utilities if it grows further. |
+| `services/test-agent/ui_executor.go`                 | 689   | Many sub-step types sharing context (browser session, varCtx). Splitting would add plumbing without reducing complexity.  |
+| `services/test-agent/ui_types.go`                    | 567   | Struct definitions — large surface area but low cognitive load.                                                           |
+| `services/test-agent/ui_browser.go`                  | 537   | Chromedp wrapper — single responsibility, cohesive.                                                                       |
+| `services/test-agent/main.go`                        | 463   | Entry point + routing. Could extract an `Orchestrator` but not urgent.                                                    |
+| `apps/cli/src/commands/clean.ts`                     | 442   | Multiple cleanup targets but all follow the same pattern.                                                                 |
+| `apps/cli/src/commands/doctor.ts`                    | 430   | Multiple diagnostic checks but simple linear flow.                                                                        |
+| `services/test-agent/step_validator.go`              | 423   | Per-step-type dispatch — could split but each branch is small.                                                            |
+| `shared/definition-validator/validate-assertions.ts` | 415   | Focused on assertion schema validation, recently refactored.                                                              |
 
 ---
 

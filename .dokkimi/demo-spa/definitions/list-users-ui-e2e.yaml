@@ -42,12 +42,12 @@ tests:
                 match: true
         assertions:
           - match:
-              path: "$.traffic"
+              path: '$.traffic'
               where:
-                - path: "$$.request.method"
+                - path: '$$.request.method'
                   operator: eq
                   value: POST
-                - path: "$$.request.url"
+                - path: '$$.request.url'
                   operator: contains
                   value: traffic-tester/query
             assertions:
