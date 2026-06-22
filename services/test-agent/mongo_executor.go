@@ -148,7 +148,7 @@ func jsonDecToValue(dec *json.Decoder) interface{} {
 		}
 	case json.Number:
 		if i, err := v.Int64(); err == nil {
-			return int32(i)
+			return i
 		}
 		if f, err := v.Float64(); err == nil {
 			return f

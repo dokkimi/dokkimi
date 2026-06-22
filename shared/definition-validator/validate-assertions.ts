@@ -352,7 +352,7 @@ export function validateAssertion(
 
   // Validate shorthand source fields (count, type, keys, values, entries)
   for (const field of ['count', 'type', 'keys', 'values', 'entries']) {
-    if (a[field] !== undefined && field !== 'path') {
+    if (a[field] !== undefined) {
       if (typeof a[field] !== 'string') {
         err(r, `${ctx}: "${field}" must be a string (path)`);
       } else {
@@ -413,7 +413,10 @@ export function validateAssertionBlock(
     block.for !== undefined ||
     block.repeat !== undefined
   ) {
-    validateLoopModifiers(block, ctx, r, { allowDocPaths: true });
+    validateLoopModifiers(block, ctx, r, {
+      allowDocPaths: true,
+      level: 'assertion-block',
+    });
     validateBlockLoopSiblingConflicts(block, ctx, r);
   }
 }

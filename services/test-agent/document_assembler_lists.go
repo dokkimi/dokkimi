@@ -185,11 +185,15 @@ func annotateTimelineIndices(traffic []interface{}, timeline []interface{}) {
 		if !ok {
 			continue
 		}
-		reqIdx, _ := findTimelineIndex(timeline, i, "request")
-		entry["requestTimelineIndex"] = float64(reqIdx)
+		reqIdx, reqFound := findTimelineIndex(timeline, i, "request")
+		if !reqFound {
+			entry["requestTimelineIndex"] = nil
+		} else {
+			entry["requestTimelineIndex"] = float64(reqIdx)
+		}
 
-		respIdx, found := findTimelineIndex(timeline, i, "response")
-		if !found {
+		respIdx, respFound := findTimelineIndex(timeline, i, "response")
+		if !respFound {
 			entry["responseTimelineIndex"] = nil
 		} else {
 			entry["responseTimelineIndex"] = float64(respIdx)

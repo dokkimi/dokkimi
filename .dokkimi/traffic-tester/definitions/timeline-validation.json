@@ -1,0 +1,444 @@
+{
+  "name": "timeline-validation",
+  "description": "Validates timeline ordering, structure, and cross-referencing with traffic entries",
+  "config": {
+    "timeoutSeconds": 120
+  },
+  "items": [
+    {
+      "$ref": "../shared/service-a.yaml"
+    },
+    {
+      "$ref": "../shared/service-b.json"
+    },
+    {
+      "$ref": "../shared/service-c.yaml"
+    }
+  ],
+  "tests": [
+    {
+      "name": "Request before its own response",
+      "steps": [
+        {
+          "name": "Single call — requestTimelineIndex < responseTimelineIndex",
+          "action": {
+            "type": "httpRequest",
+            "method": "POST",
+            "url": "service-a/timeline-single",
+            "headers": { "Content-Type": "application/json" },
+            "body": {
+              "requests": [
+                {
+                  "baseURL": "http://service-b",
+                  "url": "/timeline-ping",
+                  "method": "POST",
+                  "data": { "response": { "value": { "ok": true } } }
+                }
+              ]
+            }
+          },
+          "assertions": [
+            {
+              "assertions": [
+                { "path": "$.response.status", "operator": "eq", "value": 200 }
+              ]
+            },
+            {
+              "match": {
+                "path": "$.traffic",
+                "where": [
+                  { "path": "$$.request.url", "operator": "contains", "value": "/timeline-ping" }
+                ],
+                "count": 1
+              },
+              "assertions": [
+                { "path": "$.match.requestTimelineIndex", "operator": "exists" },
+                { "path": "$.match.responseTimelineIndex", "operator": "exists" },
+                {
+                  "path": "$.match.requestTimelineIndex",
+                  "operator": "lt",
+                  "value": { "from": "$.match.responseTimelineIndex" }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Sequential calls — first request before second request",
+      "steps": [
+        {
+          "name": "Fire two sequential calls: service-b then service-c",
+          "action": {
+            "type": "httpRequest",
+            "method": "POST",
+            "url": "service-a/timeline-sequential",
+            "headers": { "Content-Type": "application/json" },
+            "body": {
+              "requests": [
+                {
+                  "baseURL": "http://service-b",
+                  "url": "/timeline-first",
+                  "method": "POST",
+                  "data": { "response": { "value": { "order": 1 } } }
+                },
+                {
+                  "baseURL": "http://service-c",
+                  "url": "/timeline-second",
+                  "method": "POST",
+                  "data": { "response": { "value": { "order": 2 } } }
+                }
+              ]
+            }
+          },
+          "extract": {
+            "firstReqIdx": "$.traffic[0].requestTimelineIndex",
+            "firstRespIdx": "$.traffic[0].responseTimelineIndex",
+            "secondReqIdx": "$.traffic[1].requestTimelineIndex",
+            "secondRespIdx": "$.traffic[1].responseTimelineIndex"
+          },
+          "assertions": [
+            {
+              "assertions": [
+                { "path": "$.response.status", "operator": "eq", "value": 200 }
+              ]
+            },
+            {
+              "match": {
+                "path": "$.traffic",
+                "where": [
+                  { "path": "$$.request.url", "operator": "contains", "value": "/timeline-first" }
+                ],
+                "count": 1,
+                "as": "firstCall"
+              },
+              "assertions": [
+                {
+                  "path": "$.match.requestTimelineIndex",
+                  "operator": "lt",
+                  "value": { "from": "$.match.responseTimelineIndex" }
+                }
+              ]
+            },
+            {
+              "match": {
+                "path": "$.traffic",
+                "where": [
+                  { "path": "$$.request.url", "operator": "contains", "value": "/timeline-second" }
+                ],
+                "count": 1,
+                "as": "secondCall"
+              },
+              "assertions": [
+                {
+                  "path": "$.match.requestTimelineIndex",
+                  "operator": "lt",
+                  "value": { "from": "$.match.responseTimelineIndex" }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "Verify first request before second request, first response before second request",
+          "action": {
+            "type": "httpRequest",
+            "method": "GET",
+            "url": "service-a/health"
+          },
+          "assertions": [
+            {
+              "assertions": [
+                { "path": "$.response.status", "operator": "eq", "value": 200 },
+                {
+                  "path": "$.variables.firstReqIdx",
+                  "operator": "lt",
+                  "value": { "from": "$.variables.secondReqIdx" }
+                },
+                {
+                  "path": "$.variables.firstRespIdx",
+                  "operator": "lte",
+                  "value": { "from": "$.variables.secondReqIdx" }
+                },
+                {
+                  "path": "$.variables.firstReqIdx",
+                  "operator": "lt",
+                  "value": { "from": "$.variables.secondRespIdx" }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Timeline entry structure — type and direction fields",
+      "steps": [
+        {
+          "name": "Make a call and verify timeline entry fields",
+          "action": {
+            "type": "httpRequest",
+            "method": "POST",
+            "url": "service-a/timeline-structure",
+            "headers": { "Content-Type": "application/json" },
+            "body": {
+              "requests": [
+                {
+                  "baseURL": "http://service-b",
+                  "url": "/timeline-check-fields",
+                  "method": "PUT",
+                  "data": { "response": { "value": { "checked": true } } }
+                }
+              ]
+            }
+          },
+          "assertions": [
+            {
+              "assertions": [
+                { "path": "$.response.status", "operator": "eq", "value": 200 }
+              ]
+            },
+            {
+              "match": {
+                "path": "$.traffic",
+                "where": [
+                  { "path": "$$.request.url", "operator": "contains", "value": "/timeline-check-fields" }
+                ],
+                "count": 1
+              },
+              "assertions": [
+                { "path": "$.match.requestTimelineIndex", "operator": "exists" },
+                { "path": "$.match.responseTimelineIndex", "operator": "exists" }
+              ]
+            },
+            {
+              "match": {
+                "path": "$.timeline",
+                "where": [
+                  { "path": "$$.type", "operator": "eq", "value": "httpRequest" },
+                  { "path": "$$.url", "operator": "contains", "value": "/timeline-check-fields" }
+                ],
+                "count": 1
+              },
+              "assertions": [
+                { "path": "$.match.direction", "operator": "eq", "value": "request" },
+                { "path": "$.match.method", "operator": "eq", "value": "PUT" },
+                { "path": "$.match.from", "operator": "eq", "value": "service-a" },
+                { "path": "$.match.to", "operator": "eq", "value": "service-b" },
+                { "path": "$.match.trafficIndex", "operator": "exists" },
+                { "path": "$.match.timestamp", "operator": "exists" }
+              ]
+            },
+            {
+              "match": {
+                "path": "$.timeline",
+                "where": [
+                  { "path": "$$.type", "operator": "eq", "value": "httpResponse" },
+                  { "path": "$$.from", "operator": "eq", "value": "service-a" },
+                  { "path": "$$.to", "operator": "eq", "value": "service-b" }
+                ],
+                "count": 1
+              },
+              "assertions": [
+                { "path": "$.match.direction", "operator": "eq", "value": "response" },
+                { "path": "$.match.status", "operator": "eq", "value": 200 },
+                { "path": "$.match.trafficIndex", "operator": "exists" },
+                { "path": "$.match.timestamp", "operator": "exists" }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Timeline count — 2 events per traffic entry (request + response)",
+      "steps": [
+        {
+          "name": "Fire 3 calls and verify 6 timeline HTTP events",
+          "action": {
+            "type": "httpRequest",
+            "method": "POST",
+            "url": "service-a/timeline-count",
+            "headers": { "Content-Type": "application/json" },
+            "body": {
+              "requests": [
+                {
+                  "baseURL": "http://service-b",
+                  "url": "/timeline-count-1",
+                  "method": "GET",
+                  "data": { "response": { "value": { "n": 1 } } }
+                },
+                {
+                  "baseURL": "http://service-b",
+                  "url": "/timeline-count-2",
+                  "method": "GET",
+                  "data": { "response": { "value": { "n": 2 } } }
+                },
+                {
+                  "baseURL": "http://service-c",
+                  "url": "/timeline-count-3",
+                  "method": "GET",
+                  "data": { "response": { "value": { "n": 3 } } }
+                }
+              ]
+            }
+          },
+          "assertions": [
+            {
+              "assertions": [
+                { "path": "$.response.status", "operator": "eq", "value": 200 }
+              ]
+            },
+            {
+              "match": {
+                "path": "$.timeline",
+                "where": [
+                  { "path": "$$.type", "operator": "eq", "value": "httpRequest" }
+                ],
+                "count": { "operator": "gte", "value": 3 }
+              }
+            },
+            {
+              "match": {
+                "path": "$.timeline",
+                "where": [
+                  { "path": "$$.type", "operator": "eq", "value": "httpResponse" }
+                ],
+                "count": { "operator": "gte", "value": 3 }
+              }
+            },
+            {
+              "match": {
+                "path": "$.traffic",
+                "where": [
+                  { "path": "$$.origin", "operator": "eq", "value": "service-a" },
+                  { "path": "$$.request.url", "operator": "contains", "value": "/timeline-count-" }
+                ],
+                "count": 3
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Console log appears in timeline alongside HTTP events",
+      "steps": [
+        {
+          "name": "Trigger console logging and a forwarded call, verify both in timeline",
+          "action": {
+            "type": "httpRequest",
+            "method": "POST",
+            "url": "service-a/timeline-with-logs",
+            "headers": { "Content-Type": "application/json" },
+            "body": {
+              "preRequestLogs": [
+                "INFO: timeline-test-marker processing"
+              ],
+              "requests": [
+                {
+                  "baseURL": "http://service-b",
+                  "url": "/timeline-logged",
+                  "method": "POST",
+                  "data": { "response": { "value": { "logged": true } } }
+                }
+              ]
+            }
+          },
+          "assertions": [
+            {
+              "assertions": [
+                { "path": "$.response.status", "operator": "eq", "value": 200 }
+              ]
+            },
+            {
+              "match": {
+                "path": "$.timeline",
+                "where": [
+                  { "path": "$$.type", "operator": "eq", "value": "consoleLog" },
+                  { "path": "$$.message", "operator": "contains", "value": "timeline-test-marker" }
+                ],
+                "count": { "operator": "gte", "value": 1 }
+              },
+              "assertions": [
+                { "path": "$.match.service", "operator": "eq", "value": "service-a" },
+                { "path": "$.match.level", "operator": "exists" }
+              ]
+            },
+            {
+              "match": {
+                "path": "$.timeline",
+                "where": [
+                  { "path": "$$.type", "operator": "eq", "value": "httpRequest" },
+                  { "path": "$$.url", "operator": "contains", "value": "/timeline-logged" }
+                ],
+                "count": 1
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Traffic entry cross-references timeline by index",
+      "steps": [
+        {
+          "name": "Verify trafficIndex on timeline entry matches the traffic array position",
+          "action": {
+            "type": "httpRequest",
+            "method": "POST",
+            "url": "service-a/timeline-xref",
+            "headers": { "Content-Type": "application/json" },
+            "body": {
+              "requests": [
+                {
+                  "baseURL": "http://service-b",
+                  "url": "/timeline-xref-target",
+                  "method": "POST",
+                  "data": { "response": { "value": { "xref": true } } }
+                }
+              ]
+            }
+          },
+          "assertions": [
+            {
+              "assertions": [
+                { "path": "$.response.status", "operator": "eq", "value": 200 }
+              ]
+            },
+            {
+              "match": {
+                "path": "$.timeline",
+                "where": [
+                  { "path": "$$.type", "operator": "eq", "value": "httpRequest" },
+                  { "path": "$$.url", "operator": "contains", "value": "/timeline-xref-target" }
+                ],
+                "count": 1
+              },
+              "assertions": [
+                { "path": "$.match.trafficIndex", "operator": "gte", "value": 0 },
+                { "path": "$.match.direction", "operator": "eq", "value": "request" }
+              ]
+            },
+            {
+              "match": {
+                "path": "$.timeline",
+                "where": [
+                  { "path": "$$.type", "operator": "eq", "value": "httpResponse" },
+                  { "path": "$$.from", "operator": "eq", "value": "service-a" },
+                  { "path": "$$.to", "operator": "eq", "value": "service-b" }
+                ],
+                "count": 1
+              },
+              "assertions": [
+                { "path": "$.match.trafficIndex", "operator": "gte", "value": 0 },
+                { "path": "$.match.direction", "operator": "eq", "value": "response" }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

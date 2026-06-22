@@ -104,10 +104,10 @@ Console log assertions are most powerful when combined with HTTP assertions. Her
           - path: '$$.origin'
             operator: eq
             value: payment-service
-          - path: '$$.method'
+          - path: '$$.request.method'
             operator: eq
             value: POST
-          - path: '$$.url'
+          - path: '$$.request.url'
             operator: eq
             value: mock-stripe/v1/charges
       assertions:

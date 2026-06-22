@@ -45,6 +45,13 @@ export function loadDokkimiConfig(
     }
 
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      errors.push({
+        file: configPath,
+        errors: [
+          `Config must be a YAML/JSON object, got ${parsed === null ? 'null' : Array.isArray(parsed) ? 'array' : typeof parsed}`,
+        ],
+        warnings: [],
+      });
       return empty;
     }
 

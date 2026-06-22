@@ -200,10 +200,10 @@ tests:
                 - path: '$$.origin'
                   operator: eq
                   value: agent-service
-                - path: '$$.method'
+                - path: '$$.request.method'
                   operator: eq
                   value: POST
-                - path: '$$.url'
+                - path: '$$.request.url'
                   operator: eq
                   value: api.openai.com/v1/chat/completions
             assertions:
@@ -221,10 +221,10 @@ tests:
                 - path: '$$.origin'
                   operator: eq
                   value: agent-service
-                - path: '$$.method'
+                - path: '$$.request.method'
                   operator: eq
                   value: POST
-                - path: '$$.url'
+                - path: '$$.request.url'
                   operator: eq
                   value: api.openai.com/v1/chat/completions
               count:
@@ -338,10 +338,10 @@ tests:
                 - path: '$$.origin'
                   operator: eq
                   value: agent-service
-                - path: '$$.method'
+                - path: '$$.request.method'
                   operator: eq
                   value: POST
-                - path: '$$.url'
+                - path: '$$.request.url'
                   operator: eq
                   value: api.openai.com/v1/chat/completions
                 - path: '$$.response.body.choices[0].finish_reason'
@@ -552,10 +552,10 @@ This mock has no `mockRequestBodyContains`, so it has lower specificity than any
       - path: '$$.origin'
         operator: eq
         value: agent-service
-      - path: '$$.method'
+      - path: '$$.request.method'
         operator: eq
         value: POST
-      - path: '$$.url'
+      - path: '$$.request.url'
         operator: eq
         value: api.openai.com/v1/chat/completions
       - path: '$$.response.body.id'

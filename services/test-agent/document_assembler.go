@@ -101,36 +101,6 @@ func AssembleDbDocument(log *DatabaseLogMessage) map[string]interface{} {
 	}
 }
 
-// MatchUrl matches a user-provided URL against a log's target and url path.
-func MatchUrl(matchUrl string, logTarget *string, logUrl string) bool {
-	if matchUrl == "" {
-		return true
-	}
-	if strings.HasPrefix(matchUrl, "/") {
-		return strings.Contains(logUrl, matchUrl)
-	}
-
-	slashIdx := strings.Index(matchUrl, "/")
-	var service, path string
-	if slashIdx >= 0 {
-		service = matchUrl[:slashIdx]
-		path = matchUrl[slashIdx:]
-	} else {
-		service = matchUrl
-	}
-
-	if service != "" {
-		if logTarget == nil || *logTarget != service {
-			return false
-		}
-	}
-	if path != "" && !strings.Contains(logUrl, path) {
-		return false
-	}
-
-	return true
-}
-
 // FindDirectRequestLog finds the HTTP log for the step's own action.
 func FindDirectRequestLog(httpLogs []HttpLogMessage, action StepAction, stepExec StepExecution) *HttpLogMessage {
 	startTime, endTime := stepTimeWindow(stepExec)

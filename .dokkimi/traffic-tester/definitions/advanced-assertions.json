@@ -1,6 +1,6 @@
 {
   "name": "advanced-assertions",
-  "description": "Coverage for underused assertion operators: ne, gt, lt, matches, notContains, notExists, in, notIn, arrayContains, arrayNotContains, notEmpty, and responseTime",
+  "description": "Coverage for underused assertion operators: ne, gt, lt, matches, notContains, notExists, in, notIn, contains (array/object dispatch), notEmpty, and responseTime",
   "config": {
     "timeoutSeconds": 120
   },

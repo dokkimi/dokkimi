@@ -50,17 +50,9 @@ func CompareValues(operator string, actual, expected interface{}) AssertionResul
 	case "notContains":
 		return containsDispatch(actual, expected, true)
 	case "containsIgnoreCase":
-		passed := strings.Contains(
-			strings.ToLower(fmt.Sprintf("%v", actual)),
-			strings.ToLower(fmt.Sprintf("%v", expected)),
-		)
-		return AssertionResult{Passed: passed, Expected: expected, Actual: actual}
+		return containsIgnoreCaseDispatch(actual, expected, false)
 	case "notContainsIgnoreCase":
-		passed := !strings.Contains(
-			strings.ToLower(fmt.Sprintf("%v", actual)),
-			strings.ToLower(fmt.Sprintf("%v", expected)),
-		)
-		return AssertionResult{Passed: passed, Expected: expected, Actual: actual}
+		return containsIgnoreCaseDispatch(actual, expected, true)
 	case "matches":
 		pattern := fmt.Sprintf("%v", expected)
 		re, err := regexp.Compile(pattern)
@@ -170,6 +162,61 @@ func containsDispatch(actual, expected interface{}, negate bool) AssertionResult
 		return AssertionResult{
 			Passed:   false,
 			Error:    fmt.Sprintf("cannot use contains on %s — expected string, array, or object", goTypeLabel(actual)),
+			Expected: expected,
+			Actual:   actual,
+		}
+	}
+}
+
+func containsIgnoreCaseDispatch(actual, expected interface{}, negate bool) AssertionResult {
+	if actual == nil {
+		return AssertionResult{
+			Passed:   false,
+			Error:    fmt.Sprintf("cannot use containsIgnoreCase on %s — expected string, array, or object", goTypeLabel(actual)),
+			Expected: expected,
+			Actual:   actual,
+		}
+	}
+	switch v := actual.(type) {
+	case string:
+		passed := strings.Contains(
+			strings.ToLower(v),
+			strings.ToLower(fmt.Sprintf("%v", expected)),
+		)
+		if negate {
+			passed = !passed
+		}
+		return AssertionResult{Passed: passed, Expected: expected, Actual: actual}
+	case []interface{}:
+		expStr := strings.ToLower(fmt.Sprintf("%v", expected))
+		found := false
+		for _, item := range v {
+			if strings.EqualFold(fmt.Sprintf("%v", item), expStr) {
+				found = true
+				break
+			}
+		}
+		if negate {
+			found = !found
+		}
+		return AssertionResult{Passed: found, Expected: expected, Actual: actual}
+	case map[string]interface{}:
+		key := fmt.Sprintf("%v", expected)
+		found := false
+		for k := range v {
+			if strings.EqualFold(k, key) {
+				found = true
+				break
+			}
+		}
+		if negate {
+			found = !found
+		}
+		return AssertionResult{Passed: found, Expected: expected, Actual: actual}
+	default:
+		return AssertionResult{
+			Passed:   false,
+			Error:    fmt.Sprintf("cannot use containsIgnoreCase on %s — expected string, array, or object", goTypeLabel(actual)),
 			Expected: expected,
 			Actual:   actual,
 		}

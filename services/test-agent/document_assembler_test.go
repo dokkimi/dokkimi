@@ -114,41 +114,6 @@ func TestAssembleDbDocument(t *testing.T) {
 	})
 }
 
-func TestMatchUrl(t *testing.T) {
-	svc := "user-service"
-
-	t.Run("empty match returns true", func(t *testing.T) {
-		if !MatchUrl("", &svc, "/users") {
-			t.Error("expected true")
-		}
-	})
-
-	t.Run("path-only match", func(t *testing.T) {
-		if !MatchUrl("/users", nil, "/api/users") {
-			t.Error("expected true for path match")
-		}
-		if MatchUrl("/orders", nil, "/api/users") {
-			t.Error("expected false for non-matching path")
-		}
-	})
-
-	t.Run("service-only match", func(t *testing.T) {
-		if !MatchUrl("user-service", &svc, "/anything") {
-			t.Error("expected true for service match")
-		}
-		other := "other-service"
-		if MatchUrl("user-service", &other, "/anything") {
-			t.Error("expected false for non-matching service")
-		}
-	})
-
-	t.Run("service+path match", func(t *testing.T) {
-		if !MatchUrl("user-service/users", &svc, "/api/users") {
-			t.Error("expected true")
-		}
-	})
-}
-
 func TestFindDirectRequestLog(t *testing.T) {
 	now := time.Now()
 	ts := now.Format(time.RFC3339Nano)

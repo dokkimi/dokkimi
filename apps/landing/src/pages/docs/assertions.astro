@@ -28,8 +28,8 @@ import CodeBlock from '../../components/CodeBlock.astro';
     "path": "$.traffic",
     "where": [
       { "path": "$$.origin", "operator": "eq", "value": "api-gateway" },
-      { "path": "$$.method", "operator": "eq", "value": "POST" },
-      { "path": "$$.url", "operator": "contains", "value": "user-service/api/users" }
+      { "path": "$$.request.method", "operator": "eq", "value": "POST" },
+      { "path": "$$.request.url", "operator": "contains", "value": "user-service/api/users" }
     ],
     "count": 1
   },
@@ -48,7 +48,7 @@ import CodeBlock from '../../components/CodeBlock.astro';
     <tbody>
       <tr><td><code>path</code></td><td>string</td><td>Yes</td><td>Data source to query: <code>$.traffic</code> for HTTP traffic, <code>$.consoleLogs</code> for console output</td></tr>
       <tr><td><code>where</code></td><td>array</td><td>No</td><td>Filter entries. Each clause uses <code>$$.</code> prefix to reference fields on the matched entry</td></tr>
-      <tr><td><code>count</code></td><td>integer</td><td>No</td><td>Assert exactly this many entries match. If omitted, at least one match is expected.</td></tr>
+      <tr><td><code>count</code></td><td>integer or object</td><td>No</td><td>Assert how many entries match. An integer asserts an exact count. An object <code>&#123; "operator": "gte", "value": 1 &#125;</code> supports range operators (<code>eq</code>, <code>gt</code>, <code>gte</code>, <code>lt</code>, <code>lte</code>). If omitted, at least one match is expected.</td></tr>
     </tbody>
   </table>
 
@@ -56,17 +56,17 @@ import CodeBlock from '../../components/CodeBlock.astro';
   <p>Each where clause filters entries using <code>$$.</code>-prefixed paths that reference the candidate entry's fields. All clauses must pass for an entry to match (AND logic). All support <code>&#123;&#123;variables&#125;&#125;</code>:</p>
   <CodeBlock code={`"where": [
   { "path": "$$.origin", "operator": "eq", "value": "api-gateway" },
-  { "path": "$$.method", "operator": "eq", "value": "POST" },
-  { "path": "$$.url", "operator": "contains", "value": "/api/users" }
+  { "path": "$$.request.method", "operator": "eq", "value": "POST" },
+  { "path": "$$.request.url", "operator": "contains", "value": "/api/users" }
 ]`} lang="json" />
 
   <p>You can use combinators for complex filtering:</p>
   <CodeBlock code={`"where": [
   { "or": [
-    { "path": "$$.method", "operator": "eq", "value": "POST" },
-    { "path": "$$.method", "operator": "eq", "value": "PUT" }
+    { "path": "$$.request.method", "operator": "eq", "value": "POST" },
+    { "path": "$$.request.method", "operator": "eq", "value": "PUT" }
   ]},
-  { "not": { "path": "$$.url", "operator": "contains", "value": "/health" } }
+  { "not": { "path": "$$.request.url", "operator": "contains", "value": "/health" } }
 ]`} lang="json" />
 
   <h3>Assertion paths inside match blocks</h3>

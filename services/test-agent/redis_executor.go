@@ -92,24 +92,27 @@ func parseRedisCommand(cmd string) []string {
 	var args []string
 	var current strings.Builder
 	inQuote := false
+	wasQuoted := false
 
 	for i := 0; i < len(cmd); i++ {
 		ch := cmd[i]
 		switch {
 		case ch == '"' && !inQuote:
 			inQuote = true
+			wasQuoted = true
 		case ch == '"' && inQuote:
 			inQuote = false
 		case ch == ' ' && !inQuote:
-			if current.Len() > 0 {
+			if current.Len() > 0 || wasQuoted {
 				args = append(args, current.String())
 				current.Reset()
+				wasQuoted = false
 			}
 		default:
 			current.WriteByte(ch)
 		}
 	}
-	if current.Len() > 0 {
+	if current.Len() > 0 || wasQuoted {
 		args = append(args, current.String())
 	}
 	return args

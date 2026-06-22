@@ -58,7 +58,7 @@ func applyAssertionTransform(value interface{}, transform string) (interface{}, 
 		if !ok {
 			return nil, fmt.Errorf("transform 'keys' requires object, got %s", goTypeLabel(value))
 		}
-		keys := sortedMapKeys(obj)
+		keys := sortedKeys(obj)
 		result := make([]interface{}, len(keys))
 		for i, k := range keys {
 			result[i] = k
@@ -69,7 +69,7 @@ func applyAssertionTransform(value interface{}, transform string) (interface{}, 
 		if !ok {
 			return nil, fmt.Errorf("transform 'values' requires object, got %s", goTypeLabel(value))
 		}
-		keys := sortedMapKeys(obj)
+		keys := sortedKeys(obj)
 		result := make([]interface{}, len(keys))
 		for i, k := range keys {
 			result[i] = obj[k]
@@ -80,7 +80,7 @@ func applyAssertionTransform(value interface{}, transform string) (interface{}, 
 		if !ok {
 			return nil, fmt.Errorf("transform 'entries' requires object, got %s", goTypeLabel(value))
 		}
-		keys := sortedMapKeys(obj)
+		keys := sortedKeys(obj)
 		result := make([]interface{}, len(keys))
 		for i, k := range keys {
 			result[i] = map[string]interface{}{"key": k, "value": obj[k]}
@@ -227,16 +227,7 @@ func applyTransform(obj map[string]interface{}, transform string, variable strin
 	}
 }
 
-func sortedMapKeys(m map[string]interface{}) []string {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	return keys
-}
-
-func sortedExtractKeys(m map[string]ExtractRule) []string {
+func sortedKeys[V any](m map[string]V) []string {
 	keys := make([]string, 0, len(m))
 	for k := range m {
 		keys = append(keys, k)

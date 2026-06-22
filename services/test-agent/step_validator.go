@@ -354,19 +354,8 @@ func (sv *StepValidator) executeBlockLoop(loop interface{}, rootCtx map[string]i
 			rootCtx["variables"] = sv.varCtx.Snapshot()
 			results = append(results, sv.runLoopIterationBody(l.Assertions, l.Match, l.Extract, l.ForEach, l.For, l.Repeat, rootCtx, matchStack)...)
 
-			// Check until conditions
-			if len(l.Until) > 0 {
-				allPass := true
-				for _, u := range l.Until {
-					r := ValidateAssertion(u, rootCtx)
-					if !r.Passed {
-						allPass = false
-						break
-					}
-				}
-				if allPass {
-					break
-				}
+			if evaluateUntil(l.Until, rootCtx, sv.varCtx) {
+				break
 			}
 		}
 		sv.varCtx.Delete(l.As)
@@ -382,7 +371,7 @@ func (sv *StepValidator) executeBlockLoop(loop interface{}, rootCtx map[string]i
 // executeExtract resolves extract rules against the root context, supporting dynamic key names.
 func (sv *StepValidator) executeExtract(extract map[string]ExtractRule, rootCtx map[string]interface{}) []AssertionResult {
 	var results []AssertionResult
-	for _, variable := range sortedExtractKeys(extract) {
+	for _, variable := range sortedKeys(extract) {
 		resolvedKey, _ := sv.varCtx.Resolve(variable)
 		rule := extract[variable]
 		value, err := ResolveExtractRule(rootCtx, resolvedKey, rule)
