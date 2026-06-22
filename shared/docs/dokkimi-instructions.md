@@ -1180,6 +1180,20 @@ The loop always executes at least once, regardless of `until`.
 }
 ```
 
+#### Loop meta-variables
+
+All three loop types set variables via the `as` field. When the optional `name` field is set, additional metadata variables become available. Meta-variables require `name`; without it, only `{{as}}` is set.
+
+| Variable              | Type    | Available in          | Description                                                                 |
+| --------------------- | ------- | --------------------- | --------------------------------------------------------------------------- |
+| `{{as}}`              | any     | forEach, for, repeat  | Current item (forEach), range value (for), or 0-based counter (repeat)      |
+| `{{name.index}}`      | number  | forEach, for, repeat  | 0-based iteration counter                                                   |
+| `{{name.items}}`      | array   | forEach only          | The full items array being iterated                                         |
+| `{{name.completed}}`  | boolean | All (after loop ends) | Whether the loop completed normally (repeat+until: did the condition pass?) |
+| `{{name.iterations}}` | number  | All (after loop ends) | How many iterations actually ran                                            |
+
+`completed` and `iterations` are set after the loop finishes, so they are available in subsequent steps but not inside the loop body.
+
 #### Loop levels
 
 Loops can be applied at five levels:
