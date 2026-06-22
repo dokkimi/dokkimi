@@ -273,7 +273,9 @@
                 {
                   "path": "$.match.response.body.token",
                   "operator": "eq",
-                  "value": { "from": "$.variables.serviceCall[0].response.body.token" }
+                  "value": {
+                    "from": "$.variables.serviceCall[0].response.body.token"
+                  }
                 },
                 {
                   "path": "$.match.requestTimelineIndex",

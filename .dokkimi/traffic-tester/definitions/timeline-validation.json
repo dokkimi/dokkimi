@@ -47,13 +47,23 @@
               "match": {
                 "path": "$.traffic",
                 "where": [
-                  { "path": "$$.request.url", "operator": "contains", "value": "/timeline-ping" }
+                  {
+                    "path": "$$.request.url",
+                    "operator": "contains",
+                    "value": "/timeline-ping"
+                  }
                 ],
                 "count": 1
               },
               "assertions": [
-                { "path": "$.match.requestTimelineIndex", "operator": "exists" },
-                { "path": "$.match.responseTimelineIndex", "operator": "exists" },
+                {
+                  "path": "$.match.requestTimelineIndex",
+                  "operator": "exists"
+                },
+                {
+                  "path": "$.match.responseTimelineIndex",
+                  "operator": "exists"
+                },
                 {
                   "path": "$.match.requestTimelineIndex",
                   "operator": "lt",
@@ -108,7 +118,11 @@
               "match": {
                 "path": "$.traffic",
                 "where": [
-                  { "path": "$$.request.url", "operator": "contains", "value": "/timeline-first" }
+                  {
+                    "path": "$$.request.url",
+                    "operator": "contains",
+                    "value": "/timeline-first"
+                  }
                 ],
                 "count": 1,
                 "as": "firstCall"
@@ -125,7 +139,11 @@
               "match": {
                 "path": "$.traffic",
                 "where": [
-                  { "path": "$$.request.url", "operator": "contains", "value": "/timeline-second" }
+                  {
+                    "path": "$$.request.url",
+                    "operator": "contains",
+                    "value": "/timeline-second"
+                  }
                 ],
                 "count": 1,
                 "as": "secondCall"
@@ -203,29 +221,59 @@
               "match": {
                 "path": "$.traffic",
                 "where": [
-                  { "path": "$$.request.url", "operator": "contains", "value": "/timeline-check-fields" }
+                  {
+                    "path": "$$.request.url",
+                    "operator": "contains",
+                    "value": "/timeline-check-fields"
+                  }
                 ],
                 "count": 1
               },
               "assertions": [
-                { "path": "$.match.requestTimelineIndex", "operator": "exists" },
-                { "path": "$.match.responseTimelineIndex", "operator": "exists" }
+                {
+                  "path": "$.match.requestTimelineIndex",
+                  "operator": "exists"
+                },
+                {
+                  "path": "$.match.responseTimelineIndex",
+                  "operator": "exists"
+                }
               ]
             },
             {
               "match": {
                 "path": "$.timeline",
                 "where": [
-                  { "path": "$$.type", "operator": "eq", "value": "httpRequest" },
-                  { "path": "$$.url", "operator": "contains", "value": "/timeline-check-fields" }
+                  {
+                    "path": "$$.type",
+                    "operator": "eq",
+                    "value": "httpRequest"
+                  },
+                  {
+                    "path": "$$.url",
+                    "operator": "contains",
+                    "value": "/timeline-check-fields"
+                  }
                 ],
                 "count": 1
               },
               "assertions": [
-                { "path": "$.match.direction", "operator": "eq", "value": "request" },
+                {
+                  "path": "$.match.direction",
+                  "operator": "eq",
+                  "value": "request"
+                },
                 { "path": "$.match.method", "operator": "eq", "value": "PUT" },
-                { "path": "$.match.from", "operator": "eq", "value": "service-a" },
-                { "path": "$.match.to", "operator": "eq", "value": "service-b" },
+                {
+                  "path": "$.match.from",
+                  "operator": "eq",
+                  "value": "service-a"
+                },
+                {
+                  "path": "$.match.to",
+                  "operator": "eq",
+                  "value": "service-b"
+                },
                 { "path": "$.match.trafficIndex", "operator": "exists" },
                 { "path": "$.match.timestamp", "operator": "exists" }
               ]
@@ -234,14 +282,22 @@
               "match": {
                 "path": "$.timeline",
                 "where": [
-                  { "path": "$$.type", "operator": "eq", "value": "httpResponse" },
+                  {
+                    "path": "$$.type",
+                    "operator": "eq",
+                    "value": "httpResponse"
+                  },
                   { "path": "$$.from", "operator": "eq", "value": "service-a" },
                   { "path": "$$.to", "operator": "eq", "value": "service-b" }
                 ],
                 "count": 1
               },
               "assertions": [
-                { "path": "$.match.direction", "operator": "eq", "value": "response" },
+                {
+                  "path": "$.match.direction",
+                  "operator": "eq",
+                  "value": "response"
+                },
                 { "path": "$.match.status", "operator": "eq", "value": 200 },
                 { "path": "$.match.trafficIndex", "operator": "exists" },
                 { "path": "$.match.timestamp", "operator": "exists" }
@@ -294,7 +350,11 @@
               "match": {
                 "path": "$.timeline",
                 "where": [
-                  { "path": "$$.type", "operator": "eq", "value": "httpRequest" }
+                  {
+                    "path": "$$.type",
+                    "operator": "eq",
+                    "value": "httpRequest"
+                  }
                 ],
                 "count": { "operator": "gte", "value": 3 }
               }
@@ -303,7 +363,11 @@
               "match": {
                 "path": "$.timeline",
                 "where": [
-                  { "path": "$$.type", "operator": "eq", "value": "httpResponse" }
+                  {
+                    "path": "$$.type",
+                    "operator": "eq",
+                    "value": "httpResponse"
+                  }
                 ],
                 "count": { "operator": "gte", "value": 3 }
               }
@@ -312,8 +376,16 @@
               "match": {
                 "path": "$.traffic",
                 "where": [
-                  { "path": "$$.origin", "operator": "eq", "value": "service-a" },
-                  { "path": "$$.request.url", "operator": "contains", "value": "/timeline-count-" }
+                  {
+                    "path": "$$.origin",
+                    "operator": "eq",
+                    "value": "service-a"
+                  },
+                  {
+                    "path": "$$.request.url",
+                    "operator": "contains",
+                    "value": "/timeline-count-"
+                  }
                 ],
                 "count": 3
               }
@@ -333,9 +405,7 @@
             "url": "service-a/timeline-with-logs",
             "headers": { "Content-Type": "application/json" },
             "body": {
-              "preRequestLogs": [
-                "INFO: timeline-test-marker processing"
-              ],
+              "preRequestLogs": ["INFO: timeline-test-marker processing"],
               "requests": [
                 {
                   "baseURL": "http://service-b",
@@ -356,13 +426,25 @@
               "match": {
                 "path": "$.timeline",
                 "where": [
-                  { "path": "$$.type", "operator": "eq", "value": "consoleLog" },
-                  { "path": "$$.message", "operator": "contains", "value": "timeline-test-marker" }
+                  {
+                    "path": "$$.type",
+                    "operator": "eq",
+                    "value": "consoleLog"
+                  },
+                  {
+                    "path": "$$.message",
+                    "operator": "contains",
+                    "value": "timeline-test-marker"
+                  }
                 ],
                 "count": { "operator": "gte", "value": 1 }
               },
               "assertions": [
-                { "path": "$.match.service", "operator": "eq", "value": "service-a" },
+                {
+                  "path": "$.match.service",
+                  "operator": "eq",
+                  "value": "service-a"
+                },
                 { "path": "$.match.level", "operator": "exists" }
               ]
             },
@@ -370,8 +452,16 @@
               "match": {
                 "path": "$.timeline",
                 "where": [
-                  { "path": "$$.type", "operator": "eq", "value": "httpRequest" },
-                  { "path": "$$.url", "operator": "contains", "value": "/timeline-logged" }
+                  {
+                    "path": "$$.type",
+                    "operator": "eq",
+                    "value": "httpRequest"
+                  },
+                  {
+                    "path": "$$.url",
+                    "operator": "contains",
+                    "value": "/timeline-logged"
+                  }
                 ],
                 "count": 1
               }
@@ -411,29 +501,57 @@
               "match": {
                 "path": "$.timeline",
                 "where": [
-                  { "path": "$$.type", "operator": "eq", "value": "httpRequest" },
-                  { "path": "$$.url", "operator": "contains", "value": "/timeline-xref-target" }
+                  {
+                    "path": "$$.type",
+                    "operator": "eq",
+                    "value": "httpRequest"
+                  },
+                  {
+                    "path": "$$.url",
+                    "operator": "contains",
+                    "value": "/timeline-xref-target"
+                  }
                 ],
                 "count": 1
               },
               "assertions": [
-                { "path": "$.match.trafficIndex", "operator": "gte", "value": 0 },
-                { "path": "$.match.direction", "operator": "eq", "value": "request" }
+                {
+                  "path": "$.match.trafficIndex",
+                  "operator": "gte",
+                  "value": 0
+                },
+                {
+                  "path": "$.match.direction",
+                  "operator": "eq",
+                  "value": "request"
+                }
               ]
             },
             {
               "match": {
                 "path": "$.timeline",
                 "where": [
-                  { "path": "$$.type", "operator": "eq", "value": "httpResponse" },
+                  {
+                    "path": "$$.type",
+                    "operator": "eq",
+                    "value": "httpResponse"
+                  },
                   { "path": "$$.from", "operator": "eq", "value": "service-a" },
                   { "path": "$$.to", "operator": "eq", "value": "service-b" }
                 ],
                 "count": 1
               },
               "assertions": [
-                { "path": "$.match.trafficIndex", "operator": "gte", "value": 0 },
-                { "path": "$.match.direction", "operator": "eq", "value": "response" }
+                {
+                  "path": "$.match.trafficIndex",
+                  "operator": "gte",
+                  "value": 0
+                },
+                {
+                  "path": "$.match.direction",
+                  "operator": "eq",
+                  "value": "response"
+                }
               ]
             }
           ]
