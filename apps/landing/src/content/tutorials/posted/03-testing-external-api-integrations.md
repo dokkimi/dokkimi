@@ -176,14 +176,14 @@ tests:
                 quantity: 1
         assertions:
           - assertions:
-              - path: response.status
+              - path: $.response.status
                 operator: eq
                 value: 201
-              - path: response.body.order.totalCents
+              - path: $.response.body.order.totalCents
                 operator: eq
                 value: 2498
         extract:
-          orderId: response.body.order.id
+          orderId: $.response.body.order.id
 
       # Pay for the order
       - action:
@@ -195,46 +195,82 @@ tests:
         assertions:
           # Stripe was charged the correct amount
           - match:
-              origin: payment-service
-              method: POST
-              url: api.stripe.com/v1/charges
+              path: $.traffic
+              where:
+                - path: $$.origin
+                  operator: eq
+                  value: payment-service
+                - path: $$.request.method
+                  operator: eq
+                  value: POST
+                - path: $$.request.url
+                  operator: contains
+                  value: api.stripe.com/v1/charges
+              count: 1
             assertions:
-              - path: request.body.amount
+              - path: $.match.request.body.amount
                 operator: eq
                 value: 2498
-              - path: request.body.currency
+              - path: $.match.request.body.currency
                 operator: eq
                 value: usd
 
           # A shipping label was created
           - match:
-              origin: shipping-service
-              method: POST
-              url: api.easypost.com/v2/shipments
+              path: $.traffic
+              where:
+                - path: $$.origin
+                  operator: eq
+                  value: shipping-service
+                - path: $$.request.method
+                  operator: eq
+                  value: POST
+                - path: $$.request.url
+                  operator: contains
+                  value: api.easypost.com/v2/shipments
+              count: 1
             assertions:
-              - path: response.body.tracking_code
+              - path: $.match.response.body.tracking_code
                 operator: exists
 
           # Confirmation email was sent to the customer
           - match:
-              origin: notification-service
-              method: POST
-              url: api.sendgrid.com/v3/mail/send
+              path: $.traffic
+              where:
+                - path: $$.origin
+                  operator: eq
+                  value: notification-service
+                - path: $$.request.method
+                  operator: eq
+                  value: POST
+                - path: $$.request.url
+                  operator: contains
+                  value: api.sendgrid.com/v3/mail/send
+              count: 1
             assertions:
-              - path: request.body.personalizations[0].to[0].email
+              - path: $.match.request.body.personalizations[0].to[0].email
                 operator: eq
                 value: buyer@example.com
 
           # SMS receipt was sent
           - match:
-              origin: notification-service
-              method: POST
-              url: api.twilio.com
+              path: $.traffic
+              where:
+                - path: $$.origin
+                  operator: eq
+                  value: notification-service
+                - path: $$.request.method
+                  operator: eq
+                  value: POST
+                - path: $$.request.url
+                  operator: contains
+                  value: api.twilio.com
+              count: 1
             assertions:
-              - path: request.body.To
+              - path: $.match.request.body.To
                 operator: eq
                 value: '+15551234567'
-              - path: request.body.Body
+              - path: $.match.request.body.Body
                 operator: contains
                 value: '9400111899223456789012'
 
@@ -245,10 +281,10 @@ tests:
           query: 'SELECT status, total_cents FROM orders WHERE id = {{orderId}}'
         assertions:
           - assertions:
-              - path: data[0].status
+              - path: $.data[0].status
                 operator: eq
                 value: paid
-              - path: data[0].total_cents
+              - path: $.data[0].total_cents
                 operator: eq
                 value: 2498
 
@@ -259,7 +295,7 @@ tests:
           query: "SELECT stock FROM products WHERE sku = 'WIDGET-001'"
         assertions:
           - assertions:
-              - path: data[0].stock
+              - path: $.data[0].stock
                 operator: eq
                 value: 49
 ```
@@ -314,7 +350,7 @@ tests:
               - sku: WIDGET-001
                 quantity: 1
         extract:
-          orderId: response.body.order.id
+          orderId: $.response.body.order.id
 
       - action:
           type: httpRequest
@@ -325,28 +361,36 @@ tests:
         assertions:
           # Payment was rejected
           - assertions:
-              - path: response.status
+              - path: $.response.status
                 operator: eq
                 value: 402
-              - path: response.body.error
+              - path: $.response.body.error
                 operator: contains
                 value: declined
 
           # No shipping label was created
           - match:
-              origin: shipping-service
-              url: api.easypost.com
-            count:
-              operator: eq
-              value: 0
+              path: $.traffic
+              where:
+                - path: $$.origin
+                  operator: eq
+                  value: shipping-service
+                - path: $$.request.url
+                  operator: contains
+                  value: api.easypost.com
+              count: 0
 
           # No confirmation email was sent
           - match:
-              origin: notification-service
-              url: api.sendgrid.com
-            count:
-              operator: eq
-              value: 0
+              path: $.traffic
+              where:
+                - path: $$.origin
+                  operator: eq
+                  value: notification-service
+                - path: $$.request.url
+                  operator: contains
+                  value: api.sendgrid.com
+              count: 0
 
       # Order status should be payment_failed, not paid
       - action:
@@ -355,7 +399,7 @@ tests:
           query: 'SELECT status FROM orders WHERE id = {{orderId}}'
         assertions:
           - assertions:
-              - path: data[0].status
+              - path: $.data[0].status
                 operator: eq
                 value: payment_failed
 
@@ -366,7 +410,7 @@ tests:
           query: "SELECT stock FROM products WHERE sku = 'WIDGET-001'"
         assertions:
           - assertions:
-              - path: data[0].stock
+              - path: $.data[0].stock
                 operator: eq
                 value: 50
 ```
@@ -430,37 +474,64 @@ tests:
                   order_id: '100'
         assertions:
           - assertions:
-              - path: response.status
+              - path: $.response.status
                 operator: eq
                 value: 200
 
           # Order was marked as paid
           - match:
-              origin: payment-service
-              method: PATCH
-              url: order-service/v1/orders/100
+              path: $.traffic
+              where:
+                - path: $$.origin
+                  operator: eq
+                  value: payment-service
+                - path: $$.request.method
+                  operator: eq
+                  value: PATCH
+                - path: $$.request.url
+                  operator: contains
+                  value: order-service/v1/orders/100
+              count: 1
             assertions:
-              - path: request.body.status
+              - path: $.match.request.body.status
                 operator: eq
                 value: paid
 
           # Shipping was initiated
           - match:
-              origin: shipping-service
-              method: POST
-              url: api.easypost.com/v2/shipments
+              path: $.traffic
+              where:
+                - path: $$.origin
+                  operator: eq
+                  value: shipping-service
+                - path: $$.request.method
+                  operator: eq
+                  value: POST
+                - path: $$.request.url
+                  operator: contains
+                  value: api.easypost.com/v2/shipments
+              count: 1
             assertions:
-              - path: response.status
+              - path: $.match.response.status
                 operator: eq
                 value: 201
 
           # Customer was notified
           - match:
-              origin: notification-service
-              method: POST
-              url: api.sendgrid.com/v3/mail/send
+              path: $.traffic
+              where:
+                - path: $$.origin
+                  operator: eq
+                  value: notification-service
+                - path: $$.request.method
+                  operator: eq
+                  value: POST
+                - path: $$.request.url
+                  operator: contains
+                  value: api.sendgrid.com/v3/mail/send
+              count: 1
             assertions:
-              - path: request.body.personalizations[0].to[0].email
+              - path: $.match.request.body.personalizations[0].to[0].email
                 operator: eq
                 value: buyer@example.com
 
@@ -471,7 +542,7 @@ tests:
           query: 'SELECT status FROM orders WHERE id = 100'
         assertions:
           - assertions:
-              - path: data[0].status
+              - path: $.data[0].status
                 operator: eq
                 value: paid
 ```
@@ -541,10 +612,10 @@ tests:
                 quantity: 10
         assertions:
           - assertions:
-              - path: response.status
+              - path: $.response.status
                 operator: eq
                 value: 409
-              - path: response.body.error
+              - path: $.response.body.error
                 operator: contains
                 value: 'insufficient stock'
 
@@ -555,7 +626,7 @@ tests:
           query: "SELECT stock FROM products WHERE sku = 'GADGET-001'"
         assertions:
           - assertions:
-              - path: data[0].stock
+              - path: $.data[0].stock
                 operator: eq
                 value: 5
 ```

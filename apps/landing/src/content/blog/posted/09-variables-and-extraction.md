@@ -79,13 +79,22 @@ You can also extract values within assertion blocks. This is useful when you nee
 ```yaml
 assertions:
   - match:
-      origin: api-gateway
-      method: POST
-      url: order-service/api/orders
+      path: $.traffic
+      where:
+        - path: $$.origin
+          operator: eq
+          value: api-gateway
+        - path: $$.request.method
+          operator: eq
+          value: POST
+        - path: $$.request.url
+          operator: contains
+          value: order-service/api/orders
+      count: 1
     extract:
-      internalOrderId: $.response.body.orderId
+      internalOrderId: $.match.response.body.orderId
     assertions:
-      - path: $.response.status
+      - path: $.match.response.status
         operator: eq
         value: 201
 ```

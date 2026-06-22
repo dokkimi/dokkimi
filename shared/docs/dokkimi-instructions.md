@@ -989,8 +989,7 @@ The referenced files must be plain `{ "key": "value" }` objects (no nested objec
 - Action body string values: `"body": { "email": "{{email}}" }`
 - Database queries: `"query": "SELECT * FROM users WHERE id = {{userId}}"`
 - Assertion values: `"value": "{{email}}"`
-- Match block fields: `"url": "user-service/{{path}}"`
-- Console log message values: `"value": "User {{userId}} created"`
+- Match where clause values: `"value": "user-service/{{path}}"`
 
 **Extract syntax:**
 
@@ -1286,9 +1285,9 @@ Loops can be applied at five levels:
 
 ### Assertion Blocks
 
-Each step can have an `assertions` array of blocks. Block type is determined by shape (not by an explicit type field). There are three block types:
+Each step can have an `assertions` array of blocks. Block type is determined by shape (not by an explicit type field). There are two block types:
 
-#### 1. Self Block (no `match`, no `service`)
+#### 1. Self Block (no `match`)
 
 Asserts on the step's own outcome:
 
@@ -1316,92 +1315,180 @@ Asserts on the step's own outcome:
 }
 ```
 
-#### 2. HTTP Call Block (has `match`)
+#### 2. Match Block (has `match`)
 
-Asserts on observed inter-service traffic captured by the interceptor sidecar.
+Filters an array from the root context (traffic, console logs, DB logs, etc.) and asserts on the matched entries. This is a generic system — the same syntax works for all log types.
+
+**Match criteria fields:**
+
+| Field   | Type              | Required | Description                                                                                                                                                                                                  |
+| ------- | ----------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `path`  | string            | Yes      | JSONPath to the array to filter (e.g. `"$.traffic"`, `"$.consoleLogs"`, `"$.dbLogs"`)                                                                                                                        |
+| `where` | array             | No       | Array of filter entries — each entry tests a field on the iterator element (see below)                                                                                                                       |
+| `count` | integer or object | No       | Assert on the number of matching entries. Integer shorthand (e.g. `1`) or `{ "operator": "eq", "value": 1 }`. Count operators: `"eq"`, `"gt"`, `"gte"`, `"lt"`, `"lte"`. Default: at least 1 match expected. |
+| `as`    | string            | No       | Save the matched entries array as a named variable for use in later steps                                                                                                                                    |
+
+**Where entries** use `$$` as the iterator variable — it refers to each element in the array being filtered:
 
 ```json
 {
   "match": {
-    "origin": "api-gateway",
-    "method": "POST",
-    "url": "user-service/api/users"
+    "path": "$.traffic",
+    "where": [
+      { "path": "$$.origin", "operator": "eq", "value": "api-gateway" },
+      { "path": "$$.request.method", "operator": "eq", "value": "POST" },
+      {
+        "path": "$$.request.url",
+        "operator": "contains",
+        "value": "user-service/api/users"
+      }
+    ],
+    "count": 1
   },
-  "count": { "operator": "eq", "value": 1 },
-  "assertionScope": "all",
   "assertions": [
-    { "path": "$.request.body.email", "operator": "eq", "value": "{{email}}" },
-    { "path": "$.response.status", "operator": "eq", "value": 201 },
-    { "path": "$.response.body.id", "operator": "exists" }
+    {
+      "path": "$.match.request.body.email",
+      "operator": "eq",
+      "value": "{{email}}"
+    },
+    { "path": "$.match.response.status", "operator": "eq", "value": 201 },
+    { "path": "$.match.response.body.id", "operator": "exists" }
   ]
 }
 ```
 
-**Match fields** (all optional, all support `{{variables}}`):
-
-| Field    | Description                                                       |
-| -------- | ----------------------------------------------------------------- |
-| `origin` | Service name that made the request                                |
-| `method` | HTTP method to match                                              |
-| `url`    | Target URL: `"service-name/path"`, `"service-name"`, or `"/path"` |
-
-**`assertionScope`** determines which matching traffic entries are validated:
-
-| Value             | Behavior                                             |
-| ----------------- | ---------------------------------------------------- |
-| `"all"` (default) | All matching entries must pass all assertions        |
-| `"first"`         | Only the first matching entry is validated           |
-| `"last"`          | Only the last matching entry is validated            |
-| `"any"`           | At least one matching entry must pass all assertions |
-
-**`count`** asserts on the number of matching traffic entries:
-
-```json
-{ "operator": "eq", "value": 1 }
-```
-
-Count operators: `"eq"`, `"gt"`, `"gte"`, `"lt"`, `"lte"`. Default: `{ "operator": "gte", "value": 1 }` (at least 1 match expected).
-
-#### 3. Console Log Block (has `service`)
-
-Asserts on console output from a specific service during the step's execution.
+Where entries support logical combinators — `or`, `and`, and `not` — for complex filtering:
 
 ```json
 {
-  "service": "user-service",
-  "consoleAssertions": [
+  "path": "$.traffic",
+  "where": [
     {
-      "level": "INFO",
-      "message": { "operator": "contains", "value": "User created" },
-      "count": { "operator": "gte", "value": 1 }
-    },
-    {
-      "level": "ERROR",
-      "count": { "operator": "eq", "value": 0 }
-    },
-    {
-      "message": { "operator": "matches", "value": "Processing order \\d+" },
-      "count": { "operator": "gte", "value": 1 }
+      "or": [
+        {
+          "path": "$$.request.url",
+          "operator": "contains",
+          "value": "/api/users"
+        },
+        {
+          "path": "$$.request.url",
+          "operator": "contains",
+          "value": "/api/orders"
+        }
+      ]
     }
   ]
 }
 ```
 
-**ConsoleLogAssertion fields:**
+**Assertion paths inside match blocks** use `$.match.*` to reference the matched entry:
 
-| Field     | Type   | Required | Description                                                                                                                   |
-| --------- | ------ | -------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| `level`   | enum   | No       | Filter by log level: `"INFO"`, `"WARN"`, `"ERROR"`, `"DEBUG"`. If omitted, matches all levels.                                |
-| `message` | object | No       | Filter by message content. Has `operator` (`"eq"`, `"contains"`, `"matches"`) and `value` (string, supports `{{variables}}`). |
-| `count`   | object | Yes      | Assert on count of matching logs: `{ "operator": "eq"/"gte"/"lte"/"gt"/"lt", "value": number }`                               |
+| Path             | Description                                                        |
+| ---------------- | ------------------------------------------------------------------ |
+| `$.match.*`      | The single matched entry (when count=1), or the last matched entry |
+| `$.lastMatch.*`  | Alias for the last matched entry                                   |
+| `$.matches`      | Array of all matched entries                                       |
+| `$.matches[0].*` | Specific matched entry by index                                    |
 
-All three block types can include `extract` to capture variables from matched results.
+**Traffic assertion example:**
+
+```json
+{
+  "match": {
+    "path": "$.traffic",
+    "where": [
+      { "path": "$$.origin", "operator": "eq", "value": "api-gateway" },
+      { "path": "$$.request.method", "operator": "eq", "value": "POST" },
+      {
+        "path": "$$.request.url",
+        "operator": "contains",
+        "value": "order-service/api/orders"
+      }
+    ],
+    "count": 1
+  },
+  "assertions": [
+    { "path": "$.match.response.status", "operator": "eq", "value": 201 }
+  ]
+}
+```
+
+**Console log assertion example:**
+
+```json
+{
+  "match": {
+    "path": "$.consoleLogs",
+    "where": [
+      { "path": "$$.service", "operator": "eq", "value": "user-service" },
+      { "path": "$$.level", "operator": "eq", "value": "INFO" },
+      { "path": "$$.message", "operator": "contains", "value": "User created" }
+    ],
+    "count": { "operator": "gte", "value": 1 }
+  }
+}
+```
+
+To assert zero errors from a service:
+
+```json
+{
+  "match": {
+    "path": "$.consoleLogs",
+    "where": [
+      { "path": "$$.service", "operator": "eq", "value": "order-service" },
+      { "path": "$$.level", "operator": "eq", "value": "ERROR" }
+    ],
+    "count": 0
+  }
+}
+```
+
+Both block types can include `extract` to capture variables from matched results.
+
+#### Source Fields (Transform Shorthands)
+
+Instead of using `path` as the assertion source, you can use a transform shorthand that resolves a path and applies a transformation before comparing:
+
+| Field     | Description                                                       |
+| --------- | ----------------------------------------------------------------- |
+| `count`   | Resolves the path and returns its length (array or string)        |
+| `type`    | Resolves the path and returns the type as a string                |
+| `keys`    | Resolves the path (must be an object) and returns its keys        |
+| `values`  | Resolves the path (must be an object) and returns its values      |
+| `entries` | Resolves the path (must be an object) and returns key-value pairs |
+
+```json
+{ "count": "$.response.body.items", "operator": "eq", "value": 3 }
+```
+
+```json
+{ "type": "$.response.body.count", "operator": "eq", "value": "number" }
+```
+
+You can also use the object form `{ "from": "$.path", "transform": "count" }` in both `path` and `value` fields for more complex comparisons.
+
+#### Value References
+
+To compare two document paths against each other, use a value reference instead of a literal value:
+
+```json
+{
+  "path": "$.response.body.total",
+  "operator": "eq",
+  "value": { "from": "$.response.body.expectedTotal" }
+}
+```
+
+A value reference is an object with a `from` field containing a `$.`-prefixed path. The path is resolved against the root context before comparison.
 
 ---
 
 ### Assertion Paths
 
-**For HTTP responses (self block or HTTP call block):**
+All assertion paths start with `$.` and resolve against the unified root context.
+
+**For HTTP responses (self block):**
 
 | Path                             | Description                        |
 | -------------------------------- | ---------------------------------- |
@@ -1428,34 +1515,52 @@ All three block types can include `extract` to capture variables from matched re
 | `$.response.error`          | Error message if query failed (string or null) |
 | `$.response.duration`       | Query execution time in milliseconds           |
 
+**Inside match blocks:**
+
+| Path                           | Description                                          |
+| ------------------------------ | ---------------------------------------------------- |
+| `$.match.response.status`      | Response status of the matched entry                 |
+| `$.match.request.body.field`   | Request body field of the matched entry              |
+| `$.lastMatch.*`                | Alias — same as `$.match.*` (the last matched entry) |
+| `$.matches`                    | Array of all matched entries                         |
+| `$.matches[0].response.status` | Field from a specific matched entry by index         |
+
+**Other root context fields:**
+
+| Path                  | Description                                  |
+| --------------------- | -------------------------------------------- |
+| `$.variables.varName` | Access a variable by name                    |
+| `$.traffic`           | Array of all captured HTTP traffic entries   |
+| `$.consoleLogs`       | Array of all console log entries             |
+| `$.dbLogs`            | Array of all database log entries            |
+| `$.timeline`          | Ordered array of all events (traffic + logs) |
+
 ---
 
 ### Assertion Operators
 
-| Operator                | Value required? | Value type     | Description                                                                                 |
-| ----------------------- | --------------- | -------------- | ------------------------------------------------------------------------------------------- |
-| `eq`                    | Yes             | any            | Exact equality (case-insensitive for strings)                                               |
-| `ne`                    | Yes             | any            | Not equal (case-insensitive for strings)                                                    |
-| `gt`                    | Yes             | number         | Greater than                                                                                |
-| `gte`                   | Yes             | number         | Greater than or equal                                                                       |
-| `lt`                    | Yes             | number         | Less than                                                                                   |
-| `lte`                   | Yes             | number         | Less than or equal                                                                          |
-| `contains`              | Yes             | string         | Substring match (case-insensitive)                                                          |
-| `notContains`           | Yes             | string         | Substring does NOT match (case-insensitive)                                                 |
-| `matches`               | Yes             | string (regex) | Regular expression match                                                                    |
-| `exists`                | No              | —              | Value exists (is defined and not null)                                                      |
-| `notExists`             | No              | —              | Value does not exist                                                                        |
-| `in`                    | Yes             | array          | Value is in the given array                                                                 |
-| `notIn`                 | Yes             | array          | Value is NOT in the given array                                                             |
-| `type`                  | Yes             | string         | JavaScript type check: `"string"`, `"number"`, `"boolean"`, `"object"`, `"array"`, `"null"` |
-| `length`                | Yes             | number         | Array or string length equals value                                                         |
-| `isEmpty`               | No              | —              | Value is empty/null/undefined/empty array/empty object                                      |
-| `notEmpty`              | No              | —              | Value is not empty                                                                          |
-| `arrayContains`         | Yes             | any            | Array contains the given element                                                            |
-| `arrayNotContains`      | Yes             | any            | Array does NOT contain the given element                                                    |
-| `eqIgnoreCase`          | Yes             | string         | Case-insensitive equality                                                                   |
-| `containsIgnoreCase`    | Yes             | string         | Case-insensitive substring match                                                            |
-| `notContainsIgnoreCase` | Yes             | string         | Case-insensitive substring does NOT match                                                   |
+| Operator                | Value required? | Value type     | Description                                                                                                        |
+| ----------------------- | --------------- | -------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `eq`                    | Yes             | any            | Exact equality (case-insensitive for strings)                                                                      |
+| `ne`                    | Yes             | any            | Not equal (case-insensitive for strings)                                                                           |
+| `gt`                    | Yes             | number         | Greater than                                                                                                       |
+| `gte`                   | Yes             | number         | Greater than or equal                                                                                              |
+| `lt`                    | Yes             | number         | Less than                                                                                                          |
+| `lte`                   | Yes             | number         | Less than or equal                                                                                                 |
+| `contains`              | Yes             | any            | Dispatches by type: string → case-insensitive substring match, array → element containment, object → key existence |
+| `notContains`           | Yes             | any            | Dispatches by type: string → substring NOT present, array → element NOT present, object → key NOT present          |
+| `matches`               | Yes             | string (regex) | Regular expression match                                                                                           |
+| `exists`                | No              | —              | Value exists (is defined and not null)                                                                             |
+| `notExists`             | No              | —              | Value does not exist                                                                                               |
+| `in`                    | Yes             | array          | Value is in the given array                                                                                        |
+| `notIn`                 | Yes             | array          | Value is NOT in the given array                                                                                    |
+| `isEmpty`               | No              | —              | Value is empty/null/undefined/empty array/empty object                                                             |
+| `notEmpty`              | No              | —              | Value is not empty                                                                                                 |
+| `eqIgnoreCase`          | Yes             | string         | Explicit case-insensitive equality (same behavior as `eq` for strings, but clearer intent)                         |
+| `containsIgnoreCase`    | Yes             | any            | Explicit case-insensitive containment (same behavior as `contains`, but clearer intent)                            |
+| `notContainsIgnoreCase` | Yes             | any            | Explicit case-insensitive non-containment (same behavior as `notContains`, but clearer intent)                     |
+
+To check the type or length of a value, use the `type` or `count` source fields instead of an operator (see "Source Fields" above).
 
 ---
 
@@ -1549,31 +1654,66 @@ A full definition with two services, a database, a mock, and tests:
             },
             {
               "match": {
-                "origin": "api-gateway",
-                "method": "POST",
-                "url": "order-service/api/orders"
+                "path": "$.traffic",
+                "where": [
+                  {
+                    "path": "$$.origin",
+                    "operator": "eq",
+                    "value": "api-gateway"
+                  },
+                  {
+                    "path": "$$.request.method",
+                    "operator": "eq",
+                    "value": "POST"
+                  },
+                  {
+                    "path": "$$.request.url",
+                    "operator": "contains",
+                    "value": "order-service/api/orders"
+                  }
+                ],
+                "count": 1
               },
-              "count": { "operator": "eq", "value": 1 },
               "assertions": [
-                { "path": "$.response.status", "operator": "eq", "value": 201 }
+                {
+                  "path": "$.match.response.status",
+                  "operator": "eq",
+                  "value": 201
+                }
               ]
             },
             {
-              "service": "order-service",
-              "consoleAssertions": [
-                {
-                  "level": "INFO",
-                  "message": {
+              "match": {
+                "path": "$.consoleLogs",
+                "where": [
+                  {
+                    "path": "$$.service",
+                    "operator": "eq",
+                    "value": "order-service"
+                  },
+                  { "path": "$$.level", "operator": "eq", "value": "INFO" },
+                  {
+                    "path": "$$.message",
                     "operator": "contains",
                     "value": "Order created"
+                  }
+                ],
+                "count": { "operator": "gte", "value": 1 }
+              }
+            },
+            {
+              "match": {
+                "path": "$.consoleLogs",
+                "where": [
+                  {
+                    "path": "$$.service",
+                    "operator": "eq",
+                    "value": "order-service"
                   },
-                  "count": { "operator": "gte", "value": 1 }
-                },
-                {
-                  "level": "ERROR",
-                  "count": { "operator": "eq", "value": 0 }
-                }
-              ]
+                  { "path": "$$.level", "operator": "eq", "value": "ERROR" }
+                ],
+                "count": 0
+              }
             }
           ]
         },

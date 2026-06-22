@@ -62,7 +62,7 @@ This means the order service never called the payment service. Drill into the st
 
 - **The service errored before making the call.** Check the console logs for exceptions.
 - **The URL doesn't match.** Maybe the service calls `/v1/charge` (singular) but your assertion matches `/v1/charges` (plural).
-- **The origin doesn't match.** If `api-gateway` proxies the request to `payment-service`, the captured origin will be `api-gateway`, not `order-service`.
+- **The origin doesn't match.** If `api-gateway` proxies the request to `payment-service`, the captured `$$.origin` will be `api-gateway`, not `order-service`.
 
 ## Console log assertions
 

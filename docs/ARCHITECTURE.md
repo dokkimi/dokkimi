@@ -302,3 +302,38 @@ dokkimi/
 6. **Wire protocol proxies over query-execution endpoints** — DB Proxy variants parse each database's native wire protocol (MongoDB OP_MSG, PostgreSQL messages, MySQL packets, Redis RESP) to transparently intercept and log queries. This means applications connect normally to the proxy port with no driver changes, and the proxy forwards traffic unmodified while extracting query text, results, duration, and errors for logging.
 
 7. **Inline assertion validation in test-agent** — the test-agent validates assertions against in-memory logs (HTTP traffic, console output, DB queries) instead of round-tripping through Control Tower. Interceptors POST logs to both CT (for storage/inspection) and the test-agent (for real-time validation). Console logs arrive via GELF UDP. This eliminates HTTP round-trips per assertion, removes database query latency from the validation path, and enables retry logic (polling for expected traffic) without CT involvement. CT's test-validation module now only stores pre-validated results.
+
+---
+
+## Test Agent Internals
+
+The test-agent's assertion engine validates all assertions against a unified **root context** document assembled from buffered logs:
+
+```
+{
+  request,         // the step's outbound request
+  response,        // the step's response
+  responseTime,    // response latency in ms
+  variables,       // current variable context snapshot
+  traffic,         // array of all captured HTTP traffic entries
+  consoleLogs,     // array of all console log entries
+  dbLogs,          // array of all database log entries
+  timeline         // ordered array of all events (traffic + logs)
+}
+```
+
+### Unified match system
+
+All log types (traffic, console, DB) are asserted through the same generic match system: `match: { path, where, count, as }`. The `path` field selects which array to filter (e.g. `$.traffic`, `$.consoleLogs`), `where` entries filter elements using `$$` as the iterator variable, and matched results are exposed as `$.match` / `$.matches` in assertion paths.
+
+### StepValidator and retry
+
+`StepValidator` owns the validation loop. After executing a step, it validates immediately. If the result looks like logs haven't arrived yet (a "retryable" failure — e.g., zero matches when expecting some, or a pending action log), it polls every 100ms up to a 5-second deadline. This handles the inherent async delay between interceptor log delivery and assertion evaluation.
+
+### MatchStack
+
+Nested match blocks push/pop context onto a `MatchStack`. Each push saves the current `$.match` / `$.matches` state and installs the new match result; the deferred pop restores it. This allows match blocks inside loops or nested within other match blocks.
+
+### Variable generation caching
+
+`VariableContext` tracks a generation counter that increments on every `Set`/`Delete`/`Reset`. The `StepValidator` caches resolved assertion blocks keyed by generation — during retry loops, if variables haven't changed between attempts, the resolved blocks are reused instead of re-allocating.

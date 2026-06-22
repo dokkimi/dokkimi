@@ -30,14 +30,30 @@ Dokkimi's interceptor sidecar captures every HTTP call between services automati
 ```json
 {
   "match": {
-    "origin": "order-service",
-    "method": "POST",
-    "url": "payment-service/api/charges"
+    "path": "$.traffic",
+    "where": [
+      { "path": "$$.origin", "operator": "eq", "value": "order-service" },
+      { "path": "$$.request.method", "operator": "eq", "value": "POST" },
+      {
+        "path": "$$.request.url",
+        "operator": "contains",
+        "value": "payment-service/api/charges"
+      }
+    ],
+    "count": 1
   },
   "assertions": [
-    { "path": "$.request.body.amount_cents", "operator": "eq", "value": 1998 },
-    { "path": "$.request.body.currency", "operator": "eq", "value": "usd" },
-    { "path": "$.response.status", "operator": "eq", "value": 201 }
+    {
+      "path": "$.match.request.body.amount_cents",
+      "operator": "eq",
+      "value": 1998
+    },
+    {
+      "path": "$.match.request.body.currency",
+      "operator": "eq",
+      "value": "usd"
+    },
+    { "path": "$.match.response.status", "operator": "eq", "value": 201 }
   ]
 }
 ```

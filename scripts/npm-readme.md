@@ -131,7 +131,7 @@ tests:
           query: "SELECT title FROM posts WHERE title = 'My new post'"
         assertions:
           - assertions:
-              - path: data[0].title
+              - path: $.response.data[0].title
                 operator: eq
                 value: My new post
 ```

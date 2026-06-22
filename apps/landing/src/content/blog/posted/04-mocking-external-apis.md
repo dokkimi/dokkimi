@@ -43,14 +43,23 @@ Because the mock is part of Dokkimi's interception layer, every call to the mock
 ```yaml
 assertions:
   - match:
-      origin: payment-service
-      method: POST
-      url: api.stripe.com/v1/charges
+      path: $.traffic
+      where:
+        - path: $$.origin
+          operator: eq
+          value: payment-service
+        - path: $$.request.method
+          operator: eq
+          value: POST
+        - path: $$.request.url
+          operator: contains
+          value: api.stripe.com/v1/charges
+      count: 1
     assertions:
-      - path: $.request.body.amount
+      - path: $.match.request.body.amount
         operator: eq
         value: 1998
-      - path: $.request.body.currency
+      - path: $.match.request.body.currency
         operator: eq
         value: 'usd'
 ```

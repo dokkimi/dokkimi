@@ -42,7 +42,7 @@ import CodeBlock from '../../components/CodeBlock.astro';
       <tr><td>Action body (string values)</td><td><code>"email": "&#123;&#123;email&#125;&#125;"</code></td></tr>
       <tr><td>Database queries</td><td><code>"query": "SELECT * FROM users WHERE id = &#123;&#123;userId&#125;&#125;"</code></td></tr>
       <tr><td>Assertion values</td><td><code>"value": "&#123;&#123;email&#125;&#125;"</code></td></tr>
-      <tr><td>Match block fields</td><td><code>"url": "user-service/&#123;&#123;path&#125;&#125;"</code></td></tr>
+      <tr><td>Match where values</td><td><code>"value": "user-service/&#123;&#123;path&#125;&#125;"</code></td></tr>
       <tr><td>Console log messages</td><td><code>"value": "User &#123;&#123;userId&#125;&#125; created"</code></td></tr>
     </tbody>
   </table>
@@ -131,15 +131,19 @@ import CodeBlock from '../../components/CodeBlock.astro';
   <p>You can also extract values from within assertion blocks — useful for capturing values from intercepted inter-service traffic:</p>
   <CodeBlock code={`{
   "match": {
-    "origin": "api-gateway",
-    "method": "POST",
-    "url": "order-service/api/orders"
+    "path": "$.traffic",
+    "where": [
+      { "path": "$$.origin", "operator": "eq", "value": "api-gateway" },
+      { "path": "$$.request.method", "operator": "eq", "value": "POST" },
+      { "path": "$$.request.url", "operator": "contains", "value": "order-service/api/orders" }
+    ],
+    "count": 1
   },
   "extract": {
-    "internalOrderId": "$.response.body.orderId"
+    "internalOrderId": "$.match.response.body.orderId"
   },
   "assertions": [
-    { "path": "$.response.status", "operator": "eq", "value": 201 }
+    { "path": "$.match.response.status", "operator": "eq", "value": 201 }
   ]
 }`} lang="json" />
 

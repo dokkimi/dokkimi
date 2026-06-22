@@ -147,28 +147,37 @@ tests:
         assertions:
           # The API route returned the right data
           - assertions:
-              - path: response.status
+              - path: $.response.status
                 operator: eq
                 value: 200
-              - path: response.body.posts.length
+              - count: $.response.body.posts
                 operator: eq
                 value: 3
-              - path: response.body.posts[0].title
+              - path: $.response.body.posts[0].title
                 operator: eq
                 value: 'CSS Grid is underrated'
 
           # The post service queried the database correctly
           - match:
-              origin: web-app
-              method: GET
-              url: api-gateway/v1/posts
+              path: $.traffic
+              where:
+                - path: $$.origin
+                  operator: eq
+                  value: web-app
+                - path: $$.request.method
+                  operator: eq
+                  value: GET
+                - path: $$.request.url
+                  operator: contains
+                  value: api-gateway/v1/posts
+              count: 1
             assertions:
-              - path: response.status
+              - path: $.match.response.status
                 operator: eq
                 value: 200
 ```
 
-Notice the assertion on `$.posts.length` — the database has 4 posts but only 3 are published. This verifies that the `published` filter works correctly all the way through the stack, not just in the post service's unit tests.
+Notice the `count` assertion on `$.response.body.posts` — the database has 4 posts but only 3 are published. This verifies that the `published` filter works correctly all the way through the stack, not just in the post service's unit tests.
 
 You can also use database steps to verify writes. Here's a test for creating a new post:
 
@@ -195,13 +204,13 @@ tests:
             published: true
         assertions:
           - assertions:
-              - path: response.status
+              - path: $.response.status
                 operator: eq
                 value: 201
-              - path: response.body.post.id
+              - path: $.response.body.post.id
                 operator: exists
         extract:
-          newPostId: response.body.post.id
+          newPostId: $.response.body.post.id
 
       # Verify the post exists in the database
       - action:
@@ -210,10 +219,10 @@ tests:
           query: 'SELECT title, published FROM posts WHERE id = {{newPostId}}'
         assertions:
           - assertions:
-              - path: data[0].title
+              - path: $.data[0].title
                 operator: eq
                 value: 'New post from test'
-              - path: data[0].published
+              - path: $.data[0].published
                 operator: eq
                 value: true
 
@@ -224,7 +233,7 @@ tests:
           url: web-app/api/posts
         assertions:
           - assertions:
-              - path: response.body.posts.length
+              - count: $.response.body.posts
                 operator: eq
                 value: 4
 ```
@@ -260,24 +269,42 @@ tests:
         assertions:
           # The page triggered a fetch to the API gateway
           - match:
-              origin: web-app
-              method: GET
-              url: api-gateway/v1/posts/1
+              path: $.traffic
+              where:
+                - path: $$.origin
+                  operator: eq
+                  value: web-app
+                - path: $$.request.method
+                  operator: eq
+                  value: GET
+                - path: $$.request.url
+                  operator: contains
+                  value: api-gateway/v1/posts/1
+              count: 1
             assertions:
-              - path: response.status
+              - path: $.match.response.status
                 operator: eq
                 value: 200
-              - path: response.body.title
+              - path: $.match.response.body.title
                 operator: eq
                 value: 'Understanding consensus algorithms'
 
           # The author profile was also fetched
           - match:
-              origin: web-app
-              method: GET
-              url: api-gateway/v1/users/1
+              path: $.traffic
+              where:
+                - path: $$.origin
+                  operator: eq
+                  value: web-app
+                - path: $$.request.method
+                  operator: eq
+                  value: GET
+                - path: $$.request.url
+                  operator: contains
+                  value: api-gateway/v1/users/1
+              count: 1
             assertions:
-              - path: response.body.displayName
+              - path: $.match.response.body.displayName
                 operator: eq
                 value: 'Alice Chen'
 ```
@@ -332,14 +359,23 @@ tests:
         assertions:
           # The form submission went through the full stack
           - match:
-              origin: web-app
-              method: POST
-              url: api-gateway/v1/posts
+              path: $.traffic
+              where:
+                - path: $$.origin
+                  operator: eq
+                  value: web-app
+                - path: $$.request.method
+                  operator: eq
+                  value: POST
+                - path: $$.request.url
+                  operator: contains
+                  value: api-gateway/v1/posts
+              count: 1
             assertions:
-              - path: request.body.title
+              - path: $.match.request.body.title
                 operator: eq
                 value: 'Integration testing with Dokkimi'
-              - path: response.status
+              - path: $.match.response.status
                 operator: eq
                 value: 201
 
@@ -350,7 +386,7 @@ tests:
           query: "SELECT title, published FROM posts WHERE title = 'Integration testing with Dokkimi'"
         assertions:
           - assertions:
-              - path: data[0].published
+              - path: $.data[0].published
                 operator: eq
                 value: true
 
@@ -365,11 +401,20 @@ tests:
               name: post-listing-after
         assertions:
           - match:
-              origin: web-app
-              method: GET
-              url: api-gateway/v1/posts
+              path: $.traffic
+              where:
+                - path: $$.origin
+                  operator: eq
+                  value: web-app
+                - path: $$.request.method
+                  operator: eq
+                  value: GET
+                - path: $$.request.url
+                  operator: contains
+                  value: api-gateway/v1/posts
+              count: 1
             assertions:
-              - path: response.body.posts.length
+              - count: $.match.response.body.posts
                 operator: eq
                 value: 4
 ```
@@ -395,24 +440,42 @@ tests:
         assertions:
           # SSR fetched the user profile
           - match:
-              origin: web-app
-              method: GET
-              url: api-gateway/v1/users/alice
+              path: $.traffic
+              where:
+                - path: $$.origin
+                  operator: eq
+                  value: web-app
+                - path: $$.request.method
+                  operator: eq
+                  value: GET
+                - path: $$.request.url
+                  operator: contains
+                  value: api-gateway/v1/users/alice
+              count: 1
             assertions:
-              - path: response.body.displayName
+              - path: $.match.response.body.displayName
                 operator: eq
                 value: 'Alice Chen'
-              - path: response.body.bio
+              - path: $.match.response.body.bio
                 operator: eq
                 value: 'Staff engineer. Writes about distributed systems.'
 
           # SSR also fetched the user's posts
           - match:
-              origin: web-app
-              method: GET
-              url: api-gateway/v1/users/alice/posts
+              path: $.traffic
+              where:
+                - path: $$.origin
+                  operator: eq
+                  value: web-app
+                - path: $$.request.method
+                  operator: eq
+                  value: GET
+                - path: $$.request.url
+                  operator: contains
+                  value: api-gateway/v1/users/alice/posts
+              count: 1
             assertions:
-              - path: response.body.posts.length
+              - count: $.match.response.body.posts
                 operator: eq
                 value: 2
 ```

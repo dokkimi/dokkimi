@@ -30,11 +30,20 @@ You write assertions against real traffic — "when I POST to the API gateway, v
 ```yaml
 assertions:
   - match:
-      origin: order-service
-      method: POST
-      url: payment-service/v1/charges
+      path: $.traffic
+      where:
+        - path: $$.origin
+          operator: eq
+          value: order-service
+        - path: $$.request.method
+          operator: eq
+          value: POST
+        - path: $$.request.url
+          operator: contains
+          value: payment-service/v1/charges
+      count: 1
     assertions:
-      - path: $.request.body.amount
+      - path: $.match.request.body.amount
         operator: eq
         value: 1998
 ```
