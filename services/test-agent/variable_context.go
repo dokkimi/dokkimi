@@ -7,12 +7,13 @@ import (
 	"sync"
 )
 
-var variablePattern = regexp.MustCompile(`\{\{([\w]+(?:\.[\w]+|\[\d+\])*)\}\}`)
+var variablePattern = regexp.MustCompile(`\{\{([\w-]+(?:\.[\w-]+|\[\d+\])*)\}\}`)
 
 // VariableContext stores and resolves variables during test execution.
 type VariableContext struct {
-	mu        sync.RWMutex
-	variables map[string]interface{}
+	mu         sync.RWMutex
+	variables  map[string]interface{}
+	generation uint64
 }
 
 // NewVariableContext creates a new empty variable context.
@@ -29,6 +30,7 @@ func (vc *VariableContext) Reset() {
 	vc.mu.Lock()
 	defer vc.mu.Unlock()
 	vc.variables = make(map[string]interface{})
+	vc.generation++
 }
 
 // Set stores a variable value.
@@ -36,6 +38,7 @@ func (vc *VariableContext) Set(name string, value interface{}) {
 	vc.mu.Lock()
 	defer vc.mu.Unlock()
 	vc.variables[name] = value
+	vc.generation++
 }
 
 // Delete removes a variable. No-op if the variable does not exist.
@@ -43,6 +46,16 @@ func (vc *VariableContext) Delete(name string) {
 	vc.mu.Lock()
 	defer vc.mu.Unlock()
 	delete(vc.variables, name)
+	vc.generation++
+}
+
+// Generation returns the current generation counter. It increments on every
+// Set, Delete, or Reset call, allowing callers to detect whether the variable
+// context has changed since their last observation.
+func (vc *VariableContext) Generation() uint64 {
+	vc.mu.RLock()
+	defer vc.mu.RUnlock()
+	return vc.generation
 }
 
 // Resolve replaces {{variableName}} placeholders in a template string.

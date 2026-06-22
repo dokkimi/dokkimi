@@ -50,16 +50,32 @@
             "assertions": [
               {
                 "assertions": [
-                  { "path": "$.response.status", "operator": "eq", "value": 201 },
-                  { "path": "$.response.body.post.title", "operator": "eq", "value": "{{post.title}}" }
+                  {
+                    "path": "$.response.status",
+                    "operator": "eq",
+                    "value": 201
+                  },
+                  {
+                    "path": "$.response.body.post.title",
+                    "operator": "eq",
+                    "value": "{{post.title}}"
+                  }
                 ]
               },
               {
                 "match": {
                   "path": "$.traffic",
                   "where": [
-                    { "path": "$$.request.url", "operator": "contains", "value": "/api/profile/posts" },
-                    { "path": "$$.request.method", "operator": "eq", "value": "POST" }
+                    {
+                      "path": "$$.request.url",
+                      "operator": "contains",
+                      "value": "/api/profile/posts"
+                    },
+                    {
+                      "path": "$$.request.method",
+                      "operator": "eq",
+                      "value": "POST"
+                    }
                   ]
                 },
                 "forEach": {

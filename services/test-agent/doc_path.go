@@ -1,10 +1,28 @@
 package main
 
 import (
+	"reflect"
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 )
+
+var lowerKeyCache sync.Map // uintptr → map[string]string
+
+func resetLowerKeyCache() {
+	lowerKeyCache = sync.Map{}
+}
+
+func getCachedLowerKeyMap(obj map[string]interface{}) map[string]string {
+	ptr := reflect.ValueOf(obj).Pointer()
+	if cached, ok := lowerKeyCache.Load(ptr); ok {
+		return cached.(map[string]string)
+	}
+	m := buildLowerKeyMap(obj)
+	lowerKeyCache.Store(ptr, m)
+	return m
+}
 
 // EvaluateDocPath resolves a dotted path against an assembled document.
 // Supports: "response.body.user.name", "data[0].email", "data[-1].email", "responseTime"
@@ -67,15 +85,10 @@ func EvaluateDocPath(doc interface{}, path string, scopedCtx ...interface{}) (in
 				value = v
 			} else {
 				lowerSeg := strings.ToLower(seg)
-				found := false
-				for k, v := range obj {
-					if strings.ToLower(k) == lowerSeg {
-						value = v
-						found = true
-						break
-					}
-				}
-				if !found {
+				lowerMap := getCachedLowerKeyMap(obj)
+				if origKey, exists := lowerMap[lowerSeg]; exists {
+					value = obj[origKey]
+				} else {
 					return nil, false
 				}
 			}
@@ -89,17 +102,18 @@ var arrayIndexPattern = regexp.MustCompile(`^\[(-?\d+)\]$`)
 
 func parsePathSegments(path string) []string {
 	var segments []string
-	current := ""
+	var current strings.Builder
 	for i := 0; i < len(path); i++ {
 		switch path[i] {
 		case '.':
-			if current != "" {
-				segments = append(segments, current)
+			if current.Len() > 0 {
+				segments = append(segments, current.String())
+				current.Reset()
 			}
-			current = ""
 		case '[':
-			if current != "" {
-				segments = append(segments, current)
+			if current.Len() > 0 {
+				segments = append(segments, current.String())
+				current.Reset()
 			}
 			closeIdx := strings.Index(path[i:], "]")
 			if closeIdx == -1 {
@@ -107,15 +121,27 @@ func parsePathSegments(path string) []string {
 			}
 			segments = append(segments, path[i:i+closeIdx+1])
 			i += closeIdx
-			current = ""
 		default:
-			current += string(path[i])
+			current.WriteByte(path[i])
 		}
 	}
-	if current != "" {
-		segments = append(segments, current)
+	if current.Len() > 0 {
+		segments = append(segments, current.String())
 	}
 	return segments
+}
+
+// buildLowerKeyMap returns a map from lowercased key to the original key.
+// When multiple keys lowercase to the same string, the first one wins.
+func buildLowerKeyMap(obj map[string]interface{}) map[string]string {
+	m := make(map[string]string, len(obj))
+	for k := range obj {
+		lower := strings.ToLower(k)
+		if _, exists := m[lower]; !exists {
+			m[lower] = k
+		}
+	}
+	return m
 }
 
 func toMap(v interface{}) (map[string]interface{}, bool) {

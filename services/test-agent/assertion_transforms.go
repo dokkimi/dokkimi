@@ -12,6 +12,9 @@ func resolveSource(a Assertion) (sourcePath string, transform string, err error)
 	switch p := a.Path.(type) {
 	case string:
 		if p != "" {
+			if !strings.HasPrefix(p, "$.") && !strings.HasPrefix(p, "$$.") {
+				return "", "", fmt.Errorf("path must be a $.-prefixed path (e.g., \"$.response.body\")")
+			}
 			return p, "", nil
 		}
 	case map[string]interface{}:
@@ -23,18 +26,33 @@ func resolveSource(a Assertion) (sourcePath string, transform string, err error)
 		return from, t, nil
 	}
 	if a.Count != "" {
+		if !strings.HasPrefix(a.Count, "$.") && !strings.HasPrefix(a.Count, "$$.") {
+			return "", "", fmt.Errorf("count must be a $.-prefixed path (e.g., \"$.response.body.items\")")
+		}
 		return a.Count, "length", nil
 	}
 	if a.Type != "" {
+		if !strings.HasPrefix(a.Type, "$.") && !strings.HasPrefix(a.Type, "$$.") {
+			return "", "", fmt.Errorf("type must be a $.-prefixed path (e.g., \"$.response.body\")")
+		}
 		return a.Type, "type", nil
 	}
 	if a.Keys != "" {
+		if !strings.HasPrefix(a.Keys, "$.") && !strings.HasPrefix(a.Keys, "$$.") {
+			return "", "", fmt.Errorf("keys must be a $.-prefixed path (e.g., \"$.response.body\")")
+		}
 		return a.Keys, "keys", nil
 	}
 	if a.Values != "" {
+		if !strings.HasPrefix(a.Values, "$.") && !strings.HasPrefix(a.Values, "$$.") {
+			return "", "", fmt.Errorf("values must be a $.-prefixed path (e.g., \"$.response.body\")")
+		}
 		return a.Values, "values", nil
 	}
 	if a.Entries != "" {
+		if !strings.HasPrefix(a.Entries, "$.") && !strings.HasPrefix(a.Entries, "$$.") {
+			return "", "", fmt.Errorf("entries must be a $.-prefixed path (e.g., \"$.response.body\")")
+		}
 		return a.Entries, "entries", nil
 	}
 	return "", "", fmt.Errorf("assertion must have exactly one source field")

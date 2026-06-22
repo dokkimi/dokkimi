@@ -13,10 +13,19 @@ const (
 	validationMaxWait       = 5 * time.Second
 )
 
+// resolvedBlocksCache caches the result of ResolveAssertionBlocks keyed by
+// the VariableContext generation counter. This avoids redundant slice
+// allocations when ValidateStepWithRetry retries and the variables haven't changed.
+type resolvedBlocksCache struct {
+	generation uint64
+	blocks     []AssertionBlock
+}
+
 // StepValidator validates assertions for a step using in-memory log buffers.
 type StepValidator struct {
-	logBuffer *StepLogBuffer
-	varCtx    *VariableContext
+	logBuffer  *StepLogBuffer
+	varCtx     *VariableContext
+	blockCache resolvedBlocksCache
 }
 
 // NewStepValidator creates a new step validator.
@@ -31,6 +40,8 @@ func NewStepValidator(logBuffer *StepLogBuffer, varCtx *VariableContext) *StepVa
 // logs haven't arrived yet (retryable), it polls every 100ms and retries until
 // validation passes, a non-retryable failure occurs, or the deadline is hit.
 func (sv *StepValidator) ValidateStepWithRetry(step TestStep, stepExec StepExecution, stepResp map[string]interface{}) ([]AssertionResult, bool) {
+	sv.blockCache = resolvedBlocksCache{}
+	resetLowerKeyCache()
 	results, passed := sv.validateStep(step, stepExec, stepResp)
 	if passed || !isRetryable(results) {
 		sv.logBuffer.Flush()
@@ -149,7 +160,14 @@ func (sv *StepValidator) validateStep(step TestStep, stepExec StepExecution, ste
 		return results, allPassed(results)
 	}
 
-	resolvedBlocks := sv.varCtx.ResolveAssertionBlocks(step.Assertions)
+	gen := sv.varCtx.Generation()
+	var resolvedBlocks []AssertionBlock
+	if sv.blockCache.blocks != nil && sv.blockCache.generation == gen {
+		resolvedBlocks = sv.blockCache.blocks
+	} else {
+		resolvedBlocks = sv.varCtx.ResolveAssertionBlocks(step.Assertions)
+		sv.blockCache = resolvedBlocksCache{generation: gen, blocks: resolvedBlocks}
+	}
 	matchStack := &MatchStack{}
 
 	for blockIndex := 0; blockIndex < len(resolvedBlocks); blockIndex++ {

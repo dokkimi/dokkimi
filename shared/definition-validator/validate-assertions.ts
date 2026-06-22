@@ -190,6 +190,11 @@ export function validateMatchCriteria(
   if (m.as !== undefined) {
     if (typeof m.as !== 'string' || !m.as) {
       err(r, `${ctx}: "as" must be a non-empty string`);
+    } else if (!/^\w+$/.test(m.as)) {
+      err(
+        r,
+        `${ctx}: "as" must be alphanumeric (letters, digits, underscores)`,
+      );
     }
   }
 }
@@ -335,19 +340,25 @@ export function validateAssertion(
       } else {
         validatePathFormat(pathObj.from, `${ctx}.path.from`, r);
       }
-      if (
-        pathObj.transform !== undefined &&
-        !(VALID_TRANSFORMS as readonly string[]).includes(
-          pathObj.transform as string,
-        )
-      ) {
+      if (pathObj.transform !== undefined) {
+        if (
+          !(VALID_TRANSFORMS as readonly string[]).includes(
+            pathObj.transform as string,
+          )
+        ) {
+          err(
+            r,
+            `${ctx}.path: "transform" must be one of: ${VALID_TRANSFORMS.join(', ')}`,
+          );
+        }
+      } else {
         err(
           r,
-          `${ctx}.path: "transform" must be one of: ${VALID_TRANSFORMS.join(', ')}`,
+          `${ctx}.path: "transform" is required when using the {from, transform} form`,
         );
       }
     } else {
-      err(r, `${ctx}: "path" must be a string or {from, transform?} object`);
+      err(r, `${ctx}: "path" must be a string or {from, transform} object`);
     }
   }
 

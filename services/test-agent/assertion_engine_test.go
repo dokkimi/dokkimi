@@ -650,7 +650,7 @@ func TestValidateAssertion(t *testing.T) {
 	}
 
 	t.Run("validates exists for present value", func(t *testing.T) {
-		r := ValidateAssertion(Assertion{Path: "response.status", Operator: "exists"}, doc)
+		r := ValidateAssertion(Assertion{Path: "$.response.status", Operator: "exists"}, doc)
 		if !r.Passed {
 			t.Error("expected pass")
 		}
@@ -663,14 +663,14 @@ func TestValidateAssertion(t *testing.T) {
 		nullDoc := map[string]interface{}{
 			"response": map[string]interface{}{"status": nil},
 		}
-		r := ValidateAssertion(Assertion{Path: "response.status", Operator: "exists"}, nullDoc)
+		r := ValidateAssertion(Assertion{Path: "$.response.status", Operator: "exists"}, nullDoc)
 		if r.Passed {
 			t.Error("expected fail for null value")
 		}
 	})
 
 	t.Run("validates exists for missing value", func(t *testing.T) {
-		r := ValidateAssertion(Assertion{Path: "response.missing", Operator: "exists"}, doc)
+		r := ValidateAssertion(Assertion{Path: "$.response.missing", Operator: "exists"}, doc)
 		if r.Passed {
 			t.Error("expected fail")
 		}
@@ -680,7 +680,7 @@ func TestValidateAssertion(t *testing.T) {
 	})
 
 	t.Run("validates notExists for missing value", func(t *testing.T) {
-		r := ValidateAssertion(Assertion{Path: "response.missing", Operator: "notExists"}, doc)
+		r := ValidateAssertion(Assertion{Path: "$.response.missing", Operator: "notExists"}, doc)
 		if !r.Passed {
 			t.Error("expected pass")
 		}
@@ -690,14 +690,14 @@ func TestValidateAssertion(t *testing.T) {
 		nullDoc := map[string]interface{}{
 			"response": map[string]interface{}{"status": nil},
 		}
-		r := ValidateAssertion(Assertion{Path: "response.status", Operator: "notExists"}, nullDoc)
+		r := ValidateAssertion(Assertion{Path: "$.response.status", Operator: "notExists"}, nullDoc)
 		if !r.Passed {
 			t.Error("expected pass for null value")
 		}
 	})
 
 	t.Run("validates notExists fails for present value", func(t *testing.T) {
-		r := ValidateAssertion(Assertion{Path: "response.status", Operator: "notExists"}, doc)
+		r := ValidateAssertion(Assertion{Path: "$.response.status", Operator: "notExists"}, doc)
 		if r.Passed {
 			t.Error("expected fail")
 		}
@@ -707,19 +707,29 @@ func TestValidateAssertion(t *testing.T) {
 	})
 
 	t.Run("returns error when path not found and operator is not exists/notExists", func(t *testing.T) {
-		r := ValidateAssertion(Assertion{Path: "response.missing", Operator: "eq", Value: float64(200)}, doc)
+		r := ValidateAssertion(Assertion{Path: "$.response.missing", Operator: "eq", Value: float64(200)}, doc)
 		if r.Passed {
 			t.Error("expected fail")
 		}
-		if !strings.Contains(r.Error, "Path 'response.missing' not found") {
+		if !strings.Contains(r.Error, "Path '$.response.missing' not found") {
 			t.Errorf("expected path not found error, got: %s", r.Error)
 		}
 	})
 
 	t.Run("delegates to CompareValues for standard operators", func(t *testing.T) {
-		r := ValidateAssertion(Assertion{Path: "response.status", Operator: "eq", Value: float64(200)}, doc)
+		r := ValidateAssertion(Assertion{Path: "$.response.status", Operator: "eq", Value: float64(200)}, doc)
 		if !r.Passed {
 			t.Error("expected pass")
+		}
+	})
+
+	t.Run("rejects path without $. prefix", func(t *testing.T) {
+		r := ValidateAssertion(Assertion{Path: "response.status", Operator: "eq", Value: float64(200)}, doc)
+		if r.Passed {
+			t.Error("expected fail for unprefixed path")
+		}
+		if !strings.Contains(r.Error, "$.-prefixed path") {
+			t.Errorf("expected prefix error, got: %s", r.Error)
 		}
 	})
 }

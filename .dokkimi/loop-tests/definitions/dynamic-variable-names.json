@@ -50,7 +50,11 @@
             "assertions": [
               {
                 "assertions": [
-                  { "path": "$.response.status", "operator": "eq", "value": 201 }
+                  {
+                    "path": "$.response.status",
+                    "operator": "eq",
+                    "value": 201
+                  }
                 ],
                 "extract": {
                   "postTitle_{{postLoop.index}}": "$.response.body.post.title"

@@ -6,6 +6,17 @@ import (
 	"time"
 )
 
+func computeResponseTime(l *HttpLogMessage) interface{} {
+	if l.RequestSentAt != nil && l.ResponseReceivedAt != nil {
+		sentAt, err1 := time.Parse(time.RFC3339Nano, *l.RequestSentAt)
+		receivedAt, err2 := time.Parse(time.RFC3339Nano, *l.ResponseReceivedAt)
+		if err1 == nil && err2 == nil {
+			return float64(receivedAt.Sub(sentAt).Milliseconds())
+		}
+	}
+	return nil
+}
+
 type timelineEntry struct {
 	timestamp time.Time
 	entry     map[string]interface{}
@@ -41,10 +52,11 @@ func assembleTrafficList(httpLogs []HttpLogMessage, stepExec StepExecution) ([]i
 
 		trafficIdx := float64(len(traffic))
 		entry := map[string]interface{}{
-			"timestamp": ts,
-			"origin":    from,
-			"from":      from,
-			"to":        to,
+			"timestamp":    ts,
+			"origin":       from,
+			"from":         from,
+			"to":           to,
+			"responseTime": computeResponseTime(l),
 			"request": map[string]interface{}{
 				"method":  l.Method,
 				"url":     l.URL,
@@ -198,29 +210,14 @@ func mergeTimeline(slices ...[]timelineEntry) []interface{} {
 	return result
 }
 
-func annotateTimelineIndices(traffic []interface{}, timeline []interface{}) {
-	for i, t := range traffic {
-		entry, ok := t.(map[string]interface{})
-		if !ok {
-			continue
-		}
-		reqIdx, reqFound := findTimelineIndex(timeline, i, "request")
-		if !reqFound {
-			entry["requestTimelineIndex"] = nil
-		} else {
-			entry["requestTimelineIndex"] = float64(reqIdx)
-		}
-
-		respIdx, respFound := findTimelineIndex(timeline, i, "response")
-		if !respFound {
-			entry["responseTimelineIndex"] = nil
-		} else {
-			entry["responseTimelineIndex"] = float64(respIdx)
-		}
-	}
+type timelineLookupKey struct {
+	trafficIndex float64
+	direction    string
 }
 
-func findTimelineIndex(timeline []interface{}, trafficIdx int, direction string) (int, bool) {
+func annotateTimelineIndices(traffic []interface{}, timeline []interface{}) {
+	// Build a map from (trafficIndex, direction) → timeline index in a single pass.
+	lookup := make(map[timelineLookupKey]int, len(timeline))
 	for i, t := range timeline {
 		entry, ok := t.(map[string]interface{})
 		if !ok {
@@ -228,9 +225,32 @@ func findTimelineIndex(timeline []interface{}, trafficIdx int, direction string)
 		}
 		ti, ok1 := entry["trafficIndex"]
 		dir, ok2 := entry["direction"]
-		if ok1 && ok2 && ti == float64(trafficIdx) && dir == direction {
-			return i, true
+		if !ok1 || !ok2 {
+			continue
+		}
+		tiFloat, fOk := ti.(float64)
+		dirStr, dOk := dir.(string)
+		if !fOk || !dOk {
+			continue
+		}
+		lookup[timelineLookupKey{trafficIndex: tiFloat, direction: dirStr}] = i
+	}
+
+	for i, t := range traffic {
+		entry, ok := t.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		tiFloat := float64(i)
+		if reqIdx, found := lookup[timelineLookupKey{trafficIndex: tiFloat, direction: "request"}]; found {
+			entry["requestTimelineIndex"] = float64(reqIdx)
+		} else {
+			entry["requestTimelineIndex"] = nil
+		}
+		if respIdx, found := lookup[timelineLookupKey{trafficIndex: tiFloat, direction: "response"}]; found {
+			entry["responseTimelineIndex"] = float64(respIdx)
+		} else {
+			entry["responseTimelineIndex"] = nil
 		}
 	}
-	return 0, false
 }
