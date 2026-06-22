@@ -1,6 +1,5 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { minimatch } from 'minimatch';
 import {
   validateDefinition,
   resolveRefs,
@@ -12,10 +11,22 @@ import {
   type FileSystem,
 } from '@dokkimi/definition-validator';
 
-const nodeFs: FileSystem = {
-  existsSync: fs.existsSync,
-  readFileSync: (p) => fs.readFileSync(p, 'utf-8'),
-};
+import {
+  CONFIG_FILENAMES,
+  loadDokkimiConfig,
+  type DokkimiConfig,
+} from './config-loader';
+import { interpolateEnv } from './env-substitution';
+import {
+  scanDefinitionFiles,
+  loadDokignore,
+  findDokkimiDir,
+  findDokkimiDirFrom,
+  filterFilesByPattern,
+  collectInitFilePaths,
+} from './glob-resolver';
+
+export type { DokkimiConfig } from './config-loader';
 
 function trackingFs(consumed: Set<string>): FileSystem {
   return {
@@ -25,151 +36,6 @@ function trackingFs(consumed: Set<string>): FileSystem {
       return fs.readFileSync(p, 'utf-8');
     },
   };
-}
-
-// ---------------------------------------------------------------------------
-// Global config (.dokkimi/config.yaml)
-// ---------------------------------------------------------------------------
-
-const CONFIG_FILENAMES = ['config.yaml', 'config.yml', 'config.json'];
-const ENV_REF_RE = /\$\{\{(\w+)\}\}/g;
-
-export interface DokkimiConfig {
-  dokkimi?: string;
-  env: Record<string, string>;
-}
-
-/**
- * Loads the project config file from the .dokkimi/ root directory.
- * Looks for config.yaml, config.yml, or config.json (first match wins).
- * Returns defaults if no config file exists.
- */
-function loadDokkimiConfig(
-  dokkimiDir: string,
-  errors: ResolverError[],
-): DokkimiConfig {
-  const empty: DokkimiConfig = { env: {} };
-
-  for (const filename of CONFIG_FILENAMES) {
-    const configPath = path.join(dokkimiDir, filename);
-    if (!nodeFs.existsSync(configPath)) {
-      continue;
-    }
-
-    let parsed: unknown;
-    try {
-      const raw = nodeFs.readFileSync(configPath);
-      parsed = parseDefinitionFile(configPath, raw);
-    } catch (e) {
-      errors.push({
-        file: configPath,
-        errors: [`Config parse error: ${e instanceof Error ? e.message : e}`],
-        warnings: [],
-      });
-      return empty;
-    }
-
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-      errors.push({
-        file: configPath,
-        errors: ['Config file must be a plain object'],
-        warnings: [],
-      });
-      return empty;
-    }
-
-    const obj = parsed as Record<string, unknown>;
-    const config: DokkimiConfig = { env: {} };
-
-    // Parse dokkimi version field
-    if (obj.dokkimi !== undefined) {
-      if (typeof obj.dokkimi !== 'string' && typeof obj.dokkimi !== 'number') {
-        errors.push({
-          file: configPath,
-          errors: ['"dokkimi" field must be a version string (e.g. "0.1.0")'],
-          warnings: [],
-        });
-        return empty;
-      }
-      config.dokkimi = String(obj.dokkimi);
-    }
-
-    // Parse env map
-    if (obj.env !== undefined) {
-      if (!obj.env || typeof obj.env !== 'object' || Array.isArray(obj.env)) {
-        errors.push({
-          file: configPath,
-          errors: ['"env" must be a plain object with string values'],
-          warnings: [],
-        });
-        return empty;
-      }
-
-      for (const [key, value] of Object.entries(
-        obj.env as Record<string, unknown>,
-      )) {
-        if (!/^\w+$/.test(key)) {
-          errors.push({
-            file: configPath,
-            errors: [
-              `env key "${key}" must be alphanumeric (letters, digits, underscores)`,
-            ],
-            warnings: [],
-          });
-          return empty;
-        }
-        if (typeof value !== 'string' && typeof value !== 'number') {
-          errors.push({
-            file: configPath,
-            errors: [`env key "${key}" must be a string, got ${typeof value}`],
-            warnings: [],
-          });
-          return empty;
-        }
-        config.env[key] = String(value);
-      }
-    }
-
-    return config;
-  }
-
-  return empty;
-}
-
-/**
- * Recursively walks a value and replaces ${{KEY}} placeholders in strings
- * with matching env values. Collects any unresolved references as errors.
- */
-function interpolateEnv<T>(
-  value: T,
-  env: Record<string, string>,
-  unresolved: Set<string>,
-): T {
-  if (typeof value === 'string') {
-    return value.replace(ENV_REF_RE, (match, varName) => {
-      if (varName in env) {
-        return env[varName];
-      }
-      unresolved.add(varName);
-      return match;
-    }) as unknown as T;
-  }
-
-  if (Array.isArray(value)) {
-    return value.map((item) =>
-      interpolateEnv(item, env, unresolved),
-    ) as unknown as T;
-  }
-
-  if (value && typeof value === 'object') {
-    const result: Record<string, unknown> = {};
-    for (const [k, v] of Object.entries(value)) {
-      result[k] = interpolateEnv(v, env, unresolved);
-    }
-    return result as T;
-  }
-
-  return value;
 }
 
 export interface ResolverError {
@@ -545,211 +411,4 @@ export function resolveDefinitions(target?: string): ResolverResult {
     consumedFiles: [...consumedFiles],
     dokkimiDir,
   };
-}
-
-// ============================================
-// Helpers
-// ============================================
-
-interface IgnoreRules {
-  exact: Set<string>;
-  globs: string[];
-}
-
-function scanDefinitionFiles(
-  scanDir: string,
-  ignoreRules?: IgnoreRules,
-  ignoreRoot?: string,
-): string[] {
-  if (!ignoreRules) {
-    ignoreRules = loadDokignore(scanDir);
-  }
-  // ignoreRoot is the directory that .dokignore paths are relative to (the .dokkimi root).
-  // Falls back to scanDir when scanning from the .dokkimi root directly.
-  const relRoot = ignoreRoot ?? scanDir;
-
-  const files: string[] = [];
-
-  function isIgnored(rel: string, fileName: string): boolean {
-    if (ignoreRules!.exact.has(rel) || ignoreRules!.exact.has(fileName)) {
-      return true;
-    }
-    return ignoreRules!.globs.some(
-      (pattern) => minimatch(rel, pattern) || minimatch(fileName, pattern),
-    );
-  }
-
-  function walk(dir: string) {
-    if (!fs.existsSync(dir)) {
-      return;
-    }
-    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-      if (entry.name.startsWith('.')) {
-        continue;
-      }
-      const full = path.join(dir, entry.name);
-      if (entry.isDirectory()) {
-        walk(full);
-      } else if (isDefinitionFile(entry.name)) {
-        const rel = path.relative(relRoot, full);
-        if (isIgnored(rel, entry.name)) {
-          continue;
-        }
-        files.push(full);
-      }
-    }
-  }
-
-  walk(scanDir);
-  return files;
-}
-
-function loadDokignore(dokkimiDir: string): IgnoreRules {
-  const ignorePath = path.join(dokkimiDir, '.dokignore');
-  if (!fs.existsSync(ignorePath)) {
-    return { exact: new Set(), globs: [] };
-  }
-
-  const content = fs.readFileSync(ignorePath, 'utf-8');
-  const exact = new Set<string>();
-  const globs: string[] = [];
-  for (const line of content.split('\n')) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith('#')) {
-      continue;
-    }
-    if (
-      trimmed.includes('*') ||
-      trimmed.includes('?') ||
-      trimmed.includes('{')
-    ) {
-      globs.push(trimmed);
-    } else {
-      exact.add(trimmed);
-    }
-  }
-  return { exact, globs };
-}
-
-function findDokkimiDir(filePath: string): string | null {
-  let dir = path.dirname(filePath);
-  while (true) {
-    if (path.basename(dir) === '.dokkimi') {
-      return dir;
-    }
-    const parent = path.dirname(dir);
-    if (parent === dir) {
-      return null;
-    }
-    dir = parent;
-  }
-}
-
-/**
- * Walk up from a directory looking for a `.dokkimi` ancestor OR a `.dokkimi` child.
- * Checks: dir itself (if named .dokkimi), then dir/.dokkimi, then walks up.
- */
-function findDokkimiDirFrom(dir: string): string | null {
-  // Check if dir itself is .dokkimi
-  if (path.basename(dir) === '.dokkimi') {
-    return dir;
-  }
-  // Check if dir is inside a .dokkimi tree
-  const ancestor = findDokkimiDir(path.join(dir, '_placeholder'));
-  if (ancestor) {
-    return ancestor;
-  }
-  // Check if dir contains a .dokkimi child
-  const child = path.join(dir, '.dokkimi');
-  if (fs.existsSync(child) && fs.statSync(child).isDirectory()) {
-    return child;
-  }
-  // Walk up looking for directories that contain .dokkimi
-  let current = path.dirname(dir);
-  while (true) {
-    const candidate = path.join(current, '.dokkimi');
-    if (fs.existsSync(candidate) && fs.statSync(candidate).isDirectory()) {
-      return candidate;
-    }
-    const parent = path.dirname(current);
-    if (parent === current) {
-      return null;
-    }
-    current = parent;
-  }
-}
-
-/**
- * Filters files by a pattern string. Supports:
- * - Glob patterns (if contains *, ?, {, }, [, ])
- * - Regex patterns (if starts/ends with /)
- * - Substring match (default)
- * Matches against both the relative path from .dokkimi and the file basename (without extension).
- */
-function filterFilesByPattern(
-  files: string[],
-  dokkimiDir: string,
-  pattern: string,
-): string[] {
-  const isGlob = /[*?{}[\]]/.test(pattern);
-  const isRegex = pattern.startsWith('/') && pattern.lastIndexOf('/') > 0;
-
-  let regex: RegExp | null = null;
-  if (isRegex) {
-    const lastSlash = pattern.lastIndexOf('/');
-    const body = pattern.slice(1, lastSlash);
-    const flags = pattern.slice(lastSlash + 1) || 'i';
-    try {
-      regex = new RegExp(body, flags);
-    } catch {
-      // Invalid regex — fall through to substring matching
-    }
-  } else if (!isGlob) {
-    // Try to compile as regex (for patterns like "auth.*" without explicit //)
-    try {
-      regex = new RegExp(pattern, 'i');
-    } catch {
-      // Not valid regex — will use substring match
-    }
-  }
-
-  return files.filter((f) => {
-    const rel = path.relative(dokkimiDir, f);
-    const basename = path.basename(f, path.extname(f));
-    const basenameWithExt = path.basename(f);
-
-    if (isGlob) {
-      return (
-        minimatch(rel, pattern, { matchBase: true }) ||
-        minimatch(rel, `**/${pattern}`, { matchBase: true }) ||
-        minimatch(basenameWithExt, pattern)
-      );
-    }
-
-    if (regex) {
-      return regex.test(rel) || regex.test(basename);
-    }
-
-    // Substring match (case-insensitive)
-    const lower = pattern.toLowerCase();
-    return (
-      rel.toLowerCase().includes(lower) ||
-      basename.toLowerCase().includes(lower)
-    );
-  });
-}
-
-function collectInitFilePaths(item: Record<string, unknown>): string[] {
-  const paths: string[] = [];
-  if (typeof item.initFilePath === 'string') {
-    paths.push(item.initFilePath);
-  }
-  if (Array.isArray(item.initFilePaths)) {
-    for (const p of item.initFilePaths) {
-      if (typeof p === 'string') {
-        paths.push(p);
-      }
-    }
-  }
-  return paths;
 }
