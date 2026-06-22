@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"strconv"
 	"time"
 )
 
@@ -41,21 +40,64 @@ func NewUIExtractor(b BrowserReader, timeout time.Duration) *UIExtractor {
 	return &UIExtractor{browser: b, timeout: timeout}
 }
 
-// Extract reads a single UIExtractSource and returns its final string value
-// (post-regex). Non-string kinds (count / exists) are rendered as their
-// decimal or "true"/"false" form so that the returned value slots into
-// test-agent's string-keyed variable scope.
-func (e *UIExtractor) Extract(src UIExtractSource) (string, error) {
-	raw, err := e.readRaw(src)
+// Extract reads a single UIExtractSource and returns its typed value.
+// String-based kinds (text, attribute, value, url, cookie, storage) return
+// strings with optional regex post-processing. Typed kinds (count, exists)
+// return int and bool respectively — unless a regex pattern is specified, in
+// which case they are stringified first and the regex result (a string) is
+// returned.
+func (e *UIExtractor) Extract(src UIExtractSource) (interface{}, error) {
+	switch src.From {
+	case UIExtractFromCount:
+		return e.extractCount(src)
+	case UIExtractFromExists:
+		return e.extractExists(src)
+	default:
+		return e.extractString(src)
+	}
+}
+
+func (e *UIExtractor) extractString(src UIExtractSource) (interface{}, error) {
+	raw, err := e.readStringRaw(src)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	group := resolveExtractGroup(src.Group, src.Pattern != "")
 	return applyExtractRegex(raw, src.Pattern, group)
 }
 
-// readRaw returns the pre-regex string for src.
-func (e *UIExtractor) readRaw(src UIExtractSource) (string, error) {
+func (e *UIExtractor) extractCount(src UIExtractSource) (interface{}, error) {
+	if src.Selector == "" {
+		return nil, fmt.Errorf(`extract "count" requires "selector"`)
+	}
+	n, err := e.browser.Count(src.Selector, e.timeout)
+	if err != nil {
+		return nil, err
+	}
+	if src.Pattern != "" {
+		group := resolveExtractGroup(src.Group, true)
+		return applyExtractRegex(fmt.Sprintf("%d", n), src.Pattern, group)
+	}
+	return n, nil
+}
+
+func (e *UIExtractor) extractExists(src UIExtractSource) (interface{}, error) {
+	if src.Selector == "" {
+		return nil, fmt.Errorf(`extract "exists" requires "selector"`)
+	}
+	ok, err := e.browser.Exists(src.Selector, e.timeout)
+	if err != nil {
+		return nil, err
+	}
+	if src.Pattern != "" {
+		group := resolveExtractGroup(src.Group, true)
+		return applyExtractRegex(fmt.Sprintf("%t", ok), src.Pattern, group)
+	}
+	return ok, nil
+}
+
+// readStringRaw returns the pre-regex string for string-based extract kinds.
+func (e *UIExtractor) readStringRaw(src UIExtractSource) (string, error) {
 	switch src.From {
 	case UIExtractFromText:
 		if src.Selector == "" {
@@ -102,29 +144,6 @@ func (e *UIExtractor) readRaw(src UIExtractSource) (string, error) {
 			return "", fmt.Errorf(`extract "sessionStorage" requires "key"`)
 		}
 		return e.browser.SessionStorageItem(src.Key, e.timeout)
-
-	case UIExtractFromCount:
-		if src.Selector == "" {
-			return "", fmt.Errorf(`extract "count" requires "selector"`)
-		}
-		n, err := e.browser.Count(src.Selector, e.timeout)
-		if err != nil {
-			return "", err
-		}
-		return strconv.Itoa(n), nil
-
-	case UIExtractFromExists:
-		if src.Selector == "" {
-			return "", fmt.Errorf(`extract "exists" requires "selector"`)
-		}
-		ok, err := e.browser.Exists(src.Selector, e.timeout)
-		if err != nil {
-			return "", err
-		}
-		if ok {
-			return "true", nil
-		}
-		return "false", nil
 
 	default:
 		return "", fmt.Errorf(`extract: unknown "from" value %q`, src.From)

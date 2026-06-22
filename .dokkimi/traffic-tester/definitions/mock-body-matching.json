@@ -22,7 +22,12 @@
       "mockResponseBody": {
         "id": "chatcmpl-001",
         "choices": [
-          { "message": { "role": "assistant", "content": "billing" } }
+          {
+            "message": {
+              "role": "assistant",
+              "content": "billing"
+            }
+          }
         ]
       }
     },
@@ -63,7 +68,10 @@
         "id": "chatcmpl-fallback",
         "choices": [
           {
-            "message": { "role": "assistant", "content": "I don't understand." }
+            "message": {
+              "role": "assistant",
+              "content": "I don't understand."
+            }
           }
         ]
       }
@@ -80,7 +88,14 @@
         "Content-Type": "application/json"
       },
       "mockResponseBody": {
-        "data": { "users": [{ "id": "1", "name": "Alice" }] }
+        "data": {
+          "users": [
+            {
+              "id": "1",
+              "name": "Alice"
+            }
+          ]
+        }
       }
     },
     {
@@ -95,7 +110,14 @@
         "Content-Type": "application/json"
       },
       "mockResponseBody": {
-        "data": { "orders": [{ "id": "ord-1", "total": 99.99 }] }
+        "data": {
+          "orders": [
+            {
+              "id": "ord-1",
+              "total": 99.99
+            }
+          ]
+        }
       }
     },
     {
@@ -134,133 +156,77 @@
       "name": "LLM prompt routing — different prompts get different responses",
       "steps": [
         {
-          "name": "Classify prompt matches classify mock",
-          "action": {
-            "type": "httpRequest",
-            "method": "POST",
-            "url": "service-a/external-call",
-            "headers": { "Content-Type": "application/json" },
-            "body": {
-              "requests": [
-                {
-                  "baseURL": "http://api.llm-provider.com",
-                  "url": "/v1/chat/completions",
-                  "method": "POST",
-                  "data": {
-                    "model": "gpt-4o",
-                    "messages": [
-                      {
-                        "role": "user",
-                        "content": "classify this ticket: printer not working"
-                      }
-                    ]
+          "name": "{{prompt.label}} prompt matches {{prompt.label}} mock",
+          "forEach": {
+            "items": [
+              {
+                "label": "classify",
+                "content": "classify this ticket: printer not working",
+                "expectedId": "chatcmpl-001",
+                "expectedContent": "billing"
+              },
+              {
+                "label": "extract",
+                "content": "extract entities from: Alice lives in NYC",
+                "expectedId": "chatcmpl-002",
+                "expectedContent": "Alice"
+              },
+              {
+                "label": "fallback",
+                "content": "tell me a joke",
+                "expectedId": "chatcmpl-fallback",
+                "expectedContent": "I don't understand."
+              }
+            ],
+            "as": "prompt",
+            "action": {
+              "type": "httpRequest",
+              "method": "POST",
+              "url": "service-a/external-call",
+              "headers": {
+                "Content-Type": "application/json"
+              },
+              "body": {
+                "requests": [
+                  {
+                    "baseURL": "http://api.llm-provider.com",
+                    "url": "/v1/chat/completions",
+                    "method": "POST",
+                    "data": {
+                      "model": "gpt-4o",
+                      "messages": [
+                        {
+                          "role": "user",
+                          "content": "{{prompt.content}}"
+                        }
+                      ]
+                    }
                   }
-                }
-              ]
-            }
-          },
-          "assertions": [
-            {
-              "assertions": [
-                { "path": "response.status", "operator": "eq", "value": 200 },
-                {
-                  "path": "response.body.results[0].id",
-                  "operator": "eq",
-                  "value": "chatcmpl-001"
-                },
-                {
-                  "path": "response.body.results[0].choices[0].message.content",
-                  "operator": "eq",
-                  "value": "billing"
-                }
-              ]
-            }
-          ]
-        },
-        {
-          "name": "Extract prompt matches extract mock",
-          "action": {
-            "type": "httpRequest",
-            "method": "POST",
-            "url": "service-a/external-call",
-            "headers": { "Content-Type": "application/json" },
-            "body": {
-              "requests": [
-                {
-                  "baseURL": "http://api.llm-provider.com",
-                  "url": "/v1/chat/completions",
-                  "method": "POST",
-                  "data": {
-                    "model": "gpt-4o",
-                    "messages": [
-                      {
-                        "role": "user",
-                        "content": "extract entities from: Alice lives in NYC"
-                      }
-                    ]
+                ]
+              }
+            },
+            "assertions": [
+              {
+                "assertions": [
+                  {
+                    "path": "$.response.status",
+                    "operator": "eq",
+                    "value": 200
+                  },
+                  {
+                    "path": "$.response.body.results[0].id",
+                    "operator": "eq",
+                    "value": "{{prompt.expectedId}}"
+                  },
+                  {
+                    "path": "$.response.body.results[0].choices[0].message.content",
+                    "operator": "contains",
+                    "value": "{{prompt.expectedContent}}"
                   }
-                }
-              ]
-            }
-          },
-          "assertions": [
-            {
-              "assertions": [
-                { "path": "response.status", "operator": "eq", "value": 200 },
-                {
-                  "path": "response.body.results[0].id",
-                  "operator": "eq",
-                  "value": "chatcmpl-002"
-                },
-                {
-                  "path": "response.body.results[0].choices[0].message.content",
-                  "operator": "contains",
-                  "value": "Alice"
-                }
-              ]
-            }
-          ]
-        },
-        {
-          "name": "Unrecognized prompt falls back to fallback mock",
-          "action": {
-            "type": "httpRequest",
-            "method": "POST",
-            "url": "service-a/external-call",
-            "headers": { "Content-Type": "application/json" },
-            "body": {
-              "requests": [
-                {
-                  "baseURL": "http://api.llm-provider.com",
-                  "url": "/v1/chat/completions",
-                  "method": "POST",
-                  "data": {
-                    "model": "gpt-4o",
-                    "messages": [
-                      { "role": "user", "content": "tell me a joke" }
-                    ]
-                  }
-                }
-              ]
-            }
-          },
-          "assertions": [
-            {
-              "assertions": [
-                { "path": "response.status", "operator": "eq", "value": 200 },
-                {
-                  "path": "response.body.results[0].id",
-                  "operator": "eq",
-                  "value": "chatcmpl-fallback"
-                },
-                {
-                  "path": "response.body.results[0].choices[0].message.content",
-                  "operator": "eq",
-                  "value": "I don't understand."
-                }
-              ]
-            }
-          ]
+                ]
+              }
+            ]
+          }
         }
       ]
     },
@@ -273,7 +239,9 @@
             "type": "httpRequest",
             "method": "POST",
             "url": "service-a/external-call",
-            "headers": { "Content-Type": "application/json" },
+            "headers": {
+              "Content-Type": "application/json"
+            },
             "body": {
               "requests": [
                 {
@@ -290,9 +258,13 @@
           "assertions": [
             {
               "assertions": [
-                { "path": "response.status", "operator": "eq", "value": 200 },
                 {
-                  "path": "response.body.results[0].data.users[0].name",
+                  "path": "$.response.status",
+                  "operator": "eq",
+                  "value": 200
+                },
+                {
+                  "path": "$.response.body.results[0].data.users[0].name",
                   "operator": "eq",
                   "value": "Alice"
                 }
@@ -306,7 +278,9 @@
             "type": "httpRequest",
             "method": "POST",
             "url": "service-a/external-call",
-            "headers": { "Content-Type": "application/json" },
+            "headers": {
+              "Content-Type": "application/json"
+            },
             "body": {
               "requests": [
                 {
@@ -323,14 +297,18 @@
           "assertions": [
             {
               "assertions": [
-                { "path": "response.status", "operator": "eq", "value": 200 },
                 {
-                  "path": "response.body.results[0].data.orders[0].id",
+                  "path": "$.response.status",
+                  "operator": "eq",
+                  "value": 200
+                },
+                {
+                  "path": "$.response.body.results[0].data.orders[0].id",
                   "operator": "eq",
                   "value": "ord-1"
                 },
                 {
-                  "path": "response.body.results[0].data.orders[0].total",
+                  "path": "$.response.body.results[0].data.orders[0].total",
                   "operator": "eq",
                   "value": 99.99
                 }
@@ -344,72 +322,59 @@
       "name": "Regex body matching — tool call routing",
       "steps": [
         {
-          "name": "search_database tool call matches regex",
-          "action": {
-            "type": "httpRequest",
-            "method": "POST",
-            "url": "service-a/external-call",
-            "headers": { "Content-Type": "application/json" },
-            "body": {
-              "requests": [
-                {
-                  "baseURL": "http://api.llm-provider.com",
-                  "url": "/v1/tool-calls",
-                  "method": "POST",
-                  "data": {
-                    "tool": "search_database",
-                    "args": { "query": "order #1234" }
+          "name": "{{tool.name}} tool call matches regex",
+          "forEach": {
+            "items": [
+              {
+                "name": "search_database",
+                "args": { "query": "order #1234" },
+                "expectedResult": "found 3 matching records"
+              },
+              {
+                "name": "send_email",
+                "args": { "to": "alice@example.com", "subject": "Hello" },
+                "expectedResult": "email sent successfully"
+              }
+            ],
+            "as": "tool",
+            "action": {
+              "type": "httpRequest",
+              "method": "POST",
+              "url": "service-a/external-call",
+              "headers": {
+                "Content-Type": "application/json"
+              },
+              "body": {
+                "requests": [
+                  {
+                    "baseURL": "http://api.llm-provider.com",
+                    "url": "/v1/tool-calls",
+                    "method": "POST",
+                    "data": {
+                      "tool": "{{tool.name}}",
+                      "args": "{{tool.args}}"
+                    }
                   }
-                }
-              ]
-            }
-          },
-          "assertions": [
-            {
-              "assertions": [
-                { "path": "response.status", "operator": "eq", "value": 200 },
-                {
-                  "path": "response.body.results[0].result",
-                  "operator": "eq",
-                  "value": "found 3 matching records"
-                }
-              ]
-            }
-          ]
-        },
-        {
-          "name": "send_email tool call matches different regex",
-          "action": {
-            "type": "httpRequest",
-            "method": "POST",
-            "url": "service-a/external-call",
-            "headers": { "Content-Type": "application/json" },
-            "body": {
-              "requests": [
-                {
-                  "baseURL": "http://api.llm-provider.com",
-                  "url": "/v1/tool-calls",
-                  "method": "POST",
-                  "data": {
-                    "tool": "send_email",
-                    "args": { "to": "alice@example.com", "subject": "Hello" }
+                ]
+              }
+            },
+            "assertions": [
+              {
+                "assertions": [
+                  {
+                    "path": "$.response.status",
+                    "operator": "eq",
+                    "value": 200
+                  },
+                  {
+                    "path": "$.response.body.results[0].result",
+                    "operator": "eq",
+                    "value": "{{tool.expectedResult}}"
                   }
-                }
-              ]
-            }
-          },
-          "assertions": [
-            {
-              "assertions": [
-                { "path": "response.status", "operator": "eq", "value": 200 },
-                {
-                  "path": "response.body.results[0].result",
-                  "operator": "eq",
-                  "value": "email sent successfully"
-                }
-              ]
-            }
-          ]
+                ]
+              }
+            ]
+          }
         }
       ]
     },
@@ -422,7 +387,9 @@
             "type": "httpRequest",
             "method": "POST",
             "url": "service-a/external-call",
-            "headers": { "Content-Type": "application/json" },
+            "headers": {
+              "Content-Type": "application/json"
+            },
             "body": {
               "requests": [
                 {
@@ -445,9 +412,13 @@
           "assertions": [
             {
               "assertions": [
-                { "path": "response.status", "operator": "eq", "value": 200 },
                 {
-                  "path": "response.body.results[0].id",
+                  "path": "$.response.status",
+                  "operator": "eq",
+                  "value": 200
+                },
+                {
+                  "path": "$.response.body.results[0].id",
                   "operator": "eq",
                   "value": "chatcmpl-001"
                 }
@@ -466,7 +437,9 @@
             "type": "httpRequest",
             "method": "POST",
             "url": "service-a/external-call",
-            "headers": { "Content-Type": "application/json" },
+            "headers": {
+              "Content-Type": "application/json"
+            },
             "body": {
               "requests": [
                 {
@@ -501,7 +474,10 @@
                   "method": "POST",
                   "data": {
                     "messages": [
-                      { "role": "user", "content": "something else entirely" }
+                      {
+                        "role": "user",
+                        "content": "something else entirely"
+                      }
                     ]
                   }
                 }
@@ -511,19 +487,23 @@
           "assertions": [
             {
               "assertions": [
-                { "path": "response.status", "operator": "eq", "value": 200 },
                 {
-                  "path": "response.body.results[0].id",
+                  "path": "$.response.status",
+                  "operator": "eq",
+                  "value": 200
+                },
+                {
+                  "path": "$.response.body.results[0].id",
                   "operator": "eq",
                   "value": "chatcmpl-001"
                 },
                 {
-                  "path": "response.body.results[1].id",
+                  "path": "$.response.body.results[1].id",
                   "operator": "eq",
                   "value": "chatcmpl-002"
                 },
                 {
-                  "path": "response.body.results[2].id",
+                  "path": "$.response.body.results[2].id",
                   "operator": "eq",
                   "value": "chatcmpl-fallback"
                 }
@@ -531,13 +511,28 @@
             },
             {
               "match": {
-                "origin": "service-a",
-                "method": "POST",
-                "url": "api.llm-provider.com/v1/chat/completions"
-              },
-              "count": {
-                "operator": "eq",
-                "value": 3
+                "path": "$.traffic",
+                "where": [
+                  {
+                    "path": "$$.origin",
+                    "operator": "eq",
+                    "value": "service-a"
+                  },
+                  {
+                    "path": "$$.request.method",
+                    "operator": "eq",
+                    "value": "POST"
+                  },
+                  {
+                    "path": "$$.request.url",
+                    "operator": "contains",
+                    "value": "api.llm-provider.com/v1/chat/completions"
+                  }
+                ],
+                "count": {
+                  "operator": "eq",
+                  "value": 3
+                }
               }
             }
           ]

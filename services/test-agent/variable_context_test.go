@@ -72,11 +72,11 @@ func TestExtract_SimplePath(t *testing.T) {
 	if err := vc.Extract(rules, doc); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if v := vc.variables["userId"]; v != "42" {
-		t.Errorf("expected '42', got '%s'", v)
+	if v := vc.variables["userId"]; v != float64(42) {
+		t.Errorf("expected 42, got '%v'", v)
 	}
 	if v := vc.variables["userName"]; v != "alice" {
-		t.Errorf("expected 'alice', got '%s'", v)
+		t.Errorf("expected 'alice', got '%v'", v)
 	}
 }
 
@@ -99,7 +99,7 @@ func TestExtract_RegexPattern(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if v := vc.variables["orderId"]; v != "12345" {
-		t.Errorf("expected '12345', got '%s'", v)
+		t.Errorf("expected '12345', got '%v'", v)
 	}
 }
 
@@ -117,7 +117,7 @@ func TestExtract_RegexPattern_DefaultGroup(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if v := vc.variables["resourceId"]; v != "789" {
-		t.Errorf("expected '789', got '%s'", v)
+		t.Errorf("expected '789', got '%v'", v)
 	}
 }
 
@@ -136,7 +136,7 @@ func TestExtract_RegexPattern_Group0_FullMatch(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if v := vc.variables["ts"]; v != "2024-01-15T10:30:00Z" {
-		t.Errorf("expected '2024-01-15T10:30:00Z', got '%s'", v)
+		t.Errorf("expected '2024-01-15T10:30:00Z', got '%v'", v)
 	}
 }
 
@@ -190,6 +190,109 @@ func TestExtract_RegexPattern_GroupOutOfRange(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
+// Dotted and bracketed variable path resolution
+// ---------------------------------------------------------------------------
+
+func TestVariableContext_DottedPathResolution(t *testing.T) {
+	t.Run("resolves {{user.email}}", func(t *testing.T) {
+		vc := NewVariableContext()
+		vc.Set("user", map[string]interface{}{
+			"name":  "Alice",
+			"email": "alice@test.com",
+		})
+		result, err := vc.Resolve("{{user.email}}")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if result != "alice@test.com" {
+			t.Errorf("expected alice@test.com, got %v", result)
+		}
+	})
+
+	t.Run("resolves {{users[0].name}}", func(t *testing.T) {
+		vc := NewVariableContext()
+		vc.Set("users", []interface{}{
+			map[string]interface{}{"name": "Alice"},
+			map[string]interface{}{"name": "Bob"},
+		})
+		result, err := vc.Resolve("{{users[0].name}}")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if result != "Alice" {
+			t.Errorf("expected Alice, got %v", result)
+		}
+	})
+
+	t.Run("resolves {{users[1].name}}", func(t *testing.T) {
+		vc := NewVariableContext()
+		vc.Set("users", []interface{}{
+			map[string]interface{}{"name": "Alice"},
+			map[string]interface{}{"name": "Bob"},
+		})
+		result, err := vc.Resolve("{{users[1].name}}")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if result != "Bob" {
+			t.Errorf("expected Bob, got %v", result)
+		}
+	})
+
+	t.Run("ResolveTyped returns typed value for {{user.email}}", func(t *testing.T) {
+		vc := NewVariableContext()
+		vc.Set("user", map[string]interface{}{
+			"email": "alice@test.com",
+			"age":   float64(30),
+		})
+		result, err := vc.ResolveTyped("{{user.age}}")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if result != float64(30) {
+			t.Errorf("expected 30, got %v (%T)", result, result)
+		}
+	})
+
+	t.Run("resolves deeply nested {{a.b.c}}", func(t *testing.T) {
+		vc := NewVariableContext()
+		vc.Set("a", map[string]interface{}{
+			"b": map[string]interface{}{
+				"c": "deep",
+			},
+		})
+		result, err := vc.Resolve("{{a.b.c}}")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if result != "deep" {
+			t.Errorf("expected deep, got %v", result)
+		}
+	})
+
+	t.Run("errors on missing dotted path", func(t *testing.T) {
+		vc := NewVariableContext()
+		vc.Set("user", map[string]interface{}{"name": "Alice"})
+		_, err := vc.Resolve("{{user.missing}}")
+		if err == nil {
+			t.Error("expected error for missing path")
+		}
+	})
+
+	t.Run("mixed text with dotted path", func(t *testing.T) {
+		vc := NewVariableContext()
+		vc.Set("user", map[string]interface{}{"name": "Alice"})
+		result, err := vc.Resolve("Hello {{user.name}}!")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if result != "Hello Alice!" {
+			t.Errorf("expected Hello Alice!, got %v", result)
+		}
+	})
+}
+
+// ---------------------------------------------------------------------------
 // Full step unmarshal with mixed extract rules
 // ---------------------------------------------------------------------------
 
@@ -218,4 +321,98 @@ func TestTestStep_UnmarshalExtract_Mixed(t *testing.T) {
 	if step.Extract["withRegex"].Pattern != `trace=(\w+)` {
 		t.Errorf("unexpected pattern: %s", step.Extract["withRegex"].Pattern)
 	}
+}
+
+func TestResolveWhereEntries(t *testing.T) {
+	t.Run("resolves {{var}} in where entry values", func(t *testing.T) {
+		vc := NewVariableContext()
+		vc.Set("svcName", "service-a")
+		entries := []WhereEntry{
+			{Path: "$$.origin", Operator: "eq", Value: "{{svcName}}"},
+		}
+		resolved := vc.resolveWhereEntries(entries)
+		if resolved[0].Value != "service-a" {
+			t.Errorf("expected service-a, got %v", resolved[0].Value)
+		}
+	})
+
+	t.Run("does NOT resolve $$ paths (left for match time)", func(t *testing.T) {
+		vc := NewVariableContext()
+		entries := []WhereEntry{
+			{Path: "$$.request.method", Operator: "eq", Value: "POST"},
+		}
+		resolved := vc.resolveWhereEntries(entries)
+		if resolved[0].Path != "$$.request.method" {
+			t.Errorf("expected $$.request.method, got %v", resolved[0].Path)
+		}
+	})
+
+	t.Run("recurses into or", func(t *testing.T) {
+		vc := NewVariableContext()
+		vc.Set("target", "api")
+		entries := []WhereEntry{
+			{Or: []WhereEntry{
+				{Path: "$$.origin", Operator: "eq", Value: "{{target}}"},
+			}},
+		}
+		resolved := vc.resolveWhereEntries(entries)
+		if resolved[0].Or[0].Value != "api" {
+			t.Errorf("expected api in or clause, got %v", resolved[0].Or[0].Value)
+		}
+	})
+
+	t.Run("recurses into and", func(t *testing.T) {
+		vc := NewVariableContext()
+		vc.Set("method", "GET")
+		entries := []WhereEntry{
+			{And: []WhereEntry{
+				{Path: "$$.request.method", Operator: "eq", Value: "{{method}}"},
+			}},
+		}
+		resolved := vc.resolveWhereEntries(entries)
+		if resolved[0].And[0].Value != "GET" {
+			t.Errorf("expected GET in and clause, got %v", resolved[0].And[0].Value)
+		}
+	})
+
+	t.Run("recurses into not", func(t *testing.T) {
+		vc := NewVariableContext()
+		vc.Set("excluded", "internal")
+		not := WhereEntry{Path: "$$.origin", Operator: "eq", Value: "{{excluded}}"}
+		entries := []WhereEntry{
+			{Not: &not},
+		}
+		resolved := vc.resolveWhereEntries(entries)
+		if resolved[0].Not.Value != "internal" {
+			t.Errorf("expected internal in not clause, got %v", resolved[0].Not.Value)
+		}
+	})
+}
+
+func TestExtractKeyInterpolation(t *testing.T) {
+	vc := NewVariableContext()
+	vc.Set("prefix", "user")
+	vc.Set("idx", "0")
+
+	t.Run("resolves variable in extract key", func(t *testing.T) {
+		key := "{{prefix}}_id"
+		resolved, err := vc.Resolve(key)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if resolved != "user_id" {
+			t.Errorf("expected user_id, got %v", resolved)
+		}
+	})
+
+	t.Run("resolves multiple variables in key", func(t *testing.T) {
+		key := "{{prefix}}_{{idx}}"
+		resolved, err := vc.Resolve(key)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if resolved != "user_0" {
+			t.Errorf("expected user_0, got %v", resolved)
+		}
+	})
 }

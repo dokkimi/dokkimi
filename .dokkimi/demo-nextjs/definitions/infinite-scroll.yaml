@@ -45,20 +45,26 @@ tests:
           # The feed asks for limit=10 by default; assert the page came
           # back with exactly that many rows on the first request.
           - assertions:
-              - path: $.extracted.initialCount
+              - path: $.variables.initialCount
                 operator: eq
                 value: '10'
           - match:
-              method: GET
-              url: nextjs-demo/api/bookmarks
-            count:
-              operator: eq
-              value: 1
+              path: '$.traffic'
+              where:
+                - path: '$$.request.method'
+                  operator: eq
+                  value: GET
+                - path: '$$.request.url'
+                  operator: contains
+                  value: nextjs-demo/api/bookmarks
+              count:
+                operator: eq
+                value: 1
             assertions:
-              - path: response.status
+              - path: $.match.response.status
                 operator: eq
                 value: 200
-              - path: response.body.items
+              - path: $.match.response.body.items
                 operator: exists
       - name: Scroll sentinel into view and assert the second page fired
         action:
@@ -85,7 +91,7 @@ tests:
                 match: true
         assertions:
           - assertions:
-              - path: $.extracted.afterScrollCount
+              - path: $.variables.afterScrollCount
                 operator: eq
                 value: '20'
           # A single follow-up call to /api/bookmarks during this group's
@@ -94,12 +100,18 @@ tests:
           # match.url doesn't expose the query string for assertion, so
           # the count + rendered-row delta carries the load here.
           - match:
-              method: GET
-              url: nextjs-demo/api/bookmarks
-            count:
-              operator: eq
-              value: 1
+              path: '$.traffic'
+              where:
+                - path: '$$.request.method'
+                  operator: eq
+                  value: GET
+                - path: '$$.request.url'
+                  operator: contains
+                  value: nextjs-demo/api/bookmarks
+              count:
+                operator: eq
+                value: 1
             assertions:
-              - path: response.status
+              - path: $.match.response.status
                 operator: eq
                 value: 200

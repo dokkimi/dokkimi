@@ -48,10 +48,10 @@ tests:
           url: api-gateway/api/orders
         assertions:
           - assertions:
-              - path: response.status
+              - path: $.response.status
                 operator: eq
                 value: 200
-              - path: response.body[2]
+              - path: $.response.body[2]
                 operator: exists
 ```
 
@@ -79,7 +79,7 @@ steps:
       url: api-gateway/api/users
       body: { email: 'test@example.com' }
     extract:
-      userId: $.body.id
+      userId: $.response.body.id
 
   # Step 2: Use the created user's ID
   - name: Get user

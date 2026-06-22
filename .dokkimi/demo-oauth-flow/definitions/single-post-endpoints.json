@@ -2,7 +2,9 @@
   "name": "single-post-endpoints",
   "description": "Tests GET /api/posts/:id — fetching individual posts by ID, including published, draft, and non-existent posts",
   "items": [
-    { "$ref": "../shared/api-service.json" },
+    {
+      "$ref": "../shared/api-service.json"
+    },
     {
       "$ref": "../shared/postgres-db.json",
       "initFilePath": "../init-files/schema.sql"
@@ -26,24 +28,28 @@
           "assertions": [
             {
               "assertions": [
-                { "path": "response.status", "operator": "eq", "value": 200 },
                 {
-                  "path": "response.body.id",
+                  "path": "$.response.status",
+                  "operator": "eq",
+                  "value": 200
+                },
+                {
+                  "path": "$.response.body.id",
                   "operator": "eq",
                   "value": "{{publishedPostId}}"
                 },
                 {
-                  "path": "response.body.title",
+                  "path": "$.response.body.title",
                   "operator": "eq",
                   "value": "Getting Started with Microservices"
                 },
                 {
-                  "path": "response.body.published",
+                  "path": "$.response.body.published",
                   "operator": "eq",
                   "value": true
                 },
                 {
-                  "path": "response.body.author.name",
+                  "path": "$.response.body.author.name",
                   "operator": "eq",
                   "value": "Alice Johnson"
                 }
@@ -67,19 +73,23 @@
           "assertions": [
             {
               "assertions": [
-                { "path": "response.status", "operator": "eq", "value": 200 },
                 {
-                  "path": "response.body.id",
+                  "path": "$.response.status",
+                  "operator": "eq",
+                  "value": 200
+                },
+                {
+                  "path": "$.response.body.id",
                   "operator": "eq",
                   "value": "{{draftPostId}}"
                 },
                 {
-                  "path": "response.body.published",
+                  "path": "$.response.body.published",
                   "operator": "eq",
                   "value": false
                 },
                 {
-                  "path": "response.body.title",
+                  "path": "$.response.body.title",
                   "operator": "eq",
                   "value": "Draft: Advanced Patterns"
                 }
@@ -102,9 +112,13 @@
           "assertions": [
             {
               "assertions": [
-                { "path": "response.status", "operator": "eq", "value": 404 },
                 {
-                  "path": "response.body.message",
+                  "path": "$.response.status",
+                  "operator": "eq",
+                  "value": 404
+                },
+                {
+                  "path": "$.response.body.message",
                   "operator": "eq",
                   "value": "Post not found"
                 }

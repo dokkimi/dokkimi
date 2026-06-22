@@ -27,17 +27,17 @@
             {
               "assertions": [
                 {
-                  "path": "response.status",
+                  "path": "$.response.status",
                   "operator": "eq",
                   "value": 200
                 },
                 {
-                  "path": "response.body.service",
+                  "path": "$.response.body.service",
                   "operator": "eq",
                   "value": "control-tower"
                 },
                 {
-                  "path": "response.body.checks.database.status",
+                  "path": "$.response.body.checks.database.status",
                   "operator": "eq",
                   "value": "healthy"
                 }
@@ -77,7 +77,7 @@
             {
               "assertions": [
                 {
-                  "path": "response.status",
+                  "path": "$.response.status",
                   "operator": "in",
                   "value": [200, 201]
                 }
@@ -112,7 +112,7 @@
             {
               "assertions": [
                 {
-                  "path": "response.status",
+                  "path": "$.response.status",
                   "operator": "eq",
                   "value": 202
                 }

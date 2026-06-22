@@ -214,9 +214,9 @@ export function getGroupError(
 export function getGroupVariables(
   execLogs: TestExecutionLog[],
   stepIndex: number,
-): { before: Record<string, string>; after: Record<string, string> } {
-  let before: Record<string, string> = {};
-  let after: Record<string, string> = {};
+): { before: Record<string, unknown>; after: Record<string, unknown> } {
+  let before: Record<string, unknown> = {};
+  let after: Record<string, unknown> = {};
 
   for (const log of execLogs) {
     const isStepEnd =

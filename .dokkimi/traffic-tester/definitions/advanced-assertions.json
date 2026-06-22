@@ -1,6 +1,6 @@
 {
   "name": "advanced-assertions",
-  "description": "Coverage for underused assertion operators: ne, gt, lt, matches, notContains, notExists, in, notIn, arrayContains, arrayNotContains, notEmpty, and responseTime",
+  "description": "Coverage for underused assertion operators: ne, gt, lt, matches, notContains, notExists, in, notIn, contains (array/object dispatch), notEmpty, and responseTime",
   "config": {
     "timeoutSeconds": 120
   },
@@ -33,27 +33,27 @@
             {
               "assertions": [
                 {
-                  "path": "success",
+                  "path": "$.response.success",
                   "operator": "eq",
                   "value": true
                 },
                 {
-                  "path": "data[0].user_count",
+                  "path": "$.response.data[0].user_count",
                   "operator": "gt",
                   "value": 0
                 },
                 {
-                  "path": "data[0].user_count",
+                  "path": "$.response.data[0].user_count",
                   "operator": "gte",
                   "value": 2
                 },
                 {
-                  "path": "data[0].user_count",
+                  "path": "$.response.data[0].user_count",
                   "operator": "lt",
                   "value": 1000
                 },
                 {
-                  "path": "data[0].user_count",
+                  "path": "$.response.data[0].user_count",
                   "operator": "lte",
                   "value": 100
                 }
@@ -72,26 +72,26 @@
             {
               "assertions": [
                 {
-                  "path": "success",
+                  "path": "$.response.success",
                   "operator": "eq",
                   "value": true
                 },
                 {
-                  "path": "data[0].name",
+                  "path": "$.response.data[0].name",
                   "operator": "ne",
                   "value": "Bob"
                 },
                 {
-                  "path": "data[0].email",
+                  "path": "$.response.data[0].email",
                   "operator": "notEmpty"
                 },
                 {
-                  "path": "data[0].email",
+                  "path": "$.response.data[0].email",
                   "operator": "notContains",
                   "value": "bob"
                 },
                 {
-                  "path": "error",
+                  "path": "$.response.error",
                   "operator": "isEmpty"
                 }
               ]
@@ -114,17 +114,17 @@
             {
               "assertions": [
                 {
-                  "path": "data[0].email",
+                  "path": "$.response.data[0].email",
                   "operator": "matches",
                   "value": "^[a-z]+@example\\.com$"
                 },
                 {
-                  "path": "data[1].email",
+                  "path": "$.response.data[1].email",
                   "operator": "matches",
                   "value": "^[a-z]+@example\\.com$"
                 },
                 {
-                  "path": "data[0].name",
+                  "path": "$.response.data[0].name",
                   "operator": "matches",
                   "value": "^[A-Z][a-z]+$"
                 }
@@ -135,7 +135,7 @@
       ]
     },
     {
-      "name": "Array operators: in, notIn, arrayContains, arrayNotContains",
+      "name": "Array operators: in, notIn, contains, notContains",
       "steps": [
         {
           "name": "Service-a returns an array and we validate with array operators",
@@ -160,42 +160,42 @@
             {
               "assertions": [
                 {
-                  "path": "response.status",
+                  "path": "$.response.status",
                   "operator": "eq",
                   "value": 200
                 },
                 {
-                  "path": "response.body.priority",
+                  "path": "$.response.body.priority",
                   "operator": "in",
                   "value": ["low", "medium", "high", "critical"]
                 },
                 {
-                  "path": "response.body.priority",
+                  "path": "$.response.body.priority",
                   "operator": "notIn",
                   "value": ["none", "unknown"]
                 },
                 {
-                  "path": "response.body.region",
+                  "path": "$.response.body.region",
                   "operator": "in",
                   "value": ["us-east-1", "us-west-2", "eu-west-1"]
                 },
                 {
-                  "path": "response.body.tags",
-                  "operator": "arrayContains",
+                  "path": "$.response.body.tags",
+                  "operator": "contains",
                   "value": "critical"
                 },
                 {
-                  "path": "response.body.tags",
-                  "operator": "arrayNotContains",
+                  "path": "$.response.body.tags",
+                  "operator": "notContains",
                   "value": "deprecated"
                 },
                 {
-                  "path": "response.body.tags",
-                  "operator": "length",
+                  "count": "$.response.body.tags",
+                  "operator": "eq",
                   "value": 3
                 },
                 {
-                  "path": "response.body.tags",
+                  "path": "$.response.body.tags",
                   "operator": "notEmpty"
                 }
               ]
@@ -218,23 +218,23 @@
             {
               "assertions": [
                 {
-                  "path": "response.status",
+                  "path": "$.response.status",
                   "operator": "eq",
                   "value": 200
                 },
                 {
-                  "path": "responseTime",
+                  "path": "$.responseTime",
                   "operator": "lt",
                   "value": 5000
                 },
                 {
-                  "path": "responseTime",
+                  "path": "$.responseTime",
                   "operator": "gte",
                   "value": 0
                 },
                 {
-                  "path": "responseTime",
-                  "operator": "type",
+                  "type": "$.responseTime",
+                  "operator": "eq",
                   "value": "number"
                 }
               ]
@@ -271,7 +271,7 @@
             {
               "assertions": [
                 {
-                  "path": "responseTime",
+                  "path": "$.responseTime",
                   "operator": "lt",
                   "value": 10000
                 }
@@ -279,16 +279,27 @@
             },
             {
               "match": {
-                "origin": "service-a",
-                "url": "service-b/timed"
-              },
-              "count": {
-                "operator": "eq",
-                "value": 1
+                "path": "$.traffic",
+                "where": [
+                  {
+                    "path": "$$.origin",
+                    "operator": "eq",
+                    "value": "service-a"
+                  },
+                  {
+                    "path": "$$.request.url",
+                    "operator": "contains",
+                    "value": "service-b/timed"
+                  }
+                ],
+                "count": {
+                  "operator": "eq",
+                  "value": 1
+                }
               },
               "assertions": [
                 {
-                  "path": "response.status",
+                  "path": "$.match.response.status",
                   "operator": "eq",
                   "value": 200
                 }
@@ -329,40 +340,40 @@
             {
               "assertions": [
                 {
-                  "path": "response.body.stringField",
-                  "operator": "type",
+                  "type": "$.response.body.stringField",
+                  "operator": "eq",
                   "value": "string"
                 },
                 {
-                  "path": "response.body.numberField",
-                  "operator": "type",
+                  "type": "$.response.body.numberField",
+                  "operator": "eq",
                   "value": "number"
                 },
                 {
-                  "path": "response.body.boolField",
-                  "operator": "type",
+                  "type": "$.response.body.boolField",
+                  "operator": "eq",
                   "value": "boolean"
                 },
                 {
-                  "path": "response.body.arrayField",
-                  "operator": "type",
+                  "type": "$.response.body.arrayField",
+                  "operator": "eq",
                   "value": "array"
                 },
                 {
-                  "path": "response.body.objectField",
-                  "operator": "type",
+                  "type": "$.response.body.objectField",
+                  "operator": "eq",
                   "value": "object"
                 },
                 {
-                  "path": "response.body.nullField",
+                  "path": "$.response.body.nullField",
                   "operator": "isEmpty"
                 },
                 {
-                  "path": "response.body.missingField",
+                  "path": "$.response.body.missingField",
                   "operator": "notExists"
                 },
                 {
-                  "path": "response.body.stringField",
+                  "path": "$.response.body.stringField",
                   "operator": "exists"
                 }
               ]

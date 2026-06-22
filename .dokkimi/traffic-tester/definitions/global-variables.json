@@ -37,19 +37,19 @@
             "query": "SELECT * FROM users WHERE name = '{{expectedName}}' LIMIT 1"
           },
           "extract": {
-            "userId": "$.data[0].id",
-            "userName": "$.data[0].name"
+            "userId": "$.response.data[0].id",
+            "userName": "$.response.data[0].name"
           },
           "assertions": [
             {
               "assertions": [
                 {
-                  "path": "success",
+                  "path": "$.response.success",
                   "operator": "eq",
                   "value": true
                 },
                 {
-                  "path": "data[0].name",
+                  "path": "$.response.data[0].name",
                   "operator": "eq",
                   "value": "{{expectedName}}"
                 }
@@ -86,13 +86,13 @@
             }
           },
           "extract": {
-            "insertedId": "$.body.queryResults[0][0].result[0].id"
+            "insertedId": "$.response.body.queryResults[0][0].result[0].id"
           },
           "assertions": [
             {
               "assertions": [
                 {
-                  "path": "response.status",
+                  "path": "$.response.status",
                   "operator": "eq",
                   "value": 200
                 }
@@ -123,7 +123,7 @@
             {
               "assertions": [
                 {
-                  "path": "response.status",
+                  "path": "$.response.status",
                   "operator": "eq",
                   "value": 200
                 }
@@ -142,17 +142,17 @@
             {
               "assertions": [
                 {
-                  "path": "success",
+                  "path": "$.response.success",
                   "operator": "eq",
                   "value": true
                 },
                 {
-                  "path": "data[0].name",
+                  "path": "$.response.data[0].name",
                   "operator": "eq",
                   "value": "{{newUserName}}"
                 },
                 {
-                  "path": "data[0].email",
+                  "path": "$.response.data[0].email",
                   "operator": "eq",
                   "value": "{{newUserEmail}}"
                 }
@@ -192,7 +192,7 @@
             {
               "assertions": [
                 {
-                  "path": "response.status",
+                  "path": "$.response.status",
                   "operator": "eq",
                   "value": 200
                 }

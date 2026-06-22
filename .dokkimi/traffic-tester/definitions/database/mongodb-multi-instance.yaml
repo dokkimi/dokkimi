@@ -33,13 +33,13 @@ tests:
           query: '{"operation":"find","collection":"orders","filter":{"orderId":"M-001"}}'
         assertions:
           - assertions:
-              - path: success
+              - path: $.response.success
                 operator: eq
                 value: true
-              - path: data
-                operator: length
+              - count: $.response.data
+                operator: eq
                 value: 1
-              - path: data[0].source
+              - path: $.response.data[0].source
                 operator: eq
                 value: orders
       - name: Read back from analytics-mongo
@@ -49,13 +49,13 @@ tests:
           query: '{"operation":"find","collection":"events","filter":{"eventId":"E-001"}}'
         assertions:
           - assertions:
-              - path: success
+              - path: $.response.success
                 operator: eq
                 value: true
-              - path: data
-                operator: length
+              - count: $.response.data
+                operator: eq
                 value: 1
-              - path: data[0].source
+              - path: $.response.data[0].source
                 operator: eq
                 value: analytics
   - name: Data from instance A is not in instance B
@@ -67,7 +67,7 @@ tests:
           query: '{"operation":"insertOne","collection":"isolation_test","document":{"key":"only-in-orders"}}'
         assertions:
           - assertions:
-              - path: success
+              - path: $.response.success
                 operator: eq
                 value: true
       - name: Confirm key is absent from analytics-mongo
@@ -77,11 +77,11 @@ tests:
           query: '{"operation":"find","collection":"isolation_test","filter":{"key":"only-in-orders"}}'
         assertions:
           - assertions:
-              - path: success
+              - path: $.response.success
                 operator: eq
                 value: true
-              - path: data
-                operator: length
+              - count: $.response.data
+                operator: eq
                 value: 0
 
   - name: Parallel writes to both instances
@@ -103,10 +103,10 @@ tests:
           query: '{"operation":"find","collection":"parallel","filter":{"id":"p1"}}'
         assertions:
           - assertions:
-              - path: data
-                operator: length
+              - count: $.response.data
+                operator: eq
                 value: 1
-              - path: data[0].instance
+              - path: $.response.data[0].instance
                 operator: eq
                 value: orders
       - name: Read back from analytics-mongo
@@ -116,10 +116,10 @@ tests:
           query: '{"operation":"find","collection":"parallel","filter":{"id":"p1"}}'
         assertions:
           - assertions:
-              - path: data
-                operator: length
+              - count: $.response.data
+                operator: eq
                 value: 1
-              - path: data[0].instance
+              - path: $.response.data[0].instance
                 operator: eq
                 value: analytics
   - name: Different collections per instance
@@ -141,10 +141,10 @@ tests:
           query: '{"operation":"find","collection":"shipments","filter":{"trackingId":"TRK-001"}}'
         assertions:
           - assertions:
-              - path: data
-                operator: length
+              - count: $.response.data
+                operator: eq
                 value: 1
-              - path: data[0].carrier
+              - path: $.response.data[0].carrier
                 operator: eq
                 value: FedEx
       - name: Read back metric from analytics-mongo
@@ -154,9 +154,9 @@ tests:
           query: '{"operation":"find","collection":"metrics","filter":{"metric":"pageviews"}}'
         assertions:
           - assertions:
-              - path: data
-                operator: length
+              - count: $.response.data
+                operator: eq
                 value: 1
-              - path: data[0].value
+              - path: $.response.data[0].value
                 operator: eq
                 value: 42

@@ -604,7 +604,7 @@ Reference it on a step's `action` with `$ref`. Inline fields are shallow-merged 
       name: custom-name
   assertions:
     - assertions:
-        - path: response.statusCode
+        - path: $.response.status
           operator: eq
           value: 201
 ```
@@ -698,14 +698,14 @@ Tests are defined in the top-level `tests` array. Each test is independent and c
 
 ### TestStep
 
-| Field           | Type    | Required | Default | Description                                                     |
-| --------------- | ------- | -------- | ------- | --------------------------------------------------------------- |
-| `name`          | string  | No       | —       | Step name                                                       |
-| `description`   | string  | No       | —       | Step description                                                |
-| `action`        | object  | Yes      | —       | Action to execute (httpRequest, dbQuery, wait, ui, or parallel) |
-| `extract`       | object  | No       | —       | Extract variables from response: `{ "varName": "$.path" }`      |
-| `assertions`    | array   | No       | —       | Assertion blocks to validate after action completes             |
-| `stopOnFailure` | boolean | No       | `true`  | Stop test when assertions in this step fail                     |
+| Field           | Type    | Required | Default | Description                                                                       |
+| --------------- | ------- | -------- | ------- | --------------------------------------------------------------------------------- |
+| `name`          | string  | No       | —       | Step name                                                                         |
+| `description`   | string  | No       | —       | Step description                                                                  |
+| `action`        | object  | Yes      | —       | Action to execute (httpRequest, dbQuery, wait, ui, or parallel)                   |
+| `extract`       | object  | No       | —       | Extract variables from the root context: `{ "varName": "$.response.body.field" }` |
+| `assertions`    | array   | No       | —       | Assertion blocks to validate after action completes                               |
+| `stopOnFailure` | boolean | No       | `true`  | Stop test when assertions in this step fail                                       |
 
 ### Step Actions
 
@@ -929,7 +929,7 @@ If the regex doesn't match, the extract step fails with a clear error.
 
 **Using extracted values:** anything pulled out via `extract` is added to the variable context and behaves like any other variable.
 
-- In the same step's assertions, reference it as `$.extracted.<varName>` in a self-block (for example `path: "$.extracted.newPostId"`).
+- In the same step's assertions, reference it as `$.variables.<varName>` in a self-block (for example `path: "$.variables.newPostId"`).
 - In any later step (in this group or beyond), reference it as `{{newPostId}}` inside an action's URL, headers, body, query, params, etc.
 
 **CORS gotcha — read this before writing UI tests against your own services.**
@@ -989,8 +989,7 @@ The referenced files must be plain `{ "key": "value" }` objects (no nested objec
 - Action body string values: `"body": { "email": "{{email}}" }`
 - Database queries: `"query": "SELECT * FROM users WHERE id = {{userId}}"`
 - Assertion values: `"value": "{{email}}"`
-- Match block fields: `"url": "user-service/{{path}}"`
-- Console log message values: `"value": "User {{userId}} created"`
+- Match where clause values: `"value": "user-service/{{path}}"`
 
 **Extract syntax:**
 
@@ -999,12 +998,12 @@ Each extract rule can be a **simple JSONPath string** or a **regex extract objec
 ```json
 {
   "extract": {
-    "userId": "$.body.id",
-    "authToken": "$.headers.x-auth-token",
-    "firstName": "$.body.user.profile.name",
-    "firstItem": "$.body.items[0].id",
+    "userId": "$.response.body.id",
+    "authToken": "$.response.headers.x-auth-token",
+    "firstName": "$.response.body.user.profile.name",
+    "firstItem": "$.response.body.items[0].id",
     "correlationId": {
-      "path": "$.body.message",
+      "path": "$.response.body.message",
       "pattern": "correlation_id=([a-f0-9-]+)",
       "group": 1
     }
@@ -1024,25 +1023,51 @@ Each extract rule can be a **simple JSONPath string** or a **regex extract objec
 
 The JSONPath is resolved first, the result is coerced to a string, then the regex is applied. An error is raised if the path doesn't exist, the pattern doesn't match, or the capture group is out of range.
 
-Extract operates on the **action's response only** — it does not have access to request data. This applies to both step-level and assertion-block extract (even inside `match` blocks). The test-agent resolves extract paths against the response document from the step's action, not against intercepted traffic logs.
+**Transform form** (object): converts an object into an array for use with `forEach`:
 
-For HTTP actions, the extract document is: `{ statusCode, headers, body }`
-For DB queries, the extract document is: `{ success, data, rowsAffected, error, duration }`
+| Field       | Type   | Required | Description                                           |
+| ----------- | ------ | -------- | ----------------------------------------------------- |
+| `path`      | string | \*       | JSONPath to the source object                         |
+| `from`      | string | \*       | Variable reference (`{{varName}}`) as the source      |
+| `transform` | string | Yes      | Conversion type: `"keys"`, `"values"`, or `"entries"` |
+
+\* Either `path` or `from` is required (not both).
+
+- `"keys"` — returns an array of the object's key names (sorted alphabetically)
+- `"values"` — returns an array of values (in sorted key order)
+- `"entries"` — returns an array of `{ "key": "...", "value": ... }` objects (in sorted key order)
+
+```json
+{
+  "extract": {
+    "settingKeys": {
+      "path": "$.response.body.settings",
+      "transform": "keys"
+    },
+    "fieldNames": {
+      "from": "{{userTemplate}}",
+      "transform": "keys"
+    }
+  }
+}
+```
+
+Extract resolves paths against the unified root context, the same document structure used by assertions. The root context is: `{ request, response, responseTime, variables, traffic, consoleLogs, dbLogs, timeline }`. For step-level and assertion-block extract (including inside `match` blocks), the test-agent resolves extract paths against this root context.
+
+For HTTP actions, use paths like `$.response.body.field`, `$.response.status`, `$.response.headers.name`.
+For DB queries, use paths like `$.response.data[0].field`, `$.response.success`, `$.response.rowsAffected`.
 
 Supported JSONPath syntax:
 
-- `$.field` — top-level field
-- `$.nested.field` — nested object access
-- `$.array[0]` — array index
-- `$.array[0].field` — array element field access
-- `$.headers.header-name` — headers (case-insensitive)
+- `$.response.body.field` — field in the response body
+- `$.response.body.nested.field` — nested object access
+- `$.response.body.array[0]` — array index
+- `$.response.body.array[0].field` — array element field access
+- `$.response.headers.header-name` — response headers (case-insensitive)
+- `$.response.status` — HTTP status code
+- `$.response.data[0].column` — DB query result field
 
-**Extract paths vs assertion paths:** Extract paths and assertion paths use **different** document structures and have different capabilities:
-
-- **Extract paths** use a flat response-only document: `$.body.field`, `$.statusCode`, `$.headers.name` (for HTTP); `$.data[0].field`, `$.success` (for DB queries). **No access to `request.*`.**
-- **Assertion paths** use a nested document with both request and response: `response.body.field`, `response.status`, `response.header.name`, `request.body.field` (for HTTP); `data[0].field`, `success` (for DB queries)
-
-This distinction matters — don't use `response.body` in extract paths or `$.body` in assertion paths. If you need to validate request-side data, use assertions (not extract).
+**Extract paths and assertion paths use the same unified root context.** Both resolve against the same document structure with a `$.` prefix. For example, `$.response.body.id` works in both extract and assertion paths. The unified root context includes `request`, `response`, `responseTime`, `variables`, and more — so both extract and assertions can access request-side data.
 
 **Variable scope and precedence:**
 
@@ -1054,170 +1079,488 @@ This distinction matters — don't use `response.body` in extract paths or `$.bo
 
 ---
 
-### Assertion Blocks
+### Loops
 
-Each step can have an `assertions` array of blocks. Block type is determined by shape (not by an explicit type field). There are three block types:
+Loop modifiers let you repeat tests, steps, or actions over data. Three types are available: `forEach` (iterate an array), `for` (numeric range), and `repeat` (fixed count with optional early exit).
 
-#### 1. Self Block (no `match`, no `service`)
+#### forEach
 
-Asserts on the step's own outcome:
+Iterates over an array of items. Each iteration sets the loop variable to the current item.
 
-- HTTP step → the response (`response.status`, `response.body`, `response.header.*`, `responseTime`).
-- DB query step → the query result (`success`, `data`, `rowsAffected`, `error`, `duration`).
-- UI step → variables newly pulled out by the action's `extract` sub-steps, exposed as `$.extracted.<varName>` (e.g. `$.extracted.errorText`).
-
-```json
-{
-  "assertions": [
-    { "path": "response.status", "operator": "eq", "value": 201 },
-    { "path": "response.body.id", "operator": "exists" },
-    { "path": "response.body.name", "operator": "eq", "value": "{{userName}}" },
-    {
-      "path": "response.header.content-type",
-      "operator": "contains",
-      "value": "application/json"
-    },
-    { "path": "responseTime", "operator": "lt", "value": 500 }
-  ]
-}
-```
-
-#### 2. HTTP Call Block (has `match`)
-
-Asserts on observed inter-service traffic captured by the interceptor sidecar.
+| Field     | Type            | Required | Description                                                                                                               |
+| --------- | --------------- | -------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `items`   | array or string | Yes      | Inline array, `{{variable}}` reference, or `$.path` into the response (assertion-block level only)                        |
+| `as`      | string          | Yes      | Variable name for the current item. Access fields with `{{as.field}}`.                                                    |
+| `name`    | string          | No       | Loop name. When set, exposes metadata as `{{name.index}}`, `{{name.items}}`, `{{name.completed}}`, `{{name.iterations}}`. |
+| `delayMs` | integer         | No       | Milliseconds to wait between iterations                                                                                   |
 
 ```json
 {
-  "match": {
-    "origin": "api-gateway",
-    "method": "POST",
-    "url": "user-service/api/users"
+  "name": "Verify user {{user.name}}",
+  "forEach": {
+    "items": [
+      { "name": "Alice", "email": "alice@test.com" },
+      { "name": "Bob", "email": "bob@test.com" }
+    ],
+    "as": "user"
   },
-  "count": { "operator": "eq", "value": 1 },
-  "assertionScope": "all",
-  "assertions": [
-    { "path": "request.body.email", "operator": "eq", "value": "{{email}}" },
-    { "path": "response.status", "operator": "eq", "value": 201 },
-    { "path": "response.body.id", "operator": "exists" }
-  ]
+  "action": {
+    "type": "httpRequest",
+    "method": "GET",
+    "url": "api-gateway/api/users?email={{user.email}}"
+  }
 }
 ```
 
-**Match fields** (all optional, all support `{{variables}}`):
-
-| Field    | Description                                                       |
-| -------- | ----------------------------------------------------------------- |
-| `origin` | Service name that made the request                                |
-| `method` | HTTP method to match                                              |
-| `url`    | Target URL: `"service-name/path"`, `"service-name"`, or `"/path"` |
-
-**`assertionScope`** determines which matching traffic entries are validated:
-
-| Value             | Behavior                                             |
-| ----------------- | ---------------------------------------------------- |
-| `"all"` (default) | All matching entries must pass all assertions        |
-| `"first"`         | Only the first matching entry is validated           |
-| `"last"`          | Only the last matching entry is validated            |
-| `"any"`           | At least one matching entry must pass all assertions |
-
-**`count`** asserts on the number of matching traffic entries:
+Items can also be a variable reference or a JSONPath:
 
 ```json
-{ "operator": "eq", "value": 1 }
+"forEach": { "items": "{{users}}", "as": "user" }
 ```
 
-Count operators: `"eq"`, `"gt"`, `"gte"`, `"lt"`, `"lte"`. Default: `{ "operator": "gte", "value": 1 }` (at least 1 match expected).
+#### for
 
-#### 3. Console Log Block (has `service`)
+Iterates over a numeric range (inclusive on both ends).
 
-Asserts on console output from a specific service during the step's execution.
+| Field     | Type    | Required | Default | Description                                                                      |
+| --------- | ------- | -------- | ------- | -------------------------------------------------------------------------------- |
+| `from`    | integer | Yes      | —       | Start value (inclusive)                                                          |
+| `to`      | integer | Yes      | —       | End value (inclusive)                                                            |
+| `step`    | integer | No       | 1       | Increment per iteration. Must not be 0. Use negative step for descending ranges. |
+| `as`      | string  | Yes      | —       | Variable name for the current value                                              |
+| `name`    | string  | No       | —       | Loop name for metadata (see forEach)                                             |
+| `delayMs` | integer | No       | —       | Milliseconds to wait between iterations                                          |
 
 ```json
 {
-  "service": "user-service",
-  "consoleAssertions": [
+  "name": "Seed user {{i}}",
+  "for": { "from": 1, "to": 5, "as": "i" },
+  "action": {
+    "type": "httpRequest",
+    "method": "POST",
+    "url": "api-gateway/api/users",
+    "body": { "name": "user-{{i}}" }
+  }
+}
+```
+
+For descending ranges, provide a negative `step` explicitly: `"for": { "from": 10, "to": 1, "step": -1, "as": "i" }`. Omitting `step` when `from > to` is a validation error.
+
+#### repeat
+
+Repeats a fixed number of times, optionally stopping early when `until` assertions all pass.
+
+| Field     | Type    | Required | Description                                                          |
+| --------- | ------- | -------- | -------------------------------------------------------------------- |
+| `count`   | integer | Yes      | Maximum number of iterations                                         |
+| `as`      | string  | Yes      | Variable name for the iteration index (0-based)                      |
+| `name`    | string  | No       | Loop name for metadata (see forEach)                                 |
+| `delayMs` | integer | No       | Milliseconds to wait between iterations                              |
+| `until`   | array   | No       | Assertions checked after each iteration; all must pass to stop early |
+
+The loop always executes at least once, regardless of `until`.
+
+```json
+{
+  "name": "Poll until job completes (attempt {{attempt}})",
+  "repeat": {
+    "count": 10,
+    "as": "attempt",
+    "delayMs": 500,
+    "until": [
+      { "path": "$.response.body.status", "operator": "eq", "value": "done" }
+    ]
+  },
+  "action": {
+    "type": "httpRequest",
+    "method": "GET",
+    "url": "api-gateway/api/jobs/{{jobId}}"
+  }
+}
+```
+
+#### Loop meta-variables
+
+All three loop types set variables via the `as` field. When the optional `name` field is set, additional metadata variables become available. Meta-variables require `name`; without it, only `{{as}}` is set.
+
+| Variable              | Type    | Available in          | Description                                                                 |
+| --------------------- | ------- | --------------------- | --------------------------------------------------------------------------- |
+| `{{as}}`              | any     | forEach, for, repeat  | Current item (forEach), range value (for), or 0-based counter (repeat)      |
+| `{{name.index}}`      | number  | forEach, for, repeat  | 0-based iteration counter                                                   |
+| `{{name.items}}`      | array   | forEach only          | The full items array being iterated                                         |
+| `{{name.completed}}`  | boolean | All (after loop ends) | Whether the loop completed normally (repeat+until: did the condition pass?) |
+| `{{name.iterations}}` | number  | All (after loop ends) | How many iterations actually ran                                            |
+
+`completed` and `iterations` are set after the loop finishes, so they are available in subsequent steps but not inside the loop body.
+
+#### Loop levels
+
+Loops can be applied at five levels:
+
+**Test-level** — add `forEach`, `for`, or `repeat` to a test definition. All steps repeat per iteration:
+
+```json
+{
+  "name": "Verify order {{order.id}}",
+  "forEach": { "items": "{{orders}}", "as": "order" },
+  "steps": [
     {
-      "level": "INFO",
-      "message": { "operator": "contains", "value": "User created" },
-      "count": { "operator": "gte", "value": 1 }
+      "name": "Check API",
+      "action": {
+        "type": "httpRequest",
+        "method": "GET",
+        "url": "api/orders/{{order.id}}"
+      }
     },
     {
-      "level": "ERROR",
-      "count": { "operator": "eq", "value": 0 }
-    },
-    {
-      "message": { "operator": "matches", "value": "Processing order \\d+" },
-      "count": { "operator": "gte", "value": 1 }
+      "name": "Check DB",
+      "action": {
+        "type": "dbQuery",
+        "database": "postgres-db",
+        "query": "SELECT * FROM orders WHERE id = '{{order.id}}'"
+      }
     }
   ]
 }
 ```
 
-**ConsoleLogAssertion fields:**
+**Step-level** — add a loop modifier to a step. The action, extract, and assertions all repeat per iteration:
 
-| Field     | Type   | Required | Description                                                                                                                   |
-| --------- | ------ | -------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| `level`   | enum   | No       | Filter by log level: `"INFO"`, `"WARN"`, `"ERROR"`, `"DEBUG"`. If omitted, matches all levels.                                |
-| `message` | object | No       | Filter by message content. Has `operator` (`"eq"`, `"contains"`, `"matches"`) and `value` (string, supports `{{variables}}`). |
-| `count`   | object | Yes      | Assert on count of matching logs: `{ "operator": "eq"/"gte"/"lte"/"gt"/"lt", "value": number }`                               |
+```json
+{
+  "name": "Create user {{user.name}}",
+  "forEach": { "items": "{{users}}", "as": "user" },
+  "action": { ... },
+  "extract": { "lastId": "$.response.body.id" },
+  "assertions": [ ... ]
+}
+```
 
-All three block types can include `extract` to capture variables from matched results.
+**Action-level** — add a loop modifier inside the action object. Only the action repeats; extract and assertions run once on the last response:
+
+```json
+{
+  "name": "Seed 5 users",
+  "action": {
+    "type": "httpRequest",
+    "method": "POST",
+    "url": "api-gateway/api/users",
+    "body": { "name": "user-{{i}}" },
+    "for": { "from": 1, "to": 5, "as": "i" }
+  },
+  "extract": { "lastUserId": "$.response.body.id" }
+}
+```
+
+**Assertion-block level** — add `forEach` to an assertion block. The assertions run once per item (only `forEach` is supported at this level):
+
+```json
+{
+  "forEach": { "items": "$.response.body", "as": "user" },
+  "assertions": [
+    {
+      "path": "{{user.email}}",
+      "operator": "matches",
+      "value": "^.+@.+\\..+$"
+    },
+    { "path": "{{user.active}}", "operator": "eq", "value": true }
+  ]
+}
+```
+
+**UI sub-step group** — inside a UI action's `steps` array, add an object with a loop modifier and nested `steps`:
+
+```json
+{
+  "forEach": { "items": ["bad@", "", "no-dot"], "as": "email" },
+  "steps": [
+    { "type": { "selector": "#email", "text": "{{email}}" } },
+    { "click": "#submit" },
+    { "waitFor": "[data-testid='error']" }
+  ]
+}
+```
+
+---
+
+### Assertion Blocks
+
+Each step can have an `assertions` array of blocks. Block type is determined by shape (not by an explicit type field). There are two block types:
+
+#### 1. Self Block (no `match`)
+
+Asserts on the step's own outcome:
+
+- HTTP step → the response (`$.response.status`, `$.response.body`, `$.response.headers.*`, `$.responseTime`).
+- DB query step → the query result (`$.response.success`, `$.response.data`, `$.response.rowsAffected`, `$.response.error`, `$.response.duration`).
+- UI step → variables newly pulled out by the action's `extract` sub-steps, exposed as `$.variables.<varName>` (e.g. `$.variables.errorText`).
+
+```json
+{
+  "assertions": [
+    { "path": "$.response.status", "operator": "eq", "value": 201 },
+    { "path": "$.response.body.id", "operator": "exists" },
+    {
+      "path": "$.response.body.name",
+      "operator": "eq",
+      "value": "{{userName}}"
+    },
+    {
+      "path": "$.response.headers.content-type",
+      "operator": "contains",
+      "value": "application/json"
+    },
+    { "path": "$.responseTime", "operator": "lt", "value": 500 }
+  ]
+}
+```
+
+#### 2. Match Block (has `match`)
+
+Filters an array from the root context (traffic, console logs, DB logs, etc.) and asserts on the matched entries. This is a generic system — the same syntax works for all log types.
+
+**Match criteria fields:**
+
+| Field   | Type              | Required | Description                                                                                                                                                                                                  |
+| ------- | ----------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `path`  | string            | Yes      | JSONPath to the array to filter (e.g. `"$.traffic"`, `"$.consoleLogs"`, `"$.dbLogs"`)                                                                                                                        |
+| `where` | array             | No       | Array of filter entries — each entry tests a field on the iterator element (see below)                                                                                                                       |
+| `count` | integer or object | No       | Assert on the number of matching entries. Integer shorthand (e.g. `1`) or `{ "operator": "eq", "value": 1 }`. Count operators: `"eq"`, `"gt"`, `"gte"`, `"lt"`, `"lte"`. Default: at least 1 match expected. |
+| `as`    | string            | No       | Save the matched entries array as a named variable for use in later steps                                                                                                                                    |
+
+**Where entries** use `$$` as the iterator variable — it refers to each element in the array being filtered:
+
+```json
+{
+  "match": {
+    "path": "$.traffic",
+    "where": [
+      { "path": "$$.origin", "operator": "eq", "value": "api-gateway" },
+      { "path": "$$.request.method", "operator": "eq", "value": "POST" },
+      {
+        "path": "$$.request.url",
+        "operator": "contains",
+        "value": "user-service/api/users"
+      }
+    ],
+    "count": 1
+  },
+  "assertions": [
+    {
+      "path": "$.match.request.body.email",
+      "operator": "eq",
+      "value": "{{email}}"
+    },
+    { "path": "$.match.response.status", "operator": "eq", "value": 201 },
+    { "path": "$.match.response.body.id", "operator": "exists" }
+  ]
+}
+```
+
+Where entries support logical combinators — `or`, `and`, and `not` — for complex filtering:
+
+```json
+{
+  "path": "$.traffic",
+  "where": [
+    {
+      "or": [
+        {
+          "path": "$$.request.url",
+          "operator": "contains",
+          "value": "/api/users"
+        },
+        {
+          "path": "$$.request.url",
+          "operator": "contains",
+          "value": "/api/orders"
+        }
+      ]
+    }
+  ]
+}
+```
+
+**Assertion paths inside match blocks** use `$.match.*` to reference the matched entry:
+
+| Path             | Description                                                        |
+| ---------------- | ------------------------------------------------------------------ |
+| `$.match.*`      | The single matched entry (when count=1), or the last matched entry |
+| `$.lastMatch.*`  | Alias for the last matched entry                                   |
+| `$.matches`      | Array of all matched entries                                       |
+| `$.matches[0].*` | Specific matched entry by index                                    |
+
+**Traffic assertion example:**
+
+```json
+{
+  "match": {
+    "path": "$.traffic",
+    "where": [
+      { "path": "$$.origin", "operator": "eq", "value": "api-gateway" },
+      { "path": "$$.request.method", "operator": "eq", "value": "POST" },
+      {
+        "path": "$$.request.url",
+        "operator": "contains",
+        "value": "order-service/api/orders"
+      }
+    ],
+    "count": 1
+  },
+  "assertions": [
+    { "path": "$.match.response.status", "operator": "eq", "value": 201 }
+  ]
+}
+```
+
+**Console log assertion example:**
+
+```json
+{
+  "match": {
+    "path": "$.consoleLogs",
+    "where": [
+      { "path": "$$.service", "operator": "eq", "value": "user-service" },
+      { "path": "$$.level", "operator": "eq", "value": "INFO" },
+      { "path": "$$.message", "operator": "contains", "value": "User created" }
+    ],
+    "count": { "operator": "gte", "value": 1 }
+  }
+}
+```
+
+To assert zero errors from a service:
+
+```json
+{
+  "match": {
+    "path": "$.consoleLogs",
+    "where": [
+      { "path": "$$.service", "operator": "eq", "value": "order-service" },
+      { "path": "$$.level", "operator": "eq", "value": "ERROR" }
+    ],
+    "count": 0
+  }
+}
+```
+
+Both block types can include `extract` to capture variables from matched results.
+
+#### Source Fields (Transform Shorthands)
+
+Instead of using `path` as the assertion source, you can use a transform shorthand that resolves a path and applies a transformation before comparing:
+
+| Field     | Description                                                       |
+| --------- | ----------------------------------------------------------------- |
+| `count`   | Resolves the path and returns its length (array or string)        |
+| `type`    | Resolves the path and returns the type as a string                |
+| `keys`    | Resolves the path (must be an object) and returns its keys        |
+| `values`  | Resolves the path (must be an object) and returns its values      |
+| `entries` | Resolves the path (must be an object) and returns key-value pairs |
+
+```json
+{ "count": "$.response.body.items", "operator": "eq", "value": 3 }
+```
+
+```json
+{ "type": "$.response.body.count", "operator": "eq", "value": "number" }
+```
+
+You can also use the object form `{ "from": "$.path", "transform": "count" }` in both `path` and `value` fields for more complex comparisons.
+
+#### Value References
+
+To compare two document paths against each other, use a value reference instead of a literal value:
+
+```json
+{
+  "path": "$.response.body.total",
+  "operator": "eq",
+  "value": { "from": "$.response.body.expectedTotal" }
+}
+```
+
+A value reference is an object with a `from` field containing a `$.`-prefixed path. The path is resolved against the root context before comparison.
 
 ---
 
 ### Assertion Paths
 
-**For HTTP responses (self block or HTTP call block):**
+All assertion paths start with `$.` and resolve against the unified root context.
 
-| Path                          | Description                        |
-| ----------------------------- | ---------------------------------- |
-| `response.status`             | HTTP status code (integer)         |
-| `response.body`               | Entire response body               |
-| `response.body.field`         | Top-level field in response body   |
-| `response.body.nested.field`  | Nested field (dot notation)        |
-| `response.body[0].field`      | Array element access               |
-| `response.header.header-name` | Response header (case-insensitive) |
-| `request.method`              | HTTP method of the request         |
-| `request.body`                | Entire request body                |
-| `request.body.field`          | Field in request body              |
-| `request.header.header-name`  | Request header (case-insensitive)  |
-| `responseTime`                | Response time in milliseconds      |
+**For HTTP responses (self block):**
+
+| Path                             | Description                        |
+| -------------------------------- | ---------------------------------- |
+| `$.response.status`              | HTTP status code (integer)         |
+| `$.response.body`                | Entire response body               |
+| `$.response.body.field`          | Top-level field in response body   |
+| `$.response.body.nested.field`   | Nested field (dot notation)        |
+| `$.response.body[0].field`       | Array element access               |
+| `$.response.headers.header-name` | Response header (case-insensitive) |
+| `$.request.method`               | HTTP method of the request         |
+| `$.request.body`                 | Entire request body                |
+| `$.request.body.field`           | Field in request body              |
+| `$.request.headers.header-name`  | Request header (case-insensitive)  |
+| `$.responseTime`                 | Response time in milliseconds      |
 
 **For database query results (self block only):**
 
-| Path             | Description                                    |
-| ---------------- | ---------------------------------------------- |
-| `success`        | Boolean — did the query succeed?               |
-| `data`           | Array of result rows                           |
-| `data[0].column` | Specific column from a result row              |
-| `rowsAffected`   | Number of affected rows (integer)              |
-| `error`          | Error message if query failed (string or null) |
+| Path                        | Description                                    |
+| --------------------------- | ---------------------------------------------- |
+| `$.response.success`        | Boolean — did the query succeed?               |
+| `$.response.data`           | Array of result rows                           |
+| `$.response.data[0].column` | Specific column from a result row              |
+| `$.response.rowsAffected`   | Number of affected rows (integer)              |
+| `$.response.error`          | Error message if query failed (string or null) |
+| `$.response.duration`       | Query execution time in milliseconds           |
+
+**Inside match blocks:**
+
+| Path                           | Description                                          |
+| ------------------------------ | ---------------------------------------------------- |
+| `$.match.response.status`      | Response status of the matched entry                 |
+| `$.match.request.body.field`   | Request body field of the matched entry              |
+| `$.lastMatch.*`                | Alias — same as `$.match.*` (the last matched entry) |
+| `$.matches`                    | Array of all matched entries                         |
+| `$.matches[0].response.status` | Field from a specific matched entry by index         |
+
+**Other root context fields:**
+
+| Path                  | Description                                  |
+| --------------------- | -------------------------------------------- |
+| `$.variables.varName` | Access a variable by name                    |
+| `$.traffic`           | Array of all captured HTTP traffic entries   |
+| `$.consoleLogs`       | Array of all console log entries             |
+| `$.dbLogs`            | Array of all database log entries            |
+| `$.timeline`          | Ordered array of all events (traffic + logs) |
 
 ---
 
 ### Assertion Operators
 
-| Operator           | Value required? | Value type     | Description                                                                                 |
-| ------------------ | --------------- | -------------- | ------------------------------------------------------------------------------------------- |
-| `eq`               | Yes             | any            | Exact equality (case-insensitive for strings)                                               |
-| `ne`               | Yes             | any            | Not equal (case-insensitive for strings)                                                    |
-| `gt`               | Yes             | number         | Greater than                                                                                |
-| `gte`              | Yes             | number         | Greater than or equal                                                                       |
-| `lt`               | Yes             | number         | Less than                                                                                   |
-| `lte`              | Yes             | number         | Less than or equal                                                                          |
-| `contains`         | Yes             | string         | Substring match (case-insensitive)                                                          |
-| `notContains`      | Yes             | string         | Substring does NOT match (case-insensitive)                                                 |
-| `matches`          | Yes             | string (regex) | Regular expression match                                                                    |
-| `exists`           | No              | —              | Value exists (is defined and not null)                                                      |
-| `notExists`        | No              | —              | Value does not exist                                                                        |
-| `in`               | Yes             | array          | Value is in the given array                                                                 |
-| `notIn`            | Yes             | array          | Value is NOT in the given array                                                             |
-| `type`             | Yes             | string         | JavaScript type check: `"string"`, `"number"`, `"boolean"`, `"object"`, `"array"`, `"null"` |
-| `length`           | Yes             | number         | Array or string length equals value                                                         |
-| `isEmpty`          | No              | —              | Value is empty/null/undefined/empty array/empty object                                      |
-| `notEmpty`         | No              | —              | Value is not empty                                                                          |
-| `arrayContains`    | Yes             | any            | Array contains the given element                                                            |
-| `arrayNotContains` | Yes             | any            | Array does NOT contain the given element                                                    |
+| Operator                | Value required? | Value type     | Description                                                                                                        |
+| ----------------------- | --------------- | -------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `eq`                    | Yes             | any            | Exact equality (case-insensitive for strings)                                                                      |
+| `ne`                    | Yes             | any            | Not equal (case-insensitive for strings)                                                                           |
+| `gt`                    | Yes             | number         | Greater than                                                                                                       |
+| `gte`                   | Yes             | number         | Greater than or equal                                                                                              |
+| `lt`                    | Yes             | number         | Less than                                                                                                          |
+| `lte`                   | Yes             | number         | Less than or equal                                                                                                 |
+| `contains`              | Yes             | any            | Dispatches by type: string → case-insensitive substring match, array → element containment, object → key existence |
+| `notContains`           | Yes             | any            | Dispatches by type: string → substring NOT present, array → element NOT present, object → key NOT present          |
+| `matches`               | Yes             | string (regex) | Regular expression match                                                                                           |
+| `exists`                | No              | —              | Value exists (is defined and not null)                                                                             |
+| `notExists`             | No              | —              | Value does not exist                                                                                               |
+| `in`                    | Yes             | array          | Value is in the given array                                                                                        |
+| `notIn`                 | Yes             | array          | Value is NOT in the given array                                                                                    |
+| `isEmpty`               | No              | —              | Value is empty/null/undefined/empty array/empty object                                                             |
+| `notEmpty`              | No              | —              | Value is not empty                                                                                                 |
+| `eqIgnoreCase`          | Yes             | string         | Explicit case-insensitive equality (same behavior as `eq` for strings, but clearer intent)                         |
+| `containsIgnoreCase`    | Yes             | any            | Explicit case-insensitive containment (same behavior as `contains`, but clearer intent)                            |
+| `notContainsIgnoreCase` | Yes             | any            | Explicit case-insensitive non-containment (same behavior as `notContains`, but clearer intent)                     |
+
+To check the type or length of a value, use the `type` or `count` source fields instead of an operator (see "Source Fields" above).
 
 ---
 
@@ -1295,15 +1638,15 @@ A full definition with two services, a database, a mock, and tests:
             }
           },
           "extract": {
-            "orderId": "$.body.id"
+            "orderId": "$.response.body.id"
           },
           "assertions": [
             {
               "assertions": [
-                { "path": "response.status", "operator": "eq", "value": 201 },
-                { "path": "response.body.id", "operator": "exists" },
+                { "path": "$.response.status", "operator": "eq", "value": 201 },
+                { "path": "$.response.body.id", "operator": "exists" },
                 {
-                  "path": "response.body.status",
+                  "path": "$.response.body.status",
                   "operator": "eq",
                   "value": "pending"
                 }
@@ -1311,31 +1654,66 @@ A full definition with two services, a database, a mock, and tests:
             },
             {
               "match": {
-                "origin": "api-gateway",
-                "method": "POST",
-                "url": "order-service/api/orders"
+                "path": "$.traffic",
+                "where": [
+                  {
+                    "path": "$$.origin",
+                    "operator": "eq",
+                    "value": "api-gateway"
+                  },
+                  {
+                    "path": "$$.request.method",
+                    "operator": "eq",
+                    "value": "POST"
+                  },
+                  {
+                    "path": "$$.request.url",
+                    "operator": "contains",
+                    "value": "order-service/api/orders"
+                  }
+                ],
+                "count": 1
               },
-              "count": { "operator": "eq", "value": 1 },
               "assertions": [
-                { "path": "response.status", "operator": "eq", "value": 201 }
+                {
+                  "path": "$.match.response.status",
+                  "operator": "eq",
+                  "value": 201
+                }
               ]
             },
             {
-              "service": "order-service",
-              "consoleAssertions": [
-                {
-                  "level": "INFO",
-                  "message": {
+              "match": {
+                "path": "$.consoleLogs",
+                "where": [
+                  {
+                    "path": "$$.service",
+                    "operator": "eq",
+                    "value": "order-service"
+                  },
+                  { "path": "$$.level", "operator": "eq", "value": "INFO" },
+                  {
+                    "path": "$$.message",
                     "operator": "contains",
                     "value": "Order created"
+                  }
+                ],
+                "count": { "operator": "gte", "value": 1 }
+              }
+            },
+            {
+              "match": {
+                "path": "$.consoleLogs",
+                "where": [
+                  {
+                    "path": "$$.service",
+                    "operator": "eq",
+                    "value": "order-service"
                   },
-                  "count": { "operator": "gte", "value": 1 }
-                },
-                {
-                  "level": "ERROR",
-                  "count": { "operator": "eq", "value": 0 }
-                }
-              ]
+                  { "path": "$$.level", "operator": "eq", "value": "ERROR" }
+                ],
+                "count": 0
+              }
             }
           ]
         },
@@ -1349,14 +1727,18 @@ A full definition with two services, a database, a mock, and tests:
           "assertions": [
             {
               "assertions": [
-                { "path": "success", "operator": "eq", "value": true },
                 {
-                  "path": "data[0].email",
+                  "path": "$.response.success",
+                  "operator": "eq",
+                  "value": true
+                },
+                {
+                  "path": "$.response.data[0].email",
                   "operator": "eq",
                   "value": "{{userEmail}}"
                 },
                 {
-                  "path": "data[0].status",
+                  "path": "$.response.data[0].status",
                   "operator": "eq",
                   "value": "completed"
                 }

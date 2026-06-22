@@ -40,27 +40,27 @@
             {
               "assertions": [
                 {
-                  "path": "response.status",
+                  "path": "$.response.status",
                   "operator": "eq",
                   "value": 201
                 },
                 {
-                  "path": "response.header.x-custom-header",
+                  "path": "$.response.headers.x-custom-header",
                   "operator": "eq",
                   "value": "custom-value"
                 },
                 {
-                  "path": "response.header.x-request-id",
+                  "path": "$.response.headers.x-request-id",
                   "operator": "eq",
                   "value": "req-12345"
                 },
                 {
-                  "path": "response.body.created",
+                  "path": "$.response.body.created",
                   "operator": "eq",
                   "value": true
                 },
                 {
-                  "path": "response.body.id",
+                  "path": "$.response.body.id",
                   "operator": "eq",
                   "value": "item-001"
                 }
@@ -102,41 +102,58 @@
             {
               "assertions": [
                 {
-                  "path": "response.status",
+                  "path": "$.response.status",
                   "operator": "eq",
                   "value": 200
                 },
                 {
-                  "path": "response.body.logged",
+                  "path": "$.response.body.logged",
                   "operator": "eq",
                   "value": true
                 }
               ]
             },
             {
-              "service": "service-a",
-              "consoleAssertions": [
-                {
-                  "message": {
+              "match": {
+                "path": "$.consoleLogs",
+                "where": [
+                  {
+                    "path": "$$.service",
+                    "operator": "eq",
+                    "value": "service-a"
+                  },
+                  {
+                    "path": "$$.message",
                     "operator": "contains",
                     "value": "PRE: Starting request processing"
-                  },
-                  "count": {
-                    "operator": "gte",
-                    "value": 1
                   }
-                },
-                {
-                  "message": {
+                ],
+                "count": {
+                  "operator": "gte",
+                  "value": 1
+                }
+              }
+            },
+            {
+              "match": {
+                "path": "$.consoleLogs",
+                "where": [
+                  {
+                    "path": "$$.service",
+                    "operator": "eq",
+                    "value": "service-a"
+                  },
+                  {
+                    "path": "$$.message",
                     "operator": "contains",
                     "value": "POST: Request complete"
-                  },
-                  "count": {
-                    "operator": "gte",
-                    "value": 1
                   }
+                ],
+                "count": {
+                  "operator": "gte",
+                  "value": 1
                 }
-              ]
+              }
             }
           ]
         }
@@ -160,26 +177,26 @@
             {
               "assertions": [
                 {
-                  "path": "response.status",
+                  "path": "$.response.status",
                   "operator": "eq",
                   "value": 200
                 },
                 {
-                  "path": "response.body.queryResults",
-                  "operator": "type",
+                  "type": "$.response.body.queryResults",
+                  "operator": "eq",
                   "value": "array"
                 },
                 {
-                  "path": "response.body.queryResults",
+                  "path": "$.response.body.queryResults",
                   "operator": "isEmpty"
                 },
                 {
-                  "path": "response.body.results",
-                  "operator": "type",
+                  "type": "$.response.body.results",
+                  "operator": "eq",
                   "value": "array"
                 },
                 {
-                  "path": "response.body.results",
+                  "path": "$.response.body.results",
                   "operator": "isEmpty"
                 }
               ]

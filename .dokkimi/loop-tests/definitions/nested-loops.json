@@ -1,0 +1,136 @@
+{
+  "name": "nested-loops",
+  "description": "Validates true nested loops: step-level forEach with assertion-block forEach inside",
+  "items": [
+    { "$ref": "../shared/api-service.json" },
+    {
+      "$ref": "../shared/postgres-db.json",
+      "initFilePath": "../init-files/schema.sql"
+    },
+    { "$ref": "../../demo-oauth-flow/shared/mock-oauth-token.json" },
+    { "$ref": "../../demo-oauth-flow/shared/mock-oauth-userinfo.json" }
+  ],
+  "tests": [
+    {
+      "name": "step forEach with assertion-block forEach inside",
+      "steps": [
+        {
+          "name": "Login",
+          "action": {
+            "type": "httpRequest",
+            "method": "GET",
+            "url": "api-service/auth/callback?code=test_code&state=s1"
+          },
+          "extract": {
+            "sessionToken": "$.response.body.token"
+          }
+        },
+        {
+          "name": "Create and verify post {{postLoop.index}}",
+          "forEach": {
+            "items": [
+              { "title": "Nested A", "content": "Content A" },
+              { "title": "Nested B", "content": "Content B" }
+            ],
+            "as": "post",
+            "name": "postLoop",
+            "action": {
+              "type": "httpRequest",
+              "method": "POST",
+              "url": "api-service/api/profile/posts",
+              "headers": {
+                "Authorization": "Bearer {{sessionToken}}",
+                "Content-Type": "application/json"
+              },
+              "body": {
+                "title": "{{post.title}}",
+                "content": "{{post.content}}"
+              }
+            },
+            "assertions": [
+              {
+                "assertions": [
+                  {
+                    "path": "$.response.status",
+                    "operator": "eq",
+                    "value": 201
+                  },
+                  {
+                    "path": "$.response.body.post.title",
+                    "operator": "eq",
+                    "value": "{{post.title}}"
+                  }
+                ]
+              },
+              {
+                "match": {
+                  "path": "$.traffic",
+                  "where": [
+                    {
+                      "path": "$$.request.url",
+                      "operator": "contains",
+                      "value": "/api/profile/posts"
+                    },
+                    {
+                      "path": "$$.request.method",
+                      "operator": "eq",
+                      "value": "POST"
+                    }
+                  ]
+                },
+                "forEach": {
+                  "items": "$.matches",
+                  "as": "trafficEntry",
+                  "assertions": [
+                    {
+                      "path": "$.variables.trafficEntry.response.status",
+                      "operator": "eq",
+                      "value": 201
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "assertion-block forEach over response array",
+      "steps": [
+        {
+          "name": "Get all posts and validate each with nested forEach",
+          "action": {
+            "type": "httpRequest",
+            "method": "GET",
+            "url": "api-service/api/posts"
+          },
+          "assertions": [
+            {
+              "assertions": [
+                { "path": "$.response.status", "operator": "eq", "value": 200 }
+              ]
+            },
+            {
+              "forEach": {
+                "items": "$.response.body.posts",
+                "as": "postItem",
+                "assertions": [
+                  {
+                    "path": "$.variables.postItem.title",
+                    "operator": "notEmpty"
+                  },
+                  {
+                    "path": "$.variables.postItem.published",
+                    "operator": "eq",
+                    "value": true
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -2,13 +2,19 @@
   "name": "profile-posts-visibility",
   "description": "Tests that a user's profile correctly reflects their posts — new posts appear in the profile and the public feed, while another user's posts are excluded from the profile",
   "items": [
-    { "$ref": "../shared/api-service.json" },
+    {
+      "$ref": "../shared/api-service.json"
+    },
     {
       "$ref": "../shared/postgres-db.json",
       "initFilePath": "../init-files/schema.sql"
     },
-    { "$ref": "../shared/mock-oauth-token.json" },
-    { "$ref": "../shared/mock-oauth-userinfo.json" }
+    {
+      "$ref": "../shared/mock-oauth-token.json"
+    },
+    {
+      "$ref": "../shared/mock-oauth-userinfo.json"
+    }
   ],
   "tests": [
     {
@@ -23,13 +29,17 @@
             "url": "api-service/auth/callback?code=test_code&state=s1"
           },
           "extract": {
-            "sessionToken": "$.body.token",
-            "userId": "$.body.user.id"
+            "sessionToken": "$.response.body.token",
+            "userId": "$.response.body.user.id"
           },
           "assertions": [
             {
               "assertions": [
-                { "path": "response.status", "operator": "eq", "value": 200 }
+                {
+                  "path": "$.response.status",
+                  "operator": "eq",
+                  "value": 200
+                }
               ]
             }
           ]
@@ -40,15 +50,21 @@
             "type": "httpRequest",
             "method": "GET",
             "url": "api-service/api/profile",
-            "headers": { "Authorization": "Bearer {{sessionToken}}" }
+            "headers": {
+              "Authorization": "Bearer {{sessionToken}}"
+            }
           },
           "assertions": [
             {
               "assertions": [
-                { "path": "response.status", "operator": "eq", "value": 200 },
                 {
-                  "path": "response.body.profile.posts",
-                  "operator": "length",
+                  "path": "$.response.status",
+                  "operator": "eq",
+                  "value": 200
+                },
+                {
+                  "count": "$.response.body.profile.posts",
+                  "operator": "eq",
                   "value": 0
                 }
               ]
@@ -56,49 +72,43 @@
           ]
         },
         {
-          "name": "Create first post",
-          "action": {
-            "type": "httpRequest",
-            "method": "POST",
-            "url": "api-service/api/profile/posts",
-            "headers": {
-              "Authorization": "Bearer {{sessionToken}}",
-              "Content-Type": "application/json"
+          "name": "Create post: {{post.title}}",
+          "forEach": {
+            "items": [
+              { "title": "First Post", "content": "Hello world" },
+              { "title": "Second Post", "content": "More content" }
+            ],
+            "as": "post",
+            "action": {
+              "type": "httpRequest",
+              "method": "POST",
+              "url": "api-service/api/profile/posts",
+              "headers": {
+                "Authorization": "Bearer {{sessionToken}}",
+                "Content-Type": "application/json"
+              },
+              "body": {
+                "title": "{{post.title}}",
+                "content": "{{post.content}}"
+              }
             },
-            "body": { "title": "First Post", "content": "Hello world" }
-          },
-          "assertions": [
-            {
-              "assertions": [
-                { "path": "response.status", "operator": "eq", "value": 201 },
-                {
-                  "path": "response.body.post.authorId",
-                  "operator": "eq",
-                  "value": "{{userId}}"
-                }
-              ]
-            }
-          ]
-        },
-        {
-          "name": "Create second post",
-          "action": {
-            "type": "httpRequest",
-            "method": "POST",
-            "url": "api-service/api/profile/posts",
-            "headers": {
-              "Authorization": "Bearer {{sessionToken}}",
-              "Content-Type": "application/json"
-            },
-            "body": { "title": "Second Post", "content": "More content" }
-          },
-          "assertions": [
-            {
-              "assertions": [
-                { "path": "response.status", "operator": "eq", "value": 201 }
-              ]
-            }
-          ]
+            "assertions": [
+              {
+                "assertions": [
+                  {
+                    "path": "$.response.status",
+                    "operator": "eq",
+                    "value": 201
+                  },
+                  {
+                    "path": "$.response.body.post.authorId",
+                    "operator": "eq",
+                    "value": "{{userId}}"
+                  }
+                ]
+              }
+            ]
+          }
         },
         {
           "name": "Profile now shows exactly 2 posts",
@@ -106,15 +116,21 @@
             "type": "httpRequest",
             "method": "GET",
             "url": "api-service/api/profile",
-            "headers": { "Authorization": "Bearer {{sessionToken}}" }
+            "headers": {
+              "Authorization": "Bearer {{sessionToken}}"
+            }
           },
           "assertions": [
             {
               "assertions": [
-                { "path": "response.status", "operator": "eq", "value": 200 },
                 {
-                  "path": "response.body.profile.posts",
-                  "operator": "length",
+                  "path": "$.response.status",
+                  "operator": "eq",
+                  "value": 200
+                },
+                {
+                  "count": "$.response.body.profile.posts",
+                  "operator": "eq",
                   "value": 2
                 }
               ]
@@ -131,10 +147,14 @@
           "assertions": [
             {
               "assertions": [
-                { "path": "response.status", "operator": "eq", "value": 200 },
                 {
-                  "path": "response.body.posts",
-                  "operator": "length",
+                  "path": "$.response.status",
+                  "operator": "eq",
+                  "value": 200
+                },
+                {
+                  "count": "$.response.body.posts",
+                  "operator": "eq",
                   "value": 4
                 }
               ]
@@ -151,7 +171,11 @@
           "assertions": [
             {
               "assertions": [
-                { "path": "data[0].count", "operator": "eq", "value": 2 }
+                {
+                  "path": "$.response.data[0].count",
+                  "operator": "eq",
+                  "value": 2
+                }
               ]
             }
           ]

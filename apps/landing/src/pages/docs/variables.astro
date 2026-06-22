@@ -8,11 +8,15 @@ import CodeBlock from '../../components/CodeBlock.astro';
   <p class="subtitle">Define test data upfront and extract runtime values to chain multi-step workflows.</p>
 
   <h2>Defining variables</h2>
-  <p>Variables are key-value pairs defined at the definition level or test level:</p>
+  <p>Variables are key-value pairs defined at the definition level or test level. Values can be any JSON type — strings, numbers, booleans, arrays, or objects:</p>
   <CodeBlock code={`{
   "name": "my-suite",
   "variables": {
-    "baseEmail": "test@example.com"
+    "baseEmail": "test@example.com",
+    "retryCount": 3,
+    "enableAuth": true,
+    "allowedRoles": ["admin", "editor"],
+    "defaultUser": { "name": "Alice", "email": "alice@example.com" }
   },
   "tests": [
     {
@@ -38,10 +42,22 @@ import CodeBlock from '../../components/CodeBlock.astro';
       <tr><td>Action body (string values)</td><td><code>"email": "&#123;&#123;email&#125;&#125;"</code></td></tr>
       <tr><td>Database queries</td><td><code>"query": "SELECT * FROM users WHERE id = &#123;&#123;userId&#125;&#125;"</code></td></tr>
       <tr><td>Assertion values</td><td><code>"value": "&#123;&#123;email&#125;&#125;"</code></td></tr>
-      <tr><td>Match block fields</td><td><code>"url": "user-service/&#123;&#123;path&#125;&#125;"</code></td></tr>
+      <tr><td>Match where values</td><td><code>"value": "user-service/&#123;&#123;path&#125;&#125;"</code></td></tr>
       <tr><td>Console log messages</td><td><code>"value": "User &#123;&#123;userId&#125;&#125; created"</code></td></tr>
     </tbody>
   </table>
+
+  <h3>Type preservation</h3>
+  <p>When <code>&#123;&#123;var&#125;&#125;</code> is the <strong>entire value</strong> of a field, the typed value is preserved. When embedded in a larger string, the value is stringified:</p>
+  <ul>
+    <li><code>"value": "&#123;&#123;retryCount&#125;&#125;"</code> — preserves the number <code>3</code></li>
+    <li><code>"url": "api/users/&#123;&#123;userId&#125;&#125;"</code> — stringifies into the URL</li>
+    <li><code>"body": &#123; "filters": "&#123;&#123;filterObj&#125;&#125;" &#125;</code> — preserves the object</li>
+    <li><code>"body": &#123; "label": "Count: &#123;&#123;count&#125;&#125;" &#125;</code> — stringifies to <code>"Count: 3"</code></li>
+  </ul>
+
+  <h3>Dotted path access</h3>
+  <p>Variable references support dotted paths and array indexing: <code>&#123;&#123;user.email&#125;&#125;</code>, <code>&#123;&#123;users[0].name&#125;&#125;</code>, <code>&#123;&#123;config.retries&#125;&#125;</code>.</p>
 
   <h2>Extraction</h2>
   <p>Extract values from responses at runtime using JSONPath expressions:</p>
@@ -54,10 +70,10 @@ import CodeBlock from '../../components/CodeBlock.astro';
     "body": { "email": "{{testEmail}}" }
   },
   "extract": {
-    "userId": "$.body.id",
-    "authToken": "$.headers.x-auth-token",
-    "firstName": "$.body.user.profile.name",
-    "firstItem": "$.body.items[0].id"
+    "userId": "$.response.body.id",
+    "authToken": "$.response.headers.x-auth-token",
+    "firstName": "$.response.body.user.profile.name",
+    "firstItem": "$.response.body.items[0].id"
   }
 }`} lang="json" />
   <p>Extracted values become variables available in all subsequent steps.</p>
@@ -66,9 +82,9 @@ import CodeBlock from '../../components/CodeBlock.astro';
   <p>Extract rules can also be <strong>regex extract objects</strong> — resolve a JSONPath first, then apply a regex pattern to pull out a substring:</p>
   <CodeBlock code={`{
   "extract": {
-    "userId": "$.body.id",
+    "userId": "$.response.body.id",
     "correlationId": {
-      "path": "$.body.message",
+      "path": "$.response.body.message",
       "pattern": "correlation_id=([a-f0-9-]+)",
       "group": 1
     }
@@ -95,35 +111,39 @@ import CodeBlock from '../../components/CodeBlock.astro';
   <h3>Extract paths</h3>
   <p>For HTTP responses:</p>
   <ul>
-    <li><code>$.body.field</code> — response body field</li>
-    <li><code>$.statusCode</code> — HTTP status code</li>
-    <li><code>$.headers.header-name</code> — response header (case-insensitive)</li>
-    <li><code>$.body.nested.field</code> — nested access</li>
-    <li><code>$.body.array[0]</code> — array index</li>
+    <li><code>$.response.body.field</code> — response body field</li>
+    <li><code>$.response.status</code> — HTTP status code</li>
+    <li><code>$.response.headers.header-name</code> — response header (case-insensitive)</li>
+    <li><code>$.response.body.nested.field</code> — nested access</li>
+    <li><code>$.response.body.array[0]</code> — array index</li>
   </ul>
   <p>For database query results:</p>
   <ul>
-    <li><code>$.data[0].field</code> — column from a result row</li>
-    <li><code>$.success</code> — whether the query succeeded</li>
+    <li><code>$.response.data[0].field</code> — column from a result row</li>
+    <li><code>$.response.success</code> — whether the query succeeded</li>
   </ul>
 
   <div class="callout">
-    <p><strong>Extract paths vs assertion paths.</strong> Extract paths use a flat document (<code>$.body.field</code>). Assertion paths use a nested format (<code>response.body.field</code>). Don't mix them — see <a href="/docs/assertions">Assertions</a> for assertion path syntax.</p>
+    <p><strong>Unified root context.</strong> Extract and assertion paths use the same unified root context. See <a href="/docs/assertions">Assertions</a> for the full path reference.</p>
   </div>
 
   <h2>Extraction in assertion blocks</h2>
   <p>You can also extract values from within assertion blocks — useful for capturing values from intercepted inter-service traffic:</p>
   <CodeBlock code={`{
   "match": {
-    "origin": "api-gateway",
-    "method": "POST",
-    "url": "order-service/api/orders"
+    "path": "$.traffic",
+    "where": [
+      { "path": "$$.origin", "operator": "eq", "value": "api-gateway" },
+      { "path": "$$.request.method", "operator": "eq", "value": "POST" },
+      { "path": "$$.request.url", "operator": "contains", "value": "order-service/api/orders" }
+    ],
+    "count": 1
   },
   "extract": {
-    "internalOrderId": "$.response.body.orderId"
+    "internalOrderId": "$.match.response.body.orderId"
   },
   "assertions": [
-    { "path": "response.status", "operator": "eq", "value": 201 }
+    { "path": "$.match.response.status", "operator": "eq", "value": 201 }
   ]
 }`} lang="json" />
 
@@ -162,7 +182,7 @@ import CodeBlock from '../../components/CodeBlock.astro';
 }`} lang="json" />
 
   <div class="nav-links">
-    <a href="/docs/actions">← Actions</a>
+    <a href="/docs/loops">← Loops</a>
     <a href="/docs/assertions">Assertions →</a>
   </div>
 </DocsLayout>

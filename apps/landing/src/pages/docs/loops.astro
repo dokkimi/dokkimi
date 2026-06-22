@@ -1,0 +1,282 @@
+---
+import DocsLayout from '../../layouts/DocsLayout.astro';
+import CodeBlock from '../../components/CodeBlock.astro';
+---
+
+<DocsLayout title="Loops — Dokkimi Docs" description="Iterate over data, repeat numeric ranges, and poll until conditions are met.">
+  <h1>Loops</h1>
+  <p class="subtitle">Iterate over data, repeat numeric ranges, and poll until conditions are met.</p>
+
+  <h2>Loop modifiers</h2>
+  <p>Dokkimi provides three loop types: <code>forEach</code> iterates over arrays, <code>for</code> counts through numeric ranges, and <code>repeat</code> runs a fixed number of times with optional early exit. Each can be added at the test, step, action, assertion-block, or UI sub-step level.</p>
+
+  <h2>forEach</h2>
+  <p>Iterate over an array of items. Each iteration binds the current item to a variable you specify with <code>as</code>.</p>
+
+  <table>
+    <thead>
+      <tr><th>Field</th><th>Type</th><th>Required</th><th>Description</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>items</code></td><td>array or string</td><td>Yes</td><td>Inline array, <code>&#123;&#123;variable&#125;&#125;</code> reference, or <code>$.response.body.path</code></td></tr>
+      <tr><td><code>as</code></td><td>string</td><td>Yes</td><td>Variable name for the current item</td></tr>
+      <tr><td><code>delayMs</code></td><td>integer</td><td>No</td><td>Milliseconds to wait between iterations</td></tr>
+    </tbody>
+  </table>
+
+  <p>Step-level forEach example:</p>
+  <CodeBlock code={`{
+  "name": "Verify user {{user.name}}",
+  "forEach": {
+    "items": [
+      { "name": "Alice", "email": "alice@test.com" },
+      { "name": "Bob", "email": "bob@test.com" }
+    ],
+    "as": "user"
+  },
+  "action": {
+    "type": "httpRequest",
+    "method": "GET",
+    "url": "api-gateway/api/users?email={{user.email}}"
+  },
+  "assertions": [
+    {
+      "assertions": [
+        { "path": "$.response.body.name", "operator": "eq", "value": "{{user.name}}" }
+      ]
+    }
+  ]
+}`} lang="json" />
+
+  <p>To access loop metadata (index, items array), add an optional <code>name</code> to the loop. The named variable exposes <code>&#123;&#123;name.index&#125;&#125;</code> (0-based) and <code>&#123;&#123;name.items&#125;&#125;</code> (the full items array).</p>
+
+  <p>You can reference a variable instead of an inline array:</p>
+  <CodeBlock code={`"forEach": {
+  "items": "{{users}}",
+  "as": "user"
+}`} lang="json" />
+
+  <h2>for</h2>
+  <p>Count through a numeric range. The range is inclusive of both <code>from</code> and <code>to</code>.</p>
+
+  <table>
+    <thead>
+      <tr><th>Field</th><th>Type</th><th>Required</th><th>Description</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>from</code></td><td>integer</td><td>Yes</td><td>Start value</td></tr>
+      <tr><td><code>to</code></td><td>integer</td><td>Yes</td><td>End value (inclusive)</td></tr>
+      <tr><td><code>step</code></td><td>integer</td><td>No</td><td>Increment per iteration (defaults to 1). Use negative step for descending ranges.</td></tr>
+      <tr><td><code>as</code></td><td>string</td><td>Yes</td><td>Variable name for the current value</td></tr>
+      <tr><td><code>delayMs</code></td><td>integer</td><td>No</td><td>Milliseconds to wait between iterations</td></tr>
+    </tbody>
+  </table>
+
+  <CodeBlock code={`{
+  "name": "Seed user {{i}}",
+  "for": { "from": 1, "to": 5, "as": "i" },
+  "action": {
+    "type": "httpRequest",
+    "method": "POST",
+    "url": "api-gateway/api/users",
+    "body": { "name": "user-{{i}}" }
+  }
+}`} lang="json" />
+
+  <p>If <code>from</code> is greater than <code>to</code>, you must provide a negative <code>step</code> explicitly (e.g. <code>"step": -1</code>). Omitting <code>step</code> when <code>from &gt; to</code> is a validation error.</p>
+
+  <h2>repeat</h2>
+  <p>Run a fixed number of times with an optional early-exit condition. Useful for polling until a condition is met.</p>
+
+  <table>
+    <thead>
+      <tr><th>Field</th><th>Type</th><th>Required</th><th>Description</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>count</code></td><td>integer</td><td>Yes</td><td>Maximum number of iterations</td></tr>
+      <tr><td><code>as</code></td><td>string</td><td>Yes</td><td>Variable name for the iteration counter (0-based)</td></tr>
+      <tr><td><code>delayMs</code></td><td>integer</td><td>No</td><td>Milliseconds to wait between iterations</td></tr>
+      <tr><td><code>until</code></td><td>array of assertions</td><td>No</td><td>Checked after each iteration; all must pass to stop early</td></tr>
+    </tbody>
+  </table>
+
+  <p>Polling example:</p>
+  <CodeBlock code={`{
+  "name": "Wait for job to complete (attempt {{attempt}})",
+  "repeat": {
+    "count": 10,
+    "as": "attempt",
+    "delayMs": 500,
+    "until": [
+      { "path": "$.response.body.status", "operator": "eq", "value": "done" }
+    ]
+  },
+  "action": {
+    "type": "httpRequest",
+    "method": "GET",
+    "url": "api-gateway/api/jobs/{{jobId}}"
+  }
+}`} lang="json" />
+
+  <p>The loop always executes at least once. The <code>until</code> assertions are evaluated after each iteration, so the action runs before the exit condition is checked.</p>
+
+  <h2>Loop result variables</h2>
+  <p>When a loop has a <code>name</code>, result metadata is set on the named variable after the loop completes:</p>
+  <table>
+    <thead>
+      <tr><th>Variable</th><th>Type</th><th>Description</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>&#123;&#123;name.completed&#125;&#125;</code></td><td>boolean</td><td><code>true</code> if the loop finished normally or <code>until</code> triggered; <code>false</code> if a <code>repeat</code> exhausted all iterations without <code>until</code> matching</td></tr>
+      <tr><td><code>&#123;&#123;name.iterations&#125;&#125;</code></td><td>number</td><td>How many iterations actually ran</td></tr>
+    </tbody>
+  </table>
+  <p>Use these in a subsequent step to verify polling behavior:</p>
+  <CodeBlock code={`{
+  "name": "Poll until ready",
+  "repeat": {
+    "count": 10, "as": "attempt", "name": "pollLoop",
+    "delayMs": 500,
+    "until": [{ "path": "$.response.body.status", "operator": "eq", "value": "done" }]
+  },
+  "action": { "type": "httpRequest", "method": "GET", "url": "api/jobs/{{jobId}}" }
+},
+{
+  "name": "Verify polling completed",
+  "action": { "type": "wait", "durationMs": 10 },
+  "assertions": [
+    {
+      "assertions": [
+        { "path": "$.variables.pollLoop.completed", "operator": "eq", "value": true }
+      ]
+    }
+  ]
+}`} lang="json" />
+
+  <h2>stopOnFailure interaction</h2>
+  <p>By default, a failed assertion in any loop iteration stops the loop immediately. Set <code>"stopOnFailure": false</code> on the step to collect all iteration failures without halting:</p>
+  <CodeBlock code={`{
+  "name": "Verify all users (collect failures)",
+  "stopOnFailure": false,
+  "forEach": {
+    "items": "{{users}}",
+    "as": "user"
+  },
+  "action": { "type": "httpRequest", "method": "GET", "url": "api/users/{{user.id}}" },
+  "assertions": [
+    { "assertions": [{ "path": "$.response.status", "operator": "eq", "value": 200 }] }
+  ]
+}`} lang="json" />
+
+  <h2>Where loops can be used</h2>
+  <p>Loops can be applied at multiple levels of a test definition:</p>
+
+  <table>
+    <thead>
+      <tr><th>Level</th><th>Where</th><th>Effect</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>Test-level</td><td><code>forEach</code>/<code>for</code>/<code>repeat</code> on a test</td><td>All steps repeat per iteration</td></tr>
+      <tr><td>Step-level</td><td><code>forEach</code>/<code>for</code>/<code>repeat</code> on a step</td><td>Action + extract + assertions repeat per iteration</td></tr>
+      <tr><td>Action-level</td><td><code>forEach</code>/<code>for</code>/<code>repeat</code> inside an action</td><td>Only the action repeats; extract + assertions run once after</td></tr>
+      <tr><td>Assertion-block</td><td><code>forEach</code> on an assertion block</td><td>Assertions nested inside the loop body run once per item</td></tr>
+      <tr><td>UI sub-step group</td><td><code>forEach</code>/<code>for</code>/<code>repeat</code> with nested <code>steps</code> inside a UI action</td><td>Sub-steps repeat per iteration</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Test-level loop</h3>
+  <CodeBlock code={`{
+  "name": "Verify order {{order.id}}",
+  "forEach": {
+    "items": "{{orders}}",
+    "as": "order"
+  },
+  "steps": [
+    { "name": "Check status", "action": { "..." : "..." } },
+    { "name": "Verify in DB", "action": { "..." : "..." } }
+  ]
+}`} lang="json" />
+
+  <h3>Action-level loop</h3>
+  <CodeBlock code={`{
+  "name": "Seed users",
+  "action": {
+    "type": "httpRequest",
+    "method": "POST",
+    "url": "api-gateway/api/users",
+    "body": { "name": "user-{{i}}" },
+    "for": { "from": 1, "to": 5, "as": "i" }
+  },
+  "extract": {
+    "lastUserId": "$.response.body.id"
+  }
+}`} lang="json" />
+
+  <h3>Assertion-block loop</h3>
+  <p>When a <code>forEach</code> is used inside an assertion block, the assertions are nested inside the loop object:</p>
+  <CodeBlock code={`{
+  "assertions": [
+    {
+      "forEach": {
+        "items": "$.response.body.users",
+        "as": "user",
+        "assertions": [
+          { "path": "$.variables.user.email", "operator": "exists" },
+          { "path": "$.variables.user.active", "operator": "eq", "value": true }
+        ]
+      }
+    }
+  ]
+}`} lang="json" />
+
+  <h3>UI sub-step group</h3>
+  <CodeBlock code={`{
+  "forEach": {
+    "items": ["bad@", "", "missing-dot"],
+    "as": "email"
+  },
+  "steps": [
+    { "type": { "selector": "#email", "text": "{{email}}" } },
+    { "click": "#submit" },
+    { "waitFor": "[data-testid='error']" }
+  ]
+}`} lang="json" />
+
+  <h2>Extract transform</h2>
+  <p>You can convert objects to arrays for iteration using <code>transform</code> in extract rules:</p>
+  <CodeBlock code={`{
+  "extract": {
+    "configKeys": {
+      "path": "$.response.body.settings",
+      "transform": "keys"
+    }
+  }
+}`} lang="json" />
+
+  <p>Three transform types are available:</p>
+  <table>
+    <thead>
+      <tr><th>Transform</th><th>Output</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>keys</code></td><td>Array of key strings</td></tr>
+      <tr><td><code>values</code></td><td>Array of values</td></tr>
+      <tr><td><code>entries</code></td><td>Array of <code>&#123; key, value &#125;</code> objects</td></tr>
+    </tbody>
+  </table>
+
+  <p>You can also use <code>from</code> instead of <code>path</code> to transform a variable reference:</p>
+  <CodeBlock code={`{
+  "extract": {
+    "fieldNames": {
+      "from": "{{userTemplate}}",
+      "transform": "keys"
+    }
+  }
+}`} lang="json" />
+
+  <div class="nav-links">
+    <a href="/docs/actions">&larr; Actions</a>
+    <a href="/docs/variables">Variables &rarr;</a>
+  </div>
+</DocsLayout>

@@ -51,7 +51,7 @@ export interface DeployableDefinition {
   description?: string | null;
   items: DefinitionItem[];
   tests?: TestDefinition[];
-  variables?: Record<string, string>;
+  variables?: Record<string, unknown>;
   config?: DefinitionConfig;
 }
 

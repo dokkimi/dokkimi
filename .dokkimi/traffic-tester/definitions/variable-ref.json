@@ -39,12 +39,12 @@
             {
               "assertions": [
                 {
-                  "path": "success",
+                  "path": "$.response.success",
                   "operator": "eq",
                   "value": true
                 },
                 {
-                  "path": "data[0].name",
+                  "path": "$.response.data[0].name",
                   "operator": "eq",
                   "value": "{{expectedName}}"
                 }
@@ -72,7 +72,7 @@
             {
               "assertions": [
                 {
-                  "path": "success",
+                  "path": "$.response.success",
                   "operator": "eq",
                   "value": true
                 }
@@ -112,7 +112,7 @@
             {
               "assertions": [
                 {
-                  "path": "response.status",
+                  "path": "$.response.status",
                   "operator": "eq",
                   "value": 200
                 }

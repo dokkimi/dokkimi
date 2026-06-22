@@ -1,0 +1,277 @@
+{
+  "name": "assertion-block-foreach-and-extract-transform",
+  "description": "Validates assertion-block-level forEach and extract transform (keys/values/entries)",
+  "items": [
+    { "$ref": "../shared/api-service.json" },
+    {
+      "$ref": "../shared/postgres-db.json",
+      "initFilePath": "../init-files/schema.sql"
+    }
+  ],
+  "tests": [
+    {
+      "name": "Assertion-block forEach over response array",
+      "steps": [
+        {
+          "name": "Get all posts and validate each",
+          "action": {
+            "type": "httpRequest",
+            "method": "GET",
+            "url": "api-service/api/posts"
+          },
+          "assertions": [
+            {
+              "assertions": [
+                { "path": "$.response.status", "operator": "eq", "value": 200 },
+                {
+                  "count": "$.response.body.posts",
+                  "operator": "eq",
+                  "value": 2
+                }
+              ]
+            },
+            {
+              "forEach": {
+                "items": "$.response.body.posts",
+                "as": "post",
+                "assertions": [
+                  {
+                    "path": "$.variables.post.title",
+                    "operator": "notEmpty"
+                  },
+                  {
+                    "path": "$.variables.post.published",
+                    "operator": "eq",
+                    "value": true
+                  },
+                  {
+                    "type": "$.variables.post.id",
+                    "operator": "eq",
+                    "value": "string"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Assertion-block forEach over extracted variable",
+      "steps": [
+        {
+          "name": "Get users from DB",
+          "action": {
+            "type": "dbQuery",
+            "database": "postgres-db",
+            "query": "SELECT id, name, email FROM users"
+          },
+          "extract": {
+            "dbUsers": "$.response.data"
+          },
+          "assertions": [
+            {
+              "assertions": [
+                {
+                  "path": "$.response.success",
+                  "operator": "eq",
+                  "value": true
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "Verify all users have valid data",
+          "action": {
+            "type": "dbQuery",
+            "database": "postgres-db",
+            "query": "SELECT COUNT(*)::int as count FROM users"
+          },
+          "assertions": [
+            {
+              "forEach": {
+                "items": "{{dbUsers}}",
+                "as": "dbUser",
+                "assertions": [
+                  {
+                    "path": "$.variables.dbUser.name",
+                    "operator": "notEmpty"
+                  },
+                  {
+                    "path": "$.variables.dbUser.email",
+                    "operator": "contains",
+                    "value": "@"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Extract transform: keys from post object",
+      "steps": [
+        {
+          "name": "Get a post and extract its field names",
+          "action": {
+            "type": "httpRequest",
+            "method": "GET",
+            "url": "api-service/api/posts/b1b2c3d4-0000-0000-0000-000000000001"
+          },
+          "extract": {
+            "postData": "$.response.body",
+            "postKeys": {
+              "path": "$.response.body",
+              "transform": "keys"
+            }
+          },
+          "assertions": [
+            {
+              "assertions": [
+                { "path": "$.response.status", "operator": "eq", "value": 200 },
+                {
+                  "type": "$.variables.postKeys",
+                  "operator": "eq",
+                  "value": "array"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Extract transform: entries then iterate",
+      "steps": [
+        {
+          "name": "Get first user from DB and transform to entries",
+          "action": {
+            "type": "dbQuery",
+            "database": "postgres-db",
+            "query": "SELECT name, email FROM users LIMIT 1"
+          },
+          "extract": {
+            "userData": "$.response.data[0]",
+            "userEntries": {
+              "path": "$.response.data[0]",
+              "transform": "entries"
+            }
+          }
+        },
+        {
+          "name": "Verify each user field {{entry.key}} is not empty",
+          "forEach": {
+            "items": "{{userEntries}}",
+            "as": "entry",
+            "action": {
+              "type": "httpRequest",
+              "method": "GET",
+              "url": "api-service/health"
+            },
+            "assertions": [
+              {
+                "assertions": [
+                  {
+                    "path": "$.variables.entry.value",
+                    "operator": "notEmpty"
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Extract transform: from variable reference",
+      "variables": {
+        "postTemplate": {
+          "title": "string",
+          "content": "string",
+          "published": "boolean"
+        }
+      },
+      "steps": [
+        {
+          "name": "Transform variable to keys for iteration",
+          "action": {
+            "type": "wait",
+            "durationMs": 10
+          },
+          "extract": {
+            "fieldNames": {
+              "from": "{{postTemplate}}",
+              "transform": "keys"
+            }
+          }
+        },
+        {
+          "name": "Verify all fields are present in post response",
+          "action": {
+            "type": "httpRequest",
+            "method": "GET",
+            "url": "api-service/api/posts/b1b2c3d4-0000-0000-0000-000000000001"
+          },
+          "assertions": [
+            {
+              "forEach": {
+                "items": "{{fieldNames}}",
+                "as": "field",
+                "assertions": [
+                  {
+                    "path": "$.response.body.{{field}}",
+                    "operator": "exists"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Extract transform: values from DB row",
+      "steps": [
+        {
+          "name": "Get first user and extract values",
+          "action": {
+            "type": "dbQuery",
+            "database": "postgres-db",
+            "query": "SELECT name, email FROM users LIMIT 1"
+          },
+          "extract": {
+            "userValues": {
+              "path": "$.response.data[0]",
+              "transform": "values"
+            }
+          }
+        },
+        {
+          "name": "Verify extracted values array is not empty",
+          "action": {
+            "type": "wait",
+            "durationMs": 10
+          },
+          "assertions": [
+            {
+              "assertions": [
+                {
+                  "type": "$.variables.userValues",
+                  "operator": "eq",
+                  "value": "array"
+                },
+                {
+                  "count": "$.variables.userValues",
+                  "operator": "eq",
+                  "value": 2
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

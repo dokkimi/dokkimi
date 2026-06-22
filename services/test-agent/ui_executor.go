@@ -174,6 +174,13 @@ func (e *UIStepExecutor) Execute(
 	extracted := map[string]interface{}{}
 
 	for i, sub := range action.Steps {
+		if sub.IsGroup {
+			if err := e.runSubStepGroup(ctx, driver, extractor, sub, baseURL, extracted, stepIndex, i, stepName, target); err != nil {
+				return nil, err
+			}
+			continue
+		}
+
 		selector := subStepSelector(sub)
 		pos := SubStepPosition{StepIndex: stepIndex, SubStepIndex: i}
 		start := time.Now()
@@ -471,6 +478,52 @@ func (e *UIStepExecutor) runSubStep(
 	default:
 		return fmt.Errorf("unknown sub-step kind %q", sub.Kind)
 	}
+}
+
+// runSubStepGroup executes a UI sub-step group (loop modifier + nested steps).
+func (e *UIStepExecutor) runSubStepGroup(
+	ctx context.Context,
+	driver UIDriver,
+	extractor *UIExtractor,
+	group UISubStep,
+	baseURL string,
+	extracted map[string]interface{},
+	stepIndex, subStepIndex int,
+	stepName, target string,
+) error {
+	plan, err := buildIterationPlan(group.ForEach, group.For, group.Repeat, e.varCtx)
+	if err != nil {
+		return err
+	}
+
+	_, loopErr := runLoop(plan, e.varCtx, func(iterIdx int, iter Iteration) (map[string]interface{}, error) {
+		iter.SetupFn()
+		log.Printf("UI sub-step group iteration %d %s", iterIdx, iter.Label)
+
+		for j, sub := range group.Steps {
+			selector := subStepSelector(sub)
+			pos := SubStepPosition{StepIndex: stepIndex, SubStepIndex: subStepIndex*100_000_000 + iterIdx*10_000 + j}
+			start := time.Now()
+			e.logger.LogUISubStepStarted(stepIndex, pos.SubStepIndex, string(sub.Kind), selector, target)
+
+			err := e.runSubStep(ctx, driver, extractor, sub, baseURL, extracted, pos, stepName)
+			dur := int(time.Since(start).Milliseconds())
+			e.logger.LogUISubStepCompleted(stepIndex, pos.SubStepIndex, string(sub.Kind), selector, dur, err)
+
+			if err != nil {
+				failureName := buildFailureName(stepName, sub)
+				e.captureFailureArtifacts(ctx, driver, pos, failureName)
+				return nil, fmt.Errorf(
+					"ui target=%s step=%d group[%d] iter=%d sub[%d/%s]: %w",
+					target, stepIndex, subStepIndex, iterIdx, j, sub.Kind, err,
+				)
+			}
+		}
+
+		return nil, nil
+	})
+
+	return loopErr
 }
 
 // captureFailureArtifacts grabs a screenshot + page HTML at the moment of

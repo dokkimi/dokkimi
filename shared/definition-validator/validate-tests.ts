@@ -19,6 +19,11 @@ import {
   validateExtractRules,
 } from './validate-assertions';
 import { validateUiAction } from './validate-ui-action';
+import {
+  validateLoopModifiers,
+  validateLoopSiblingConflicts,
+  validateTestLoopSiblingConflicts,
+} from './validate-loops';
 
 // ---------------------------------------------------------------------------
 // Variable $ref resolution
@@ -30,7 +35,7 @@ export function resolveVariablesRef(
   r: ValidationResult,
   fs: FileSystem,
   _visited?: Set<string>,
-): Record<string, string> | null {
+): Record<string, unknown> | null {
   const visited = _visited ?? new Set([path.resolve(sourceFilePath)]);
 
   if (visited.size > MAX_REF_DEPTH) {
@@ -45,9 +50,9 @@ export function resolveVariablesRef(
 
   // If no $ref, just pass through (will be validated by caller)
   if (refValue === undefined) {
-    const result: Record<string, string> = {};
+    const result: Record<string, unknown> = {};
     for (const [key, value] of Object.entries(inlineKeys)) {
-      result[key] = value as string;
+      result[key] = value;
     }
     return result;
   }
@@ -64,7 +69,7 @@ export function resolveVariablesRef(
   }
 
   // Resolve and merge left-to-right
-  const merged: Record<string, string> = {};
+  const merged: Record<string, unknown> = {};
   let hasError = false;
 
   for (const ref of refs) {
@@ -116,14 +121,6 @@ export function resolveVariablesRef(
       }
 
       for (const [key, value] of Object.entries(obj)) {
-        if (typeof value !== 'string') {
-          err(
-            r,
-            `variables.$ref "${ref}": value for "${key}" must be a string, got ${typeof value}`,
-          );
-          hasError = true;
-          continue;
-        }
         if (!/^\w+$/.test(key)) {
           err(
             r,
@@ -146,7 +143,7 @@ export function resolveVariablesRef(
 
   // Inline keys override refs
   for (const [key, value] of Object.entries(inlineKeys)) {
-    merged[key] = value as string;
+    merged[key] = value;
   }
 
   return merged;
@@ -185,11 +182,8 @@ export function validateVariablesField(
         `${ctx}.variables: key "${key}" must be alphanumeric (letters, digits, underscores)`,
       );
     }
-    if (typeof value !== 'string') {
-      err(
-        r,
-        `${ctx}.variables: value for "${key}" must be a string, got ${typeof value}`,
-      );
+    if (value === undefined) {
+      err(r, `${ctx}.variables: value for "${key}" must not be undefined`);
     }
   }
 }
@@ -210,8 +204,19 @@ export function validateStep(
 
   checkUnknownKeys(step, VALID_STEP_KEYS, ctx, r);
 
+  // When a step-level loop is present, action lives inside the loop body
+  const hasLoopModifier =
+    step.forEach !== undefined ||
+    step.for !== undefined ||
+    step.repeat !== undefined;
+
   if (!step.action || typeof step.action !== 'object') {
-    err(r, `${ctx}: missing "action" object`);
+    if (!hasLoopModifier) {
+      err(r, `${ctx}: missing "action" object`);
+    }
+    // Validate loop modifiers and siblings even without step-level action
+    validateLoopModifiers(step, ctx, r);
+    validateLoopSiblingConflicts(step, ctx, r);
     return;
   }
 
@@ -288,6 +293,38 @@ export function validateStep(
     err(r, `${ctx}.action: missing "type"`);
   }
 
+  // Validate loop modifiers on the step itself.
+  validateLoopModifiers(step, ctx, r);
+  validateLoopSiblingConflicts(step, ctx, r);
+
+  // Validate loop modifiers on the action (action-level loops).
+  if (action.type !== 'parallel' && action.type !== 'ui') {
+    validateLoopModifiers(action, `${ctx}.action`, r);
+  }
+
+  if (action.type === 'parallel') {
+    if (step.extract !== undefined) {
+      warn(
+        r,
+        `${ctx}: "extract" on a parallel step will always receive an empty response — parallel actions do not produce an extraction document`,
+      );
+    }
+    if (
+      Array.isArray(step.assertions) &&
+      step.assertions.some(
+        (b: unknown) =>
+          typeof b === 'object' &&
+          b !== null &&
+          !('match' in (b as Record<string, unknown>)),
+      )
+    ) {
+      warn(
+        r,
+        `${ctx}: self-block assertions on a parallel step will always receive an empty response — use "match" blocks to assert against individual sub-action traffic`,
+      );
+    }
+  }
+
   if (step.extract !== undefined) {
     validateExtractRules(step.extract, ctx, r);
   }
@@ -298,9 +335,11 @@ export function validateStep(
     } else {
       for (let ai = 0; ai < step.assertions.length; ai++) {
         const block = step.assertions[ai] as Record<string, unknown>;
-        if (block && typeof block === 'object') {
-          validateAssertionBlock(block, `${ctx}.assertions[${ai}]`, r);
+        if (!block || typeof block !== 'object' || Array.isArray(block)) {
+          err(r, `${ctx}.assertions[${ai}]: must be an object`);
+          continue;
         }
+        validateAssertionBlock(block, `${ctx}.assertions[${ai}]`, r);
       }
     }
   }
@@ -345,6 +384,10 @@ export function validateTests(
 
     validateVariablesField(test.variables, ctx, filePath, r, fs);
 
+    // Validate loop modifiers on the test itself.
+    validateLoopModifiers(test, ctx, r, { level: 'test' });
+    validateTestLoopSiblingConflicts(test, ctx, r);
+
     if (test.steps !== undefined) {
       if (!Array.isArray(test.steps)) {
         err(r, `${ctx}: "steps" must be an array`);
@@ -355,6 +398,30 @@ export function validateTests(
             `${ctx}.steps[${si}]`,
             r,
           );
+        }
+
+        // Warn if test-level repeat has until but the last step is a wait action,
+        // since until evaluates against the last step's response (which is nil for wait).
+        if (
+          test.repeat !== undefined &&
+          typeof test.repeat === 'object' &&
+          !Array.isArray(test.repeat) &&
+          (test.repeat as Record<string, unknown>).until !== undefined &&
+          test.steps.length > 0
+        ) {
+          const lastStep = test.steps[test.steps.length - 1] as Record<
+            string,
+            unknown
+          >;
+          const action = lastStep?.action as
+            | Record<string, unknown>
+            | undefined;
+          if (action?.type === 'wait') {
+            warn(
+              r,
+              `${ctx}: test-level "repeat.until" evaluates against the last step's response, but the last step is a "wait" action (which produces no response) — the until condition will never match a $.response.* path`,
+            );
+          }
         }
 
         // Cross-step uniqueness for artifact names. The artifact pipeline

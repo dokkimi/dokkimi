@@ -1,3 +1,5 @@
+> **Superseded** by [`docs/proposed/consistent-root-document.md`](../proposed/consistent-root-document.md) — the match engine, where-based filtering, and source transforms replace the prior assertion model.
+
 # Design: Inline Assertion Validation in Test-Agent
 
 ## Problem

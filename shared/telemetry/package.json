@@ -1,6 +1,6 @@
 {
   "name": "@dokkimi/telemetry",
-  "version": "0.4.2",
+  "version": "0.5.0",
   "license": "Elastic-2.0",
   "description": "Shared telemetry module for Dokkimi CLI and services",
   "main": "dist/index.js",
@@ -13,10 +13,10 @@
   "dependencies": {
     "@dokkimi/config": "workspace:*",
     "@dokkimi/platform": "workspace:*",
-    "posthog-node": "^5.0.0"
+    "posthog-node": "^5.38.2"
   },
   "devDependencies": {
-    "@types/node": "^25.6.2",
+    "@types/node": "^26.0.0",
     "typescript": "^6.0.3"
   }
 }

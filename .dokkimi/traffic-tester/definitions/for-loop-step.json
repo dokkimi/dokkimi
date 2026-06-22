@@ -1,0 +1,375 @@
+{
+  "name": "for-loop-step",
+  "description": "Exercises for loop with step > 1 (skipping iterations), negative step (descending), and repeat with until using {{variable}} template syntax in the until assertion",
+  "config": {
+    "timeoutSeconds": 120
+  },
+  "items": [
+    {
+      "$ref": "../shared/service-a.yaml"
+    }
+  ],
+  "tests": [
+    {
+      "name": "for loop with step=2 — iterate even indices",
+      "steps": [
+        {
+          "name": "POST iteration {{i}} (step=2, expect 0,2,4,6,8)",
+          "for": {
+            "from": 0,
+            "to": 8,
+            "step": 2,
+            "as": "i",
+            "name": "stepTwoLoop",
+            "assertions": [
+              {
+                "assertions": [
+                  {
+                    "path": "$.response.status",
+                    "operator": "eq",
+                    "value": 200
+                  },
+                  {
+                    "path": "$.response.body.index",
+                    "operator": "eq",
+                    "value": "{{i}}"
+                  }
+                ]
+              }
+            ]
+          },
+          "action": {
+            "type": "httpRequest",
+            "method": "POST",
+            "url": "service-a/step-loop",
+            "headers": {
+              "Content-Type": "application/json"
+            },
+            "body": {
+              "response": {
+                "value": {
+                  "index": "{{i}}",
+                  "type": "even"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Verify step-2 loop ran exactly 5 iterations (0,2,4,6,8)",
+          "action": {
+            "type": "httpRequest",
+            "method": "GET",
+            "url": "service-a/health"
+          },
+          "assertions": [
+            {
+              "assertions": [
+                {
+                  "path": "$.response.status",
+                  "operator": "eq",
+                  "value": 200
+                },
+                {
+                  "path": "$.variables.stepTwoLoop.iterations",
+                  "operator": "eq",
+                  "value": 5
+                },
+                {
+                  "path": "$.variables.stepTwoLoop.completed",
+                  "operator": "eq",
+                  "value": true
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "for loop with step=3 — iterate every 3rd value",
+      "steps": [
+        {
+          "name": "POST iteration {{n}} (step=3, expect 1,4,7,10)",
+          "for": {
+            "from": 1,
+            "to": 10,
+            "step": 3,
+            "as": "n",
+            "name": "stepThreeLoop",
+            "assertions": [
+              {
+                "assertions": [
+                  {
+                    "path": "$.response.status",
+                    "operator": "eq",
+                    "value": 200
+                  }
+                ]
+              }
+            ]
+          },
+          "action": {
+            "type": "httpRequest",
+            "method": "POST",
+            "url": "service-a/step-three",
+            "headers": {
+              "Content-Type": "application/json"
+            },
+            "body": {
+              "response": {
+                "value": {
+                  "iteration": "{{n}}"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Verify step-3 loop ran exactly 4 iterations (1,4,7,10)",
+          "action": {
+            "type": "httpRequest",
+            "method": "GET",
+            "url": "service-a/health"
+          },
+          "assertions": [
+            {
+              "assertions": [
+                {
+                  "path": "$.response.status",
+                  "operator": "eq",
+                  "value": 200
+                },
+                {
+                  "path": "$.variables.stepThreeLoop.iterations",
+                  "operator": "eq",
+                  "value": 4
+                },
+                {
+                  "path": "$.variables.stepThreeLoop.completed",
+                  "operator": "eq",
+                  "value": true
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "for loop with negative step — descending iteration",
+      "steps": [
+        {
+          "name": "Descend from 10 to 0 by step=-2 (expect 10,8,6,4,2,0)",
+          "for": {
+            "from": 10,
+            "to": 0,
+            "step": -2,
+            "as": "d",
+            "name": "descendLoop",
+            "assertions": [
+              {
+                "assertions": [
+                  {
+                    "path": "$.response.status",
+                    "operator": "eq",
+                    "value": 200
+                  }
+                ]
+              }
+            ]
+          },
+          "action": {
+            "type": "httpRequest",
+            "method": "POST",
+            "url": "service-a/descend",
+            "headers": {
+              "Content-Type": "application/json"
+            },
+            "body": {
+              "response": {
+                "value": {
+                  "countdown": "{{d}}"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Verify descending loop ran 6 iterations",
+          "action": {
+            "type": "httpRequest",
+            "method": "GET",
+            "url": "service-a/health"
+          },
+          "assertions": [
+            {
+              "assertions": [
+                {
+                  "path": "$.response.status",
+                  "operator": "eq",
+                  "value": 200
+                },
+                {
+                  "path": "$.variables.descendLoop.iterations",
+                  "operator": "eq",
+                  "value": 6
+                },
+                {
+                  "path": "$.variables.descendLoop.completed",
+                  "operator": "eq",
+                  "value": true
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "repeat with until using {{variable}} — poll until extracted value matches",
+      "variables": {
+        "targetStatus": "ready"
+      },
+      "steps": [
+        {
+          "name": "Poll service-a until response status is {{targetStatus}} (attempt {{attempt}})",
+          "repeat": {
+            "count": 5,
+            "as": "attempt",
+            "name": "pollUntilReady",
+            "delayMs": 100,
+            "until": [
+              {
+                "path": "$.response.body.status",
+                "operator": "eq",
+                "value": "{{targetStatus}}"
+              }
+            ]
+          },
+          "stopOnFailure": false,
+          "action": {
+            "type": "httpRequest",
+            "method": "POST",
+            "url": "service-a/poll-status",
+            "headers": {
+              "Content-Type": "application/json"
+            },
+            "body": {
+              "response": {
+                "value": {
+                  "status": "ready",
+                  "attempt": "{{attempt}}"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Verify the poll loop completed via until on first try",
+          "action": {
+            "type": "httpRequest",
+            "method": "GET",
+            "url": "service-a/health"
+          },
+          "assertions": [
+            {
+              "assertions": [
+                {
+                  "path": "$.response.status",
+                  "operator": "eq",
+                  "value": 200
+                },
+                {
+                  "path": "$.variables.pollUntilReady.completed",
+                  "operator": "eq",
+                  "value": true
+                },
+                {
+                  "path": "$.variables.pollUntilReady.iterations",
+                  "operator": "gte",
+                  "value": 1
+                },
+                {
+                  "path": "$.variables.pollUntilReady.iterations",
+                  "operator": "lte",
+                  "value": 5
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "repeat with until — does not match, exhausts count",
+      "variables": {
+        "impossibleStatus": "never-gonna-match"
+      },
+      "steps": [
+        {
+          "name": "Poll for impossible status {{impossibleStatus}} (attempt {{try}})",
+          "repeat": {
+            "count": 3,
+            "as": "try",
+            "name": "exhaustedPoll",
+            "delayMs": 50,
+            "until": [
+              {
+                "path": "$.response.body.status",
+                "operator": "eq",
+                "value": "{{impossibleStatus}}"
+              }
+            ]
+          },
+          "stopOnFailure": false,
+          "action": {
+            "type": "httpRequest",
+            "method": "POST",
+            "url": "service-a/poll-exhaust",
+            "headers": {
+              "Content-Type": "application/json"
+            },
+            "body": {
+              "response": {
+                "value": {
+                  "status": "pending",
+                  "attempt": "{{try}}"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Verify the poll exhausted all 3 attempts without completing",
+          "action": {
+            "type": "httpRequest",
+            "method": "GET",
+            "url": "service-a/health"
+          },
+          "assertions": [
+            {
+              "assertions": [
+                {
+                  "path": "$.response.status",
+                  "operator": "eq",
+                  "value": 200
+                },
+                {
+                  "path": "$.variables.exhaustedPoll.completed",
+                  "operator": "eq",
+                  "value": false
+                },
+                {
+                  "path": "$.variables.exhaustedPoll.iterations",
+                  "operator": "eq",
+                  "value": 3
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

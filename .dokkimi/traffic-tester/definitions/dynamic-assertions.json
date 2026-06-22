@@ -1,0 +1,376 @@
+{
+  "name": "dynamic-assertions",
+  "description": "Exercises PathWithTransform, ValueRef (dynamic comparison), keys/values/entries source fields, match.as alias, and disabled assertions",
+  "config": {
+    "timeoutSeconds": 120
+  },
+  "items": [
+    {
+      "$ref": "../shared/service-a.yaml"
+    },
+    {
+      "$ref": "../shared/service-b.json"
+    }
+  ],
+  "tests": [
+    {
+      "name": "PathWithTransform — length transform as assertion source",
+      "steps": [
+        {
+          "name": "Echo an array and assert on its length via PathWithTransform",
+          "action": {
+            "type": "httpRequest",
+            "method": "POST",
+            "url": "service-a/echo-transform",
+            "headers": {
+              "Content-Type": "application/json"
+            },
+            "body": {
+              "response": {
+                "value": {
+                  "items": ["alpha", "bravo", "charlie", "delta"],
+                  "metadata": { "source": "test", "version": 2 }
+                }
+              }
+            }
+          },
+          "assertions": [
+            {
+              "assertions": [
+                {
+                  "path": "$.response.status",
+                  "operator": "eq",
+                  "value": 200
+                },
+                {
+                  "path": {
+                    "from": "$.response.body.items",
+                    "transform": "length"
+                  },
+                  "operator": "eq",
+                  "value": 4
+                },
+                {
+                  "path": {
+                    "from": "$.response.body.items",
+                    "transform": "length"
+                  },
+                  "operator": "gt",
+                  "value": 0
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "ValueRef — dynamic expected value from response path",
+      "variables": {
+        "expectedItemCount": 3,
+        "expectedType": "object"
+      },
+      "steps": [
+        {
+          "name": "Echo data with an expected count field and compare dynamically",
+          "action": {
+            "type": "httpRequest",
+            "method": "POST",
+            "url": "service-a/echo-valueref",
+            "headers": {
+              "Content-Type": "application/json"
+            },
+            "body": {
+              "response": {
+                "value": {
+                  "items": ["one", "two", "three"],
+                  "expected": 3,
+                  "label": "test-label",
+                  "labelCopy": "test-label",
+                  "nested": { "key": "value" }
+                }
+              }
+            }
+          },
+          "assertions": [
+            {
+              "assertions": [
+                {
+                  "path": "$.response.status",
+                  "operator": "eq",
+                  "value": 200
+                },
+                {
+                  "count": "$.response.body.items",
+                  "operator": "eq",
+                  "value": {
+                    "from": "$.response.body.expected"
+                  }
+                },
+                {
+                  "path": "$.response.body.label",
+                  "operator": "eq",
+                  "value": {
+                    "from": "$.response.body.labelCopy"
+                  }
+                },
+                {
+                  "count": "$.response.body.items",
+                  "operator": "eq",
+                  "value": {
+                    "from": "$.variables.expectedItemCount"
+                  }
+                },
+                {
+                  "type": "$.response.body.nested",
+                  "operator": "eq",
+                  "value": {
+                    "from": "$.variables.expectedType"
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "keys, values, entries source fields",
+      "steps": [
+        {
+          "name": "Echo a config object and inspect its keys, values, and entries",
+          "action": {
+            "type": "httpRequest",
+            "method": "POST",
+            "url": "service-a/echo-source-fields",
+            "headers": {
+              "Content-Type": "application/json"
+            },
+            "body": {
+              "response": {
+                "value": {
+                  "config": {
+                    "timeout": 30,
+                    "retries": 5,
+                    "debug": true
+                  }
+                }
+              }
+            }
+          },
+          "assertions": [
+            {
+              "assertions": [
+                {
+                  "path": "$.response.status",
+                  "operator": "eq",
+                  "value": 200
+                },
+                {
+                  "keys": "$.response.body.config",
+                  "operator": "contains",
+                  "value": "timeout"
+                },
+                {
+                  "keys": "$.response.body.config",
+                  "operator": "contains",
+                  "value": "retries"
+                },
+                {
+                  "keys": "$.response.body.config",
+                  "operator": "notContains",
+                  "value": "missing"
+                },
+                {
+                  "values": "$.response.body.config",
+                  "operator": "contains",
+                  "value": 30
+                },
+                {
+                  "values": "$.response.body.config",
+                  "operator": "contains",
+                  "value": 5
+                },
+                {
+                  "entries": "$.response.body.config",
+                  "operator": "notEmpty"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "match.as — bind matched traffic to a named variable",
+      "steps": [
+        {
+          "name": "Service-a forwards to service-b and bind the match with as",
+          "action": {
+            "type": "httpRequest",
+            "method": "POST",
+            "url": "service-a/forward-for-as",
+            "headers": {
+              "Content-Type": "application/json"
+            },
+            "body": {
+              "requests": [
+                {
+                  "baseURL": "http://service-b",
+                  "url": "/as-target",
+                  "method": "POST",
+                  "data": {
+                    "response": {
+                      "value": {
+                        "token": "secret-abc-123",
+                        "role": "admin"
+                      }
+                    }
+                  }
+                }
+              ]
+            }
+          },
+          "assertions": [
+            {
+              "assertions": [
+                {
+                  "path": "$.response.status",
+                  "operator": "eq",
+                  "value": 200
+                }
+              ]
+            },
+            {
+              "match": {
+                "path": "$.traffic",
+                "where": [
+                  {
+                    "path": "$$.origin",
+                    "operator": "eq",
+                    "value": "service-a"
+                  },
+                  {
+                    "path": "$$.request.url",
+                    "operator": "contains",
+                    "value": "service-b/as-target"
+                  }
+                ],
+                "count": 1,
+                "as": "serviceCall"
+              },
+              "assertions": [
+                {
+                  "path": "$.match.response.status",
+                  "operator": "eq",
+                  "value": 200
+                },
+                {
+                  "path": "$.match.response.body.token",
+                  "operator": "eq",
+                  "value": "secret-abc-123"
+                },
+                {
+                  "path": "$.match.response.body.token",
+                  "operator": "eq",
+                  "value": {
+                    "from": "$.variables.serviceCall[0].response.body.token"
+                  }
+                },
+                {
+                  "path": "$.match.requestTimelineIndex",
+                  "operator": "exists"
+                },
+                {
+                  "path": "$.match.responseTimelineIndex",
+                  "operator": "exists"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "Verify the as-bound variable is accessible in a subsequent step",
+          "action": {
+            "type": "httpRequest",
+            "method": "GET",
+            "url": "service-a/health"
+          },
+          "assertions": [
+            {
+              "assertions": [
+                {
+                  "path": "$.response.status",
+                  "operator": "eq",
+                  "value": 200
+                },
+                {
+                  "path": "$.variables.serviceCall[0].response.body.token",
+                  "operator": "eq",
+                  "value": "secret-abc-123"
+                },
+                {
+                  "path": "$.variables.serviceCall[0].response.body.role",
+                  "operator": "eq",
+                  "value": "admin"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "disabled assertion — should be skipped",
+      "steps": [
+        {
+          "name": "Echo data with one disabled assertion that would fail if evaluated",
+          "action": {
+            "type": "httpRequest",
+            "method": "POST",
+            "url": "service-a/echo-disabled",
+            "headers": {
+              "Content-Type": "application/json"
+            },
+            "body": {
+              "response": {
+                "value": {
+                  "status": "ok",
+                  "count": 5
+                }
+              }
+            }
+          },
+          "assertions": [
+            {
+              "assertions": [
+                {
+                  "path": "$.response.status",
+                  "operator": "eq",
+                  "value": 200
+                },
+                {
+                  "path": "$.response.body.status",
+                  "operator": "eq",
+                  "value": "ok"
+                },
+                {
+                  "path": "$.response.body.count",
+                  "operator": "eq",
+                  "value": 99999,
+                  "disabled": true
+                },
+                {
+                  "path": "$.response.body.nonExistentField",
+                  "operator": "eq",
+                  "value": "this-would-fail",
+                  "disabled": true
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

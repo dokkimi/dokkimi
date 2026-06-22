@@ -15,15 +15,21 @@ HTTP assertions verify what your services _say_ to each other. But they can't te
 
 ## Asserting on what gets logged
 
-Dokkimi captures stdout and stderr from every service container during a test run. You can assert on that output the same way you assert on HTTP traffic — by adding a block to your step's assertions:
+Dokkimi captures stdout and stderr from every service container during a test run. You can assert on that output the same way you assert on HTTP traffic — by adding a match block to your step's assertions:
 
 ```yaml
-- service: payment-service
-  consoleAssertions:
-    - level: ERROR
-      count:
+- match:
+    path: '$.consoleLogs'
+    where:
+      - path: '$$.service'
         operator: eq
-        value: 0
+        value: payment-service
+      - path: '$$.level'
+        operator: eq
+        value: ERROR
+    count:
+      operator: eq
+      value: 0
 ```
 
 That's it. If payment-service logs any ERROR-level message during this step, the test fails. The silent audit trail bug from our example would have been caught immediately.
@@ -41,22 +47,37 @@ If you take one thing from this post, it's this: add a zero-error assertion to y
 You can get more specific when you need to. For example, verifying that a payment step produces exactly one audit log entry:
 
 ```yaml
-- service: payment-service
-  consoleAssertions:
-    - level: INFO
-      message:
+- match:
+    path: '$.consoleLogs'
+    where:
+      - path: '$$.service'
+        operator: eq
+        value: payment-service
+      - path: '$$.level'
+        operator: eq
+        value: INFO
+      - path: '$$.message'
         operator: contains
         value: 'Payment processed'
-      count:
+    count:
+      operator: eq
+      value: 1
+
+- match:
+    path: '$.consoleLogs'
+    where:
+      - path: '$$.service'
         operator: eq
-        value: 1
-    - level: ERROR
-      count:
+        value: payment-service
+      - path: '$$.level'
         operator: eq
-        value: 0
+        value: ERROR
+    count:
+      operator: eq
+      value: 0
 ```
 
-The `message` field supports `contains` (substring match), `eq` (exact match), and `matches` (regex). Prefer `contains` over `eq` when you can — log messages tend to include timestamps, request IDs, and other dynamic content that makes exact matching fragile.
+The `message` where clause supports `contains` (substring match), `eq` (exact match), and `matches` (regex). Prefer `contains` over `eq` when you can — log messages tend to include timestamps, request IDs, and other dynamic content that makes exact matching fragile.
 
 ## Three layers deep
 
@@ -73,34 +94,57 @@ Console log assertions are most powerful when combined with HTTP assertions. Her
       amount: 1998
   assertions:
     - assertions:
-        - path: response.status
+        - path: $.response.status
           operator: eq
           value: 200
 
     - match:
-        origin: payment-service
-        method: POST
-        url: mock-stripe/v1/charges
+        path: '$.traffic'
+        where:
+          - path: '$$.origin'
+            operator: eq
+            value: payment-service
+          - path: '$$.request.method'
+            operator: eq
+            value: POST
+          - path: '$$.request.url'
+            operator: eq
+            value: mock-stripe/v1/charges
       assertions:
-        - path: request.body.amount
+        - path: $.match.request.body.amount
           operator: eq
           value: 1998
 
-    - service: payment-service
-      consoleAssertions:
-        - level: INFO
-          message:
+    - match:
+        path: '$.consoleLogs'
+        where:
+          - path: '$$.service'
+            operator: eq
+            value: payment-service
+          - path: '$$.level'
+            operator: eq
+            value: INFO
+          - path: '$$.message'
             operator: contains
             value: 'Payment processed'
-          count:
+        count:
+          operator: eq
+          value: 1
+
+    - match:
+        path: '$.consoleLogs'
+        where:
+          - path: '$$.service'
             operator: eq
-            value: 1
-        - level: ERROR
-          count:
+            value: payment-service
+          - path: '$$.level'
             operator: eq
-            value: 0
+            value: ERROR
+        count:
+          operator: eq
+          value: 0
 ```
 
-The first block checks that the API returned success. The second verifies that the downstream call to Stripe carried the correct amount. The third confirms the service logged what it should have and nothing it shouldn't have.
+The first block checks that the API returned success. The second verifies that the downstream call to Stripe carried the correct amount. The third and fourth confirm the service logged what it should have and nothing it shouldn't have.
 
 Any one of those layers can pass while the others fail. A 200 response doesn't mean the Stripe call was correct. A correct Stripe call doesn't mean the service didn't log an error along the way. Testing all three is the difference between "it worked" and "it worked correctly."

@@ -24,11 +24,11 @@ type HealthStatusDetails struct {
 
 // TestConfig represents the top-level test configuration from ConfigMap
 type TestConfig struct {
-	TestRunID      string            `json:"testRunId"`
-	TimeoutSeconds int               `json:"timeoutSeconds"`
-	ExecutionMode  string            `json:"executionMode"` // "auto" | "manual" (default: "auto")
-	Tests          []TestDefinition  `json:"tests"`
-	Variables      map[string]string `json:"variables,omitempty"`
+	TestRunID      string                 `json:"testRunId"`
+	TimeoutSeconds int                    `json:"timeoutSeconds"`
+	ExecutionMode  string                 `json:"executionMode"` // "auto" | "manual" (default: "auto")
+	Tests          []TestDefinition       `json:"tests"`
+	Variables      map[string]interface{} `json:"variables,omitempty"`
 }
 
 // ExecuteRequest is the body for POST /execute
@@ -42,12 +42,15 @@ type ExecuteRequest struct {
 
 // TestDefinition represents a named test with sequential steps
 type TestDefinition struct {
-	Name           string            `json:"name"`
-	Description    string            `json:"description,omitempty"`
-	TimeoutSeconds int               `json:"timeoutSeconds,omitempty"`
-	StopOnFailure  *bool             `json:"stopOnFailure,omitempty"` // pointer to distinguish unset from false
-	Variables      map[string]string `json:"variables,omitempty"`
-	Steps          []TestStep        `json:"steps"`
+	Name           string                 `json:"name"`
+	Description    string                 `json:"description,omitempty"`
+	TimeoutSeconds int                    `json:"timeoutSeconds,omitempty"`
+	StopOnFailure  *bool                  `json:"stopOnFailure,omitempty"` // pointer to distinguish unset from false
+	Variables      map[string]interface{} `json:"variables,omitempty"`
+	Steps          []TestStep             `json:"steps"`
+	ForEach        *ForEachLoop           `json:"forEach,omitempty"`
+	For            *ForLoop               `json:"for,omitempty"`
+	Repeat         *RepeatLoop            `json:"repeat,omitempty"`
 }
 
 // TestStep represents a single step: action + extract + assertions
@@ -55,50 +58,184 @@ type TestStep struct {
 	Name          string                 `json:"name,omitempty"`
 	Description   string                 `json:"description,omitempty"`
 	StopOnFailure *bool                  `json:"stopOnFailure,omitempty"`
-	Action        StepAction             `json:"action"`
+	Action        StepAction             `json:"action,omitempty"`
 	Extract       map[string]ExtractRule `json:"extract,omitempty"`
 	Assertions    []AssertionBlock       `json:"assertions,omitempty"`
+	ForEach       *ForEachLoop           `json:"forEach,omitempty"`
+	For           *ForLoop               `json:"for,omitempty"`
+	Repeat        *RepeatLoop            `json:"repeat,omitempty"`
+}
+
+// LoopAssertions holds the "assertions" array inside a loop body.
+// At assertion-block level this is []Assertion (flat); at step level it's []AssertionBlock.
+// The format is auto-detected during JSON unmarshal.
+type LoopAssertions struct {
+	Flat   []Assertion
+	Blocks []AssertionBlock
+}
+
+func (la LoopAssertions) IsEmpty() bool {
+	return len(la.Flat) == 0 && len(la.Blocks) == 0
+}
+
+func (la LoopAssertions) MarshalJSON() ([]byte, error) {
+	if len(la.Blocks) > 0 {
+		return json.Marshal(la.Blocks)
+	}
+	if len(la.Flat) > 0 {
+		return json.Marshal(la.Flat)
+	}
+	return []byte("null"), nil
+}
+
+func (la *LoopAssertions) UnmarshalJSON(data []byte) error {
+	if len(data) == 0 || string(data) == "null" {
+		return nil
+	}
+	var raw []json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if len(raw) == 0 {
+		return nil
+	}
+	// Detect format by checking first element's keys
+	var probe map[string]json.RawMessage
+	if err := json.Unmarshal(raw[0], &probe); err != nil {
+		return json.Unmarshal(data, &la.Flat)
+	}
+	// AssertionBlock keys: "assertions", "match", "extract", "forEach", "for", "repeat"
+	if _, ok := probe["assertions"]; ok {
+		return json.Unmarshal(data, &la.Blocks)
+	}
+	if _, ok := probe["match"]; ok {
+		return json.Unmarshal(data, &la.Blocks)
+	}
+	if _, ok := probe["extract"]; ok {
+		return json.Unmarshal(data, &la.Blocks)
+	}
+	if _, ok := probe["forEach"]; ok {
+		return json.Unmarshal(data, &la.Blocks)
+	}
+	if _, ok := probe["for"]; ok {
+		return json.Unmarshal(data, &la.Blocks)
+	}
+	if _, ok := probe["repeat"]; ok {
+		return json.Unmarshal(data, &la.Blocks)
+	}
+	// Otherwise it's flat assertions (has "path", "operator", "count", "type", etc.)
+	return json.Unmarshal(data, &la.Flat)
+}
+
+// ForEachLoop iterates over an array, running the attached object once per item.
+type ForEachLoop struct {
+	Items   interface{} `json:"items"`          // inline array or "{{varName}}" string
+	As      string      `json:"as"`             // variable name for the current item
+	Name    string      `json:"name,omitempty"` // optional loop name for metadata (index, items, completed, iterations)
+	DelayMs int         `json:"delayMs,omitempty"`
+
+	// Nested body
+	Match      *MatchCriteria         `json:"match,omitempty"`
+	Assertions LoopAssertions         `json:"assertions,omitempty"`
+	Extract    map[string]ExtractRule `json:"extract,omitempty"`
+	ForEach    *ForEachLoop           `json:"forEach,omitempty"`
+	For        *ForLoop               `json:"for,omitempty"`
+	Repeat     *RepeatLoop            `json:"repeat,omitempty"`
+
+	// Step-level body
+	Action *StepAction `json:"action,omitempty"`
+
+	// Test-level body
+	Steps []TestStep `json:"steps,omitempty"`
+}
+
+// ForLoop iterates over a numeric range.
+type ForLoop struct {
+	From    int    `json:"from"`
+	To      int    `json:"to"`
+	Step    int    `json:"step,omitempty"` // default 1; can be negative
+	As      string `json:"as"`
+	Name    string `json:"name,omitempty"`
+	DelayMs int    `json:"delayMs,omitempty"`
+
+	// Nested body
+	Match      *MatchCriteria         `json:"match,omitempty"`
+	Assertions LoopAssertions         `json:"assertions,omitempty"`
+	Extract    map[string]ExtractRule `json:"extract,omitempty"`
+	ForEach    *ForEachLoop           `json:"forEach,omitempty"`
+	For        *ForLoop               `json:"for,omitempty"`
+	Repeat     *RepeatLoop            `json:"repeat,omitempty"`
+
+	// Step-level body
+	Action *StepAction `json:"action,omitempty"`
+
+	// Test-level body
+	Steps []TestStep `json:"steps,omitempty"`
+}
+
+// RepeatLoop repeats up to Count times, optionally stopping early when Until passes.
+type RepeatLoop struct {
+	Count   int         `json:"count"`
+	As      string      `json:"as"`
+	Name    string      `json:"name,omitempty"`
+	DelayMs int         `json:"delayMs,omitempty"`
+	Until   []Assertion `json:"until,omitempty"`
+
+	// Nested body
+	Match      *MatchCriteria         `json:"match,omitempty"`
+	Assertions LoopAssertions         `json:"assertions,omitempty"`
+	Extract    map[string]ExtractRule `json:"extract,omitempty"`
+	ForEach    *ForEachLoop           `json:"forEach,omitempty"`
+	For        *ForLoop               `json:"for,omitempty"`
+	Repeat     *RepeatLoop            `json:"repeat,omitempty"`
+
+	// Step-level body
+	Action *StepAction `json:"action,omitempty"`
+
+	// Test-level body
+	Steps []TestStep `json:"steps,omitempty"`
 }
 
 // AssertionBlock represents a block of assertions for a test step.
 type AssertionBlock struct {
-	Extract           map[string]ExtractRule `json:"extract,omitempty"`
-	Match             *MatchCriteria         `json:"match,omitempty"`
-	Count             *CountAssertion        `json:"count,omitempty"`
-	AssertionScope    string                 `json:"assertionScope,omitempty"` // "all", "first", "last", "any"
-	Assertions        []Assertion            `json:"assertions,omitempty"`
-	Service           string                 `json:"service,omitempty"`
-	ConsoleAssertions []ConsoleLogAssertion  `json:"consoleAssertions,omitempty"`
+	Extract    map[string]ExtractRule `json:"extract,omitempty"`
+	Match      *MatchCriteria         `json:"match,omitempty"`
+	Assertions []Assertion            `json:"assertions,omitempty"`
+	ForEach    *ForEachLoop           `json:"forEach,omitempty"`
+	For        *ForLoop               `json:"for,omitempty"`
+	Repeat     *RepeatLoop            `json:"repeat,omitempty"`
 }
 
-// MatchCriteria specifies which HTTP logs to validate against.
+// MatchCriteria specifies which array elements to select for assertion.
 type MatchCriteria struct {
-	Origin string `json:"origin,omitempty"`
-	Method string `json:"method,omitempty"`
-	URL    string `json:"url,omitempty"`
+	Path  string       `json:"path"`
+	Where []WhereEntry `json:"where,omitempty"`
+	Count interface{}  `json:"count,omitempty"` // int or CountAssertion
+	As    string       `json:"as,omitempty"`
 }
 
-// ConsoleLogAssertion validates console log output from a service.
-type ConsoleLogAssertion struct {
-	Level    string         `json:"level,omitempty"`
-	Message  *MessageFilter `json:"message,omitempty"`
-	Count    CountAssertion `json:"count"`
-	Disabled bool           `json:"disabled,omitempty"`
-}
+// WhereEntry is a discriminated union: either an assertion (Path+Operator),
+// a boolean combinator (Or or And), or a negation (Not).
+type WhereEntry struct {
+	Path     string      `json:"path,omitempty"`
+	Operator string      `json:"operator,omitempty"`
+	Value    interface{} `json:"value,omitempty"`
 
-// MessageFilter specifies how to match console log messages.
-type MessageFilter struct {
-	Operator string `json:"operator"` // "eq", "contains", "containsIgnoreCase", "matches"
-	Value    string `json:"value"`
+	Or  []WhereEntry `json:"or,omitempty"`
+	And []WhereEntry `json:"and,omitempty"`
+	Not *WhereEntry  `json:"not,omitempty"`
 }
 
 // ExtractRule defines how to extract a variable from a response.
-// Simple form: just a JSONPath string (e.g., "$.body.id").
+// Simple form: just a JSONPath string (e.g., "$.response.body.id").
 // Regex form: a JSONPath + regex pattern + capture group index.
+// Transform form: path + transform (or from + transform) to convert objects to arrays.
 type ExtractRule struct {
-	Path    string `json:"path"`
-	Pattern string `json:"pattern,omitempty"`
-	Group   *int   `json:"group,omitempty"` // defaults to 1 when pattern is set
+	Path      string `json:"path"`
+	Pattern   string `json:"pattern,omitempty"`
+	Group     *int   `json:"group,omitempty"`     // defaults to 1 when pattern is set
+	Transform string `json:"transform,omitempty"` // "keys", "values", or "entries"
+	From      string `json:"from,omitempty"`      // variable reference for transform (e.g. "{{varName}}")
 }
 
 // UnmarshalJSON allows ExtractRule to be unmarshalled from a plain string or an object.
@@ -110,7 +247,7 @@ func (r *ExtractRule) UnmarshalJSON(data []byte) error {
 		return nil
 	}
 
-	// Otherwise parse as object
+	// Otherwise parse as object (supports path+pattern, path+transform, or from+transform)
 	type extractRuleAlias ExtractRule
 	var obj extractRuleAlias
 	if err := json.Unmarshal(data, &obj); err != nil {
@@ -135,6 +272,9 @@ type StepAction struct {
 	Target     string                 `json:"target,omitempty"`     // ui only (service name)
 	Steps      []UISubStep            `json:"steps,omitempty"`      // ui only
 	Actions    []StepAction           `json:"actions,omitempty"`    // parallel only — sub-actions to run concurrently
+	ForEach    *ForEachLoop           `json:"forEach,omitempty"`
+	For        *ForLoop               `json:"for,omitempty"`
+	Repeat     *RepeatLoop            `json:"repeat,omitempty"`
 }
 
 // StepExecution represents the execution of a single step with timing information

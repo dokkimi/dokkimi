@@ -47,40 +47,55 @@
             {
               "assertions": [
                 {
-                  "path": "response.status",
+                  "path": "$.response.status",
                   "operator": "eq",
                   "value": 200
                 },
                 {
-                  "path": "response.body.results[0].updated",
+                  "path": "$.response.body.results[0].updated",
                   "operator": "eq",
                   "value": true
                 },
                 {
-                  "path": "response.body.results[0].version",
-                  "operator": "type",
+                  "type": "$.response.body.results[0].version",
+                  "operator": "eq",
                   "value": "number"
                 }
               ]
             },
             {
               "match": {
-                "origin": "service-a",
-                "method": "PUT",
-                "url": "service-b/update-resource"
-              },
-              "count": {
-                "operator": "eq",
-                "value": 1
+                "path": "$.traffic",
+                "where": [
+                  {
+                    "path": "$$.origin",
+                    "operator": "eq",
+                    "value": "service-a"
+                  },
+                  {
+                    "path": "$$.request.method",
+                    "operator": "eq",
+                    "value": "PUT"
+                  },
+                  {
+                    "path": "$$.request.url",
+                    "operator": "contains",
+                    "value": "service-b/update-resource"
+                  }
+                ],
+                "count": {
+                  "operator": "eq",
+                  "value": 1
+                }
               },
               "assertions": [
                 {
-                  "path": "request.method",
+                  "path": "$.match.request.method",
                   "operator": "eq",
                   "value": "PUT"
                 },
                 {
-                  "path": "response.status",
+                  "path": "$.match.response.status",
                   "operator": "eq",
                   "value": 200
                 }
@@ -122,7 +137,7 @@
             {
               "assertions": [
                 {
-                  "path": "response.status",
+                  "path": "$.response.status",
                   "operator": "eq",
                   "value": 200
                 }
@@ -130,17 +145,32 @@
             },
             {
               "match": {
-                "origin": "service-a",
-                "method": "DELETE",
-                "url": "service-b/delete-resource/item-42"
-              },
-              "count": {
-                "operator": "eq",
-                "value": 1
+                "path": "$.traffic",
+                "where": [
+                  {
+                    "path": "$$.origin",
+                    "operator": "eq",
+                    "value": "service-a"
+                  },
+                  {
+                    "path": "$$.request.method",
+                    "operator": "eq",
+                    "value": "DELETE"
+                  },
+                  {
+                    "path": "$$.request.url",
+                    "operator": "contains",
+                    "value": "service-b/delete-resource/item-42"
+                  }
+                ],
+                "count": {
+                  "operator": "eq",
+                  "value": 1
+                }
               },
               "assertions": [
                 {
-                  "path": "response.status",
+                  "path": "$.match.response.status",
                   "operator": "eq",
                   "value": 204
                 }
@@ -185,17 +215,17 @@
             {
               "assertions": [
                 {
-                  "path": "response.status",
+                  "path": "$.response.status",
                   "operator": "eq",
                   "value": 200
                 },
                 {
-                  "path": "response.body.results[0].patched",
+                  "path": "$.response.body.results[0].patched",
                   "operator": "eq",
                   "value": true
                 },
                 {
-                  "path": "response.body.results[0].newValue",
+                  "path": "$.response.body.results[0].newValue",
                   "operator": "ne",
                   "value": "old-name"
                 }
@@ -203,13 +233,28 @@
             },
             {
               "match": {
-                "origin": "service-a",
-                "method": "PATCH",
-                "url": "service-b/patch-resource"
-              },
-              "count": {
-                "operator": "eq",
-                "value": 1
+                "path": "$.traffic",
+                "where": [
+                  {
+                    "path": "$$.origin",
+                    "operator": "eq",
+                    "value": "service-a"
+                  },
+                  {
+                    "path": "$$.request.method",
+                    "operator": "eq",
+                    "value": "PATCH"
+                  },
+                  {
+                    "path": "$$.request.url",
+                    "operator": "contains",
+                    "value": "service-b/patch-resource"
+                  }
+                ],
+                "count": {
+                  "operator": "eq",
+                  "value": 1
+                }
               }
             }
           ]
@@ -242,22 +287,22 @@
             {
               "assertions": [
                 {
-                  "path": "response.status",
+                  "path": "$.response.status",
                   "operator": "eq",
                   "value": 404
                 },
                 {
-                  "path": "response.body.error",
+                  "path": "$.response.body.error",
                   "operator": "eq",
                   "value": "Not Found"
                 },
                 {
-                  "path": "response.body.message",
+                  "path": "$.response.body.message",
                   "operator": "contains",
                   "value": "does not exist"
                 },
                 {
-                  "path": "response.body.message",
+                  "path": "$.response.body.message",
                   "operator": "notContains",
                   "value": "server error"
                 }
@@ -302,37 +347,37 @@
             {
               "assertions": [
                 {
-                  "path": "response.status",
+                  "path": "$.response.status",
                   "operator": "eq",
                   "value": 422
                 },
                 {
-                  "path": "response.status",
+                  "path": "$.response.status",
                   "operator": "gte",
                   "value": 400
                 },
                 {
-                  "path": "response.status",
+                  "path": "$.response.status",
                   "operator": "lt",
                   "value": 500
                 },
                 {
-                  "path": "response.body.details",
-                  "operator": "type",
+                  "type": "$.response.body.details",
+                  "operator": "eq",
                   "value": "array"
                 },
                 {
-                  "path": "response.body.details",
-                  "operator": "length",
+                  "count": "$.response.body.details",
+                  "operator": "eq",
                   "value": 2
                 },
                 {
-                  "path": "response.body.details[0].field",
+                  "path": "$.response.body.details[0].field",
                   "operator": "in",
                   "value": ["email", "age", "name"]
                 },
                 {
-                  "path": "response.body.details[1].field",
+                  "path": "$.response.body.details[1].field",
                   "operator": "eq",
                   "value": "age"
                 }
@@ -370,40 +415,46 @@
             {
               "assertions": [
                 {
-                  "path": "response.status",
+                  "path": "$.response.status",
                   "operator": "eq",
                   "value": 500
                 },
                 {
-                  "path": "response.body.requestId",
+                  "path": "$.response.body.requestId",
                   "operator": "exists"
                 },
                 {
-                  "path": "response.body.requestId",
+                  "path": "$.response.body.requestId",
                   "operator": "notEmpty"
                 },
                 {
-                  "path": "response.body.requestId",
+                  "path": "$.response.body.requestId",
                   "operator": "matches",
                   "value": "^req-err-\\d+$"
                 }
               ]
             },
             {
-              "service": "service-a",
-              "consoleAssertions": [
-                {
-                  "level": "ERROR",
-                  "message": {
+              "match": {
+                "path": "$.consoleLogs",
+                "where": [
+                  {
+                    "path": "$$.service",
+                    "operator": "eq",
+                    "value": "service-a"
+                  },
+                  { "path": "$$.level", "operator": "eq", "value": "ERROR" },
+                  {
+                    "path": "$$.message",
                     "operator": "contains",
                     "value": "Something went wrong"
-                  },
-                  "count": {
-                    "operator": "gte",
-                    "value": 1
                   }
+                ],
+                "count": {
+                  "operator": "gte",
+                  "value": 1
                 }
-              ]
+              }
             }
           ]
         }

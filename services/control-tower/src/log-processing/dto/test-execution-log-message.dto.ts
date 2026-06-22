@@ -95,7 +95,7 @@ export class TestExecutionLogMessageDto {
 
   @IsOptional()
   @IsObject()
-  variables?: Record<string, string>;
+  variables?: Record<string, unknown>;
 
   @IsOptional()
   @IsString()

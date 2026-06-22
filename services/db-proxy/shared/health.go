@@ -79,8 +79,7 @@ func (h *HealthChecker) getCheckInterval() time.Duration {
 
 	switch h.state {
 	case StateBooting:
-		// 1-2 seconds (fast detection)
-		return 1500 * time.Millisecond
+		return 500 * time.Millisecond
 	case StateHealthy:
 		// 10-30 seconds (efficient monitoring)
 		return 20 * time.Second

@@ -201,33 +201,51 @@ tests:
         assertions:
           # Got the right tasks back
           - assertions:
-              - path: response.status
+              - path: $.response.status
                 operator: eq
                 value: 200
-              - path: response.body.tasks.length
+              - count: $.response.body.tasks
                 operator: eq
                 value: 3
-              - path: response.body.tasks[0].title
+              - path: $.response.body.tasks[0].title
                 operator: eq
                 value: 'Design new endpoint schema'
 
           # The gateway validated the token against Auth0
           - match:
-              origin: api-gateway
-              method: GET
-              url: your-tenant.auth0.com/.well-known/jwks.json
+              path: $.traffic
+              where:
+                - path: $$.origin
+                  operator: eq
+                  value: api-gateway
+                - path: $$.request.method
+                  operator: eq
+                  value: GET
+                - path: $$.request.url
+                  operator: contains
+                  value: your-tenant.auth0.com/.well-known/jwks.json
+              count: 1
             assertions:
-              - path: response.status
+              - path: $.match.response.status
                 operator: eq
                 value: 200
 
           # The gateway fetched the user profile
           - match:
-              origin: api-gateway
-              method: GET
-              url: your-tenant.auth0.com/userinfo
+              path: $.traffic
+              where:
+                - path: $$.origin
+                  operator: eq
+                  value: api-gateway
+                - path: $$.request.method
+                  operator: eq
+                  value: GET
+                - path: $$.request.url
+                  operator: contains
+                  value: your-tenant.auth0.com/userinfo
+              count: 1
             assertions:
-              - path: response.body.sub
+              - path: $.match.response.body.sub
                 operator: eq
                 value: 'auth0|user-alice'
 ```
@@ -263,7 +281,7 @@ tests:
             Authorization: 'Bearer {{bobToken}}'
         assertions:
           - assertions:
-              - path: response.status
+              - path: $.response.status
                 operator: eq
                 value: 403
 
@@ -274,7 +292,7 @@ tests:
           query: 'SELECT id FROM tasks WHERE id = 3'
         assertions:
           - assertions:
-              - path: data.length
+              - count: $.data
                 operator: eq
                 value: 1
 ```
@@ -301,10 +319,10 @@ tests:
             Authorization: 'Bearer {{expiredToken}}'
         assertions:
           - assertions:
-              - path: response.status
+              - path: $.response.status
                 operator: eq
                 value: 401
-              - path: response.body.error
+              - path: $.response.body.error
                 operator: contains
                 value: expired
 ```
@@ -320,7 +338,7 @@ tests:
           url: api-gateway/v1/projects/1/tasks
         assertions:
           - assertions:
-              - path: response.status
+              - path: $.response.status
                 operator: eq
                 value: 401
 ```
@@ -378,27 +396,45 @@ tests:
             assignee: 'auth0|user-bob'
         assertions:
           - assertions:
-              - path: response.status
+              - path: $.response.status
                 operator: eq
                 value: 200
 
           # Notification service fetched a service token
           - match:
-              origin: notification-service
-              method: POST
-              url: your-tenant.auth0.com/oauth/token
+              path: $.traffic
+              where:
+                - path: $$.origin
+                  operator: eq
+                  value: notification-service
+                - path: $$.request.method
+                  operator: eq
+                  value: POST
+                - path: $$.request.url
+                  operator: contains
+                  value: your-tenant.auth0.com/oauth/token
+              count: 1
             assertions:
-              - path: request.body.grant_type
+              - path: $.match.request.body.grant_type
                 operator: eq
                 value: client_credentials
 
           # Notification email was sent to Bob
           - match:
-              origin: notification-service
-              method: POST
-              url: api.sendgrid.com/v3/mail/send
+              path: $.traffic
+              where:
+                - path: $$.origin
+                  operator: eq
+                  value: notification-service
+                - path: $$.request.method
+                  operator: eq
+                  value: POST
+                - path: $$.request.url
+                  operator: contains
+                  value: api.sendgrid.com/v3/mail/send
+              count: 1
             assertions:
-              - path: request.body.personalizations[0].to[0].email
+              - path: $.match.request.body.personalizations[0].to[0].email
                 operator: eq
                 value: bob@example.com
 
@@ -409,7 +445,7 @@ tests:
           query: 'SELECT assignee FROM tasks WHERE id = 3'
         assertions:
           - assertions:
-              - path: data[0].assignee
+              - path: $.data[0].assignee
                 operator: eq
                 value: 'auth0|user-bob'
 ```

@@ -63,7 +63,7 @@ func TestAssembleHttpDocument(t *testing.T) {
 			t.Errorf("expected 200, got %v", resp["status"])
 		}
 
-		header := resp["header"].(map[string]interface{})
+		header := resp["headers"].(map[string]interface{})
 		if header["x-request-id"] != "abc" {
 			t.Errorf("expected abc, got %v", header["x-request-id"])
 		}
@@ -110,41 +110,6 @@ func TestAssembleDbDocument(t *testing.T) {
 		}
 		if doc["rowsAffected"] != float64(1) {
 			t.Errorf("expected rowsAffected 1, got %v", doc["rowsAffected"])
-		}
-	})
-}
-
-func TestMatchUrl(t *testing.T) {
-	svc := "user-service"
-
-	t.Run("empty match returns true", func(t *testing.T) {
-		if !MatchUrl("", &svc, "/users") {
-			t.Error("expected true")
-		}
-	})
-
-	t.Run("path-only match", func(t *testing.T) {
-		if !MatchUrl("/users", nil, "/api/users") {
-			t.Error("expected true for path match")
-		}
-		if MatchUrl("/orders", nil, "/api/users") {
-			t.Error("expected false for non-matching path")
-		}
-	})
-
-	t.Run("service-only match", func(t *testing.T) {
-		if !MatchUrl("user-service", &svc, "/anything") {
-			t.Error("expected true for service match")
-		}
-		other := "other-service"
-		if MatchUrl("user-service", &other, "/anything") {
-			t.Error("expected false for non-matching service")
-		}
-	})
-
-	t.Run("service+path match", func(t *testing.T) {
-		if !MatchUrl("user-service/users", &svc, "/api/users") {
-			t.Error("expected true")
 		}
 	})
 }
@@ -208,13 +173,13 @@ func TestFindDirectRequestLog(t *testing.T) {
 	})
 }
 
-func TestAssembleStepDocument(t *testing.T) {
+func TestAssembleRootContext(t *testing.T) {
 	now := time.Now()
 	start := now.Add(-100 * time.Millisecond).Format(time.RFC3339Nano)
 	end := now.Add(100 * time.Millisecond).Format(time.RFC3339Nano)
 	stepExec := StepExecution{StartTime: start, EndTime: end}
 
-	t.Run("assembles HTTP document for httpRequest action", func(t *testing.T) {
+	t.Run("assembles unified root context for HTTP step", func(t *testing.T) {
 		target := "api"
 		status := 200
 		httpLogs := []HttpLogMessage{
@@ -225,8 +190,10 @@ func TestAssembleStepDocument(t *testing.T) {
 				ResponseBody: map[string]interface{}{"ok": true},
 			},
 		}
+		varCtx := NewVariableContext()
+		varCtx.Set("foo", "bar")
 		step := TestStep{Action: StepAction{Type: "httpRequest", Method: "GET", URL: "api/items"}}
-		doc := AssembleStepDocument(step, httpLogs, nil, stepExec)
+		doc, _ := AssembleRootContext(step, stepExec, httpLogs, nil, nil, varCtx, nil)
 		resp, ok := doc["response"].(map[string]interface{})
 		if !ok {
 			t.Fatal("expected response in doc")
@@ -234,80 +201,198 @@ func TestAssembleStepDocument(t *testing.T) {
 		if resp["status"] != float64(200) {
 			t.Errorf("expected status 200, got %v", resp["status"])
 		}
+		vars := doc["variables"].(map[string]interface{})
+		if vars["foo"] != "bar" {
+			t.Errorf("expected variables.foo = bar, got %v", vars["foo"])
+		}
+		traffic := doc["traffic"].([]interface{})
+		if len(traffic) != 1 {
+			t.Errorf("expected 1 traffic entry, got %d", len(traffic))
+		}
 	})
 
-	t.Run("assembles DB document for dbQuery action", func(t *testing.T) {
+	t.Run("assembles root context for DB step", func(t *testing.T) {
 		rows := int64(3)
+		dur := 42
 		dbLogs := []DatabaseLogMessage{
 			{
 				DatabaseName: "mydb", Query: "SELECT 1",
 				Timestamp: now.Format(time.RFC3339Nano),
-				Success:   true, RowsAffected: &rows,
+				Success:   true, RowsAffected: &rows, Duration: &dur,
 			},
 		}
+		varCtx := NewVariableContext()
 		step := TestStep{Action: StepAction{Type: "dbQuery", Database: "mydb", Query: "SELECT 1"}}
-		doc := AssembleStepDocument(step, nil, dbLogs, stepExec)
-		if doc["success"] != true {
+		doc, _ := AssembleRootContext(step, stepExec, nil, dbLogs, nil, varCtx, nil)
+		resp := doc["response"].(map[string]interface{})
+		if resp["success"] != true {
 			t.Error("expected success true")
 		}
-		if doc["rowsAffected"] != float64(3) {
-			t.Errorf("expected rowsAffected 3, got %v", doc["rowsAffected"])
+		if resp["rowsAffected"] != float64(3) {
+			t.Errorf("expected rowsAffected 3, got %v", resp["rowsAffected"])
+		}
+		if doc["responseTime"] != float64(42) {
+			t.Errorf("expected responseTime 42, got %v", doc["responseTime"])
 		}
 	})
 
-	t.Run("returns empty doc for wait action", func(t *testing.T) {
+	t.Run("assembles root context for wait step", func(t *testing.T) {
+		varCtx := NewVariableContext()
 		step := TestStep{Action: StepAction{Type: "wait"}}
-		doc := AssembleStepDocument(step, nil, nil, stepExec)
-		if len(doc) != 0 {
-			t.Errorf("expected empty doc, got %v", doc)
+		doc, _ := AssembleRootContext(step, stepExec, nil, nil, nil, varCtx, nil)
+		resp := doc["response"].(map[string]interface{})
+		if len(resp) != 0 {
+			t.Errorf("expected empty response, got %v", resp)
 		}
 	})
-}
 
-func TestAssembleExtractDocument(t *testing.T) {
-	now := time.Now()
-	start := now.Add(-100 * time.Millisecond).Format(time.RFC3339Nano)
-	end := now.Add(100 * time.Millisecond).Format(time.RFC3339Nano)
-	stepExec := StepExecution{StartTime: start, EndTime: end}
-
-	t.Run("returns flat response doc for httpRequest", func(t *testing.T) {
-		target := "api"
-		status := 201
-		httpLogs := []HttpLogMessage{
-			{
-				Method: "POST", URL: "/items", StatusCode: &status,
-				Timestamp: now.Format(time.RFC3339Nano), Target: &target,
-				RequestHeaders:  map[string]interface{}{},
-				ResponseHeaders: map[string]interface{}{"X-Id": "abc"},
-				ResponseBody:    map[string]interface{}{"id": float64(42)},
+	t.Run("assembles root context for UI step with stepResp", func(t *testing.T) {
+		varCtx := NewVariableContext()
+		varCtx.Set("token", "abc123")
+		step := TestStep{Action: StepAction{Type: "ui", Target: "frontend"}}
+		stepResp := map[string]interface{}{
+			"target":  "frontend",
+			"baseURL": "http://frontend:3000",
+			"extracted": map[string]interface{}{
+				"pageTitle": "Dashboard",
 			},
 		}
-		step := TestStep{Action: StepAction{Type: "httpRequest", Method: "POST", URL: "api/items"}}
-		doc := AssembleExtractDocument(step, httpLogs, nil, stepExec)
-		if doc["statusCode"] != float64(201) {
-			t.Errorf("expected statusCode 201, got %v", doc["statusCode"])
-		}
-		body, ok := doc["body"].(map[string]interface{})
+		doc, _ := AssembleRootContext(step, stepExec, nil, nil, nil, varCtx, stepResp)
+		resp, ok := doc["response"].(map[string]interface{})
 		if !ok {
-			t.Fatal("expected body in extract doc")
+			t.Fatal("expected response in doc")
 		}
-		if body["id"] != float64(42) {
-			t.Errorf("expected body.id 42, got %v", body["id"])
+		if resp["target"] != "frontend" {
+			t.Errorf("expected response.target=frontend, got %v", resp["target"])
 		}
-		headers, ok := doc["headers"].(map[string]interface{})
-		if !ok {
-			t.Fatal("expected headers in extract doc")
+		extracted := resp["extracted"].(map[string]interface{})
+		if extracted["pageTitle"] != "Dashboard" {
+			t.Errorf("expected extracted.pageTitle=Dashboard, got %v", extracted["pageTitle"])
 		}
-		if headers["x-id"] != "abc" {
-			t.Errorf("expected normalized header x-id, got %v", headers["x-id"])
+		vars := doc["variables"].(map[string]interface{})
+		if vars["token"] != "abc123" {
+			t.Errorf("expected variables.token=abc123, got %v", vars["token"])
+		}
+		if doc["responseTime"] != nil {
+			t.Errorf("expected responseTime=nil for UI step, got %v", doc["responseTime"])
 		}
 	})
 
-	t.Run("returns empty doc when no matching log", func(t *testing.T) {
-		step := TestStep{Action: StepAction{Type: "httpRequest", Method: "GET", URL: "api/missing"}}
-		doc := AssembleExtractDocument(step, nil, nil, stepExec)
-		if len(doc) != 0 {
-			t.Errorf("expected empty doc, got %v", doc)
+	t.Run("assembles root context for UI step without stepResp", func(t *testing.T) {
+		varCtx := NewVariableContext()
+		step := TestStep{Action: StepAction{Type: "ui", Target: "frontend"}}
+		doc, _ := AssembleRootContext(step, stepExec, nil, nil, nil, varCtx, nil)
+		resp, ok := doc["response"].(map[string]interface{})
+		if !ok {
+			t.Fatal("expected response in doc")
+		}
+		if len(resp) != 0 {
+			t.Errorf("expected empty response for nil stepResp, got %v", resp)
+		}
+	})
+
+	t.Run("includes timeline sorted by timestamp", func(t *testing.T) {
+		target := "api"
+		status := 200
+		earlyTs := now.Add(-50 * time.Millisecond).Format(time.RFC3339Nano)
+		lateTs := now.Add(50 * time.Millisecond).Format(time.RFC3339Nano)
+		httpLogs := []HttpLogMessage{
+			{
+				Method: "GET", URL: "/items", StatusCode: &status,
+				Timestamp: lateTs, Target: &target,
+				RequestHeaders: map[string]interface{}{}, ResponseHeaders: map[string]interface{}{},
+			},
+		}
+		dbLogs := []DatabaseLogMessage{
+			{
+				DatabaseName: "mydb", Query: "SELECT 1",
+				Timestamp: earlyTs, Success: true,
+			},
+		}
+		varCtx := NewVariableContext()
+		step := TestStep{Action: StepAction{Type: "httpRequest", Method: "GET", URL: "api/items"}}
+		doc, _ := AssembleRootContext(step, stepExec, httpLogs, dbLogs, nil, varCtx, nil)
+		timeline := doc["timeline"].([]interface{})
+		if len(timeline) < 2 {
+			t.Fatalf("expected at least 2 timeline entries, got %d", len(timeline))
+		}
+		first := timeline[0].(map[string]interface{})
+		if first["type"] != "dbQuery" {
+			t.Errorf("expected first timeline entry to be dbQuery, got %v", first["type"])
+		}
+		// HTTP traffic produces httpRequest + httpResponse entries
+		found := false
+		for _, e := range timeline[1:] {
+			entry := e.(map[string]interface{})
+			if entry["type"] == "httpRequest" {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Error("expected an httpRequest timeline entry")
+		}
+	})
+
+	t.Run("traffic entries have requestTimelineIndex and responseTimelineIndex", func(t *testing.T) {
+		target := "api"
+		status := 200
+		sentAt := now.Add(-50 * time.Millisecond).Format(time.RFC3339Nano)
+		receivedAt := now.Add(50 * time.Millisecond).Format(time.RFC3339Nano)
+		httpLogs := []HttpLogMessage{
+			{
+				Method: "GET", URL: "/items", StatusCode: &status,
+				Timestamp: sentAt, Target: &target,
+				RequestHeaders: map[string]interface{}{}, ResponseHeaders: map[string]interface{}{},
+				RequestSentAt: &sentAt, ResponseReceivedAt: &receivedAt,
+			},
+		}
+		varCtx := NewVariableContext()
+		step := TestStep{Action: StepAction{Type: "httpRequest", Method: "GET", URL: "api/items"}}
+		doc, _ := AssembleRootContext(step, stepExec, httpLogs, nil, nil, varCtx, nil)
+		traffic := doc["traffic"].([]interface{})
+		if len(traffic) == 0 {
+			t.Fatal("expected traffic entries")
+		}
+		entry := traffic[0].(map[string]interface{})
+		reqIdx, hasReq := entry["requestTimelineIndex"]
+		if !hasReq {
+			t.Fatal("expected requestTimelineIndex on traffic entry")
+		}
+		if _, ok := reqIdx.(float64); !ok {
+			t.Errorf("expected requestTimelineIndex to be float64, got %T", reqIdx)
+		}
+		respIdx, hasResp := entry["responseTimelineIndex"]
+		if !hasResp {
+			t.Fatal("expected responseTimelineIndex on traffic entry")
+		}
+		if _, ok := respIdx.(float64); !ok {
+			t.Errorf("expected responseTimelineIndex to be float64, got %T", respIdx)
+		}
+	})
+
+	t.Run("responseTimelineIndex is nil when no response", func(t *testing.T) {
+		target := "api"
+		ts := now.Format(time.RFC3339Nano)
+		httpLogs := []HttpLogMessage{
+			{
+				Method: "GET", URL: "/timeout", StatusCode: nil,
+				Timestamp: ts, Target: &target,
+				RequestHeaders: map[string]interface{}{}, ResponseHeaders: map[string]interface{}{},
+				RequestSentAt: &ts,
+			},
+		}
+		varCtx := NewVariableContext()
+		step := TestStep{Action: StepAction{Type: "httpRequest", Method: "GET", URL: "api/timeout"}}
+		doc, _ := AssembleRootContext(step, stepExec, httpLogs, nil, nil, varCtx, nil)
+		traffic := doc["traffic"].([]interface{})
+		if len(traffic) == 0 {
+			t.Fatal("expected traffic entries")
+		}
+		entry := traffic[0].(map[string]interface{})
+		respIdx := entry["responseTimelineIndex"]
+		if respIdx != nil {
+			t.Errorf("expected responseTimelineIndex=nil for no response, got %v", respIdx)
 		}
 	})
 }

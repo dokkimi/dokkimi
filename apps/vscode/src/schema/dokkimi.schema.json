@@ -59,7 +59,7 @@
         },
         "variables": {
           "type": "object",
-          "description": "Definition-level variables shared by all tests. Supports $ref for cross-file sharing. Test-level variables override these.",
+          "description": "Definition-level variables shared by all tests. Supports $ref for cross-file sharing. Test-level variables override these. Values can be any JSON type (string, number, boolean, array, object).",
           "properties": {
             "$ref": {
               "oneOf": [
@@ -76,33 +76,7 @@
             }
           },
           "additionalProperties": {
-            "oneOf": [
-              {
-                "type": "string",
-                "description": "JSONPath expression (e.g. $.body.id)"
-              },
-              {
-                "type": "object",
-                "description": "Regex extraction rule — resolve a JSONPath, then apply a regex pattern.",
-                "required": ["path", "pattern"],
-                "properties": {
-                  "path": {
-                    "type": "string",
-                    "description": "JSONPath to the source value."
-                  },
-                  "pattern": {
-                    "type": "string",
-                    "description": "Regex pattern with capture groups."
-                  },
-                  "group": {
-                    "type": "integer",
-                    "minimum": 0,
-                    "description": "Capture group index (default 1; use 0 for full match)."
-                  }
-                },
-                "additionalProperties": false
-              }
-            ]
+            "description": "Variable value — any JSON type. Strings support {{interpolation}}."
           }
         },
         "tests": {
@@ -358,7 +332,7 @@
             "oneOf": [
               {
                 "type": "string",
-                "description": "JSONPath expression (e.g. $.body.id)"
+                "description": "JSONPath expression (e.g. $.response.body.id)"
               },
               {
                 "type": "object",
@@ -430,7 +404,7 @@
             "oneOf": [
               {
                 "type": "string",
-                "description": "JSONPath expression (e.g. $.body.id)"
+                "description": "JSONPath expression (e.g. $.response.body.id)"
               },
               {
                 "type": "object",
@@ -503,7 +477,7 @@
         "oneOf": [
           {
             "type": "string",
-            "description": "JSONPath expression (e.g. $.body.id)"
+            "description": "JSONPath expression (e.g. $.response.body.id)"
           },
           {
             "type": "object",
@@ -660,7 +634,7 @@
             "oneOf": [
               {
                 "type": "string",
-                "description": "JSONPath expression (e.g. $.body.id)"
+                "description": "JSONPath expression (e.g. $.response.body.id)"
               },
               {
                 "type": "object",
@@ -708,9 +682,21 @@
           "type": "boolean",
           "description": "Stop on first failure (default true)."
         },
+        "forEach": {
+          "$ref": "#/definitions/ForEachLoop",
+          "description": "Test-level forEach — run all steps once per item."
+        },
+        "for": {
+          "$ref": "#/definitions/ForLoop",
+          "description": "Test-level for — run all steps once per numeric value."
+        },
+        "repeat": {
+          "$ref": "#/definitions/RepeatLoop",
+          "description": "Test-level repeat — run all steps up to count times, optionally stopping on until."
+        },
         "variables": {
           "type": "object",
-          "description": "Variables for {{interpolation}} in actions and assertions. Supports $ref for cross-file sharing. Overrides definition-level variables.",
+          "description": "Variables for {{interpolation}} in actions and assertions. Supports $ref for cross-file sharing. Overrides definition-level variables. Values can be any JSON type.",
           "properties": {
             "$ref": {
               "oneOf": [
@@ -727,33 +713,7 @@
             }
           },
           "additionalProperties": {
-            "oneOf": [
-              {
-                "type": "string",
-                "description": "JSONPath expression (e.g. $.body.id)"
-              },
-              {
-                "type": "object",
-                "description": "Regex extraction rule — resolve a JSONPath, then apply a regex pattern.",
-                "required": ["path", "pattern"],
-                "properties": {
-                  "path": {
-                    "type": "string",
-                    "description": "JSONPath to the source value."
-                  },
-                  "pattern": {
-                    "type": "string",
-                    "description": "Regex pattern with capture groups."
-                  },
-                  "group": {
-                    "type": "integer",
-                    "minimum": 0,
-                    "description": "Capture group index (default 1; use 0 for full match)."
-                  }
-                },
-                "additionalProperties": false
-              }
-            ]
+            "description": "Variable value — any JSON type. Strings support {{interpolation}}."
           }
         },
         "steps": {
@@ -761,13 +721,26 @@
           "description": "Sequential test steps. Use a 'parallel' action to run multiple actions concurrently.",
           "items": { "$ref": "#/definitions/TestStep" }
         }
+      },
+      "not": {
+        "anyOf": [
+          { "required": ["forEach", "for"] },
+          { "required": ["forEach", "repeat"] },
+          { "required": ["for", "repeat"] }
+        ]
       }
     },
 
     "TestStep": {
       "type": "object",
-      "required": ["action"],
       "additionalProperties": false,
+      "not": {
+        "anyOf": [
+          { "required": ["forEach", "for"] },
+          { "required": ["forEach", "repeat"] },
+          { "required": ["for", "repeat"] }
+        ]
+      },
       "properties": {
         "name": { "type": "string", "description": "Step name." },
         "description": {
@@ -778,6 +751,18 @@
           "type": "boolean",
           "description": "Stop the test on assertion failure (default true)."
         },
+        "forEach": {
+          "$ref": "#/definitions/ForEachLoop",
+          "description": "Step-level forEach — repeat action+extract+assertions per item."
+        },
+        "for": {
+          "$ref": "#/definitions/ForLoop",
+          "description": "Step-level for — repeat action+extract+assertions per numeric value."
+        },
+        "repeat": {
+          "$ref": "#/definitions/RepeatLoop",
+          "description": "Step-level repeat — repeat action+extract+assertions up to count times."
+        },
         "action": { "$ref": "#/definitions/AnyAction" },
         "extract": {
           "type": "object",
@@ -786,7 +771,7 @@
             "oneOf": [
               {
                 "type": "string",
-                "description": "JSONPath expression (e.g. $.body.id)"
+                "description": "JSONPath expression (e.g. $.response.body.id)"
               },
               {
                 "type": "object",
@@ -808,7 +793,8 @@
                   }
                 },
                 "additionalProperties": false
-              }
+              },
+              { "$ref": "#/definitions/ExtractRuleWithTransform" }
             ]
           }
         },
@@ -889,7 +875,7 @@
                   "oneOf": [
                     {
                       "type": "string",
-                      "description": "JSONPath expression (e.g. $.body.id)"
+                      "description": "JSONPath expression (e.g. $.response.body.id)"
                     },
                     {
                       "type": "object",
@@ -921,6 +907,18 @@
               "timeout": {
                 "type": "integer",
                 "description": "Request timeout in milliseconds."
+              },
+              "forEach": {
+                "$ref": "#/definitions/ForEachLoop",
+                "description": "Action-level forEach — repeat only this action per item; extract+assertions run once after."
+              },
+              "for": {
+                "$ref": "#/definitions/ForLoop",
+                "description": "Action-level for — repeat only this action per numeric value."
+              },
+              "repeat": {
+                "$ref": "#/definitions/RepeatLoop",
+                "description": "Action-level repeat — repeat only this action up to count times."
               }
             }
           }
@@ -951,6 +949,18 @@
               "timeout": {
                 "type": "integer",
                 "description": "Query timeout in milliseconds."
+              },
+              "forEach": {
+                "$ref": "#/definitions/ForEachLoop",
+                "description": "Action-level forEach — repeat only this query per item."
+              },
+              "for": {
+                "$ref": "#/definitions/ForLoop",
+                "description": "Action-level for — repeat only this query per numeric value."
+              },
+              "repeat": {
+                "$ref": "#/definitions/RepeatLoop",
+                "description": "Action-level repeat — repeat only this query up to count times."
               }
             }
           }
@@ -969,6 +979,18 @@
                 "type": "integer",
                 "description": "Duration to wait in milliseconds.",
                 "exclusiveMinimum": 0
+              },
+              "forEach": {
+                "$ref": "#/definitions/ForEachLoop",
+                "description": "Action-level forEach — repeat only this wait per item."
+              },
+              "for": {
+                "$ref": "#/definitions/ForLoop",
+                "description": "Action-level for — repeat only this wait per numeric value."
+              },
+              "repeat": {
+                "$ref": "#/definitions/RepeatLoop",
+                "description": "Action-level repeat — repeat only this wait up to count times."
               }
             }
           }
@@ -989,11 +1011,12 @@
               },
               "steps": {
                 "type": "array",
-                "description": "Ordered UI sub-steps (visit, click, type, waitFor, extract, screenshot). Entries can also be { $ref: 'path' } to splice in shared sub-step fragments.",
+                "description": "Ordered UI sub-steps (visit, click, type, waitFor, extract, screenshot). Entries can also be { $ref: 'path' } to splice in shared sub-step fragments, or loop groups with nested steps.",
                 "items": {
                   "oneOf": [
                     { "$ref": "#/definitions/UiSubStep" },
-                    { "$ref": "#/definitions/UiSubStepRef" }
+                    { "$ref": "#/definitions/UiSubStepRef" },
+                    { "$ref": "#/definitions/UiSubStepGroup" }
                   ]
                 }
               }
@@ -1032,6 +1055,42 @@
           "description": "Relative path to a sub-step fragment file (e.g., '../shared/login-flow.yaml')."
         }
       }
+    },
+
+    "UiSubStepGroup": {
+      "type": "object",
+      "description": "A loop group inside a UI action's steps array. Repeats the nested steps per iteration of the loop modifier.",
+      "required": ["steps"],
+      "oneOf": [
+        { "required": ["forEach", "steps"] },
+        { "required": ["for", "steps"] },
+        { "required": ["repeat", "steps"] }
+      ],
+      "properties": {
+        "forEach": {
+          "$ref": "#/definitions/ForEachLoop",
+          "description": "Iterate over an array of items."
+        },
+        "for": {
+          "$ref": "#/definitions/ForLoop",
+          "description": "Iterate over a numeric range."
+        },
+        "repeat": {
+          "$ref": "#/definitions/RepeatLoop",
+          "description": "Repeat up to count times, optionally until assertions pass."
+        },
+        "steps": {
+          "type": "array",
+          "description": "UI sub-steps to repeat per iteration.",
+          "items": {
+            "oneOf": [
+              { "$ref": "#/definitions/UiSubStep" },
+              { "$ref": "#/definitions/UiSubStepRef" }
+            ]
+          }
+        }
+      },
+      "additionalProperties": false
     },
 
     "UiSubStep": {
@@ -1328,20 +1387,33 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
+        "forEach": {
+          "$ref": "#/definitions/ForEachLoop",
+          "description": "Assertion-block forEach — run these assertions once per item. items can be a $.path into the document or a {{variable}} reference."
+        },
+        "for": {
+          "$ref": "#/definitions/ForLoop",
+          "description": "Assertion-block for — run these assertions for each value in a numeric range."
+        },
+        "repeat": {
+          "$ref": "#/definitions/RepeatLoop",
+          "description": "Assertion-block repeat — run assertions up to N times with optional until condition."
+        },
         "assertions": {
           "type": "array",
-          "description": "Field assertions using dotted paths.",
+          "description": "Field assertions evaluated against the root document ($.response, $.match, $.variables, etc.).",
           "items": { "$ref": "#/definitions/Assertion" }
         },
         "extract": {
           "type": "object",
-          "description": "Extract variables from the matched result.",
+          "description": "Extract variables from the current document context.",
           "additionalProperties": {
             "oneOf": [
               {
                 "type": "string",
-                "description": "JSONPath expression (e.g. $.body.id)"
+                "description": "JSONPath expression (e.g. $.response.body.id)"
               },
+              { "$ref": "#/definitions/ExtractRuleWithTransform" },
               {
                 "type": "object",
                 "description": "Regex extraction rule — resolve a JSONPath, then apply a regex pattern.",
@@ -1368,78 +1440,172 @@
         },
         "match": {
           "$ref": "#/definitions/MatchCriteria"
-        },
-        "count": { "$ref": "#/definitions/CountAssertion" },
-        "assertionScope": {
-          "type": "string",
-          "description": "Which matching entries to validate.",
-          "enum": ["all", "first", "last", "any"]
-        },
-        "service": {
-          "type": "string",
-          "description": "Service whose console logs to check (makes this a consoleLog block)."
-        },
-        "consoleAssertions": {
-          "type": "array",
-          "description": "Console log assertions.",
-          "items": { "$ref": "#/definitions/ConsoleLogAssertion" }
         }
       }
     },
 
     "MatchCriteria": {
       "type": "object",
-      "description": "Filter criteria for matching observed HTTP traffic (makes this an httpCall block).",
-      "additionalProperties": false,
-      "properties": {
-        "origin": {
-          "type": "string",
-          "description": "Name of the service that made the request."
-        },
-        "method": { "type": "string", "description": "HTTP method to match." },
-        "url": {
-          "type": "string",
-          "description": "Target URL pattern: 'service-name/path'."
-        }
-      }
-    },
-
-    "Assertion": {
-      "type": "object",
-      "required": ["path", "operator"],
+      "description": "Filter an array in the root document. Use where clauses with $$ to reference each candidate entry.",
+      "required": ["path"],
       "additionalProperties": false,
       "properties": {
         "path": {
           "type": "string",
-          "description": "Dotted path to the value (e.g., 'response.status', 'response.body.user.id')."
+          "description": "Root document path to the array to filter (e.g. '$.traffic', '$.consoleLogs')."
+        },
+        "where": {
+          "type": "array",
+          "description": "Filter conditions. Each entry uses $$.field to reference the candidate element.",
+          "items": { "$ref": "#/definitions/WhereEntry" }
+        },
+        "count": {
+          "oneOf": [
+            {
+              "type": "integer",
+              "description": "Exact expected count of matched entries.",
+              "minimum": 0
+            },
+            { "$ref": "#/definitions/CountAssertion" }
+          ],
+          "description": "Assert on the number of matched entries. Integer for exact match, or {operator, value} object."
+        },
+        "as": {
+          "type": "string",
+          "description": "Save matched entries to a variable accessible as $.variables.<name> in subsequent blocks."
+        }
+      }
+    },
+
+    "WhereEntry": {
+      "type": "object",
+      "description": "A filter condition for match.where. Use path for assertion form, or or/and/not for combinators.",
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Path into the candidate entry (must start with '$$.')."
         },
         "operator": {
           "type": "string",
           "description": "Comparison operator.",
           "enum": [
             "eq",
+            "eqIgnoreCase",
             "ne",
             "gt",
             "gte",
             "lt",
             "lte",
             "contains",
+            "containsIgnoreCase",
             "notContains",
+            "notContainsIgnoreCase",
             "matches",
             "exists",
             "notExists",
             "in",
             "notIn",
-            "type",
-            "length",
             "isEmpty",
-            "notEmpty",
-            "arrayContains",
-            "arrayNotContains"
+            "notEmpty"
           ]
         },
         "value": {
           "description": "Expected value. Supports {{variable}} interpolation in strings."
+        },
+        "or": {
+          "type": "array",
+          "description": "Logical OR — at least one entry must match.",
+          "items": { "$ref": "#/definitions/WhereEntry" }
+        },
+        "and": {
+          "type": "array",
+          "description": "Logical AND — all entries must match.",
+          "items": { "$ref": "#/definitions/WhereEntry" }
+        },
+        "not": {
+          "$ref": "#/definitions/WhereEntry",
+          "description": "Logical NOT — entry must not match."
+        }
+      }
+    },
+
+    "Assertion": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "An assertion with exactly one source field (path, count, type, keys, values, or entries) plus an operator and optional value.",
+      "properties": {
+        "path": {
+          "oneOf": [
+            {
+              "type": "string",
+              "description": "Dotted path to the value (e.g. '$.response.status', '$.match.request.body.amount')."
+            },
+            {
+              "type": "object",
+              "description": "Path with transform — resolve a path and apply a transform before comparing.",
+              "required": ["from"],
+              "additionalProperties": false,
+              "properties": {
+                "from": {
+                  "type": "string",
+                  "description": "Source path (must start with $.)."
+                },
+                "transform": {
+                  "type": "string",
+                  "description": "Transform to apply before comparison.",
+                  "enum": ["length", "type", "keys", "values", "entries"]
+                }
+              }
+            }
+          ]
+        },
+        "count": {
+          "type": "string",
+          "description": "Source field shorthand — get the length of the array/object at this path."
+        },
+        "type": {
+          "type": "string",
+          "description": "Source field shorthand — get the JS type of the value at this path."
+        },
+        "keys": {
+          "type": "string",
+          "description": "Source field shorthand — get the keys of the object at this path."
+        },
+        "values": {
+          "type": "string",
+          "description": "Source field shorthand — get the values of the object at this path."
+        },
+        "entries": {
+          "type": "string",
+          "description": "Source field shorthand — get [key, value] pairs of the object at this path."
+        },
+        "operator": {
+          "type": "string",
+          "description": "Comparison operator.",
+          "enum": [
+            "eq",
+            "eqIgnoreCase",
+            "ne",
+            "gt",
+            "gte",
+            "lt",
+            "lte",
+            "contains",
+            "containsIgnoreCase",
+            "notContains",
+            "notContainsIgnoreCase",
+            "matches",
+            "exists",
+            "notExists",
+            "in",
+            "notIn",
+            "isEmpty",
+            "notEmpty"
+          ]
+        },
+        "value": {
+          "description": "Expected value. Can be a literal, {{variable}}, or a ValueRef object {from, transform?}."
         },
         "disabled": {
           "type": "boolean",
@@ -1448,34 +1614,194 @@
       }
     },
 
-    "ConsoleLogAssertion": {
-      "type": "object",
-      "additionalProperties": false,
+    "LoopBodyProperties": {
+      "description": "Properties that can appear inside any loop body. Which ones are valid depends on the level (test, step, assertion-block) — the CLI validator enforces level rules.",
       "properties": {
-        "level": {
-          "type": "string",
-          "description": "Filter by log level.",
-          "enum": ["INFO", "WARN", "ERROR", "DEBUG"]
+        "steps": {
+          "type": "array",
+          "description": "Steps to execute per iteration (test-level loops).",
+          "items": { "$ref": "#/definitions/TestStep" }
         },
-        "message": {
-          "type": "object",
-          "description": "Filter by message content.",
-          "additionalProperties": false,
-          "properties": {
-            "operator": {
-              "type": "string",
-              "description": "Match mode: 'eq' (exact), 'contains' (substring), 'matches' (regex).",
-              "enum": ["eq", "contains", "matches"]
-            },
-            "value": {
-              "type": "string",
-              "description": "Message text to match. Supports {{variable}} interpolation."
-            }
+        "action": { "$ref": "#/definitions/AnyAction" },
+        "assertions": {
+          "type": "array",
+          "description": "Assertions to validate per iteration. At step level these are AssertionBlock objects; at assertion-block level these are flat Assertion objects.",
+          "items": {
+            "oneOf": [
+              { "$ref": "#/definitions/AssertionBlock" },
+              { "$ref": "#/definitions/Assertion" }
+            ]
           }
         },
-        "count": { "$ref": "#/definitions/CountAssertion" },
-        "disabled": { "type": "boolean", "description": "Skip this assertion." }
+        "extract": {
+          "type": "object",
+          "description": "Extract variables per iteration.",
+          "additionalProperties": {
+            "oneOf": [
+              { "type": "string" },
+              { "$ref": "#/definitions/ExtractRuleWithTransform" }
+            ]
+          }
+        },
+        "match": { "$ref": "#/definitions/MatchCriteria" },
+        "forEach": { "$ref": "#/definitions/ForEachLoop" },
+        "for": { "$ref": "#/definitions/ForLoop" },
+        "repeat": { "$ref": "#/definitions/RepeatLoop" }
       }
+    },
+
+    "ForEachLoop": {
+      "type": "object",
+      "description": "Iterate over an array of items. Each iteration sets the loop variable (as) to the current item. Place loop body content (steps, assertions, extract) inside this object.",
+      "required": ["items", "as"],
+      "additionalProperties": false,
+      "allOf": [{ "$ref": "#/definitions/LoopBodyProperties" }],
+      "properties": {
+        "items": {
+          "oneOf": [
+            {
+              "type": "array",
+              "description": "Inline array of items to iterate over."
+            },
+            {
+              "type": "string",
+              "description": "Variable reference ({{varName}}) or JSONPath ($.response.body.items) resolving to an array."
+            }
+          ]
+        },
+        "as": {
+          "type": "string",
+          "description": "Variable name for the current item. Access fields via {{as.field}}."
+        },
+        "name": {
+          "type": "string",
+          "description": "Optional loop name. When set, exposes loop metadata as a variable: {{name.index}}, {{name.items}}, {{name.completed}}, {{name.iterations}}."
+        },
+        "delayMs": {
+          "type": "integer",
+          "description": "Milliseconds to wait between iterations.",
+          "minimum": 0
+        },
+        "steps": true,
+        "action": true,
+        "assertions": true,
+        "extract": true,
+        "match": true,
+        "forEach": true,
+        "for": true,
+        "repeat": true
+      }
+    },
+
+    "ForLoop": {
+      "type": "object",
+      "description": "Numeric range loop. Iterates from 'from' to 'to' (inclusive) with optional step. Place loop body content (steps, assertions, extract) inside this object.",
+      "required": ["from", "to", "as"],
+      "additionalProperties": false,
+      "allOf": [{ "$ref": "#/definitions/LoopBodyProperties" }],
+      "properties": {
+        "from": {
+          "type": "integer",
+          "description": "Start value (inclusive)."
+        },
+        "to": {
+          "type": "integer",
+          "description": "End value (inclusive)."
+        },
+        "step": {
+          "type": "integer",
+          "description": "Increment per iteration. Positive for ascending, negative for descending. Must not be 0. Defaults to 1; use negative step for descending ranges.",
+          "not": { "const": 0 }
+        },
+        "as": {
+          "type": "string",
+          "description": "Variable name for the current numeric value."
+        },
+        "name": {
+          "type": "string",
+          "description": "Optional loop name. When set, exposes loop metadata as a variable: {{name.index}}, {{name.completed}}, {{name.iterations}}."
+        },
+        "delayMs": {
+          "type": "integer",
+          "description": "Milliseconds to wait between iterations.",
+          "minimum": 0
+        },
+        "steps": true,
+        "action": true,
+        "assertions": true,
+        "extract": true,
+        "match": true,
+        "forEach": true,
+        "for": true,
+        "repeat": true
+      }
+    },
+
+    "RepeatLoop": {
+      "type": "object",
+      "description": "Repeat a fixed number of times, optionally stopping early when 'until' assertions all pass. Place loop body content (steps, assertions, extract) inside this object.",
+      "required": ["count", "as"],
+      "additionalProperties": false,
+      "allOf": [{ "$ref": "#/definitions/LoopBodyProperties" }],
+      "properties": {
+        "count": {
+          "type": "integer",
+          "description": "Maximum number of iterations.",
+          "exclusiveMinimum": 0
+        },
+        "as": {
+          "type": "string",
+          "description": "Variable name for the current iteration index (0-based)."
+        },
+        "name": {
+          "type": "string",
+          "description": "Optional loop name. When set, exposes loop metadata as a variable: {{name.completed}}, {{name.iterations}}."
+        },
+        "delayMs": {
+          "type": "integer",
+          "description": "Milliseconds to wait between iterations.",
+          "minimum": 0
+        },
+        "until": {
+          "type": "array",
+          "description": "Assertions checked after each iteration. When ALL pass, the loop stops early. The loop always executes at least once.",
+          "items": { "$ref": "#/definitions/Assertion" }
+        },
+        "steps": true,
+        "action": true,
+        "assertions": true,
+        "extract": true,
+        "match": true,
+        "forEach": true,
+        "for": true,
+        "repeat": true
+      }
+    },
+
+    "ExtractRuleWithTransform": {
+      "type": "object",
+      "description": "Extract and transform an object into an array (keys, values, or entries).",
+      "required": ["transform"],
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "JSONPath to the source object (e.g. $.response.body.settings)."
+        },
+        "from": {
+          "type": "string",
+          "description": "Variable reference ({{varName}}) to use as the source object. Alternative to path."
+        },
+        "transform": {
+          "type": "string",
+          "description": "How to convert the object to an array.",
+          "enum": ["keys", "values", "entries"]
+        }
+      },
+      "oneOf": [
+        { "required": ["path", "transform"] },
+        { "required": ["from", "transform"] }
+      ]
     },
 
     "CountAssertion": {

@@ -1,0 +1,413 @@
+{
+  "name": "where-combinators",
+  "description": "Exercises or, and, not combinators in match where clauses, plus nested combinators (or inside and, not inside or)",
+  "config": {
+    "timeoutSeconds": 120
+  },
+  "items": [
+    {
+      "$ref": "../shared/service-a.yaml"
+    },
+    {
+      "$ref": "../shared/service-b.json"
+    },
+    {
+      "$ref": "../shared/service-c.yaml"
+    }
+  ],
+  "tests": [
+    {
+      "name": "or combinator — match traffic to either service-b or service-c",
+      "steps": [
+        {
+          "name": "Fan out from service-a to both service-b and service-c",
+          "action": {
+            "type": "httpRequest",
+            "method": "POST",
+            "url": "service-a/fan-out-or",
+            "headers": {
+              "Content-Type": "application/json"
+            },
+            "body": {
+              "requests": [
+                {
+                  "baseURL": "http://service-b",
+                  "url": "/or-target",
+                  "method": "POST",
+                  "data": {
+                    "response": {
+                      "value": { "handler": "service-b" }
+                    }
+                  }
+                },
+                {
+                  "baseURL": "http://service-c",
+                  "url": "/or-target",
+                  "method": "POST",
+                  "data": {
+                    "response": {
+                      "value": { "handler": "service-c" }
+                    }
+                  }
+                }
+              ]
+            }
+          },
+          "assertions": [
+            {
+              "assertions": [
+                {
+                  "path": "$.response.status",
+                  "operator": "eq",
+                  "value": 200
+                }
+              ]
+            },
+            {
+              "match": {
+                "path": "$.traffic",
+                "where": [
+                  {
+                    "path": "$$.origin",
+                    "operator": "eq",
+                    "value": "service-a"
+                  },
+                  {
+                    "or": [
+                      {
+                        "path": "$$.request.url",
+                        "operator": "contains",
+                        "value": "service-b/or-target"
+                      },
+                      {
+                        "path": "$$.request.url",
+                        "operator": "contains",
+                        "value": "service-c/or-target"
+                      }
+                    ]
+                  }
+                ],
+                "count": {
+                  "operator": "eq",
+                  "value": 2
+                }
+              },
+              "assertions": [
+                {
+                  "path": "$.match.response.status",
+                  "operator": "eq",
+                  "value": 200
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "and combinator — match traffic with multiple conditions",
+      "steps": [
+        {
+          "name": "Service-a POSTs to service-b with specific path and method",
+          "action": {
+            "type": "httpRequest",
+            "method": "POST",
+            "url": "service-a/and-test",
+            "headers": {
+              "Content-Type": "application/json"
+            },
+            "body": {
+              "requests": [
+                {
+                  "baseURL": "http://service-b",
+                  "url": "/and-target",
+                  "method": "POST",
+                  "data": {
+                    "response": {
+                      "value": { "verified": true }
+                    }
+                  }
+                },
+                {
+                  "baseURL": "http://service-b",
+                  "url": "/other-endpoint",
+                  "method": "GET",
+                  "data": {
+                    "response": {
+                      "value": { "verified": false }
+                    }
+                  }
+                }
+              ]
+            }
+          },
+          "assertions": [
+            {
+              "assertions": [
+                {
+                  "path": "$.response.status",
+                  "operator": "eq",
+                  "value": 200
+                }
+              ]
+            },
+            {
+              "match": {
+                "path": "$.traffic",
+                "where": [
+                  {
+                    "and": [
+                      {
+                        "path": "$$.origin",
+                        "operator": "eq",
+                        "value": "service-a"
+                      },
+                      {
+                        "path": "$$.request.method",
+                        "operator": "eq",
+                        "value": "POST"
+                      },
+                      {
+                        "path": "$$.request.url",
+                        "operator": "contains",
+                        "value": "service-b/and-target"
+                      }
+                    ]
+                  }
+                ],
+                "count": {
+                  "operator": "eq",
+                  "value": 1
+                }
+              },
+              "assertions": [
+                {
+                  "path": "$.match.response.body.verified",
+                  "operator": "eq",
+                  "value": true
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "not combinator — exclude matching traffic",
+      "steps": [
+        {
+          "name": "Service-a calls service-b on two endpoints, filter with not",
+          "action": {
+            "type": "httpRequest",
+            "method": "POST",
+            "url": "service-a/not-test",
+            "headers": {
+              "Content-Type": "application/json"
+            },
+            "body": {
+              "requests": [
+                {
+                  "baseURL": "http://service-b",
+                  "url": "/keep-this",
+                  "method": "POST",
+                  "data": {
+                    "response": {
+                      "value": { "kept": true }
+                    }
+                  }
+                },
+                {
+                  "baseURL": "http://service-b",
+                  "url": "/exclude-this",
+                  "method": "POST",
+                  "data": {
+                    "response": {
+                      "value": { "kept": false }
+                    }
+                  }
+                }
+              ]
+            }
+          },
+          "assertions": [
+            {
+              "assertions": [
+                {
+                  "path": "$.response.status",
+                  "operator": "eq",
+                  "value": 200
+                }
+              ]
+            },
+            {
+              "match": {
+                "path": "$.traffic",
+                "where": [
+                  {
+                    "path": "$$.origin",
+                    "operator": "eq",
+                    "value": "service-a"
+                  },
+                  {
+                    "not": {
+                      "path": "$$.request.url",
+                      "operator": "contains",
+                      "value": "/exclude-this"
+                    }
+                  }
+                ],
+                "count": {
+                  "operator": "eq",
+                  "value": 1
+                }
+              },
+              "assertions": [
+                {
+                  "path": "$.match.response.body.kept",
+                  "operator": "eq",
+                  "value": true
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Nested combinators — or inside and, not inside or",
+      "steps": [
+        {
+          "name": "Service-a calls service-b and service-c with varied paths",
+          "action": {
+            "type": "httpRequest",
+            "method": "POST",
+            "url": "service-a/nested-combinators",
+            "headers": {
+              "Content-Type": "application/json"
+            },
+            "body": {
+              "requests": [
+                {
+                  "baseURL": "http://service-b",
+                  "url": "/api/users",
+                  "method": "POST",
+                  "data": {
+                    "response": {
+                      "value": { "type": "user-b" }
+                    }
+                  }
+                },
+                {
+                  "baseURL": "http://service-c",
+                  "url": "/api/users",
+                  "method": "POST",
+                  "data": {
+                    "response": {
+                      "value": { "type": "user-c" }
+                    }
+                  }
+                },
+                {
+                  "baseURL": "http://service-b",
+                  "url": "/api/health",
+                  "method": "GET",
+                  "data": {
+                    "response": {
+                      "value": { "type": "health-b" }
+                    }
+                  }
+                }
+              ]
+            }
+          },
+          "assertions": [
+            {
+              "assertions": [
+                {
+                  "path": "$.response.status",
+                  "operator": "eq",
+                  "value": 200
+                }
+              ]
+            },
+            {
+              "match": {
+                "path": "$.traffic",
+                "where": [
+                  {
+                    "and": [
+                      {
+                        "path": "$$.request.url",
+                        "operator": "contains",
+                        "value": "/api/users"
+                      },
+                      {
+                        "or": [
+                          {
+                            "path": "$$.request.url",
+                            "operator": "contains",
+                            "value": "service-b"
+                          },
+                          {
+                            "path": "$$.request.url",
+                            "operator": "contains",
+                            "value": "service-c"
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ],
+                "count": {
+                  "operator": "eq",
+                  "value": 2
+                }
+              }
+            },
+            {
+              "match": {
+                "path": "$.traffic",
+                "where": [
+                  {
+                    "path": "$$.origin",
+                    "operator": "eq",
+                    "value": "service-a"
+                  },
+                  {
+                    "or": [
+                      {
+                        "path": "$$.request.url",
+                        "operator": "contains",
+                        "value": "service-b/api/users"
+                      },
+                      {
+                        "and": [
+                          {
+                            "path": "$$.request.url",
+                            "operator": "contains",
+                            "value": "service-c"
+                          },
+                          {
+                            "not": {
+                              "path": "$$.request.url",
+                              "operator": "contains",
+                              "value": "/health"
+                            }
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ],
+                "count": {
+                  "operator": "eq",
+                  "value": 2
+                }
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

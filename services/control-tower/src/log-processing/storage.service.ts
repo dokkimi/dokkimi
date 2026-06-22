@@ -151,7 +151,7 @@ export class StorageService {
           duration: message.duration ?? null,
           error: message.error ?? null,
           errorType: message.errorType ?? null,
-          variables: message.variables ?? {},
+          variables: (message.variables ?? {}) as Prisma.InputJsonValue,
           timestamp: message.timestamp
             ? new Date(message.timestamp)
             : new Date(),

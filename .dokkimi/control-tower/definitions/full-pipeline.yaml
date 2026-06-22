@@ -19,7 +19,7 @@ tests:
           url: control-tower/health
         assertions:
           - assertions:
-              - path: response.status
+              - path: $.response.status
                 operator: eq
                 value: 200
   - name: Full e2e flow — CT runs + log ingestion + test completion
@@ -36,16 +36,16 @@ tests:
             definitions:
               - full-pipeline
         extract:
-          runId: $.body.runId
-          instanceId: $.body.instances[0].id
+          runId: $.response.body.runId
+          instanceId: $.response.body.instances[0].id
         assertions:
           - assertions:
-              - path: response.status
+              - path: $.response.status
                 operator: in
                 value:
                   - 200
                   - 201
-              - path: response.body.runId
+              - path: $.response.body.runId
                 operator: exists
       - name: Parallel requests
         action:
@@ -127,7 +127,7 @@ tests:
                 endTime: '2026-01-01T00:00:01.000Z'
         assertions:
           - assertions:
-              - path: response.status
+              - path: $.response.status
                 operator: eq
                 value: 202
       - name: Verify complete data in shared database
@@ -140,16 +140,16 @@ tests:
             FROM database_logs WHERE "instanceId" = '{{instanceId}}') as db_count
         assertions:
           - assertions:
-              - path: success
+              - path: $.response.success
                 operator: eq
                 value: true
-              - path: data[0].http_count
+              - path: $.response.data[0].http_count
                 operator: gte
                 value: 1
-              - path: data[0].console_count
+              - path: $.response.data[0].console_count
                 operator: gte
                 value: 1
-              - path: data[0].db_count
+              - path: $.response.data[0].db_count
                 operator: gte
                 value: 1
   - name: MySQL cross-engine database verification
@@ -173,7 +173,7 @@ tests:
             'PIPELINE', 'full-pipeline', '{"test": true}')
         assertions:
           - assertions:
-              - path: success
+              - path: $.response.success
                 operator: eq
                 value: true
       - name: Read back from MySQL
@@ -183,16 +183,16 @@ tests:
           query: SELECT * FROM audit_log WHERE id = 'audit-e2e'
         assertions:
           - assertions:
-              - path: success
+              - path: $.response.success
                 operator: eq
                 value: true
-              - path: data
-                operator: length
+              - count: $.response.data
+                operator: eq
                 value: 1
-              - path: data[0].action
+              - path: $.response.data[0].action
                 operator: eq
                 value: E2E_TEST
-              - path: data[0].entity_type
+              - path: $.response.data[0].entity_type
                 operator: eq
                 value: PIPELINE
   - name: Redis cache operations
@@ -204,7 +204,7 @@ tests:
           query: SET pipeline-test-key pipeline-running
         assertions:
           - assertions:
-              - path: success
+              - path: $.response.success
                 operator: eq
                 value: true
       - name: Get value back from Redis
@@ -214,7 +214,7 @@ tests:
           query: GET pipeline-test-key
         assertions:
           - assertions:
-              - path: success
+              - path: $.response.success
                 operator: eq
                 value: true
   - name: Concurrent load — parallel log ingestion

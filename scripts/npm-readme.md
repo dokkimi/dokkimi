@@ -32,6 +32,7 @@ Dokkimi gives you **isolated test environments on demand**:
 - **Isolated environments** — every test run gets its own Docker network with dedicated services, databases, and browser. No shared state. No corrupted tests.
 - **Variable extraction** — extract values from responses using JSONPath + regex capture groups, then use them in subsequent steps.
 - **Parallel test execution** — run steps in parallel within a test, and run multiple test definitions concurrently.
+- **Loop modifiers** — iterate over data with `forEach`, repeat numeric ranges with `for`, or poll with `repeat` + `until`. Loops work at every level: test, step, action, assertion block, and UI sub-step groups.
 - **Zero code changes** — your services run unmodified. Dokkimi wires up sidecars, routing, DNS, browser, and cleanup.
 
 ## Install
@@ -105,11 +106,20 @@ tests:
         assertions:
           # Verify the API call went through correctly
           - match:
-              origin: web-app
-              method: POST
-              url: api-gateway/v1/posts
+              path: '$.traffic'
+              where:
+                - path: '$$.origin'
+                  operator: eq
+                  value: web-app
+                - path: '$$.request.method'
+                  operator: eq
+                  value: POST
+                - path: '$$.request.url'
+                  operator: contains
+                  value: api-gateway/v1/posts
+              count: 1
             assertions:
-              - path: response.status
+              - path: '$.match.response.status'
                 operator: eq
                 value: 201
 
@@ -121,7 +131,7 @@ tests:
           query: "SELECT title FROM posts WHERE title = 'My new post'"
         assertions:
           - assertions:
-              - path: data[0].title
+              - path: $.response.data[0].title
                 operator: eq
                 value: My new post
 ```

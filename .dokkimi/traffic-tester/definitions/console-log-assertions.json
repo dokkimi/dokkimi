@@ -46,52 +46,77 @@
             {
               "assertions": [
                 {
-                  "path": "response.status",
+                  "path": "$.response.status",
                   "operator": "eq",
                   "value": 200
                 }
               ]
             },
             {
-              "service": "service-a",
-              "consoleAssertions": [
-                {
-                  "level": "INFO",
-                  "message": {
+              "match": {
+                "path": "$.consoleLogs",
+                "where": [
+                  {
+                    "path": "$$.service",
+                    "operator": "eq",
+                    "value": "service-a"
+                  },
+                  { "path": "$$.level", "operator": "eq", "value": "INFO" },
+                  {
+                    "path": "$$.message",
                     "operator": "contains",
                     "value": "batch-001"
-                  },
-                  "count": {
-                    "operator": "gte",
-                    "value": 1
                   }
-                },
-                {
-                  "level": "WARN",
-                  "message": {
+                ],
+                "count": { "operator": "gte", "value": 1 }
+              }
+            },
+            {
+              "match": {
+                "path": "$.consoleLogs",
+                "where": [
+                  {
+                    "path": "$$.service",
+                    "operator": "eq",
+                    "value": "service-a"
+                  },
+                  { "path": "$$.level", "operator": "eq", "value": "WARN" },
+                  {
+                    "path": "$$.message",
                     "operator": "contains",
                     "value": "Deprecated"
+                  }
+                ],
+                "count": { "operator": "eq", "value": 1 }
+              }
+            },
+            {
+              "match": {
+                "path": "$.consoleLogs",
+                "where": [
+                  {
+                    "path": "$$.service",
+                    "operator": "eq",
+                    "value": "service-a"
                   },
-                  "count": {
+                  { "path": "$$.level", "operator": "eq", "value": "DEBUG" }
+                ],
+                "count": { "operator": "gte", "value": 1 }
+              }
+            },
+            {
+              "match": {
+                "path": "$.consoleLogs",
+                "where": [
+                  {
+                    "path": "$$.service",
                     "operator": "eq",
-                    "value": 1
-                  }
-                },
-                {
-                  "level": "DEBUG",
-                  "count": {
-                    "operator": "gte",
-                    "value": 1
-                  }
-                },
-                {
-                  "level": "ERROR",
-                  "count": {
-                    "operator": "eq",
-                    "value": 0
-                  }
-                }
-              ]
+                    "value": "service-a"
+                  },
+                  { "path": "$$.level", "operator": "eq", "value": "ERROR" }
+                ],
+                "count": { "operator": "eq", "value": 0 }
+              }
             }
           ]
         }
@@ -126,46 +151,65 @@
             {
               "assertions": [
                 {
-                  "path": "response.status",
+                  "path": "$.response.status",
                   "operator": "eq",
                   "value": 200
                 }
               ]
             },
             {
-              "service": "service-a",
-              "consoleAssertions": [
-                {
-                  "message": {
+              "match": {
+                "path": "$.consoleLogs",
+                "where": [
+                  {
+                    "path": "$$.service",
+                    "operator": "eq",
+                    "value": "service-a"
+                  },
+                  {
+                    "path": "$$.message",
                     "operator": "matches",
                     "value": "REQ-\\d+: Started"
-                  },
-                  "count": {
-                    "operator": "gte",
-                    "value": 1
                   }
-                },
-                {
-                  "message": {
+                ],
+                "count": { "operator": "gte", "value": 1 }
+              }
+            },
+            {
+              "match": {
+                "path": "$.consoleLogs",
+                "where": [
+                  {
+                    "path": "$$.service",
+                    "operator": "eq",
+                    "value": "service-a"
+                  },
+                  {
+                    "path": "$$.message",
                     "operator": "matches",
                     "value": "Validated \\d+ items"
-                  },
-                  "count": {
-                    "operator": "eq",
-                    "value": 1
                   }
-                },
-                {
-                  "message": {
+                ],
+                "count": { "operator": "eq", "value": 1 }
+              }
+            },
+            {
+              "match": {
+                "path": "$.consoleLogs",
+                "where": [
+                  {
+                    "path": "$$.service",
+                    "operator": "eq",
+                    "value": "service-a"
+                  },
+                  {
+                    "path": "$$.message",
                     "operator": "matches",
                     "value": "Total calculated: \\$\\d+\\.\\d{2}"
-                  },
-                  "count": {
-                    "operator": "gte",
-                    "value": 1
                   }
-                }
-              ]
+                ],
+                "count": { "operator": "gte", "value": 1 }
+              }
             }
           ]
         }
@@ -224,88 +268,120 @@
             {
               "assertions": [
                 {
-                  "path": "response.status",
+                  "path": "$.response.status",
                   "operator": "eq",
                   "value": 200
                 },
                 {
-                  "path": "response.body.results",
-                  "operator": "length",
+                  "count": "$.response.body.results",
+                  "operator": "eq",
                   "value": 2
                 }
               ]
             },
             {
-              "service": "service-a",
-              "consoleAssertions": [
-                {
-                  "message": {
+              "match": {
+                "path": "$.consoleLogs",
+                "where": [
+                  {
+                    "path": "$$.service",
+                    "operator": "eq",
+                    "value": "service-a"
+                  },
+                  {
+                    "path": "$$.message",
                     "operator": "contains",
                     "value": "ORCHESTRATOR: Dispatching"
-                  },
-                  "count": {
-                    "operator": "eq",
-                    "value": 1
                   }
-                },
-                {
-                  "message": {
+                ],
+                "count": { "operator": "eq", "value": 1 }
+              }
+            },
+            {
+              "match": {
+                "path": "$.consoleLogs",
+                "where": [
+                  {
+                    "path": "$$.service",
+                    "operator": "eq",
+                    "value": "service-a"
+                  },
+                  {
+                    "path": "$$.message",
                     "operator": "contains",
                     "value": "ORCHESTRATOR: All dispatches completed"
-                  },
-                  "count": {
-                    "operator": "eq",
-                    "value": 1
                   }
-                },
-                {
-                  "level": "ERROR",
-                  "count": {
-                    "operator": "eq",
-                    "value": 0
-                  }
-                }
-              ]
+                ],
+                "count": { "operator": "eq", "value": 1 }
+              }
             },
             {
-              "service": "service-b",
-              "consoleAssertions": [
-                {
-                  "message": {
+              "match": {
+                "path": "$.consoleLogs",
+                "where": [
+                  {
+                    "path": "$$.service",
+                    "operator": "eq",
+                    "value": "service-a"
+                  },
+                  { "path": "$$.level", "operator": "eq", "value": "ERROR" }
+                ],
+                "count": { "operator": "eq", "value": 0 }
+              }
+            },
+            {
+              "match": {
+                "path": "$.consoleLogs",
+                "where": [
+                  {
+                    "path": "$$.service",
+                    "operator": "eq",
+                    "value": "service-b"
+                  },
+                  {
+                    "path": "$$.message",
                     "operator": "contains",
                     "value": "HANDLER-B: Received dispatch"
-                  },
-                  "count": {
-                    "operator": "gte",
-                    "value": 1
                   }
-                },
-                {
-                  "message": {
-                    "operator": "contains",
-                    "value": "HANDLER-B: Completed"
-                  },
-                  "count": {
-                    "operator": "gte",
-                    "value": 1
-                  }
-                }
-              ]
+                ],
+                "count": { "operator": "gte", "value": 1 }
+              }
             },
             {
-              "service": "service-c",
-              "consoleAssertions": [
-                {
-                  "message": {
+              "match": {
+                "path": "$.consoleLogs",
+                "where": [
+                  {
+                    "path": "$$.service",
+                    "operator": "eq",
+                    "value": "service-b"
+                  },
+                  {
+                    "path": "$$.message",
+                    "operator": "contains",
+                    "value": "HANDLER-B: Completed"
+                  }
+                ],
+                "count": { "operator": "gte", "value": 1 }
+              }
+            },
+            {
+              "match": {
+                "path": "$.consoleLogs",
+                "where": [
+                  {
+                    "path": "$$.service",
+                    "operator": "eq",
+                    "value": "service-c"
+                  },
+                  {
+                    "path": "$$.message",
                     "operator": "contains",
                     "value": "HANDLER-C: Received dispatch"
-                  },
-                  "count": {
-                    "operator": "gte",
-                    "value": 1
                   }
-                }
-              ]
+                ],
+                "count": { "operator": "gte", "value": 1 }
+              }
             }
           ]
         }

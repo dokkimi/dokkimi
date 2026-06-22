@@ -1,0 +1,160 @@
+{
+  "name": "test-level-loops",
+  "description": "Validates loop modifiers at the test level — all steps in the test repeat per iteration",
+  "items": [
+    { "$ref": "../shared/api-service.json" },
+    {
+      "$ref": "../shared/postgres-db.json",
+      "initFilePath": "../init-files/schema.sql"
+    }
+  ],
+  "variables": {
+    "seedPosts": [
+      {
+        "id": "b1b2c3d4-0000-0000-0000-000000000001",
+        "title": "Getting Started with Microservices"
+      },
+      {
+        "id": "b1b2c3d4-0000-0000-0000-000000000002",
+        "title": "Why Testing Matters"
+      }
+    ]
+  },
+  "tests": [
+    {
+      "name": "Verify post {{post.title}}",
+      "forEach": {
+        "items": "{{seedPosts}}",
+        "as": "post",
+        "steps": [
+          {
+            "name": "Fetch post via API",
+            "action": {
+              "type": "httpRequest",
+              "method": "GET",
+              "url": "api-service/api/posts/{{post.id}}"
+            },
+            "assertions": [
+              {
+                "assertions": [
+                  {
+                    "path": "$.response.status",
+                    "operator": "eq",
+                    "value": 200
+                  },
+                  {
+                    "path": "$.response.body.title",
+                    "operator": "eq",
+                    "value": "{{post.title}}"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "name": "Verify post exists in DB",
+            "action": {
+              "type": "dbQuery",
+              "database": "postgres-db",
+              "query": "SELECT * FROM posts WHERE id = '{{post.id}}'"
+            },
+            "assertions": [
+              {
+                "assertions": [
+                  {
+                    "path": "$.response.success",
+                    "operator": "eq",
+                    "value": true
+                  },
+                  { "count": "$.response.data", "operator": "eq", "value": 1 }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "Insert and verify batch {{batch}}",
+      "for": {
+        "from": 1,
+        "to": 3,
+        "as": "batch",
+        "steps": [
+          {
+            "name": "Insert batch post",
+            "action": {
+              "type": "dbQuery",
+              "database": "postgres-db",
+              "query": "INSERT INTO posts (title, content, published, author_id) VALUES ('Batch {{batch}} Post', 'Content for batch {{batch}}', true, 'a1b2c3d4-0000-0000-0000-000000000001') RETURNING id"
+            },
+            "extract": {
+              "batchPostId": "$.response.data[0].id"
+            },
+            "assertions": [
+              {
+                "assertions": [
+                  {
+                    "path": "$.response.success",
+                    "operator": "eq",
+                    "value": true
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "name": "Verify batch post via API",
+            "action": {
+              "type": "httpRequest",
+              "method": "GET",
+              "url": "api-service/api/posts/{{batchPostId}}"
+            },
+            "assertions": [
+              {
+                "assertions": [
+                  {
+                    "path": "$.response.status",
+                    "operator": "eq",
+                    "value": 200
+                  },
+                  {
+                    "path": "$.response.body.title",
+                    "operator": "contains",
+                    "value": "Batch {{batch}}"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "Test-level repeat with until — poll health endpoint",
+      "repeat": {
+        "count": 5,
+        "as": "attempt",
+        "delayMs": 200,
+        "until": [
+          {
+            "path": "$.response.status",
+            "operator": "eq",
+            "value": 200
+          }
+        ],
+        "steps": [
+          {
+            "name": "Check health (attempt {{attempt}})",
+            "stopOnFailure": false,
+            "action": {
+              "type": "httpRequest",
+              "method": "GET",
+              "url": "api-service/health"
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

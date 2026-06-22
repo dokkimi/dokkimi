@@ -33,10 +33,10 @@ tests:
           query: GET shared-key
         assertions:
           - assertions:
-              - path: success
+              - path: $.response.success
                 operator: eq
                 value: true
-              - path: data[0].value
+              - path: $.response.data[0].value
                 operator: eq
                 value: cache-value
       - name: GET from session-db returns session-value
@@ -46,10 +46,10 @@ tests:
           query: GET shared-key
         assertions:
           - assertions:
-              - path: success
+              - path: $.response.success
                 operator: eq
                 value: true
-              - path: data[0].value
+              - path: $.response.data[0].value
                 operator: eq
                 value: session-value
   - name: Key in one instance does not exist in the other
@@ -61,7 +61,7 @@ tests:
           query: SET cache-only-key exclusive
         assertions:
           - assertions:
-              - path: success
+              - path: $.response.success
                 operator: eq
                 value: true
       - name: GET from session-db returns empty
@@ -71,11 +71,11 @@ tests:
           query: GET cache-only-key
         assertions:
           - assertions:
-              - path: success
+              - path: $.response.success
                 operator: eq
                 value: true
-              - path: data
-                operator: length
+              - count: $.response.data
+                operator: eq
                 value: 0
 
   - name: Parallel writes and reads back correct values
@@ -97,7 +97,7 @@ tests:
           query: GET par-key
         assertions:
           - assertions:
-              - path: data[0].value
+              - path: $.response.data[0].value
                 operator: eq
                 value: alpha
       - name: GET par-key from session-db returns beta
@@ -107,7 +107,7 @@ tests:
           query: GET par-key
         assertions:
           - assertions:
-              - path: data[0].value
+              - path: $.response.data[0].value
                 operator: eq
                 value: beta
   - name: Different data structures per instance
@@ -129,11 +129,11 @@ tests:
           query: HGETALL user:1
         assertions:
           - assertions:
-              - path: success
+              - path: $.response.success
                 operator: eq
                 value: true
-              - path: data
-                operator: length
+              - count: $.response.data
+                operator: eq
                 value: 1
       - name: LRANGE returns list items from session-db
         action:
@@ -142,11 +142,11 @@ tests:
           query: LRANGE recent-sessions 0 -1
         assertions:
           - assertions:
-              - path: success
+              - path: $.response.success
                 operator: eq
                 value: true
-              - path: data
-                operator: length
+              - count: $.response.data
+                operator: eq
                 value: 3
   - name: DEL in one instance does not affect the other
     steps:
@@ -167,10 +167,10 @@ tests:
           query: DEL del-test
         assertions:
           - assertions:
-              - path: success
+              - path: $.response.success
                 operator: eq
                 value: true
-              - path: data[0].value
+              - path: $.response.data[0].value
                 operator: eq
                 value: 1
       - name: GET del-test from cache-db returns empty (deleted)
@@ -180,8 +180,8 @@ tests:
           query: GET del-test
         assertions:
           - assertions:
-              - path: data
-                operator: length
+              - count: $.response.data
+                operator: eq
                 value: 0
       - name: GET del-test from session-db still returns present
         action:
@@ -190,6 +190,6 @@ tests:
           query: GET del-test
         assertions:
           - assertions:
-              - path: data[0].value
+              - path: $.response.data[0].value
                 operator: eq
                 value: present

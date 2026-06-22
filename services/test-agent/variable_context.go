@@ -4,22 +4,22 @@ import (
 	"encoding/json"
 	"fmt"
 	"regexp"
-	"strings"
 	"sync"
 )
 
-var variablePattern = regexp.MustCompile(`\{\{(\w+)\}\}`)
+var variablePattern = regexp.MustCompile(`\{\{([\w-]+(?:\.[\w-]+|\[\d+\])*)\}\}`)
 
 // VariableContext stores and resolves variables during test execution.
 type VariableContext struct {
-	mu        sync.RWMutex
-	variables map[string]string
+	mu         sync.RWMutex
+	variables  map[string]interface{}
+	generation uint64
 }
 
 // NewVariableContext creates a new empty variable context.
 func NewVariableContext() *VariableContext {
 	return &VariableContext{
-		variables: make(map[string]string),
+		variables: make(map[string]interface{}),
 	}
 }
 
@@ -29,35 +29,86 @@ func NewVariableContext() *VariableContext {
 func (vc *VariableContext) Reset() {
 	vc.mu.Lock()
 	defer vc.mu.Unlock()
-	vc.variables = make(map[string]string)
+	vc.variables = make(map[string]interface{})
+	vc.generation++
 }
 
 // Set stores a variable value.
-func (vc *VariableContext) Set(name, value string) {
+func (vc *VariableContext) Set(name string, value interface{}) {
 	vc.mu.Lock()
 	defer vc.mu.Unlock()
 	vc.variables[name] = value
+	vc.generation++
+}
+
+// Delete removes a variable. No-op if the variable does not exist.
+func (vc *VariableContext) Delete(name string) {
+	vc.mu.Lock()
+	defer vc.mu.Unlock()
+	delete(vc.variables, name)
+	vc.generation++
+}
+
+// Generation returns the current generation counter. It increments on every
+// Set, Delete, or Reset call, allowing callers to detect whether the variable
+// context has changed since their last observation.
+func (vc *VariableContext) Generation() uint64 {
+	vc.mu.RLock()
+	defer vc.mu.RUnlock()
+	return vc.generation
 }
 
 // Resolve replaces {{variableName}} placeholders in a template string.
 // Returns an error if a referenced variable is not defined.
+// Dotted paths (e.g. {{user.email}}, {{users[0].name}}) are resolved
+// by looking up the first segment in the variable map and traversing
+// remaining segments into the value.
 func (vc *VariableContext) Resolve(template string) (string, error) {
 	vc.mu.RLock()
 	defer vc.mu.RUnlock()
 	var resolveErr error
 	result := variablePattern.ReplaceAllStringFunc(template, func(match string) string {
-		varName := variablePattern.FindStringSubmatch(match)[1]
-		value, ok := vc.variables[varName]
-		if !ok {
-			resolveErr = fmt.Errorf("variable '%s' is not defined", varName)
+		varPath := variablePattern.FindStringSubmatch(match)[1]
+		value, err := vc.resolveVarPath(varPath)
+		if err != nil {
+			resolveErr = err
 			return match
 		}
-		return value
+		return valueToString(value)
 	})
 	if resolveErr != nil {
 		return "", resolveErr
 	}
 	return result, nil
+}
+
+// ResolveTyped resolves a template that is exactly one {{var}} reference,
+// returning the typed value. If the template contains anything besides a
+// single {{var}}, it falls back to string interpolation via Resolve.
+func (vc *VariableContext) ResolveTyped(template string) (interface{}, error) {
+	matches := variablePattern.FindAllStringIndex(template, -1)
+	if len(matches) == 1 && matches[0][0] == 0 && matches[0][1] == len(template) {
+		vc.mu.RLock()
+		defer vc.mu.RUnlock()
+		varPath := variablePattern.FindStringSubmatch(template)[1]
+		return vc.resolveVarPath(varPath)
+	}
+	return vc.Resolve(template)
+}
+
+// resolveVarPath looks up a dotted/bracketed path in the variable map.
+// Must be called with vc.mu held (at least RLock).
+// Tries the full path as a flat key first, then falls back to
+// EvaluateDocPath for nested object traversal (e.g. map-valued variables).
+func (vc *VariableContext) resolveVarPath(varPath string) (interface{}, error) {
+	if value, ok := vc.variables[varPath]; ok {
+		return value, nil
+	}
+	value, ok := EvaluateDocPath(vc.variables, varPath)
+	if !ok {
+		return nil, fmt.Errorf("variable '%s' is not defined", varPath)
+	}
+	return value, nil
 }
 
 // ResolveAction returns a copy of the action with variables resolved in URL, Headers values, and Body string values.
@@ -110,7 +161,11 @@ func (vc *VariableContext) ResolveAction(action StepAction) (StepAction, error) 
 		if err != nil {
 			return resolved, fmt.Errorf("resolving params: %w", err)
 		}
-		resolved.Params = resolvedParams.(map[string]interface{})
+		if m, ok := resolvedParams.(map[string]interface{}); ok {
+			resolved.Params = m
+		} else {
+			return resolved, fmt.Errorf("resolving params: expected object, got %T", resolvedParams)
+		}
 	}
 
 	// Resolve sub-actions in parallel blocks.
@@ -129,59 +184,119 @@ func (vc *VariableContext) ResolveAction(action StepAction) (StepAction, error) 
 	return resolved, nil
 }
 
-// resolveValue recursively resolves variables in a value.
-// ResolveAssertionBlocks resolves variable templates in assertion expected values,
-// match criteria, and console assertion message filters.
+// ResolveAssertionBlocks resolves variable templates in assertion paths/values
+// and match where entry values. Does NOT resolve $$-prefixed paths.
 func (vc *VariableContext) ResolveAssertionBlocks(blocks []AssertionBlock) []AssertionBlock {
 	resolved := make([]AssertionBlock, len(blocks))
 	for i, block := range blocks {
 		resolved[i] = block
 
-		// Resolve assertion values
+		// Resolve assertion values and string-form paths
 		if len(block.Assertions) > 0 {
-			resolvedAssertions := make([]Assertion, len(block.Assertions))
-			for j, a := range block.Assertions {
-				resolvedAssertions[j] = a
-				if a.Value != nil {
-					if rv, err := vc.resolveValue(a.Value); err == nil {
-						resolvedAssertions[j].Value = rv
-					}
-				}
-			}
-			resolved[i].Assertions = resolvedAssertions
+			resolved[i].Assertions = vc.resolveAssertions(block.Assertions)
 		}
 
-		// Resolve match criteria
+		// Resolve match where entry values
 		if block.Match != nil {
 			m := *block.Match
-			if m.URL != "" {
-				if rv, err := vc.Resolve(m.URL); err == nil {
-					m.URL = rv
-				}
-			}
-			if m.Origin != "" {
-				if rv, err := vc.Resolve(m.Origin); err == nil {
-					m.Origin = rv
-				}
+			if len(m.Where) > 0 {
+				m.Where = vc.resolveWhereEntries(m.Where)
 			}
 			resolved[i].Match = &m
 		}
 
-		// Resolve console assertion message filters
-		if len(block.ConsoleAssertions) > 0 {
-			resolvedCA := make([]ConsoleLogAssertion, len(block.ConsoleAssertions))
-			for j, ca := range block.ConsoleAssertions {
-				resolvedCA[j] = ca
-				if ca.Message != nil && ca.Message.Value != "" {
-					if rv, err := vc.Resolve(ca.Message.Value); err == nil {
-						resolvedCA[j].Message = &MessageFilter{
-							Operator: ca.Message.Operator,
-							Value:    rv,
-						}
-					}
-				}
+		// Resolve nested loop bodies recursively
+		if block.ForEach != nil {
+			fe := *block.ForEach
+			fe.Assertions = vc.resolveLoopAssertions(fe.Assertions)
+			resolved[i].ForEach = &fe
+		}
+		if block.For != nil {
+			f := *block.For
+			f.Assertions = vc.resolveLoopAssertions(f.Assertions)
+			resolved[i].For = &f
+		}
+		if block.Repeat != nil {
+			r := *block.Repeat
+			r.Assertions = vc.resolveLoopAssertions(r.Assertions)
+			resolved[i].Repeat = &r
+		}
+	}
+	return resolved
+}
+
+func (vc *VariableContext) resolveLoopAssertions(la LoopAssertions) LoopAssertions {
+	if len(la.Blocks) > 0 {
+		la.Blocks = vc.ResolveAssertionBlocks(la.Blocks)
+	}
+	if len(la.Flat) > 0 {
+		la.Flat = vc.resolveAssertions(la.Flat)
+	}
+	return la
+}
+
+func (vc *VariableContext) resolveAssertions(assertions []Assertion) []Assertion {
+	resolvedAssertions := make([]Assertion, len(assertions))
+	for j, a := range assertions {
+		resolvedAssertions[j] = a
+		if pathStr, ok := a.Path.(string); ok && pathStr != "" {
+			if rv, err := vc.Resolve(pathStr); err == nil {
+				resolvedAssertions[j].Path = rv
 			}
-			resolved[i].ConsoleAssertions = resolvedCA
+		}
+		if a.Count != "" {
+			if rv, err := vc.Resolve(a.Count); err == nil {
+				resolvedAssertions[j].Count = rv
+			}
+		}
+		if a.Type != "" {
+			if rv, err := vc.Resolve(a.Type); err == nil {
+				resolvedAssertions[j].Type = rv
+			}
+		}
+		if a.Keys != "" {
+			if rv, err := vc.Resolve(a.Keys); err == nil {
+				resolvedAssertions[j].Keys = rv
+			}
+		}
+		if a.Values != "" {
+			if rv, err := vc.Resolve(a.Values); err == nil {
+				resolvedAssertions[j].Values = rv
+			}
+		}
+		if a.Entries != "" {
+			if rv, err := vc.Resolve(a.Entries); err == nil {
+				resolvedAssertions[j].Entries = rv
+			}
+		}
+		if a.Value != nil {
+			if rv, err := vc.resolveValue(a.Value); err == nil {
+				resolvedAssertions[j].Value = rv
+			}
+		}
+	}
+	return resolvedAssertions
+}
+
+func (vc *VariableContext) resolveWhereEntries(entries []WhereEntry) []WhereEntry {
+	resolved := make([]WhereEntry, len(entries))
+	for i, e := range entries {
+		resolved[i] = e
+		// Do NOT resolve $$-prefixed paths — they resolve at match time
+		if e.Value != nil {
+			if rv, err := vc.resolveValue(e.Value); err == nil {
+				resolved[i].Value = rv
+			}
+		}
+		if len(e.Or) > 0 {
+			resolved[i].Or = vc.resolveWhereEntries(e.Or)
+		}
+		if len(e.And) > 0 {
+			resolved[i].And = vc.resolveWhereEntries(e.And)
+		}
+		if e.Not != nil {
+			notEntries := vc.resolveWhereEntries([]WhereEntry{*e.Not})
+			resolved[i].Not = &notEntries[0]
 		}
 	}
 	return resolved
@@ -190,7 +305,7 @@ func (vc *VariableContext) ResolveAssertionBlocks(blocks []AssertionBlock) []Ass
 func (vc *VariableContext) resolveValue(value interface{}) (interface{}, error) {
 	switch v := value.(type) {
 	case string:
-		return vc.Resolve(v)
+		return vc.ResolveTyped(v)
 	case map[string]interface{}:
 		resolved := make(map[string]interface{}, len(v))
 		for key, val := range v {
@@ -217,53 +332,27 @@ func (vc *VariableContext) resolveValue(value interface{}) (interface{}, error) 
 }
 
 // Extract evaluates extraction rules against a document and stores the results as variables.
-// For HTTP steps, the document is the response: { statusCode, headers, body }.
-// For DB steps, the document is the query result: { success, data, rowsAffected, error, duration }.
 func (vc *VariableContext) Extract(rules map[string]ExtractRule, doc map[string]interface{}) error {
 	if len(rules) == 0 || doc == nil {
 		return nil
 	}
 
 	for varName, rule := range rules {
-		value, err := EvaluateJsonPath(doc, rule.Path)
+		value, err := ResolveExtractRule(doc, varName, rule)
 		if err != nil {
-			return fmt.Errorf("failed to extract variable '%s' at path '%s': %w", varName, rule.Path, err)
+			return err
 		}
-
-		strValue := valueToString(value)
-
-		if rule.Pattern != "" {
-			re, err := regexp.Compile(rule.Pattern)
-			if err != nil {
-				return fmt.Errorf("failed to extract variable '%s': invalid regex pattern '%s': %w", varName, rule.Pattern, err)
-			}
-
-			group := 1
-			if rule.Group != nil {
-				group = *rule.Group
-			}
-
-			matches := re.FindStringSubmatch(strValue)
-			if matches == nil {
-				return fmt.Errorf("failed to extract variable '%s': pattern '%s' did not match value '%s'", varName, rule.Pattern, strValue)
-			}
-			if group < 0 || group >= len(matches) {
-				return fmt.Errorf("failed to extract variable '%s': capture group %d out of range (pattern has %d groups)", varName, group, len(matches)-1)
-			}
-			strValue = matches[group]
-		}
-
-		vc.Set(varName, strValue)
+		vc.Set(varName, value)
 	}
 
 	return nil
 }
 
 // Snapshot returns a copy of all current variable values.
-func (vc *VariableContext) Snapshot() map[string]string {
+func (vc *VariableContext) Snapshot() map[string]interface{} {
 	vc.mu.RLock()
 	defer vc.mu.RUnlock()
-	snapshot := make(map[string]string, len(vc.variables))
+	snapshot := make(map[string]interface{}, len(vc.variables))
 	for k, v := range vc.variables {
 		snapshot[k] = v
 	}
@@ -297,85 +386,4 @@ func valueToString(value interface{}) string {
 		}
 		return string(b)
 	}
-}
-
-// EvaluateJsonPath evaluates a simple JSONPath expression against parsed JSON data.
-// Supports: $, $.field, $.nested.field, $.array[0], $.array[0].field
-func EvaluateJsonPath(data interface{}, path string) (interface{}, error) {
-	if path == "$" {
-		return data, nil
-	}
-
-	var dotPath string
-	if strings.HasPrefix(path, "$.") {
-		dotPath = path[2:]
-	} else {
-		// Support bare dotted paths (e.g., "body.user.id")
-		dotPath = path
-	}
-
-	parts := strings.Split(dotPath, ".")
-	current := data
-
-	for _, part := range parts {
-		if current == nil {
-			return nil, fmt.Errorf("path '%s' not found: encountered null", path)
-		}
-
-		// Check for array access: field[0], [0], or chained field[0][1][2]
-		if idx := strings.Index(part, "["); idx >= 0 {
-			fieldName := part[:idx]
-
-			// Access field first if present
-			if fieldName != "" {
-				obj, ok := current.(map[string]interface{})
-				if !ok {
-					return nil, fmt.Errorf("path '%s' not found: expected object at '%s'", path, fieldName)
-				}
-				current, ok = obj[fieldName]
-				if !ok {
-					return nil, fmt.Errorf("path '%s' not found: key '%s' does not exist", path, fieldName)
-				}
-			}
-
-			// Process all chained bracket accesses: [0], [0][1], etc.
-			bracketPart := part[idx:]
-			for bracketPart != "" {
-				if bracketPart[0] != '[' {
-					return nil, fmt.Errorf("invalid JSONPath at '%s': expected '[' in '%s'", path, part)
-				}
-				closeIdx := strings.Index(bracketPart, "]")
-				if closeIdx < 0 {
-					return nil, fmt.Errorf("invalid JSONPath at '%s': missing ']' in '%s'", path, part)
-				}
-				indexStr := bracketPart[1:closeIdx]
-
-				arr, ok := current.([]interface{})
-				if !ok {
-					return nil, fmt.Errorf("path '%s' not found: expected array at '%s'", path, part)
-				}
-				var index int
-				if _, err := fmt.Sscanf(indexStr, "%d", &index); err != nil {
-					return nil, fmt.Errorf("invalid array index in path '%s': %s", path, indexStr)
-				}
-				if index < 0 || index >= len(arr) {
-					return nil, fmt.Errorf("path '%s' not found: array index %d out of bounds (length %d)", path, index, len(arr))
-				}
-				current = arr[index]
-
-				bracketPart = bracketPart[closeIdx+1:]
-			}
-		} else {
-			obj, ok := current.(map[string]interface{})
-			if !ok {
-				return nil, fmt.Errorf("path '%s' not found: expected object at '%s'", path, part)
-			}
-			current, ok = obj[part]
-			if !ok {
-				return nil, fmt.Errorf("path '%s' not found: key '%s' does not exist", path, part)
-			}
-		}
-	}
-
-	return current, nil
 }

@@ -42,12 +42,12 @@
             {
               "assertions": [
                 {
-                  "path": "response.status",
+                  "path": "$.response.status",
                   "operator": "eq",
                   "value": 200
                 },
                 {
-                  "path": "response.body.queryResults[0][0].result",
+                  "path": "$.response.body.queryResults[0][0].result",
                   "operator": "eq",
                   "value": "OK"
                 }
@@ -78,12 +78,12 @@
             {
               "assertions": [
                 {
-                  "path": "response.status",
+                  "path": "$.response.status",
                   "operator": "eq",
                   "value": 200
                 },
                 {
-                  "path": "response.body.queryResults[0][0].result",
+                  "path": "$.response.body.queryResults[0][0].result",
                   "operator": "eq",
                   "value": "hello-world"
                 }

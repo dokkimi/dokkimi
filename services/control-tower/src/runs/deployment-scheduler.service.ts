@@ -204,7 +204,13 @@ export class DeploymentSchedulerService {
 
   private deployInBackground(ctx: DeploymentContext, runId: string) {
     this.deployer
-      .deploy(ctx)
+      .deploy(ctx, () => {
+        this.checkRunCompletion(runId)
+          .then(() => this.deployPendingInstances(runId))
+          .catch((e) =>
+            this.logger.error(`Failed to handle crash for run ${runId}:`, e),
+          );
+      })
       .then(() => {
         this.logger.log(`Instance ${ctx.instanceId} deployed successfully`);
       })

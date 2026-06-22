@@ -57,56 +57,78 @@ tests:
           # 1. Self-block: dashboard rendered the values returned by the
           # mocked userinfo endpoint.
           - assertions:
-              - path: $.extracted.signedInName
+              - path: $.variables.signedInName
                 operator: eq
                 value: Alice Anderson
-              - path: $.extracted.signedInEmail
+              - path: $.variables.signedInEmail
                 operator: eq
                 value: alice@example.com
           # 2. Browser-initiated authorize redirect (caught by interceptor).
           - match:
-              method: GET
-              url: accounts.google.com/o/oauth2/v2/auth
-            count:
-              operator: eq
-              value: 1
+              path: '$.traffic'
+              where:
+                - path: '$$.request.method'
+                  operator: eq
+                  value: GET
+                - path: '$$.request.url'
+                  operator: contains
+                  value: accounts.google.com/o/oauth2/v2/auth
+              count:
+                operator: eq
+                value: 1
             assertions:
-              - path: response.status
+              - path: $.match.response.status
                 operator: eq
                 value: 302
-              - path: response.header.location
+              - path: $.match.response.headers.location
                 operator: contains
                 value: /api/auth/callback?code=mock-code-abc123
           # 3. Server-side code-exchange call from Next.js.
           - match:
-              origin: nextjs-demo
-              method: POST
-              url: oauth2.googleapis.com/token
-            count:
-              operator: eq
-              value: 1
+              path: '$.traffic'
+              where:
+                - path: '$$.origin'
+                  operator: eq
+                  value: nextjs-demo
+                - path: '$$.request.method'
+                  operator: eq
+                  value: POST
+                - path: '$$.request.url'
+                  operator: contains
+                  value: oauth2.googleapis.com/token
+              count:
+                operator: eq
+                value: 1
             assertions:
-              - path: response.status
+              - path: $.match.response.status
                 operator: eq
                 value: 200
-              - path: request.body
+              - path: $.match.request.body
                 operator: contains
                 value: code=mock-code-abc123
-              - path: request.body
+              - path: $.match.request.body
                 operator: contains
                 value: grant_type=authorization_code
           # 4. Server-side userinfo lookup using the access token.
           - match:
-              origin: nextjs-demo
-              method: GET
-              url: www.googleapis.com/oauth2/v3/userinfo
-            count:
-              operator: eq
-              value: 1
+              path: '$.traffic'
+              where:
+                - path: '$$.origin'
+                  operator: eq
+                  value: nextjs-demo
+                - path: '$$.request.method'
+                  operator: eq
+                  value: GET
+                - path: '$$.request.url'
+                  operator: contains
+                  value: www.googleapis.com/oauth2/v3/userinfo
+              count:
+                operator: eq
+                value: 1
             assertions:
-              - path: response.status
+              - path: $.match.response.status
                 operator: eq
                 value: 200
-              - path: request.header.authorization
+              - path: $.match.request.headers.authorization
                 operator: eq
                 value: Bearer mock-access-token-xyz

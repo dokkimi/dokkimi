@@ -52,7 +52,7 @@ func TestTestExecutor_ExecuteStep(t *testing.T) {
 		{
 			name: "successful POST request",
 			step: TestStep{
-				Action: StepAction{Type: "httpRequest", Method: "POST", URL: "test-service/api/users", Body: map[string]string{"name": "test"}},
+				Action: StepAction{Type: "httpRequest", Method: "POST", URL: "test-service/api/users", Body: map[string]interface{}{"name": "test"}},
 			},
 			wantError: false,
 		},
@@ -155,14 +155,14 @@ func TestTestExecutor_FlattenSteps_DefinitionLevelVariables(t *testing.T) {
 	testConfig := &TestConfig{
 		TestRunID:      "test-123",
 		TimeoutSeconds: 30,
-		Variables: map[string]string{
+		Variables: map[string]interface{}{
 			"defVar":    "from-definition",
 			"sharedVar": "from-definition",
 		},
 		Tests: []TestDefinition{
 			{
 				Name: "Test 1",
-				Variables: map[string]string{
+				Variables: map[string]interface{}{
 					"testVar":   "from-test",
 					"sharedVar": "from-test", // should override definition-level
 				},
@@ -209,7 +209,7 @@ func TestTestExecutor_FlattenSteps_NoDefinitionVariables(t *testing.T) {
 		Tests: []TestDefinition{
 			{
 				Name: "Test 1",
-				Variables: map[string]string{
+				Variables: map[string]interface{}{
 					"testVar": "value",
 				},
 				Steps: []TestStep{
@@ -239,7 +239,7 @@ func TestTestExecutor_FlattenSteps_MultiTestVariableIsolation(t *testing.T) {
 	testConfig := &TestConfig{
 		TestRunID:      "test-123",
 		TimeoutSeconds: 30,
-		Variables: map[string]string{
+		Variables: map[string]interface{}{
 			"connStr": "default-conn",
 		},
 		Tests: []TestDefinition{
@@ -251,7 +251,7 @@ func TestTestExecutor_FlattenSteps_MultiTestVariableIsolation(t *testing.T) {
 			},
 			{
 				Name: "Test 2 — overrides connStr",
-				Variables: map[string]string{
+				Variables: map[string]interface{}{
 					"connStr": "custom-conn",
 				},
 				Steps: []TestStep{
@@ -305,5 +305,56 @@ func TestTestExecutor_RequestTimeout(t *testing.T) {
 
 	if err == nil {
 		t.Error("Expected timeout error, got nil")
+	}
+}
+
+// ── Audit finding #2: test-level loop + startAtStep skipping step 0 prevents variable setup ──
+
+func TestTestExecutor_TestVarsNotSeededWhenStartAtStepSkipsStepZero(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{}`))
+	}))
+	defer server.Close()
+
+	logger := NewTestExecutionLogger(server.URL, "test-instance", 5*time.Second)
+	defer logger.Stop()
+	executor := NewTestExecutor(server.URL, 30*time.Second, nil, logger)
+
+	testConfig := &TestConfig{
+		TestRunID:      "test-startat-loop",
+		TimeoutSeconds: 30,
+		Tests: []TestDefinition{
+			{
+				Name: "looped test with test-level vars",
+				Variables: map[string]interface{}{
+					"testVar": "should-be-seeded",
+				},
+				ForEach: &ForEachLoop{
+					Items: []interface{}{"a"},
+					As:    "item",
+				},
+				Steps: []TestStep{
+					{Action: StepAction{Type: "httpRequest", Method: "GET", URL: "svc/step0"}},
+					{Action: StepAction{Type: "httpRequest", Method: "GET", URL: "svc/step1"}},
+				},
+			},
+		},
+	}
+
+	ctx := context.Background()
+	_, err := executor.ExecuteTests(ctx, testConfig, 1, -1) // skip step 0
+	if err != nil {
+		t.Fatalf("ExecuteTests error: %v", err)
+	}
+
+	// Test-level variables should be seeded even when startAtStep skips step 0.
+	// The seeding code is inside the `if fs.stepIndex == 0` guard, so it's
+	// skipped when step 0 is filtered out by startAtStep.
+	val, varErr := executor.varCtx.Resolve("{{testVar}}")
+	if varErr != nil {
+		t.Errorf("Bug #2: test-level variable {{testVar}} not set when startAtStep skips step 0: %v", varErr)
+	} else if val != "should-be-seeded" {
+		t.Errorf("Bug #2: expected testVar='should-be-seeded', got '%s'", val)
 	}
 }

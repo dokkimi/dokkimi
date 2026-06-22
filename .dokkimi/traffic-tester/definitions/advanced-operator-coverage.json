@@ -1,0 +1,291 @@
+{
+  "name": "advanced-operator-coverage",
+  "description": "Exercises assertion operators with zero definition file coverage: eqIgnoreCase, containsIgnoreCase (string + array), notContainsIgnoreCase, isEmpty on arrays/objects, and contains on objects (key existence check)",
+  "config": {
+    "timeoutSeconds": 120
+  },
+  "items": [
+    {
+      "$ref": "../shared/service-a.yaml"
+    }
+  ],
+  "tests": [
+    {
+      "name": "eqIgnoreCase — case-insensitive equality",
+      "steps": [
+        {
+          "name": "Echo back mixed-case string and compare with eqIgnoreCase",
+          "action": {
+            "type": "httpRequest",
+            "method": "POST",
+            "url": "service-a/echo-case",
+            "headers": {
+              "Content-Type": "application/json"
+            },
+            "body": {
+              "response": {
+                "value": {
+                  "greeting": "Hello World",
+                  "status": "ACTIVE",
+                  "code": "AbC-123"
+                }
+              }
+            }
+          },
+          "assertions": [
+            {
+              "assertions": [
+                {
+                  "path": "$.response.status",
+                  "operator": "eq",
+                  "value": 200
+                },
+                {
+                  "path": "$.response.body.greeting",
+                  "operator": "eqIgnoreCase",
+                  "value": "hello world"
+                },
+                {
+                  "path": "$.response.body.greeting",
+                  "operator": "eqIgnoreCase",
+                  "value": "HELLO WORLD"
+                },
+                {
+                  "path": "$.response.body.status",
+                  "operator": "eqIgnoreCase",
+                  "value": "active"
+                },
+                {
+                  "path": "$.response.body.code",
+                  "operator": "eqIgnoreCase",
+                  "value": "abc-123"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "containsIgnoreCase — case-insensitive substring on strings",
+      "steps": [
+        {
+          "name": "Echo a sentence and check case-insensitive substrings",
+          "action": {
+            "type": "httpRequest",
+            "method": "POST",
+            "url": "service-a/echo-contains",
+            "headers": {
+              "Content-Type": "application/json"
+            },
+            "body": {
+              "response": {
+                "value": {
+                  "message": "The Quick Brown Fox Jumps Over The Lazy Dog",
+                  "tags": ["Production", "CRITICAL", "v2-Beta"]
+                }
+              }
+            }
+          },
+          "assertions": [
+            {
+              "assertions": [
+                {
+                  "path": "$.response.status",
+                  "operator": "eq",
+                  "value": 200
+                },
+                {
+                  "path": "$.response.body.message",
+                  "operator": "containsIgnoreCase",
+                  "value": "quick brown"
+                },
+                {
+                  "path": "$.response.body.message",
+                  "operator": "containsIgnoreCase",
+                  "value": "LAZY DOG"
+                },
+                {
+                  "path": "$.response.body.message",
+                  "operator": "containsIgnoreCase",
+                  "value": "the quick"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "notContainsIgnoreCase — case-insensitive not-contains",
+      "steps": [
+        {
+          "name": "Echo a string and verify substrings are absent (case-insensitive)",
+          "action": {
+            "type": "httpRequest",
+            "method": "POST",
+            "url": "service-a/echo-not-contains",
+            "headers": {
+              "Content-Type": "application/json"
+            },
+            "body": {
+              "response": {
+                "value": {
+                  "message": "Hello World",
+                  "category": "Production"
+                }
+              }
+            }
+          },
+          "assertions": [
+            {
+              "assertions": [
+                {
+                  "path": "$.response.status",
+                  "operator": "eq",
+                  "value": 200
+                },
+                {
+                  "path": "$.response.body.message",
+                  "operator": "notContainsIgnoreCase",
+                  "value": "goodbye"
+                },
+                {
+                  "path": "$.response.body.message",
+                  "operator": "notContainsIgnoreCase",
+                  "value": "GOODBYE"
+                },
+                {
+                  "path": "$.response.body.category",
+                  "operator": "notContainsIgnoreCase",
+                  "value": "staging"
+                },
+                {
+                  "path": "$.response.body.category",
+                  "operator": "notContainsIgnoreCase",
+                  "value": "DEVELOPMENT"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "isEmpty — empty arrays, empty objects, and null",
+      "steps": [
+        {
+          "name": "Echo empty collections and verify isEmpty",
+          "action": {
+            "type": "httpRequest",
+            "method": "POST",
+            "url": "service-a/echo-empty",
+            "headers": {
+              "Content-Type": "application/json"
+            },
+            "body": {
+              "response": {
+                "value": {
+                  "emptyArray": [],
+                  "emptyObject": {},
+                  "nullField": null,
+                  "nonEmptyArray": [1, 2],
+                  "nonEmptyObject": { "key": "val" }
+                }
+              }
+            }
+          },
+          "assertions": [
+            {
+              "assertions": [
+                {
+                  "path": "$.response.status",
+                  "operator": "eq",
+                  "value": 200
+                },
+                {
+                  "path": "$.response.body.emptyArray",
+                  "operator": "isEmpty"
+                },
+                {
+                  "path": "$.response.body.emptyObject",
+                  "operator": "isEmpty"
+                },
+                {
+                  "path": "$.response.body.nullField",
+                  "operator": "isEmpty"
+                },
+                {
+                  "path": "$.response.body.nonEmptyArray",
+                  "operator": "notEmpty"
+                },
+                {
+                  "path": "$.response.body.nonEmptyObject",
+                  "operator": "notEmpty"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "contains on objects — key existence check",
+      "steps": [
+        {
+          "name": "Echo an object and verify key existence with contains",
+          "action": {
+            "type": "httpRequest",
+            "method": "POST",
+            "url": "service-a/echo-object-keys",
+            "headers": {
+              "Content-Type": "application/json"
+            },
+            "body": {
+              "response": {
+                "value": {
+                  "config": {
+                    "timeout": 30,
+                    "retries": 3,
+                    "verbose": false
+                  }
+                }
+              }
+            }
+          },
+          "assertions": [
+            {
+              "assertions": [
+                {
+                  "path": "$.response.status",
+                  "operator": "eq",
+                  "value": 200
+                },
+                {
+                  "path": "$.response.body.config",
+                  "operator": "contains",
+                  "value": "timeout"
+                },
+                {
+                  "path": "$.response.body.config",
+                  "operator": "contains",
+                  "value": "retries"
+                },
+                {
+                  "path": "$.response.body.config",
+                  "operator": "contains",
+                  "value": "verbose"
+                },
+                {
+                  "path": "$.response.body.config",
+                  "operator": "notContains",
+                  "value": "nonExistentKey"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

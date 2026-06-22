@@ -1,0 +1,94 @@
+{
+  "name": "dynamic-variable-names",
+  "description": "Validates dynamic variable names in extract (e.g., title_{{idx}}) and cross-step variable references",
+  "items": [
+    { "$ref": "../shared/api-service.json" },
+    {
+      "$ref": "../shared/postgres-db.json",
+      "initFilePath": "../init-files/schema.sql"
+    },
+    { "$ref": "../../demo-oauth-flow/shared/mock-oauth-token.json" },
+    { "$ref": "../../demo-oauth-flow/shared/mock-oauth-userinfo.json" }
+  ],
+  "tests": [
+    {
+      "name": "extract with dynamic keys inside forEach",
+      "steps": [
+        {
+          "name": "Login",
+          "action": {
+            "type": "httpRequest",
+            "method": "GET",
+            "url": "api-service/auth/callback?code=test_code&state=s1"
+          },
+          "extract": {
+            "sessionToken": "$.response.body.token"
+          }
+        },
+        {
+          "name": "Create post {{postLoop.index}}",
+          "forEach": {
+            "items": [
+              { "title": "Dynamic A", "content": "Body A" },
+              { "title": "Dynamic B", "content": "Body B" }
+            ],
+            "as": "postData",
+            "name": "postLoop",
+            "action": {
+              "type": "httpRequest",
+              "method": "POST",
+              "url": "api-service/api/profile/posts",
+              "headers": {
+                "Authorization": "Bearer {{sessionToken}}",
+                "Content-Type": "application/json"
+              },
+              "body": {
+                "title": "{{postData.title}}",
+                "content": "{{postData.content}}"
+              }
+            },
+            "assertions": [
+              {
+                "assertions": [
+                  {
+                    "path": "$.response.status",
+                    "operator": "eq",
+                    "value": 201
+                  }
+                ],
+                "extract": {
+                  "postTitle_{{postLoop.index}}": "$.response.body.post.title"
+                }
+              }
+            ]
+          }
+        },
+        {
+          "name": "Verify dynamically-named variables were extracted",
+          "action": {
+            "type": "httpRequest",
+            "method": "GET",
+            "url": "api-service/api/posts"
+          },
+          "assertions": [
+            {
+              "assertions": [
+                { "path": "$.response.status", "operator": "eq", "value": 200 },
+                {
+                  "path": "$.variables.postTitle_0",
+                  "operator": "eq",
+                  "value": "Dynamic A"
+                },
+                {
+                  "path": "$.variables.postTitle_1",
+                  "operator": "eq",
+                  "value": "Dynamic B"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -2,7 +2,9 @@
   "name": "public-endpoints",
   "description": "Tests unauthenticated public endpoints — no OAuth mocking needed",
   "items": [
-    { "$ref": "../shared/api-service.json" },
+    {
+      "$ref": "../shared/api-service.json"
+    },
     {
       "$ref": "../shared/postgres-db.json",
       "initFilePath": "../init-files/schema.sql"
@@ -22,9 +24,13 @@
           "assertions": [
             {
               "assertions": [
-                { "path": "response.status", "operator": "eq", "value": 200 },
                 {
-                  "path": "response.body.status",
+                  "path": "$.response.status",
+                  "operator": "eq",
+                  "value": 200
+                },
+                {
+                  "path": "$.response.body.status",
                   "operator": "eq",
                   "value": "ok"
                 }
@@ -48,30 +54,43 @@
           "assertions": [
             {
               "assertions": [
-                { "path": "response.status", "operator": "eq", "value": 200 },
                 {
-                  "path": "response.body.posts",
-                  "operator": "type",
+                  "path": "$.response.status",
+                  "operator": "eq",
+                  "value": 200
+                },
+                {
+                  "type": "$.response.body.posts",
+                  "operator": "eq",
                   "value": "array"
                 },
                 {
-                  "path": "response.body.posts",
-                  "operator": "length",
+                  "count": "$.response.body.posts",
+                  "operator": "eq",
                   "value": 2
                 }
               ]
             },
             {
-              "service": "api-service",
-              "consoleAssertions": [
-                {
-                  "message": {
+              "match": {
+                "path": "$.consoleLogs",
+                "where": [
+                  {
+                    "path": "$$.service",
+                    "operator": "eq",
+                    "value": "api-service"
+                  },
+                  {
+                    "path": "$$.message",
                     "operator": "contains",
                     "value": "Fetching published posts"
-                  },
-                  "count": { "operator": "gte", "value": 1 }
+                  }
+                ],
+                "count": {
+                  "operator": "gte",
+                  "value": 1
                 }
-              ]
+              }
             }
           ]
         },
@@ -85,7 +104,11 @@
           "assertions": [
             {
               "assertions": [
-                { "path": "data[0].total", "operator": "eq", "value": 3 }
+                {
+                  "path": "$.response.data[0].total",
+                  "operator": "eq",
+                  "value": 3
+                }
               ]
             }
           ]

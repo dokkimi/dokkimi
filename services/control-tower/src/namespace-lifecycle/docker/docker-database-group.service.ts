@@ -102,6 +102,8 @@ export class DockerDatabaseGroupService {
       ? this.buildMongoEntrypoint(internalPort, dbEnv, initFileMountPath)
       : undefined;
 
+    const dbTmpfs = this.getDbTmpfs(item.database);
+
     await this.dockerClient.runContainer({
       name: dbContainerName,
       image: dbConfig.image,
@@ -115,6 +117,7 @@ export class DockerDatabaseGroupService {
           ? { cmd: dbCmd }
           : {}),
       exposedPorts: [internalPort],
+      ...(dbTmpfs ? { tmpfs: dbTmpfs } : {}),
       labels: {
         'io.dokkimi.instance-id': instanceId,
         'io.dokkimi.role': 'database',
@@ -198,34 +201,49 @@ export class DockerDatabaseGroupService {
       env.MONGO_INITDB_ROOT_USERNAME && env.MONGO_INITDB_ROOT_PASSWORD
     );
 
+    const mongoshAuth = hasAuth
+      ? ` -u "$MONGO_INITDB_ROOT_USERNAME" -p "$MONGO_INITDB_ROOT_PASSWORD" --authenticationDatabase admin`
+      : '';
+
     const initBlock = initFileMountPath
       ? `
 if [ -d "${initFileMountPath}" ]; then
   for f in ${initFileMountPath}/*; do
     case "$f" in
       *.sh)  echo "Running $f"; . "$f" ;;
-      *.js)  echo "Running $f"; mongosh --port ${internalPort} "$f" ;;
+      *.js)  echo "Running $f"; mongosh --port ${internalPort}${mongoshAuth} "$f" ;;
     esac
   done
 fi`
       : '';
 
-    if (hasAuth) {
-      return `
-mongod --port ${internalPort} --bind_ip_all --fork --logpath /proc/1/fd/1
-until mongosh --port ${internalPort} --eval "db.adminCommand('ping')" &>/dev/null; do sleep 0.5; done
-mongosh --port ${internalPort} admin --eval "db.createUser({user:process.env.MONGO_INITDB_ROOT_USERNAME,pwd:process.env.MONGO_INITDB_ROOT_PASSWORD,roles:[{role:'root',db:'admin'}]});"
-${initBlock}
-mongod --port ${internalPort} --shutdown
-exec mongod --port ${internalPort} --bind_ip_all --auth`;
-    }
+    const authFlag = hasAuth ? ' --auth' : '';
+    const createUserBlock = hasAuth
+      ? `mongosh --port ${internalPort} admin --eval "db.createUser({user:process.env.MONGO_INITDB_ROOT_USERNAME,pwd:process.env.MONGO_INITDB_ROOT_PASSWORD,roles:[{role:'root',db:'admin'}]});"\n`
+      : '';
 
     return `
-mongod --port ${internalPort} --bind_ip_all --fork --logpath /proc/1/fd/1
+mongod --port ${internalPort} --bind_ip_all${authFlag} &
+MONGOD_PID=$!
 until mongosh --port ${internalPort} --eval "db.adminCommand('ping')" &>/dev/null; do sleep 0.5; done
-${initBlock}
-mongod --port ${internalPort} --shutdown
-exec mongod --port ${internalPort} --bind_ip_all`;
+${createUserBlock}${initBlock}
+wait $MONGOD_PID`;
+  }
+
+  private getDbTmpfs(databaseType: string): Record<string, string> | undefined {
+    const dbType = databaseType.toLowerCase();
+    switch (dbType) {
+      case 'mysql':
+      case 'mariadb':
+        return { '/var/lib/mysql': '' };
+      case 'postgres':
+      case 'postgresql':
+        return { '/var/lib/postgresql/data': '' };
+      case 'mongodb':
+        return { '/data/db': '' };
+      default:
+        return undefined;
+    }
   }
 
   private getInitFileMountPath(databaseType: string): string | null {

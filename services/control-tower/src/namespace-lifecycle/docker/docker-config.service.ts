@@ -51,7 +51,7 @@ export class DockerConfigService {
       timeoutSeconds: number;
       executionMode: string;
       tests: Record<string, unknown>[];
-      variables?: Record<string, string>;
+      variables?: Record<string, unknown>;
     },
     expectedNamespaceItemIds?: string[],
   ): void {

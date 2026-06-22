@@ -42,11 +42,11 @@
           },
           "extract": {
             "correlationId": {
-              "path": "$.body.message",
+              "path": "$.response.body.message",
               "pattern": "correlation_id=([a-z0-9-]+)"
             },
             "timestamp": {
-              "path": "$.body.message",
+              "path": "$.response.body.message",
               "pattern": "(\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z)",
               "group": 1
             }
@@ -55,7 +55,7 @@
             {
               "assertions": [
                 {
-                  "path": "response.status",
+                  "path": "$.response.status",
                   "operator": "eq",
                   "value": 200
                 }
@@ -85,17 +85,17 @@
             {
               "assertions": [
                 {
-                  "path": "response.status",
+                  "path": "$.response.status",
                   "operator": "eq",
                   "value": 200
                 },
                 {
-                  "path": "response.body.lookupResult",
+                  "path": "$.response.body.lookupResult",
                   "operator": "eq",
                   "value": "Found order for correlation_id=abc-123-def-456"
                 },
                 {
-                  "path": "response.body.ts",
+                  "path": "$.response.body.ts",
                   "operator": "eq",
                   "value": "2024-01-15T10:30:00Z"
                 }
@@ -131,7 +131,7 @@
           },
           "extract": {
             "resourceId": {
-              "path": "$.headers.location",
+              "path": "$.response.headers.location",
               "pattern": "/resources/(\\d+)"
             }
           },
@@ -139,7 +139,7 @@
             {
               "assertions": [
                 {
-                  "path": "response.status",
+                  "path": "$.response.status",
                   "operator": "eq",
                   "value": 201
                 }
@@ -169,12 +169,12 @@
             {
               "assertions": [
                 {
-                  "path": "response.status",
+                  "path": "$.response.status",
                   "operator": "eq",
                   "value": 200
                 },
                 {
-                  "path": "response.body.resource",
+                  "path": "$.response.body.resource",
                   "operator": "eq",
                   "value": "98765"
                 }
@@ -206,22 +206,22 @@
           },
           "extract": {
             "majorVersion": {
-              "path": "$.body.version",
+              "path": "$.response.body.version",
               "pattern": "(\\d+)\\.\\d+\\.\\d+",
               "group": 1
             },
             "minorVersion": {
-              "path": "$.body.version",
+              "path": "$.response.body.version",
               "pattern": "\\d+\\.(\\d+)\\.\\d+",
               "group": 1
             },
             "patchVersion": {
-              "path": "$.body.version",
+              "path": "$.response.body.version",
               "pattern": "\\d+\\.\\d+\\.(\\d+)",
               "group": 1
             },
             "fullVersion": {
-              "path": "$.body.version",
+              "path": "$.response.body.version",
               "pattern": "(\\d+\\.\\d+\\.\\d+)",
               "group": 0
             }
@@ -230,7 +230,7 @@
             {
               "assertions": [
                 {
-                  "path": "response.status",
+                  "path": "$.response.status",
                   "operator": "eq",
                   "value": 200
                 }
@@ -262,22 +262,22 @@
             {
               "assertions": [
                 {
-                  "path": "response.body.major",
+                  "path": "$.response.body.major",
                   "operator": "eq",
                   "value": "3"
                 },
                 {
-                  "path": "response.body.minor",
+                  "path": "$.response.body.minor",
                   "operator": "eq",
                   "value": "14"
                 },
                 {
-                  "path": "response.body.patch",
+                  "path": "$.response.body.patch",
                   "operator": "eq",
                   "value": "159"
                 },
                 {
-                  "path": "response.body.full",
+                  "path": "$.response.body.full",
                   "operator": "eq",
                   "value": "3.14.159"
                 }
@@ -302,7 +302,7 @@
           },
           "extract": {
             "emailLocalPart": {
-              "path": "$.data[0].email",
+              "path": "$.response.data[0].email",
               "pattern": "^([^@]+)@"
             }
           },
@@ -310,7 +310,7 @@
             {
               "assertions": [
                 {
-                  "path": "success",
+                  "path": "$.response.success",
                   "operator": "eq",
                   "value": true
                 }
@@ -339,12 +339,12 @@
             {
               "assertions": [
                 {
-                  "path": "response.status",
+                  "path": "$.response.status",
                   "operator": "eq",
                   "value": 200
                 },
                 {
-                  "path": "response.body.greeting",
+                  "path": "$.response.body.greeting",
                   "operator": "contains",
                   "value": "Hello, "
                 }
@@ -377,12 +377,12 @@
           },
           "extract": {
             "jwtToken": {
-              "path": "$.body.auth",
+              "path": "$.response.body.auth",
               "pattern": "Bearer (.+)",
               "group": 1
             },
             "nodeId": {
-              "path": "$.body.metadata",
+              "path": "$.response.body.metadata",
               "pattern": "(node-\\d+)",
               "group": 0
             }
@@ -391,7 +391,7 @@
             {
               "assertions": [
                 {
-                  "path": "response.status",
+                  "path": "$.response.status",
                   "operator": "eq",
                   "value": 200
                 }
@@ -421,17 +421,17 @@
             {
               "assertions": [
                 {
-                  "path": "response.status",
+                  "path": "$.response.status",
                   "operator": "eq",
                   "value": 200
                 },
                 {
-                  "path": "response.body.token",
+                  "path": "$.response.body.token",
                   "operator": "eq",
                   "value": "eyJhbGciOiJSUzI1NiJ9.test.signature"
                 },
                 {
-                  "path": "response.body.node",
+                  "path": "$.response.body.node",
                   "operator": "eq",
                   "value": "node-7"
                 }

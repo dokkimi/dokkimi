@@ -77,7 +77,7 @@ export class ConfigMapBuilderService {
       timeoutSeconds: number;
       executionMode: string;
       tests: any[];
-      variables?: Record<string, string>;
+      variables?: Record<string, unknown>;
     },
     expectedNamespaceItemIds?: string[],
   ): { metadata?: Record<string, unknown>; data?: Record<string, string> } {

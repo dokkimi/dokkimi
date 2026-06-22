@@ -1,0 +1,195 @@
+{
+  "name": "ui-substep-loops",
+  "description": "Validates loop modifiers on UI sub-step groups using demo-spa's DB Query Harness",
+  "config": {
+    "timeoutSeconds": 240
+  },
+  "items": [
+    {
+      "type": "SERVICE",
+      "name": "demo-spa",
+      "image": "ghcr.io/dokkimi/demo-spa:0.3.1",
+      "port": 80,
+      "healthCheck": "/",
+      "uiPath": "/"
+    },
+    {
+      "type": "SERVICE",
+      "name": "traffic-tester",
+      "image": "ghcr.io/dokkimi/traffic-tester:0.1.0",
+      "port": 4000,
+      "healthCheck": "/health"
+    },
+    {
+      "type": "DATABASE",
+      "name": "postgres-db",
+      "database": "postgres",
+      "initFilePath": "../../demo-spa/init-files/init.sql"
+    }
+  ],
+  "tests": [
+    {
+      "name": "UI forEach sub-step group — create multiple posts",
+      "variables": {
+        "posts": [
+          { "title": "Loop Post Alpha", "body": "First loop post" },
+          { "title": "Loop Post Beta", "body": "Second loop post" },
+          { "title": "Loop Post Gamma", "body": "Third loop post" }
+        ]
+      },
+      "steps": [
+        {
+          "name": "Create posts via UI form loop",
+          "action": {
+            "type": "ui",
+            "target": "demo-spa",
+            "steps": [
+              { "visit": "/" },
+              { "click": "[data-testid='tab-db']" },
+              { "waitFor": "[data-testid='scenario-db']" },
+              {
+                "forEach": {
+                  "items": "{{posts}}",
+                  "as": "post"
+                },
+                "steps": [
+                  {
+                    "type": {
+                      "selector": "[data-testid='db-create-title']",
+                      "text": "{{post.title}}"
+                    }
+                  },
+                  {
+                    "type": {
+                      "selector": "[data-testid='db-create-body']",
+                      "text": "{{post.body}}"
+                    }
+                  },
+                  { "click": "[data-testid='db-create-submit']" },
+                  {
+                    "waitFor": "[data-testid='db-create-success']"
+                  }
+                ]
+              },
+              { "screenshot": "after-loop-posts" }
+            ]
+          }
+        },
+        {
+          "name": "Verify all 3 loop posts exist in DB",
+          "action": {
+            "type": "dbQuery",
+            "database": "postgres-db",
+            "query": "SELECT COUNT(*)::int as count FROM posts WHERE title LIKE 'Loop Post%'"
+          },
+          "assertions": [
+            {
+              "assertions": [
+                {
+                  "path": "$.response.data[0].count",
+                  "operator": "eq",
+                  "value": 3
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "UI for sub-step group — click through tabs",
+      "steps": [
+        {
+          "name": "Toggle between tabs multiple times",
+          "action": {
+            "type": "ui",
+            "target": "demo-spa",
+            "steps": [
+              { "visit": "/" },
+              {
+                "for": {
+                  "from": 1,
+                  "to": 3,
+                  "as": "round"
+                },
+                "steps": [
+                  { "click": "[data-testid='tab-db']" },
+                  { "waitFor": "[data-testid='scenario-db']" },
+                  { "click": "[data-testid='tab-routing']" },
+                  { "waitFor": "[data-testid='scenario-routing']" }
+                ]
+              },
+              { "screenshot": "after-tab-toggling" }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "UI repeat sub-step group — list users repeatedly",
+      "steps": [
+        {
+          "name": "Click List Users 3 times to verify idempotency",
+          "action": {
+            "type": "ui",
+            "target": "demo-spa",
+            "steps": [
+              { "visit": "/" },
+              { "click": "[data-testid='tab-db']" },
+              { "waitFor": "[data-testid='scenario-db']" },
+              {
+                "repeat": {
+                  "count": 3,
+                  "as": "attempt",
+                  "delayMs": 300
+                },
+                "steps": [
+                  { "click": "[data-testid='db-list-users']" },
+                  { "waitFor": "[data-testid='db-users-list']" }
+                ]
+              },
+              { "screenshot": "after-repeated-list-users" }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "UI forEach from extracted variable — verify each user row",
+      "variables": {
+        "expectedUsers": ["Alice", "Bob", "Carol"]
+      },
+      "steps": [
+        {
+          "name": "List users and verify each name appears",
+          "action": {
+            "type": "ui",
+            "target": "demo-spa",
+            "steps": [
+              { "visit": "/" },
+              { "click": "[data-testid='tab-db']" },
+              { "waitFor": "[data-testid='scenario-db']" },
+              { "click": "[data-testid='db-list-users']" },
+              { "waitFor": "[data-testid='db-users-list']" },
+              {
+                "forEach": {
+                  "items": "{{expectedUsers}}",
+                  "as": "userName"
+                },
+                "steps": [
+                  {
+                    "waitFor": {
+                      "selector": "[data-testid='db-users-list']",
+                      "text": "{{userName}}"
+                    }
+                  }
+                ]
+              },
+              { "screenshot": "all-users-verified" }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

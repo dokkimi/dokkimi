@@ -1,0 +1,446 @@
+{
+  "name": "combined-and-nested-loops",
+  "description": "Validates combined loop patterns: parallel inside loop, named loop metadata, nested step+test loops",
+  "items": [
+    { "$ref": "../shared/api-service.json" },
+    {
+      "$ref": "../shared/postgres-db.json",
+      "initFilePath": "../init-files/schema.sql"
+    },
+    { "$ref": "../../demo-oauth-flow/shared/mock-oauth-token.json" },
+    { "$ref": "../../demo-oauth-flow/shared/mock-oauth-userinfo.json" }
+  ],
+  "variables": {
+    "seedPostIds": [
+      "b1b2c3d4-0000-0000-0000-000000000001",
+      "b1b2c3d4-0000-0000-0000-000000000002"
+    ]
+  },
+  "tests": [
+    {
+      "name": "forEach step with parallel action inside",
+      "steps": [
+        {
+          "name": "Verify post {{postId}} in API and DB",
+          "forEach": {
+            "items": "{{seedPostIds}}",
+            "as": "postId",
+            "action": {
+              "type": "parallel",
+              "actions": [
+                {
+                  "type": "httpRequest",
+                  "method": "GET",
+                  "url": "api-service/api/posts/{{postId}}"
+                },
+                {
+                  "type": "dbQuery",
+                  "database": "postgres-db",
+                  "query": "SELECT * FROM posts WHERE id = '{{postId}}'"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "forEach using named loop for index and items",
+      "steps": [
+        {
+          "name": "Fetch post at index {{postIdLoop.index}}",
+          "forEach": {
+            "items": "{{seedPostIds}}",
+            "as": "postId",
+            "name": "postIdLoop",
+            "action": {
+              "type": "httpRequest",
+              "method": "GET",
+              "url": "api-service/api/posts/{{postId}}"
+            },
+            "assertions": [
+              {
+                "assertions": [
+                  {
+                    "path": "$.response.status",
+                    "operator": "eq",
+                    "value": 200
+                  },
+                  {
+                    "type": "$.variables.postIdLoop.index",
+                    "operator": "eq",
+                    "value": "number"
+                  },
+                  {
+                    "path": "$.variables.postIdLoop.index",
+                    "operator": "gte",
+                    "value": 0
+                  },
+                  {
+                    "type": "$.variables.postIdLoop.items",
+                    "operator": "eq",
+                    "value": "array"
+                  },
+                  {
+                    "count": "$.variables.postIdLoop.items",
+                    "operator": "eq",
+                    "value": 2
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Test-level forEach with step-level for inside",
+      "forEach": {
+        "items": "{{seedPostIds}}",
+        "as": "postId",
+        "steps": [
+          {
+            "name": "Fetch same post 2 times to verify consistency",
+            "for": {
+              "from": 1,
+              "to": 2,
+              "as": "attempt",
+              "assertions": [
+                {
+                  "assertions": [
+                    {
+                      "path": "$.response.status",
+                      "operator": "eq",
+                      "value": 200
+                    }
+                  ]
+                }
+              ]
+            },
+            "action": {
+              "type": "httpRequest",
+              "method": "GET",
+              "url": "api-service/api/posts/{{postId}}"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "for loop with extract — create posts and verify last",
+      "steps": [
+        {
+          "name": "Login for auth",
+          "action": {
+            "type": "httpRequest",
+            "method": "GET",
+            "url": "api-service/auth/callback?code=test_code&state=s1"
+          },
+          "extract": {
+            "sessionToken": "$.response.body.token"
+          }
+        },
+        {
+          "name": "Create post {{i}}",
+          "for": {
+            "from": 1,
+            "to": 3,
+            "as": "i",
+            "extract": {
+              "lastPostTitle": "$.response.body.post.title"
+            },
+            "assertions": [
+              {
+                "assertions": [
+                  {
+                    "path": "$.response.status",
+                    "operator": "eq",
+                    "value": 201
+                  }
+                ]
+              }
+            ]
+          },
+          "action": {
+            "type": "httpRequest",
+            "method": "POST",
+            "url": "api-service/api/profile/posts",
+            "headers": {
+              "Authorization": "Bearer {{sessionToken}}",
+              "Content-Type": "application/json"
+            },
+            "body": {
+              "title": "Combined Post {{i}}",
+              "content": "Content {{i}}"
+            }
+          }
+        },
+        {
+          "name": "Verify last created post title",
+          "action": {
+            "type": "httpRequest",
+            "method": "GET",
+            "url": "api-service/api/profile",
+            "headers": {
+              "Authorization": "Bearer {{sessionToken}}"
+            }
+          },
+          "assertions": [
+            {
+              "assertions": [
+                { "path": "$.response.status", "operator": "eq", "value": 200 },
+                {
+                  "path": "$.variables.lastPostTitle",
+                  "operator": "eq",
+                  "value": "Combined Post 3"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Action-level forEach on dbQuery",
+      "steps": [
+        {
+          "name": "Insert multiple posts via action loop",
+          "action": {
+            "type": "dbQuery",
+            "database": "postgres-db",
+            "query": "INSERT INTO posts (title, content, published, author_id) VALUES ('{{tag}} Post', 'Tagged content', true, 'a1b2c3d4-0000-0000-0000-000000000001') RETURNING id",
+            "forEach": {
+              "items": ["urgent", "review", "backlog"],
+              "as": "tag"
+            }
+          },
+          "assertions": [
+            {
+              "assertions": [
+                {
+                  "path": "$.response.success",
+                  "operator": "eq",
+                  "value": true
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "Verify tagged posts exist",
+          "action": {
+            "type": "dbQuery",
+            "database": "postgres-db",
+            "query": "SELECT COUNT(*)::int as count FROM posts WHERE title LIKE '% Post' AND title IN ('urgent Post', 'review Post', 'backlog Post')"
+          },
+          "assertions": [
+            {
+              "assertions": [
+                {
+                  "path": "$.response.data[0].count",
+                  "operator": "eq",
+                  "value": 3
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Empty-array forEach — zero iterations, no error",
+      "variables": {
+        "emptyList": []
+      },
+      "steps": [
+        {
+          "name": "Loop over empty array (should skip)",
+          "forEach": {
+            "items": "{{emptyList}}",
+            "as": "item",
+            "name": "emptyLoop",
+            "action": {
+              "type": "httpRequest",
+              "method": "GET",
+              "url": "api-service/api/posts/nonexistent-should-never-run"
+            }
+          }
+        },
+        {
+          "name": "Verify loop ran zero iterations",
+          "action": {
+            "type": "wait",
+            "durationMs": 10
+          },
+          "assertions": [
+            {
+              "assertions": [
+                {
+                  "path": "$.variables.emptyLoop.iterations",
+                  "operator": "eq",
+                  "value": 0
+                },
+                {
+                  "path": "$.variables.emptyLoop.completed",
+                  "operator": "eq",
+                  "value": true
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "for loop from == to — exactly 1 iteration",
+      "steps": [
+        {
+          "name": "Run for loop with from == to",
+          "for": {
+            "from": 42,
+            "to": 42,
+            "as": "val",
+            "name": "singleLoop",
+            "assertions": [
+              {
+                "assertions": [
+                  {
+                    "path": "$.response.status",
+                    "operator": "eq",
+                    "value": 200
+                  },
+                  { "path": "$.variables.val", "operator": "eq", "value": 42 }
+                ]
+              }
+            ]
+          },
+          "action": {
+            "type": "httpRequest",
+            "method": "GET",
+            "url": "api-service/health"
+          }
+        },
+        {
+          "name": "Verify exactly 1 iteration",
+          "action": {
+            "type": "wait",
+            "durationMs": 10
+          },
+          "assertions": [
+            {
+              "assertions": [
+                {
+                  "path": "$.variables.singleLoop.iterations",
+                  "operator": "eq",
+                  "value": 1
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Descending for loop with negative step",
+      "steps": [
+        {
+          "name": "Count down from 3 to 1",
+          "for": {
+            "from": 3,
+            "to": 1,
+            "step": -1,
+            "as": "countdown",
+            "name": "countdownLoop",
+            "assertions": [
+              {
+                "assertions": [
+                  {
+                    "path": "$.response.status",
+                    "operator": "eq",
+                    "value": 200
+                  }
+                ]
+              }
+            ]
+          },
+          "action": {
+            "type": "httpRequest",
+            "method": "GET",
+            "url": "api-service/health"
+          }
+        },
+        {
+          "name": "Verify 3 iterations and last value was 1",
+          "action": {
+            "type": "wait",
+            "durationMs": 10
+          },
+          "assertions": [
+            {
+              "assertions": [
+                {
+                  "path": "$.variables.countdownLoop.iterations",
+                  "operator": "eq",
+                  "value": 3
+                },
+                {
+                  "path": "$.variables.countdown",
+                  "operator": "eq",
+                  "value": 1
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "stopOnFailure false — collect all iteration failures",
+      "steps": [
+        {
+          "name": "Fetch nonexistent posts (should fail but continue)",
+          "stopOnFailure": false,
+          "forEach": {
+            "items": ["nonexistent-id-aaa", "nonexistent-id-bbb"],
+            "as": "badId",
+            "name": "failLoop",
+            "assertions": [
+              {
+                "assertions": [
+                  {
+                    "path": "$.response.status",
+                    "operator": "eq",
+                    "value": 200
+                  }
+                ]
+              }
+            ]
+          },
+          "action": {
+            "type": "httpRequest",
+            "method": "GET",
+            "url": "api-service/api/posts/{{badId}}"
+          }
+        },
+        {
+          "name": "Verify both iterations ran despite failures",
+          "action": {
+            "type": "wait",
+            "durationMs": 10
+          },
+          "assertions": [
+            {
+              "assertions": [
+                {
+                  "path": "$.variables.failLoop.iterations",
+                  "operator": "eq",
+                  "value": 2
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

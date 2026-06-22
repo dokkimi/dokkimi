@@ -24,19 +24,19 @@ tests:
                 command: SELECT * FROM users ORDER BY id
         assertions:
           - assertions:
-              - path: response.status
+              - path: $.response.status
                 operator: eq
                 value: 200
-              - path: response.body.queryResults
-                operator: type
+              - type: $.response.body.queryResults
+                operator: eq
                 value: array
-              - path: response.body.queryResults[0][0].result
-                operator: type
+              - type: $.response.body.queryResults[0][0].result
+                operator: eq
                 value: array
-              - path: response.body.queryResults[0][0].result[0].name
+              - path: $.response.body.queryResults[0][0].result[0].name
                 operator: eq
                 value: Alice
-              - path: response.body.queryResults[0][0].result[1].name
+              - path: $.response.body.queryResults[0][0].result[1].name
                 operator: eq
                 value: Bob
   - name: Insert and read back
@@ -58,16 +58,16 @@ tests:
                 connectionString: '{{pgConnStr}}'
                 command: INSERT INTO users (email, name) VALUES ('{{newEmail}}', '{{newName}}') RETURNING *
         extract:
-          insertedId: $.body.queryResults[0][0].result[0].id
+          insertedId: $.response.body.queryResults[0][0].result[0].id
         assertions:
           - assertions:
-              - path: response.status
+              - path: $.response.status
                 operator: eq
                 value: 200
-              - path: response.body.queryResults[0][0].result[0].email
+              - path: $.response.body.queryResults[0][0].result[0].email
                 operator: eq
                 value: '{{newEmail}}'
-              - path: response.body.queryResults[0][0].result[0].name
+              - path: $.response.body.queryResults[0][0].result[0].name
                 operator: eq
                 value: '{{newName}}'
       - name: Verify inserted user via direct DB query
@@ -77,12 +77,12 @@ tests:
           query: SELECT * FROM users WHERE email = 'charlie@example.com'
         assertions:
           - assertions:
-              - path: success
+              - path: $.response.success
                 operator: eq
                 value: true
-              - path: data[0].name
+              - path: $.response.data[0].name
                 operator: eq
                 value: Charlie
-              - path: data[0].email
+              - path: $.response.data[0].email
                 operator: eq
                 value: charlie@example.com

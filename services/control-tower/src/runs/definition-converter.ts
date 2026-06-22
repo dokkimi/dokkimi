@@ -65,7 +65,7 @@ export function rawDefinitionToDeployable(
     description: raw.description as string | undefined,
     items,
     tests: raw.tests as DeployableDefinition['tests'],
-    variables: raw.variables as Record<string, string> | undefined,
+    variables: raw.variables as Record<string, unknown> | undefined,
     config: raw.config as DeployableDefinition['config'],
   };
 }

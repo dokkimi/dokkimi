@@ -14,7 +14,7 @@ tests:
           url: control-tower/health
         assertions:
           - assertions:
-              - path: response.status
+              - path: $.response.status
                 operator: eq
                 value: 200
   - name: Run creation and lifecycle
@@ -30,24 +30,24 @@ tests:
             definitions:
               - test-def
         extract:
-          runId: $.body.runId
-          instanceId: $.body.instances[0].id
+          runId: $.response.body.runId
+          instanceId: $.response.body.instances[0].id
         assertions:
           - assertions:
-              - path: response.status
+              - path: $.response.status
                 operator: in
                 value:
                   - 200
                   - 201
-              - path: response.body.runId
+              - path: $.response.body.runId
                 operator: exists
-              - path: response.body.instances
-                operator: length
+              - count: $.response.body.instances
+                operator: eq
                 value: 1
-              - path: response.body.instances[0].name
+              - path: $.response.body.instances[0].name
                 operator: eq
                 value: test-def
-              - path: response.body.instances[0].status
+              - path: $.response.body.instances[0].status
                 operator: eq
                 value: PENDING
       - name: Get run status
@@ -57,16 +57,16 @@ tests:
           url: 'control-tower/runs/{{runId}}/status'
         assertions:
           - assertions:
-              - path: response.status
+              - path: $.response.status
                 operator: eq
                 value: 200
-              - path: response.body.runId
+              - path: $.response.body.runId
                 operator: eq
                 value: '{{runId}}'
-              - path: response.body.status
+              - path: $.response.body.status
                 operator: exists
-              - path: response.body.instances
-                operator: length
+              - count: $.response.body.instances
+                operator: eq
                 value: 1
       - name: Get latest run matches created run
         action:
@@ -75,10 +75,10 @@ tests:
           url: control-tower/runs/latest
         assertions:
           - assertions:
-              - path: response.status
+              - path: $.response.status
                 operator: eq
                 value: 200
-              - path: response.body.runId
+              - path: $.response.body.runId
                 operator: eq
                 value: '{{runId}}'
       - name: Stop the current run
@@ -88,15 +88,15 @@ tests:
           url: control-tower/runs/stop
         assertions:
           - assertions:
-              - path: response.status
+              - path: $.response.status
                 operator: in
                 value:
                   - 200
                   - 201
-              - path: response.body.runId
+              - path: $.response.body.runId
                 operator: eq
                 value: '{{runId}}'
-              - path: response.body.status
+              - path: $.response.body.status
                 operator: eq
                 value: CANCELLED
       - name: Verify run is cancelled
@@ -106,10 +106,10 @@ tests:
           url: 'control-tower/runs/{{runId}}/status'
         assertions:
           - assertions:
-              - path: response.status
+              - path: $.response.status
                 operator: eq
                 value: 200
-              - path: response.body.status
+              - path: $.response.body.status
                 operator: eq
                 value: CANCELLED
       - name: Delete the run
@@ -119,10 +119,10 @@ tests:
           url: 'control-tower/runs/{{runId}}'
         assertions:
           - assertions:
-              - path: response.status
+              - path: $.response.status
                 operator: eq
                 value: 200
-              - path: response.body.status
+              - path: $.response.body.status
                 operator: eq
                 value: DELETED
       - name: Confirm run is gone
@@ -132,7 +132,7 @@ tests:
           url: 'control-tower/runs/{{runId}}/status'
         assertions:
           - assertions:
-              - path: response.status
+              - path: $.response.status
                 operator: in
                 value:
                   - 404
@@ -146,11 +146,11 @@ tests:
           url: control-tower/namespaces/instances
         assertions:
           - assertions:
-              - path: response.status
+              - path: $.response.status
                 operator: eq
                 value: 200
-              - path: response.body
-                operator: type
+              - type: $.response.body
+                operator: eq
                 value: array
   - name: Log query endpoints return empty results for unknown instance
     variables:
@@ -223,6 +223,6 @@ tests:
             message: No-op completion for standalone test
         assertions:
           - assertions:
-              - path: response.status
+              - path: $.response.status
                 operator: eq
                 value: 202

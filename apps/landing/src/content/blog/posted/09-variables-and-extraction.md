@@ -35,7 +35,7 @@ steps:
         name: '{{userName}}'
     assertions:
       - assertions:
-          - path: response.body.email
+          - path: $.response.body.email
             operator: eq
             value: '{{testEmail}}'
 ```
@@ -58,8 +58,8 @@ steps:
       body:
         email: '{{testEmail}}'
     extract:
-      userId: $.body.id
-      authToken: $.headers.x-auth-token
+      userId: $.response.body.id
+      authToken: $.response.headers.x-auth-token
 
   - name: Fetch user
     action:
@@ -70,7 +70,7 @@ steps:
         Authorization: 'Bearer {{authToken}}'
 ```
 
-The first step creates a user and extracts the `id` from the response body and the auth token from the response headers. The second step uses both values. Extraction uses JSONPath syntax (`$.body.id`, `$.headers.x-auth-token`) to navigate the response.
+The first step creates a user and extracts the `id` from the response body and the auth token from the response headers. The second step uses both values. Extraction uses path syntax (`$.response.body.id`, `$.response.headers.x-auth-token`) to navigate the unified root context.
 
 ## Extraction in assertions
 
@@ -79,13 +79,22 @@ You can also extract values within assertion blocks. This is useful when you nee
 ```yaml
 assertions:
   - match:
-      origin: api-gateway
-      method: POST
-      url: order-service/api/orders
+      path: $.traffic
+      where:
+        - path: $$.origin
+          operator: eq
+          value: api-gateway
+        - path: $$.request.method
+          operator: eq
+          value: POST
+        - path: $$.request.url
+          operator: contains
+          value: order-service/api/orders
+      count: 1
     extract:
-      internalOrderId: $.body.orderId
+      internalOrderId: $.match.response.body.orderId
     assertions:
-      - path: response.status
+      - path: $.match.response.status
         operator: eq
         value: 201
 ```
@@ -111,19 +120,19 @@ tests:
     steps:
       - name: Create
         action: { type: httpRequest, method: POST, url: api-gateway/api/users, body: { email: "{{testEmail}}" } }
-        extract: { userId: $.body.id }
+        extract: { userId: $.response.body.id }
 
       - name: Read
         action: { type: httpRequest, method: GET, url: api-gateway/api/users/{{userId}} }
         assertions:
           - assertions:
-              - { path: response.body.email, operator: eq, value: "{{testEmail}}" }
+              - { path: $.response.body.email, operator: eq, value: "{{testEmail}}" }
 
       - name: Delete
         action: { type: httpRequest, method: DELETE, url: api-gateway/api/users/{{userId}} }
         assertions:
           - assertions:
-              - { path: response.status, operator: eq, value: 204 }
+              - { path: $.response.status, operator: eq, value: 204 }
 ```
 
 Each step depends on the previous one's output. Sequential ordering ensures `userId` is available when it's needed.

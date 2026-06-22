@@ -23,16 +23,16 @@ tests:
           query: 'SELECT label FROM categories ORDER BY id'
         assertions:
           - assertions:
-              - path: success
+              - path: $.response.success
                 operator: eq
                 value: true
-              - path: data
-                operator: length
+              - count: $.response.data
+                operator: eq
                 value: 2
-              - path: data[0].label
+              - path: $.response.data[0].label
                 operator: eq
                 value: Electronics
-              - path: data[1].label
+              - path: $.response.data[1].label
                 operator: eq
                 value: Books
 
@@ -43,15 +43,15 @@ tests:
           query: 'SELECT name, price FROM products ORDER BY id'
         assertions:
           - assertions:
-              - path: success
+              - path: $.response.success
                 operator: eq
                 value: true
-              - path: data
-                operator: length
+              - count: $.response.data
+                operator: eq
                 value: 3
-              - path: data[0].name
+              - path: $.response.data[0].name
                 operator: eq
                 value: Widget
-              - path: data[2].name
+              - path: $.response.data[2].name
                 operator: eq
                 value: Almanac

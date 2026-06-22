@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"math"
 	"strings"
@@ -53,15 +54,15 @@ func AssembleHttpDocument(log *HttpLogMessage) map[string]interface{} {
 
 	return map[string]interface{}{
 		"request": map[string]interface{}{
-			"method": log.Method,
-			"url":    log.URL,
-			"header": NormalizeHeaderKeys(log.RequestHeaders),
-			"body":   requestBody,
+			"method":  log.Method,
+			"url":     log.URL,
+			"headers": NormalizeHeaderKeys(log.RequestHeaders),
+			"body":    requestBody,
 		},
 		"response": map[string]interface{}{
-			"status": statusCode,
-			"header": NormalizeHeaderKeys(log.ResponseHeaders),
-			"body":   responseBody,
+			"status":  statusCode,
+			"headers": NormalizeHeaderKeys(log.ResponseHeaders),
+			"body":    responseBody,
 		},
 		"responseTime": responseTime,
 	}
@@ -101,87 +102,13 @@ func AssembleDbDocument(log *DatabaseLogMessage) map[string]interface{} {
 	}
 }
 
-// AssembleStepDocument builds the assertion document for the step's own action.
-func AssembleStepDocument(step TestStep, httpLogs []HttpLogMessage, dbLogs []DatabaseLogMessage, stepExec StepExecution) map[string]interface{} {
-	switch step.Action.Type {
-	case "wait":
-		return map[string]interface{}{}
-	case "dbQuery":
-		log := FindDirectDatabaseLog(dbLogs, step.Action, stepExec)
-		return AssembleDbDocument(log)
-	case "ui":
-		return map[string]interface{}{}
-	default:
-		log := FindDirectRequestLog(httpLogs, step.Action, stepExec)
-		return AssembleHttpDocument(log)
-	}
-}
-
-// AssembleExtractDocument builds a flat document for step-level extract paths.
-// For HTTP: { statusCode, headers, body } (matches test-agent's extract convention).
-func AssembleExtractDocument(step TestStep, httpLogs []HttpLogMessage, dbLogs []DatabaseLogMessage, stepExec StepExecution) map[string]interface{} {
-	switch step.Action.Type {
-	case "wait":
-		return map[string]interface{}{}
-	case "dbQuery":
-		log := FindDirectDatabaseLog(dbLogs, step.Action, stepExec)
-		return AssembleDbDocument(log)
-	case "ui":
-		return map[string]interface{}{}
-	default:
-		log := FindDirectRequestLog(httpLogs, step.Action, stepExec)
-		if log == nil {
-			return map[string]interface{}{}
-		}
-		var statusCode interface{}
-		if log.StatusCode != nil {
-			statusCode = float64(*log.StatusCode)
-		}
-		responseBody := log.ResponseBody
-		if responseBody == nil {
-			responseBody = map[string]interface{}{}
-		}
-		return map[string]interface{}{
-			"statusCode": statusCode,
-			"headers":    NormalizeHeaderKeys(log.ResponseHeaders),
-			"body":       responseBody,
-		}
-	}
-}
-
-// MatchUrl matches a user-provided URL against a log's target and url path.
-func MatchUrl(matchUrl string, logTarget *string, logUrl string) bool {
-	if matchUrl == "" {
-		return true
-	}
-	if strings.HasPrefix(matchUrl, "/") {
-		return strings.Contains(logUrl, matchUrl)
-	}
-
-	slashIdx := strings.Index(matchUrl, "/")
-	var service, path string
-	if slashIdx >= 0 {
-		service = matchUrl[:slashIdx]
-		path = matchUrl[slashIdx:]
-	} else {
-		service = matchUrl
-	}
-
-	if service != "" {
-		if logTarget == nil || *logTarget != service {
-			return false
-		}
-	}
-	if path != "" && !strings.Contains(logUrl, path) {
-		return false
-	}
-
-	return true
-}
-
 // FindDirectRequestLog finds the HTTP log for the step's own action.
 func FindDirectRequestLog(httpLogs []HttpLogMessage, action StepAction, stepExec StepExecution) *HttpLogMessage {
-	startTime, endTime := stepTimeWindow(stepExec)
+	startTime, endTime, err := stepTimeWindow(stepExec)
+	if err != nil {
+		log.Printf("FindDirectRequestLog: %v", err)
+		return nil
+	}
 
 	var candidates []*HttpLogMessage
 	for i := range httpLogs {
@@ -238,7 +165,11 @@ func FindDirectRequestLog(httpLogs []HttpLogMessage, action StepAction, stepExec
 
 // FindDirectDatabaseLog finds the database log for a dbQuery action.
 func FindDirectDatabaseLog(dbLogs []DatabaseLogMessage, action StepAction, stepExec StepExecution) *DatabaseLogMessage {
-	startTime, endTime := stepTimeWindow(stepExec)
+	startTime, endTime, err := stepTimeWindow(stepExec)
+	if err != nil {
+		log.Printf("FindDirectDatabaseLog: %v", err)
+		return nil
+	}
 
 	var candidates []*DatabaseLogMessage
 	for i := range dbLogs {
@@ -276,20 +207,20 @@ func FindDirectDatabaseLog(dbLogs []DatabaseLogMessage, action StepAction, stepE
 	return best
 }
 
-func stepTimeWindow(stepExec StepExecution) (time.Time, time.Time) {
+func stepTimeWindow(stepExec StepExecution) (time.Time, time.Time, error) {
 	start, startErr := time.Parse(time.RFC3339Nano, stepExec.StartTime)
-	end, endErr := time.Parse(time.RFC3339Nano, stepExec.EndTime)
 	if startErr != nil {
-		log.Printf("Warning: failed to parse step StartTime %q: %v", stepExec.StartTime, startErr)
+		return time.Time{}, time.Time{}, fmt.Errorf("failed to parse step StartTime %q: %w", stepExec.StartTime, startErr)
 	}
+	end, endErr := time.Parse(time.RFC3339Nano, stepExec.EndTime)
 	if endErr != nil {
-		log.Printf("Warning: failed to parse step EndTime %q: %v", stepExec.EndTime, endErr)
+		return time.Time{}, time.Time{}, fmt.Errorf("failed to parse step EndTime %q: %w", stepExec.EndTime, endErr)
 	}
 	// No backward buffer on start — the test-agent controls the step start
 	// time so there's no clock skew. Forward buffer on end catches interceptor
 	// logs that arrive slightly after the step response returns.
 	end = end.Add(timestampBufferMs * time.Millisecond)
-	return start, end
+	return start, end, nil
 }
 
 func stepExecMidpoint(stepExec StepExecution) int64 {
@@ -310,4 +241,107 @@ func parseLogTimestamp(ts string) time.Time {
 		return time.Time{}
 	}
 	return t
+}
+
+// AssembleRootContext builds the unified root context document ($) for a step.
+// One document, one path system, used for both extract and assertion evaluation.
+// The second return value is false when the action's sidecar log (interceptor
+// or db-proxy) has not arrived yet — callers should retry rather than evaluate
+// assertions against the incomplete context.
+func AssembleRootContext(
+	step TestStep,
+	stepExec StepExecution,
+	httpLogs []HttpLogMessage,
+	dbLogs []DatabaseLogMessage,
+	consoleLogs []ConsoleLogMessage,
+	varCtx *VariableContext,
+	stepResp map[string]interface{},
+) (map[string]interface{}, bool) {
+	traffic, httpTimeline := assembleTrafficList(httpLogs, stepExec)
+	consoleLogList, consoleTimeline := assembleConsoleLogList(consoleLogs, stepExec)
+	dbLogList, dbTimeline := assembleDbLogList(dbLogs, stepExec)
+
+	timeline := mergeTimeline(httpTimeline, consoleTimeline, dbTimeline)
+	annotateTimelineIndices(traffic, timeline)
+
+	rootCtx := map[string]interface{}{
+		"variables":   varCtx.Snapshot(),
+		"traffic":     traffic,
+		"consoleLogs": consoleLogList,
+		"dbLogs":      dbLogList,
+		"timeline":    timeline,
+	}
+
+	actionLogFound := true
+
+	switch step.Action.Type {
+	case "wait":
+		rootCtx["request"] = map[string]interface{}{}
+		rootCtx["response"] = map[string]interface{}{}
+		rootCtx["responseTime"] = nil
+	case "dbQuery":
+		dbLog := FindDirectDatabaseLog(dbLogs, step.Action, stepExec)
+		rootCtx["request"] = map[string]interface{}{
+			"database": step.Action.Database,
+			"query":    step.Action.Query,
+		}
+		if dbLog != nil {
+			doc := AssembleDbDocument(dbLog)
+			delete(doc, "duration")
+			rootCtx["response"] = doc
+			if dbLog.Duration != nil {
+				rootCtx["responseTime"] = float64(*dbLog.Duration)
+			} else {
+				rootCtx["responseTime"] = nil
+			}
+		} else {
+			rootCtx["response"] = map[string]interface{}{}
+			rootCtx["responseTime"] = nil
+			actionLogFound = false
+		}
+	case "ui":
+		rootCtx["request"] = map[string]interface{}{}
+		if stepResp != nil {
+			rootCtx["response"] = stepResp
+		} else {
+			rootCtx["response"] = map[string]interface{}{}
+		}
+		rootCtx["responseTime"] = nil
+	default:
+		httpLog := FindDirectRequestLog(httpLogs, step.Action, stepExec)
+		if httpLog != nil {
+			doc := AssembleHttpDocument(httpLog)
+			rootCtx["request"] = doc["request"]
+			rootCtx["response"] = doc["response"]
+			rootCtx["responseTime"] = doc["responseTime"]
+		} else {
+			rootCtx["request"] = map[string]interface{}{}
+			rootCtx["response"] = map[string]interface{}{}
+			rootCtx["responseTime"] = nil
+			actionLogFound = false
+		}
+	}
+
+	return rootCtx, actionLogFound
+}
+
+func nilToEmptyMap(v interface{}) interface{} {
+	if v == nil {
+		return map[string]interface{}{}
+	}
+	return v
+}
+
+func ptrIntToFloat(p *int) interface{} {
+	if p == nil {
+		return nil
+	}
+	return float64(*p)
+}
+
+func ptrInt64ToFloat(p *int64) interface{} {
+	if p == nil {
+		return nil
+	}
+	return float64(*p)
 }
