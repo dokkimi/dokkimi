@@ -1,564 +1,936 @@
-> **Superseded** by [`docs/proposed/consistent-root-document.md`](../proposed/consistent-root-document.md) — the consistent root refactor extends and replaces portions of this design (match engine, assertion paths, `$$` scoping).
-
-# Design: Unified Root Context (`$`)
+# Consistent Root Document for Assertions
 
 ## Problem
 
-The test-agent has three separate path systems for accessing test data:
+### 1. `$` is context-dependent
 
-| Context          | Current syntax                      | Document shape                                     |
-| ---------------- | ----------------------------------- | -------------------------------------------------- |
-| Extract (HTTP)   | `$.body.X`, `$.headers.X`           | `{ statusCode, headers, body }`                    |
-| Extract (DB)     | `$.data[0].X`, `$.success`          | `{ success, data, rowsAffected, error, duration }` |
-| Assertion (HTTP) | `response.body.X`, `request.body.X` | `{ request, response, responseTime }`              |
-| Assertion (DB)   | `data[0].X`, `success`              | `{ success, data, rowsAffected, error, duration }` |
-| Assertion (UI)   | `$.extracted.varName`               | `{ target, baseURL, extracted: {...} }`            |
+`$` means different things depending on whether an assertion is in a "self-block" (an assertion block with no `match` — asserts against the step's own request/response) or a "match block" (an assertion block with a `match` — asserts against matched traffic entries).
 
-Users must know which action type produced the result _and_ whether they're in extract or assertion context to write the correct path. The docs explicitly warn: "don't use `response.body` in extract paths or `$.body` in assertion paths."
-
-This happened because the system grew feature by feature without a unifying model. Two assembly functions (`AssembleStepDocument` and `AssembleExtractDocument`) build different document shapes from the same underlying data. The `$` prefix is purely syntactic — the assertion engine strips it.
-
-Meanwhile, the test-agent has access to far more data than either document exposes: intercepted traffic, console logs, database logs, and the full variable context. None of this is queryable through extract or assertion paths.
-
-## Proposal
-
-Replace the multiple document shapes with a single root context `$` that represents the full observable state at assertion/extract time. One document, one path system, used everywhere.
-
-```
-$ = {
-    request:     { method, url, headers, body },
-    response:    { status, headers, body },
-    responseTime: 142,
-
-    variables:   { ... },
-
-    traffic:     [ { timestamp, from, to, request, response }, ... ],
-    consoleLogs: [ { timestamp, service, level, message }, ... ],
-    dbLogs:      [ { timestamp, database, query, duration, result }, ... ],
-    timeline:    [ { type, timestamp, ... }, ... ]
-}
-```
-
-### Scoping
-
-- `request`, `response`, `responseTime` — **step-scoped**. They describe the current action's direct result.
-- `variables` — **test-scoped**. Accumulated across all steps in the test, cleared at the test boundary.
-- `traffic`, `consoleLogs`, `dbLogs`, `timeline` — **step-scoped**. The log buffer (`StepLogBuffer`) is flushed after each step's validation completes (`ValidateStepWithRetry` calls `Flush()`), and match blocks further filter by the step's execution time window. So these already contain only the current step's observable effects — this is existing behavior, not a new restriction. Steps are sequential, so cross-step ordering is implied by step ordering.
-
-### Evaluation order
-
-Within a step, extract rules are evaluated **before** assertions. `$.variables` in the assertion document reflects all extracts from the current step (and all prior steps in the test). This was always the implementation order, but with `$.variables` queryable in assertions it becomes a public contract:
-
-```json
-"extract": { "userId": "$.response.body.id" },
-"assertions": [
-    { "path": "$.variables.userId", "operator": "exists" }
-]
-```
-
-This works because extract runs first, populates `$.variables.userId`, and then assertions evaluate against the root context (which includes the updated `$.variables`).
-
-### What changes for the user
-
-**Extract — one syntax for all action types:**
-
-```json
-// Before (HTTP)
-"extract": { "userId": "$.body.user.id" }
-
-// Before (DB)
-"extract": { "userId": "$.data[0].id" }
-
-// After (both — always through $.response)
-"extract": { "userId": "$.response.body.user.id" }
-"extract": { "userId": "$.response.data[0].id" }
-```
-
-Extract can now pull from anything in `$`:
-
-```json
-"extract": {
-    "firstServiceCalled": "$.traffic[0].to",
-    "authHeader": "$.request.headers.Authorization",
-    "dbQueryCount": "$.dbLogs.length"
-}
-```
-
-Note: `$.traffic` extraction is **positional only** (index-based). There is no JSONPath filter syntax (`$.traffic[?(@.to=='service-b')]`). For filtered access, match blocks are the declarative mechanism — and match blocks already support `extract` (documented, though unused in the internal test suite). To extract a value from a specific traffic entry (e.g., the response body of the call from service-a to service-b), use a match block with extract:
+**Without `match`** — `$` is the unified root context:
 
 ```json
 {
-  "match": { "from": "service-a", "to": "service-b" },
-  "extract": { "serviceResponse": "$.response.body" }
+  "response": { "status": 201, "body": { "id": "abc" } },
+  "request": { "method": "POST", "body": { "name": "Alice" } },
+  "responseTime": 150,
+  "variables": { "token": "xyz" },
+  "traffic": [ ... ],
+  "consoleLogs": [ ... ],
+  "dbLogs": [ ... ],
+  "timeline": [ ... ]
 }
 ```
 
-`$.traffic` in extract/assertion paths provides raw positional access to the same data — useful for count (`$.traffic.length`), ordering (`$.traffic[0].to`), and first/last access, but not for content-based filtering.
-
-**Assertions — one syntax for all action types:**
-
-```json
-// Before (HTTP)
-{ "path": "response.body.user.name", "operator": "eq", "value": "Alice" }
-
-// Before (DB)
-{ "path": "data[0].name", "operator": "eq", "value": "Alice" }
-
-// After (both — always $.response.*)
-{ "path": "$.response.body.user.name", "operator": "eq", "value": "Alice" }
-{ "path": "$.response.data[0].name", "operator": "eq", "value": "Alice" }
-```
-
-**New assertions that weren't possible before:**
-
-```json
-// Assert exactly 2 inter-service calls happened
-{ "path": "$.traffic.length", "operator": "eq", "value": 2 }
-
-// Assert no database writes occurred
-{ "path": "$.dbLogs.length", "operator": "eq", "value": 0 }
-
-// Assert a variable exists
-{ "path": "$.variables.userId", "operator": "exists" }
-
-// Assert ordering: DB query happened before the HTTP call
-{ "path": "$.timeline[0].type", "operator": "eq", "value": "dbQuery" }
-{ "path": "$.timeline[1].type", "operator": "eq", "value": "httpTraffic" }
-```
-
-**UI assertions — `$.extracted` becomes `$.variables`:**
-
-```json
-// Before
-{ "path": "$.extracted.userName", "operator": "eq", "value": "Alice" }
-
-// After
-{ "path": "$.variables.userName", "operator": "eq", "value": "Alice" }
-```
-
-**Match blocks** — syntax stays the same. Match is a filter on `$.traffic`; the user's mental model just gets clearer:
+**With `match`** — `$` silently switches to a per-log document:
 
 ```json
 {
-  "match": { "from": "service-a", "to": "service-b", "path": "/users" },
-  "assertions": [
-    { "path": "$.response.body.name", "operator": "eq", "value": "Alice" }
+  "request": { ... },
+  "response": { ... },
+  "responseTime": 150
+}
+```
+
+This means `$.response.status` resolves against completely different documents depending on sibling keys. A user who writes `$.variables.token` in a match-block assertion gets a silent "not found" — no error, just a broken assertion. The syntax is identical; the semantics are not.
+
+The "self-block" concept itself is an artifact of this inconsistency. With a consistent root, there is no meaningful distinction between assertion blocks with and without match — they all assert against the same root context.
+
+### 2. Match uses a separate mini-language with no operators
+
+Match criteria only support implicit equality (`"method": "POST"`, `"origin": "api-gateway"`). There is no way to filter on response-side fields, use operators like `gte` or `contains`, or reference variables. This means the filter and the assertion are doing fundamentally the same thing — comparing a value — but with two different syntaxes of different expressiveness.
+
+This also means match can only filter on the request, not the response. A user who wants "find the POST that returned 201" can't express it — they have to match all POSTs and then assert on the response, even when they know exactly which entry they want.
+
+### 3. `count` is a redundant mini-language
+
+The `count` field on match blocks is a separate assertion structure with its own operator/value semantics that duplicates what standard assertion operators already do. Console log assertion blocks have the same `count` structure inside `consoleAssertions`, creating a second instance of the same redundancy.
+
+### 4. `.length` is a surprising magic property in paths
+
+`EvaluateDocPath` special-cases the segment `"length"` to return array/string length. This looks like a key access but acts as a function. It's the only such magic property, making it inconsistent — and it silently intercepts any object that has an actual key called `"length"`.
+
+### 5. No way to compare two document paths
+
+Assertion `value` only accepts literals or `{{var}}` interpolation. There is no way to write "assert that the body of traffic entry 0 equals the body of traffic entry 1" without extracting one side into a variable first.
+
+### 6. Loops are inline modifiers with ambiguous ordering
+
+Loops (`forEach`, `for`, `repeat`) are sibling keys on the same object as `match` and `assertions`. When both a loop and a match exist on the same block, the structure doesn't communicate which wraps which. Currently this is sidestepped by banning the combination (`forEach` + `match` is a validation error), but that's a limitation, not a design choice.
+
+### 7. `consoleAssertions` and `service` are redundant concepts
+
+Console log assertions use a separate `consoleAssertions` field with its own filter structure (`service`, `level`, `message` fields). The `service` field on assertion blocks filters traffic by service name. Both are special-purpose filters that duplicate what a general-purpose match/filter system would provide.
+
+## Solution
+
+### 1. `$` always means root document; `$$` is the scoped iterator
+
+Two path roots:
+
+- **`$`** — always the unified root context. Never changes meaning.
+- **`$$`** — the current element in a match `where` filter. Only valid inside a `where` array.
+
+`$$` is strictly a match feature. Loops do not use `$$` — they use `as` (required) and `name` (optional) as they do today. The reason is structural: `$$` refers to the element currently being tested by the filter, which is internal to the match engine. Loops iterate over already-resolved values and bind them to named variables via `as`, so there is no anonymous "current element" to reference — the variable name _is_ the reference. Bare `$$` (without a trailing `.field`) is invalid — `$$` is always followed by a dot and a field path (e.g., `$$.request.method`).
+
+There is no "self-block" concept. All assertion blocks assert against the root context. Some blocks have a `match` that filters and populates results first; some don't. The distinction is just whether a filter runs before assertions, not a change in what `$` means.
+
+### 2. Match uses assertion syntax with `where`
+
+Match is no longer a separate mini-language. It declares a source array (`path`), filter criteria (`where`), and an optional name (`as`).
+
+Inside the `where` array, `$$` refers to the current element being tested. `where` uses the same operators and variable references as standard assertions. Transform shorthands (`count`, `type`, `keys`, `values`, `entries`) and object-form `path` are not supported in `where` entries — filters operate on direct field values. If you need to filter by a derived value (e.g., array length), match more broadly and assert in the `assertions` block.
+
+```json
+{
+  "match": {
+    "path": "$.traffic",
+    "where": [
+      { "path": "$$.origin", "operator": "eq", "value": "api-gateway" },
+      { "path": "$$.request.method", "operator": "eq", "value": "POST" },
+      {
+        "path": "$$.request.url",
+        "operator": "contains",
+        "value": "/api/users"
+      },
+      { "path": "$$.response.status", "operator": "gte", "value": 200 }
+    ],
+    "count": 1
+  },
+  "assertions": [{ "path": "$.match.response.body.id", "operator": "exists" }]
+}
+```
+
+This solves several problems at once:
+
+- **Full operator support in filters** — `gte`, `contains`, `regex`, etc. all work because `where` uses real assertions
+- **Response-side filtering** — `$$.response.status`, `$$.response.body.*` are just paths
+- **Variable references in filters** — `"value": "{{expectedOrigin}}"` works the same as in assertions
+- **One syntax to learn** — the same assertion object structure is used for both filtering and validating
+- **No "any" scope needed** — filters are expressive enough to select exactly the entries you want
+
+#### `where` logic
+
+`where` is AND by default — all entries must pass for an element to be included. For OR logic, use an `or` block; for explicit AND grouping inside an `or`, use an `and` block.
+
+Simple OR:
+
+```json
+{
+  "where": [
+    { "path": "$$.origin", "operator": "eq", "value": "api-gateway" },
+    {
+      "or": [
+        { "path": "$$.request.method", "operator": "eq", "value": "POST" },
+        { "path": "$$.request.method", "operator": "eq", "value": "PUT" }
+      ]
+    }
   ]
 }
 ```
 
-### DB response shape under `$`
-
-Today, DB assertions use bare paths (`success`, `data[0].X`) because the DB document is flat. Under the unified `$`, DB results move under `$.response` to be consistent with HTTP:
-
-```
-// HTTP step
-$.response = { status, headers, body }
-$.responseTime = 142
-
-// DB step
-$.response = { success, data, rowsAffected, error }
-$.responseTime = 8
-```
-
-Both are `$.response.*`. The shapes differ because the data genuinely differs, but the user always knows: "my action's result is at `$.response`." Query duration lives at `$.responseTime` for both — it's the same concept (how long the action took), just measured differently. For HTTP steps, it's the round-trip time (request sent to response received). For DB steps, it's the query execution time as reported by the db-proxy (includes proxy overhead but not test-agent-to-proxy round-trip).
-
-### Timeline
-
-`$.timeline` is a chronologically sorted merge of `$.traffic`, `$.consoleLogs`, and `$.dbLogs`. Each entry has a `type` field (`"httpTraffic"`, `"consoleLog"`, `"dbQuery"`) plus the fields from its source.
-
-All sidecars use `time.Now().Format(time.RFC3339Nano)` for timestamps. Docker containers share the host kernel's clock, so timestamps are comparable across sidecars. Events separated by less than ~1ms may not have deterministic ordering (a sidecar may log an event slightly after it occurs), but for the typical use cases — an INSERT before a response, an error after a DB failure — the gap is milliseconds and the ordering is reliable.
-
-The timeline enables cross-cutting assertions that are impossible today:
-
-- "The INSERT happened before service-a responded" — check relative positions in `$.timeline`
-- "The service logged an error _after_ the DB query failed" — temporal ordering across log types
-- "Exactly 5 observable events happened during this step" — `$.timeline.length`
-
-**Ordering caveat:** positional timeline assertions (`$.timeline[0].type == "dbQuery"`) are reliable when events are separated by more than ~1ms. For tightly-coupled events (e.g., an HTTP call that triggers a DB query within microseconds), the ordering may not be deterministic. Use `$.timeline` for count and type-presence assertions on tightly-coupled events; reserve positional ordering assertions for events with clear temporal separation (e.g., a DB write before a later HTTP response).
-
-### Relationship to loops
-
-The unified root context and loops are independent features that reinforce each other. Loops can ship before or after the root context migration — they need the variable context upgrade (Phase 3) but not the path unification (Phases 1-2). If loops ship first, their examples use old-style paths and get updated when the root context lands. If the root context ships first, loops use `$.*` paths from day one.
-
-That said, the variable context upgrade (Phase 3) is shared infrastructure. Both features need `map[string]interface{}` and dotted path resolution. Implementing Phase 3 first unblocks both.
-
-What loops specifically need:
-
-- **Structured variables** — `map[string]interface{}` instead of `map[string]string`, so `forEach` can iterate arrays and `{{user.email}}` can resolve dotted paths.
-- **Consistent paths** (nice to have) — loop iteration variables live in `$.variables` alongside extracted values. One path system means the user doesn't learn separate syntax for loop variables vs extracted variables vs assertion paths.
-
-### Structured variables
-
-Today, the variable context is `map[string]string`. Every extracted value is stringified via `valueToString()`: numbers become `"42"`, booleans become `"true"`, objects become JSON strings. This works by accident — JSON parsing on the receiving end turns `"42"` back into a number — but it blocks any feature that needs to treat variables as structured data (loops iterating arrays, dotted path access, type-correct assertions).
-
-The variable context upgrades to `map[string]interface{}`.
-
-#### What types are stored
-
-Variables can hold any JSON-compatible type:
-
-- **string** — `"Alice"`
-- **number** — `42`, `3.14` (stored as `float64`, matching Go's JSON unmarshalling)
-- **boolean** — `true`, `false`
-- **null** — `nil`
-- **array** — `[{"name": "Alice"}, {"name": "Bob"}]`
-- **object** — `{"email": "alice@example.com", "role": "admin"}`
-
-#### Extract stores typed values
-
-Today, `ResolveExtractRule()` in `assertion_engine.go` stringifies the extracted value:
-
-```go
-// Current — always returns string
-b, _ := json.Marshal(rawValue)
-strValue = string(b)
-```
-
-After the upgrade, extract preserves the raw value:
+Top-level `where` entries are AND. An `or` entry passes if at least one of its child entries passes. An `and` entry passes if all of its child entries pass. A `not` entry inverts the result of its child entry. All three can nest and interleave freely, giving full boolean expressiveness:
 
 ```json
-"extract": { "users": "$.response.body.users" }
-```
-
-If `$.response.body.users` is an array, `{{users}}` holds the actual array, not `"[{\"name\":\"Alice\"}]"`. This is what makes `forEach: "{{users}}"` work — the loop receives an iterable, not a string.
-
-#### `{{}}` interpolation and type context
-
-`{{var}}` appears in two contexts that need different behavior:
-
-**String context** — URLs, headers, SQL queries, string values. The variable is stringified into the surrounding text:
-
-```json
-"url": "service-a/users/{{userId}}"
-"query": "SELECT * FROM users WHERE id = {{userId}}"
-```
-
-- string → inserted as-is
-- number → `"42"` (decimal representation)
-- boolean → `"true"` / `"false"`
-- null → `""` (empty string)
-- object/array → JSON-encoded string
-
-**JSON value context** — when `{{var}}` appears as an entire value in a JSON body (not embedded in a larger string), the typed value is preserved:
-
-```json
-"body": {
-    "userId": "{{userId}}",
-    "filters": "{{filterObj}}",
-    "tags": "{{tagArray}}"
-}
-```
-
-If `userId` is the number `42`, the body gets `"userId": 42` (not `"userId": "42"`). If `filterObj` is an object, it's embedded directly. If `tagArray` is an array, it's embedded as an array.
-
-The rule: if the template string contains **exactly one `{{...}}` reference and nothing else**, emit the typed value. Otherwise, stringify all references and concatenate. Specifically:
-
-- `"{{var}}"` — entire value, preserves type
-- `"{{var}} "` — trailing space, stringifies (not entire value)
-- `"{{a}}{{b}}"` — two references, stringifies both and concatenates
-- `["{{var}}"]` — each array element is evaluated independently; `"{{var}}"` is the entire element value, so type is preserved
-- `"{{users[0].name}}"` — entire value, preserves type (dotted path resolution happens inside the braces)
-
-This matches user intuition — `"{{userId}}"` as a JSON value should preserve the number, but `"/users/{{userId}}"` in a URL should produce a string.
-
-#### Dotted path resolution
-
-The current regex `\{\{(\w+)\}\}` only matches single identifiers like `{{userId}}`. It cannot resolve `{{user.email}}` or `{{users[0].name}}`.
-
-The regex upgrades to match dotted and bracketed paths:
-
-```
-\{\{([\w]+(?:\.[\w]+|\[\d+\])*)\}\}
-```
-
-This matches:
-
-- `{{userId}}` — simple variable lookup
-- `{{user.email}}` — object property access
-- `{{users[0].name}}` — array index + property
-- `{{user.address.city}}` — nested property chain
-
-Unsupported (and not needed): negative array indices, quoted bracket notation (`["key"]`), wildcard or filter expressions.
-
-Resolution walks the variable context:
-
-1. Split the path on `.` and `[N]` segments
-2. Look up the first segment in the variable map
-3. Traverse remaining segments into the value (object property access, array indexing)
-4. If any segment fails to resolve, error with "variable path not found"
-
-This is the same traversal that `EvaluateDocPath` already does for `$` paths — share the implementation rather than duplicating it.
-
-#### Memory
-
-Variables reset at the test boundary (the `varCtx.Reset()` fix already applied). Within a test, variables accumulate across steps — an extracted array from step 1 persists into step 5. This is the same lifecycle as string variables today; the only difference is that objects/arrays are larger than strings.
-
-In practice, the data comes from HTTP response bodies and DB query results that are already in memory (in the log buffer). Storing a reference to `$.response.body.users` in the variable context doesn't duplicate the data — it's the same slice. The variable context just holds a pointer.
-
-If a test extracts very large payloads into variables, memory grows — but this is bounded by the test's own data. Tests that would extract a 100MB response body into a variable are pathological regardless of the variable type system.
-
-### Relationship to `{{}}` interpolation
-
-`$` paths and `{{}}` interpolation are two different access patterns:
-
-- **`$` paths** — used in `extract` and `assertions` to query the root context document at assertion time. Read-only, supports the full document.
-- **`{{var}}`** — resolves variable values from `$.variables`. Used in two contexts:
-  - **Actions** (URLs, headers, bodies, queries) — interpolates values into outgoing requests at action execution time.
-  - **Assertion/extract fields** (`path`, `value`, `items`) — resolves before evaluation. This is how loop variables reach assertion paths: `{ "path": "{{user.email}}", ... }` resolves the dotted path inside the variable context, producing the value directly. This already works today for simple variables (e.g., `"value": "{{expectedName}}"`); the dotted path upgrade extends it to structured data.
-
-`$` and `{{}}` can appear in the same field. A `path` like `"$.response.body.users[{{index}}].name"` uses `{{}}` to resolve the index from a variable, then `$` path evaluation traverses the document. `{{}}` resolves first.
-
----
-
-## Implementation
-
-### What changes
-
-#### Phase 1: Unified root context assembly
-
-**Replace two assembly functions with one.**
-
-File: `services/test-agent/document_assembler.go`
-
-Today there are two functions that build different documents from the same data:
-
-- `AssembleStepDocument()` → `{ request, response, responseTime }` (HTTP) or `{ success, data, ... }` (DB)
-- `AssembleExtractDocument()` → `{ statusCode, headers, body }` (HTTP) or `{ success, data, ... }` (DB)
-
-Replace both with:
-
-```go
-func AssembleRootContext(
-    step TestStep,
-    stepExec StepExecution,
-    httpLogs []HttpLogMessage,
-    dbLogs []DatabaseLogMessage,
-    consoleLogs []ConsoleLogMessage,
-    varCtx *VariableContext,
-    stepResp map[string]interface{},  // non-nil for UI steps
-) map[string]interface{}
-```
-
-This function builds:
-
-```go
 {
-    "request":      <from the step's action or matched log>,
-    "response":     <from the step's response log>,
-    "responseTime": <computed from request/response timestamps>,
-    "variables":    varCtx.Snapshot(),
-    "traffic":      assembleTrafficList(httpLogs, stepExec),
-    "consoleLogs":  assembleConsoleList(consoleLogs),
-    "dbLogs":       assembleDbLogList(dbLogs),
-    "timeline":     assembleTimeline(httpLogs, dbLogs, consoleLogs, stepExec),
+  "where": [
+    {
+      "or": [
+        {
+          "and": [
+            { "path": "$$.request.method", "operator": "eq", "value": "POST" },
+            { "path": "$$.response.status", "operator": "eq", "value": 201 }
+          ]
+        },
+        {
+          "and": [
+            { "path": "$$.request.method", "operator": "eq", "value": "PUT" },
+            { "path": "$$.response.status", "operator": "eq", "value": 200 }
+          ]
+        }
+      ]
+    }
+  ]
 }
 ```
 
-For HTTP steps, `$.response` = `{ status, headers, body }`. Note: the underlying log stores `statusCode`; `AssembleRootContext` remaps it to `status` for consistency with the user-facing path `$.response.status`.
-For DB steps, `$.response` = `{ success, data, rowsAffected, error }`. Query duration moves to `$.responseTime`.
-For UI steps, extracted values go into `varCtx` (already happens), and `$.variables` surfaces them — no more `$.extracted`.
-For `wait` steps, `$.response` = `{}`.
+Top-level `where` is implicitly AND, so an explicit `and` block is only needed inside `or`. For simple single-field OR, the `in` operator is often sufficient: `{ "path": "$$.request.method", "operator": "in", "value": ["POST", "PUT"] }`.
 
-The traffic/consoleLogs/dbLogs lists are assembled from the log buffer snapshot, filtered to the step's time window (same logic that `ValidateHttpCallBlock` already uses). Each entry is a map with user-friendly field names.
+`$$` resolves to the current element being tested everywhere inside the `where` array, including inside `or`, `and`, and `not` blocks at any nesting depth.
 
-**Internal data stays as-is.** The log buffers, variable context, and sidecar log ingestion don't change. `AssembleRootContext` is a _view_ — it builds one shallow map of references to data that already exists in memory.
+Negation in `where` uses individual negation operators (`ne`, `notContains`, `notExists`, `notIn`, etc.) for simple cases. For negating a group of conditions, use a `not` block:
 
-#### Phase 2: Wire up the single document
+Simple negation (single assertion):
 
-**File: `services/test-agent/step_validator.go`**
-
-`validateStep()` currently creates two separate documents:
-
-```go
-stepDoc = AssembleStepDocument(resolvedStep, httpLogs, dbLogs, stepExec)
-extractDoc = AssembleExtractDocument(resolvedStep, httpLogs, dbLogs, stepExec)
+```json
+{ "path": "$$.request.headers.x-internal", "operator": "notExists" }
 ```
 
-Replace with one call:
+Group negation with `not`:
 
-```go
-rootCtx = AssembleRootContext(resolvedStep, stepExec, httpLogs, dbLogs, consoleLogs, sv.varCtx, stepResp)
+```json
+{
+  "not": {
+    "and": [
+      { "path": "$$.request.method", "operator": "eq", "value": "POST" },
+      {
+        "path": "$$.request.url",
+        "operator": "contains",
+        "value": "/api/users"
+      }
+    ]
+  }
+}
 ```
 
-Then pass `rootCtx` to both extract resolution and assertion validation. Every path evaluates against the same document.
+A `not` block wraps a single where entry (assertion, `or`, or `and`) and inverts its result. `not` can nest inside `or`/`and` and vice versa.
 
-**File: `services/test-agent/block_validators.go`**
+#### Root-context references in `where` values
 
-- `ValidateSelfBlock()` — receives `rootCtx` instead of `stepDoc`. No logic change; `ValidateAssertion` already calls `EvaluateDocPath` which handles `$.` prefix.
-- `ValidateHttpCallBlock()` — for matched traffic, currently builds a per-log document via `AssembleHttpDocument()`. Under the unified model, each matched log gets its own mini root context with `$.request` and `$.response` from that log entry. The `match` filtering logic stays the same. **Important**: match block assertion paths change from `response.body.X` to `$.response.body.X` — this is a separate code path from self-block assertions, so both must accept `$.`-prefixed paths. The per-log mini document must be shaped with `request`/`response` at the top level so `$.response.body.X` resolves correctly. The `statusCode` → `status` remap must also apply here — the per-log document uses the same `$.response.status` field name as the step-level root context.
-- `ValidateConsoleLogBlock()` — currently doesn't use document paths at all (only message filtering). No change needed initially, but the `$.consoleLogs` path in the root context subsumes this capability.
+Where entry values support the same ValueRef form as standard assertions: `"value": { "from": "$.variables.userId" }`. The `from` path resolves against the root context, enabling filters like "match traffic where the response ID equals a previously extracted variable":
 
-**File: `services/test-agent/assertion_engine.go`**
+```json
+{
+  "where": [
+    {
+      "path": "$$.response.body.id",
+      "operator": "eq",
+      "value": { "from": "$.variables.expectedId" }
+    }
+  ]
+}
+```
 
-- `EvaluateDocPath()` — already strips the `$.` prefix. With the unified root, `$.response.body.X` resolves naturally: strip `$.`, split on `.`, traverse `response` → `body` → `X`. No logic change needed.
-- `ResolveExtractRule()` — already calls `EvaluateDocPath`. When the document changes from `{ statusCode, headers, body }` to the full root context, extract paths like `$.response.body.X` just work.
-- `ValidateAssertion()` — no change. It calls `EvaluateDocPath` and `CompareValues`, both of which are document-shape-agnostic.
+#### `count` on match
 
-**File: `services/test-agent/variable_context.go`**
+Match supports an optional `count` field that asserts on the number of matched entries. This is sugar — it desugars into a standard count assertion on `$.matches`, but co-locates the cardinality expectation with the filter.
 
-- `Extract()` method — currently calls `EvaluateJsonPath()` on the extract document. This can switch to using `EvaluateDocPath()` on the root context instead. Or, since `step_validator.go` already handles extract via `ResolveExtractRule()`, the `VariableContext.Extract()` method may become unused and can be removed.
-- `EvaluateJsonPath()` — still used by `Resolve()` for variable interpolation in action payloads. Stays as-is; it operates on a different phase (action execution, not assertion).
-- `Snapshot()` — called by `AssembleRootContext` to populate `$.variables`. Returns `map[string]string` today; will return `map[string]interface{}` after the variable context upgrade (see Phase 3).
+A number means `eq`:
 
-**File: `services/test-agent/ui_executor.go`**
+```json
+"match": { "path": "$.traffic", "where": [...], "count": 1 }
+```
 
-- `Execute()` currently returns `{ target, baseURL, extracted: {...} }`. UI-extracted values are already written to `varCtx` during execution (the returned document is redundant). With the unified root, `Execute()` no longer needs to return the extracted map — `$.variables` in the root context already contains them.
-- The special-case in `step_validator.go` that uses `stepResp` for UI steps can be simplified: UI steps assemble the same root context as everything else, with `$.variables` containing the UI-extracted values.
+Object form for other operators:
 
-#### Phase 3: Variable context upgrade
+```json
+"match": { "path": "$.traffic", "where": [...], "count": { "operator": "gte", "value": 2 } }
+```
 
-Implements the structured variables design described above (see "Structured variables" section).
+When `count` on match fails, the error includes the full match context:
 
-**File: `services/test-agent/variable_context.go`**
+> `match count failed: expected exactly 1 entry matching {path: $.traffic, where: [origin eq "api-gateway", method eq "POST", url contains "/api/users"]}, found 3`
 
-- `variables map[string]string` → `map[string]interface{}`
-- `Set(name, value string)` → `Set(name string, value interface{})`
-- `Resolve()` regex `\{\{(\w+)\}\}` → `\{\{([\w]+(?:\.[\w]+|\[\d+\])*)\}\}` for dotted/bracketed paths
-- `resolveValue()` — add type-context-aware interpolation: entire-value `{{var}}` preserves type, embedded `{{var}}` stringifies
-- `Snapshot()` returns `map[string]interface{}`
+Both `count` on match and the `count` assertion shorthand (`{ "count": "$.matches", ... }`) are supported. Use `count` on match for the common case; use the assertion shorthand when asserting count of a different source (e.g., `as`-named results from a previous match).
 
-**File: `services/test-agent/assertion_engine.go`**
+#### Match results
 
-- `ResolveExtractRule()` — stop stringifying extracted values. Return `interface{}` instead of `string`. This is a signature change that propagates to `step_validator.go` where `varCtx.Set()` is called with the result.
+When a match block filters, the results are injected into the root context as:
 
-**File: `services/test-agent/test_executor.go`**
+- `$.matches` — array of all matched documents
+- `$.match` — shorthand for `$.matches[0]` (the first match)
+- `$.lastMatch` — shorthand for the last element of `$.matches`
 
-- `TestConfig.Variables` and `TestDefinition.Variables` are currently `map[string]string`. These stay as `map[string]string` in the config (user-declared variables are always strings). `Set()` accepts `interface{}`, so string values pass through unchanged.
+These keys are scoped to the block that produced them. When a nested block runs its own match (e.g., a match inside a forEach that itself iterates over outer match results), the inner match pushes new values for `$.matches`/`$.match`/`$.lastMatch`. When the inner block completes, the outer match's values are restored. This is stack-based: each match pushes, each block exit pops.
 
-**Risk: type change breaking existing `eq` assertions.**
+`$.matches`/`$.match`/`$.lastMatch` do not persist to subsequent blocks or steps — they are always cleared when the block that set them completes.
 
-Today, extracting `$.response.body.count` where the JSON value is `42` stores the string `"42"`. After Phase 3, it stores `float64(42)`. `CompareValues` with `eq` uses `reflect.DeepEqual` — no type coercion. So:
+Example — nested match with stack behavior:
 
-- `{ "value": 42 }` (number literal in definition JSON) — **works after upgrade** (float64 == float64)
-- `{ "value": "42" }` (string literal in definition JSON) — **breaks after upgrade** (string != float64, was string == string before)
-- `{ "value": "{{count}}" }` in an assertion — was string `"42"`, now float64 `42` (if entire-value rule applies). Comparison depends on what the other side is.
+```json
+{
+  "match": {
+    "path": "$.traffic",
+    "where": [
+      { "path": "$$.request.method", "operator": "eq", "value": "POST" }
+    ],
+    "as": "postRequests"
+  },
+  "forEach": {
+    "items": "$.variables.postRequests",
+    "as": "entry",
+    "match": {
+      "path": "$.dbLogs",
+      "where": [
+        { "path": "$$.query", "operator": "contains", "value": "INSERT" }
+      ]
+    },
+    "assertions": [{ "path": "$.match.query", "operator": "exists" }]
+  }
+}
+```
 
-Numeric operators (`gt`, `gte`, `lt`, `lte`) are unaffected — they use `toFloat` which coerces strings to numbers.
+In this example, the outer match populates `$.matches` with POST traffic and saves to `postRequests`. The inner match (per iteration) pushes new `$.matches`/`$.match` with the matching DB logs. When each inner block completes, the outer match's `$.matches`/`$.match` are restored. The `as`-named `postRequests` variable is unaffected by inner match scoping — it persists for the remainder of the step.
 
-Mitigation: audit all assertions that use `eq` with a string-quoted number against an extracted variable. In practice, most definitions already use unquoted numeric literals (`"value": 42`, not `"value": "42"`) because the JSON is parsed by Go's unmarshaller. The risk is limited to assertions where `"value"` is a `{{var}}` reference that was previously a string and is now typed. Run the full definition suite after Phase 3 to catch any breakage.
+#### Optional `as` on match
 
-#### Phase 4: Migrate definition files and docs
+Match supports an optional `as` key that saves the matches array to `$.variables.<name>`, accessible via `$.variables.<name>` in paths and `{{name}}` in interpolation:
 
-This is a breaking change for all definition files. Dokkimi has no external users yet — the CLI has not been distributed and the landing site is not public. All ~100 definition files are internal. No migration period or dual-path support is needed.
+```json
+{
+  "match": {
+    "path": "$.traffic",
+    "where": [ ... ],
+    "as": "postRequests"
+  },
+  "assertions": [
+    { "count": "$.variables.postRequests", "operator": "eq", "value": 1 },
+    { "path": "$.variables.postRequests[0].response.status", "operator": "eq", "value": 201 }
+  ]
+}
+```
 
-**Definition files (~100 files under `.dokkimi/`):**
+`$.matches`/`$.match`/`$.lastMatch` are always populated by the most recent match (overwriting any previous values) and cleared after the block completes. `as`-named variables persist for the remainder of the step, the same as other variables — they are not block-scoped.
 
-Every extract path and assertion path changes. The migration is mechanical:
+This asymmetry is intentional: `$.match` is "current match context" (ephemeral, scoped to the block), while `as` is "save this for later" (persistent, survives across blocks). If `as` were block-scoped, it would be redundant with `$.match`. Use `as` when nesting matches or when you need to reference results from a previous match block.
 
-| Old pattern         | New pattern               | Context                                                                                    |
-| ------------------- | ------------------------- | ------------------------------------------------------------------------------------------ |
-| `$.body.X`          | `$.response.body.X`       | Extract (HTTP)                                                                             |
-| `$.headers.X`       | `$.response.headers.X`    | Extract (HTTP)                                                                             |
-| `$.statusCode`      | `$.response.status`       | Extract (HTTP) — field rename: `statusCode` → `status` (remapped in `AssembleRootContext`) |
-| `$.data[0].X`       | `$.response.data[0].X`    | Extract (DB)                                                                               |
-| `$.success`         | `$.response.success`      | Extract (DB)                                                                               |
-| `response.body.X`   | `$.response.body.X`       | Self-block assertion (HTTP)                                                                |
-| `response.status`   | `$.response.status`       | Self-block assertion (HTTP)                                                                |
-| `response.header.X` | `$.response.headers.X`    | Self-block assertion (HTTP)                                                                |
-| `request.body.X`    | `$.request.body.X`        | Self-block assertion (HTTP)                                                                |
-| `request.method`    | `$.request.method`        | Self-block assertion (HTTP)                                                                |
-| `responseTime`      | `$.responseTime`          | Self-block assertion (HTTP)                                                                |
-| `response.body.X`   | `$.response.body.X`       | Match-block assertion (HTTP) — separate code path in `ValidateHttpCallBlock`               |
-| `response.status`   | `$.response.status`       | Match-block assertion (HTTP)                                                               |
-| `request.body.X`    | `$.request.body.X`        | Match-block assertion (HTTP)                                                               |
-| `data[0].X`         | `$.response.data[0].X`    | Self-block assertion (DB)                                                                  |
-| `success`           | `$.response.success`      | Self-block assertion (DB)                                                                  |
-| `rowsAffected`      | `$.response.rowsAffected` | Self-block assertion (DB)                                                                  |
-| `error`             | `$.response.error`        | Self-block assertion (DB)                                                                  |
-| `duration`          | `$.responseTime`          | DB assertion — moves from response to top-level, paralleling HTTP                          |
-| `$.extracted.X`     | `$.variables.X`           | UI assertion                                                                               |
+#### `path` on match
 
-A script or find-and-replace pass can handle most of this. Edge cases to check manually:
+Required. In practice this will almost always be `$.traffic`, but the design is general — it works on any array in the root context (`$.consoleLogs`, `$.dbLogs`, or any array extracted into variables).
 
-- Match-block assertions are a separate code path (`ValidateHttpCallBlock` in `block_validators.go`) — must verify the per-log mini document is shaped correctly for `$.`-prefixed paths
-- Regex extract rules where the path is inside an object (`{ path: "$.body.X", pattern: "..." }`)
-- UI assertion files that use `$.extracted.*`
-- The `statusCode` → `status` rename requires a remap in `AssembleRootContext`, not just a path change in definitions
+#### `where` on match
 
-**Documentation — `shared/docs/dokkimi-instructions.md` (source of truth):**
+Optional. If `where` is omitted, all elements in the source array are included (no filtering). This is useful for asserting on the total count of an array:
 
-Sections to rewrite:
+```json
+"match": { "path": "$.traffic", "count": 5 }
+```
 
-- "Extract syntax" section — replace `$.body.X` examples with `$.response.body.X`, document new capabilities (`$.traffic`, `$.variables`, etc.)
-- "Extract paths vs assertion paths" section — remove entirely. One path system.
-- "Assertion path reference" table — update all paths to `$.` prefix, add new paths for traffic/logs/variables/timeline
-- `$.extracted.varName` references — replace with `$.variables.varName`
-- "Extract operates on the action's response only" — remove this restriction
+When `where` is present, it must be a non-empty array. An empty `where: []` is a validation error — omit `where` entirely to match all elements.
 
-**Landing site content:**
+#### Empty matches behavior
 
-Blog posts (10 files with old path patterns):
+If the match filter finds zero entries, `$.matches` is an empty array, and `$.match` / `$.lastMatch` are null. Any assertion referencing `$.match.*` or `$.lastMatch.*` must fail with a clear, actionable error — not a generic "path not found" but something like: `"no traffic matched {where criteria} — $.match is null"`. The error should include the filter criteria so the user knows exactly what filter produced zero results.
 
-- `02-getting-started-with-dokkimi.md`
-- `05-testing-with-real-databases.md`
-- `06-parallel-test-execution.md`
-- `09-variables-and-extraction.md`
-- `10-console-log-assertions.md`
-- `11-dokkimi-vs-docker-compose-testing.md`
+#### Timeline indices on traffic entries
 
-Tutorials (4 files):
+Each entry in `$.traffic` includes `requestTimelineIndex` and `responseTimelineIndex` — the entry's position in the current step's chronologically sorted `$.timeline` array. These are step-scoped indices (both `$.traffic` and `$.timeline` are filtered to the current step's time window). Cross-step ordering is implicit — steps execute sequentially. `responseTimelineIndex` is `null` for requests that have not received a response (in-flight, timed out, or one-way). `requestTimelineIndex` is always present.
 
-- `01-mocking-oauth-flows.md`
-- `02-testing-nextjs-apps.md`
-- `03-testing-external-api-integrations.md`
-- `04-testing-llm-integrations.md`
+This enables ordering assertions without new operators:
 
-Docs pages (3 files):
+```json
+{
+  "path": "$.matches[0].requestTimelineIndex",
+  "operator": "lt",
+  "value": { "from": "$.matches[1].requestTimelineIndex" }
+}
+```
 
-- `pages/docs/variables.astro`
-- `pages/docs/refs.astro`
-- `pages/docs/assertions.astro`
+### 3. Remove `.length` from path resolution; add negative indexing
 
-**Definition validator — `shared/definition-validator/validate-assertions.ts`:**
+`EvaluateDocPath` no longer special-cases `"length"` as a path segment. Paths are pure data access — dot segments resolve object keys, bracket segments resolve array indices. Nothing else.
 
-The validator currently doesn't check path formats — it validates structure (is it a string? does the object have `path`/`pattern`/`group`?) but not content. Add path format validation as part of this phase:
+Length (and other derived values) are accessed through transforms (see below).
 
-- Error if an extract path doesn't start with `$.`
-- Error if an assertion path doesn't start with `$.`
-- Suggest corrections for common old-syntax patterns (`response.body.X` → `$.response.body.X`, `$.body.X` → `$.response.body.X`, `data[0].X` → `$.response.data[0].X`)
+**Negative indexing:** Array bracket access supports negative indices. `$.arr[-1]` resolves to the last element, `$.arr[-2]` to the second-to-last, etc. This applies anywhere bracket indexing works — `$.matches[-1]`, `$.response.body.items[-1]`, etc.
 
-This catches stale definitions immediately at validation time rather than failing silently at runtime. The `dokkimi validate` command and VSCode extension both run the validator, so users get feedback before they even try to run.
+### 4. Assertion source resolution
 
-**Go test files:**
+An assertion resolves a value from the root context, then compares it with `operator`/`value`. The resolution source is specified by one of the following mutually exclusive fields:
 
-- `services/test-agent/assertion_engine_test.go` — test cases use the old document shapes; update to use the unified root context shape
-- `services/test-agent/document_assembler_test.go` — tests for the old assembly functions; replace with tests for `AssembleRootContext`
-- `services/test-agent/step_validator_test.go` (if exists) — update document expectations
+#### `path` — direct value (string or object form)
 
-**TypeScript test files:**
+String form resolves the path and uses the value directly:
 
-- `shared/definition-validator/*.spec.ts` — update for the new path validation rules
+```json
+{ "path": "$.response.status", "operator": "eq", "value": 200 }
+```
 
-### What doesn't change
+Object form resolves a path and applies a transform:
 
-- **Log buffer internals** (`step_log_buffer.go`) — the three typed slices stay. `AssembleRootContext` reads from them via `Snapshot()`.
-- **Sidecar log ingestion** — interceptors, db-proxies, and console log capture send the same payloads to the same endpoints.
-- **Control Tower log processing** — receives and stores logs the same way.
-- **Variable interpolation in actions** — `{{var}}` in URLs, headers, bodies, queries works the same. `Resolve()` still does string replacement at action execution time.
-- **Match block filtering** — match criteria (`from`, `method`, `url`) and time windowing stay. The match block is still a filter on traffic; it just operates on entries that are also visible as `$.traffic`.
-- **CLI `dokkimi dump` output** — the dump command returns raw stored data from the control tower, not the test-agent's assertion documents. No change needed.
+```json
+{
+  "path": { "from": "$.response.body.users", "transform": "length" },
+  "operator": "gte",
+  "value": 1
+}
+```
 
-### Implementation order
+#### Transform shorthands
 
-1. **Phase 1** — `AssembleRootContext` function. Write it alongside the old assembly functions. Add tests.
-2. **Phases 2 + 4 (atomic)** — Wire the new function into `step_validator.go` and `block_validators.go`, remove old assembly functions, and migrate all definition files and docs in the same change. These are tightly coupled: Phase 2 breaks every test path, Phase 4 fixes them. Shipping Phase 2 alone means a broken test suite with no way to run definitions. Treat them as one deliverable.
-3. **Phase 3** — Variable context upgrade. Independent of the path migration — it can ship before or after. Required for loops.
+Each transform has a top-level shorthand that replaces `path`. These are sugar for the object form with the corresponding `transform`:
 
-The core logic change is Phases 1 + 2: ~4 Go files in test-agent. The definition migration (Phase 4) is mechanical find-and-replace. The variable upgrade (Phase 3) is the only part with design subtlety (type-context interpolation).
+| Shorthand | Equivalent `path` object                    | Example                                                                                                  |
+| --------- | ------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| `count`   | `{ "from": "...", "transform": "length" }`  | `{ "count": "$.matches", "operator": "gte", "value": 2 }`                                                |
+| `type`    | `{ "from": "...", "transform": "type" }`    | `{ "type": "$.val", "operator": "eq", "value": "string" }`                                               |
+| `keys`    | `{ "from": "...", "transform": "keys" }`    | `{ "keys": "$.response.body", "operator": "contains", "value": "id" }`                                   |
+| `values`  | `{ "from": "...", "transform": "values" }`  | `{ "values": "$.response.body", "operator": "contains", "value": "Alice" }`                              |
+| `entries` | `{ "from": "...", "transform": "entries" }` | `{ "entries": "$.response.body", "operator": "contains", "value": { "key": "name", "value": "Alice" } }` |
 
----
+All shorthands accept a string (path to resolve). The assertion object must have exactly one source field (`path`, `count`, `type`, `keys`, `values`, or `entries`).
 
-## Summary
+Note: `count` appears in three contexts with different roles. As an **assertion source field**, it is a shorthand for `transform: "length"` (e.g., `{ "count": "$.matches", "operator": "gte", "value": 2 }`). As a **field on match**, it asserts the cardinality of the matched results (e.g., `"count": 1`). As a **field on `repeat`**, it specifies the number of iterations (e.g., `"count": 3`). These are distinct: each lives on a different parent object (assertion, match, repeat loop).
 
-| Dimension                   | Before                                                         | After                                                                                          |
-| --------------------------- | -------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
-| Path contexts               | 5 (extract HTTP, extract DB, assertion HTTP, assertion DB, UI) | 1 (`$.*`)                                                                                      |
-| Document assembly functions | 2 (`AssembleStepDocument`, `AssembleExtractDocument`)          | 1 (`AssembleRootContext`)                                                                      |
-| Queryable data              | Response only (extract) / request+response (assertion)         | Full state: request, response, traffic, logs, variables, timeline                              |
-| Traffic assertions          | Match-and-count only                                           | Match-and-count + ordering + total count + absence                                             |
-| Cross-log assertions        | Not possible                                                   | Timeline ordering, count, absence                                                              |
-| UI variable access          | `$.extracted.X` (special namespace)                            | `$.variables.X` (same as everything else)                                                      |
-| Go files changed            | —                                                              | 4 (`document_assembler.go`, `step_validator.go`, `block_validators.go`, `variable_context.go`) |
-| Definition files to migrate | —                                                              | ~100                                                                                           |
-| Doc files to update         | —                                                              | ~17 (instructions, landing blog, tutorials, doc pages)                                         |
+#### `value` — the comparison target
+
+`value` accepts a literal (current behavior) or an object with `from` + optional `transform` to resolve from the document.
+
+`from` must be a `$.`-prefixed path (e.g., `"from": "$.traffic[1].request.body"`). If `value` is an object but does not contain a `from` key starting with `$.`, it is treated as a literal value. The `$.` prefix (with the dot) is required to avoid false positives — a literal value like `{ "from": "$50", "amount": 500 }` is correctly treated as a literal object, not a document-path reference.
+
+Literal:
+
+```json
+{ "path": "$.response.status", "operator": "eq", "value": 200 }
+```
+
+Document path:
+
+```json
+{
+  "path": "$.traffic[0].request.body",
+  "operator": "eq",
+  "value": { "from": "$.traffic[1].request.body" }
+}
+```
+
+Document path with transform:
+
+```json
+{
+  "path": { "from": "$.response.body.users", "transform": "length" },
+  "operator": "eq",
+  "value": { "from": "$.response.body.roles", "transform": "length" }
+}
+```
+
+#### Evaluation pipeline
+
+1. Resolve the source (`path`, `count`, `type`, `keys`, `values`, or `entries`) against the root context
+2. If the source is an object with `transform`, or a transform shorthand, apply the transform
+3. Resolve `value` — if it's an object with a `$.`-prefixed `from` key, resolve and optionally transform; otherwise use as-is (literal)
+4. Compare with `operator`
+
+**Transform errors:** If a transform receives the wrong input type, it must fail with a clear error describing the type mismatch — not silently return null. Specific cases:
+
+- `length` on a number, boolean, object, or null → error
+- `keys`, `values`, `entries` on a non-object (including array) → error
+- `type` accepts any input (never errors)
+
+#### Supported transforms
+
+| Transform | Input        | Output                                                                           |
+| --------- | ------------ | -------------------------------------------------------------------------------- |
+| `length`  | array/string | numeric length                                                                   |
+| `type`    | any          | type label: `"string"`, `"number"`, `"boolean"`, `"array"`, `"object"`, `"null"` |
+| `keys`    | object       | sorted array of key names                                                        |
+| `values`  | object       | array of values (in sorted key order)                                            |
+| `entries` | object       | array of `{ "key": "...", "value": ... }` objects                                |
+
+### 5. Remove `count` as a standalone block field
+
+The `count` field on assertion blocks (the sibling key to `match` and `assertions`) is removed. Count validation is expressed in two ways:
+
+**`count` on match** (preferred for match cardinality):
+
+```json
+"match": { "path": "$.traffic", "where": [...], "count": 1 }
+```
+
+**`count` assertion shorthand** (for non-match arrays or `as`-named results):
+
+```json
+{ "count": "$.variables.postRequests", "operator": "gte", "value": 2 }
+```
+
+### 6. Remove `assertionScope`
+
+The `assertionScope` field (`all`, `first`, `last`, `any`) is removed. With `$.matches` as an array on the root document, users express scope through paths and loops:
+
+| Old `assertionScope`        | New equivalent                                                                    |
+| --------------------------- | --------------------------------------------------------------------------------- |
+| `"first"` (or single-match) | `$.match.*`                                                                       |
+| `"last"`                    | `$.lastMatch.*` or `$.matches[-1].*`                                              |
+| `"all"`                     | forEach over `$.matches`                                                          |
+| `"any"`                     | not needed — `where` is expressive enough to filter to the exact entries you want |
+
+`$.match` covers the most common case (single expected match). For multi-match scenarios, forEach over `$.matches` composes naturally with the loop system.
+
+### 7. Remove `consoleAssertions` field and `service` field
+
+The `consoleAssertions` field on assertion blocks is removed. Console log filtering uses the same `match.where` pattern as everything else:
+
+```json
+{
+  "match": {
+    "path": "$.consoleLogs",
+    "where": [
+      { "path": "$$.service", "operator": "eq", "value": "user-service" },
+      { "path": "$$.level", "operator": "eq", "value": "ERROR" },
+      { "path": "$$.message", "operator": "contains", "value": "timeout" }
+    ],
+    "count": 0
+  }
+}
+```
+
+Example — asserting on matched console log content:
+
+```json
+{
+  "match": {
+    "path": "$.consoleLogs",
+    "where": [
+      { "path": "$$.service", "operator": "eq", "value": "payment-service" },
+      { "path": "$$.level", "operator": "eq", "value": "INFO" },
+      {
+        "path": "$$.message",
+        "operator": "contains",
+        "value": "charge completed"
+      }
+    ],
+    "count": 1
+  },
+  "assertions": [
+    {
+      "path": "$.match.message",
+      "operator": "contains",
+      "value": "{{orderId}}"
+    }
+  ]
+}
+```
+
+The `service` field on assertion blocks (used to filter traffic by service name) is also removed — subsumed by `$$.origin` in a `where` filter.
+
+### 8. Loops nest their content
+
+Loops (`forEach`, `for`, `repeat`) are no longer inline modifiers. The loop body is nested inside the loop object. The body's shape matches the level it wraps:
+
+- **Step-level loop body** — can contain `action`, `match`, `assertions`, `extract`, nested loops
+- **Assertion-level loop body** — can contain `match`, `assertions`, `extract`, nested loops. No `action`.
+- **Test-level loop body** — contains `steps` array
+
+`$$` is **not** used in loops — `$$` refers to the element being tested by a filter, which is internal to the match engine. Loops iterate over already-resolved values and bind them to named variables via `as`, so the variable name is the reference. Loops use `as` (required) and `name` (optional) as they do today.
+
+#### forEach (nested)
+
+Before (inline modifier):
+
+```json
+{
+  "forEach": { "items": "$.matches", "as": "entry" },
+  "assertions": [
+    {
+      "path": "$.variables.entry.response.status",
+      "operator": "eq",
+      "value": 200
+    }
+  ]
+}
+```
+
+After (nested content):
+
+```json
+{
+  "forEach": {
+    "items": "$.matches",
+    "as": "entry",
+    "assertions": [
+      {
+        "path": "$.variables.entry.response.status",
+        "operator": "eq",
+        "value": 200
+      }
+    ]
+  }
+}
+```
+
+#### Match inside a loop
+
+```json
+{
+  "forEach": {
+    "items": "$.variables.endpoints",
+    "as": "endpoint",
+    "match": {
+      "path": "$.traffic",
+      "where": [
+        {
+          "path": "$$.request.url",
+          "operator": "contains",
+          "value": "{{endpoint}}"
+        }
+      ],
+      "count": { "operator": "gte", "value": 1 }
+    },
+    "assertions": [
+      { "path": "$.match.response.status", "operator": "eq", "value": 200 }
+    ]
+  }
+}
+```
+
+#### Loop inside a match
+
+```json
+{
+  "match": {
+    "path": "$.traffic",
+    "where": [
+      { "path": "$$.request.method", "operator": "eq", "value": "POST" }
+    ]
+  },
+  "forEach": {
+    "items": "$.matches",
+    "as": "entry",
+    "assertions": [
+      {
+        "path": "$.variables.entry.response.status",
+        "operator": "lt",
+        "value": 400
+      }
+    ]
+  }
+}
+```
+
+#### Nested loops
+
+```json
+{
+  "forEach": {
+    "items": "$.variables.users",
+    "as": "user",
+    "forEach": {
+      "items": "$.variables.user.roles",
+      "as": "role",
+      "assertions": [
+        { "path": "$.variables.role", "operator": "ne", "value": "admin" }
+      ]
+    }
+  }
+}
+```
+
+#### `for` and `repeat` (same pattern)
+
+```json
+{
+  "for": {
+    "from": 0,
+    "to": 5,
+    "as": "i",
+    "action": {
+      "type": "httpRequest",
+      "method": "GET",
+      "url": "api/items/{{i}}"
+    },
+    "assertions": [
+      { "path": "$.response.status", "operator": "eq", "value": 200 }
+    ]
+  }
+}
+```
+
+```json
+{
+  "repeat": {
+    "count": 3,
+    "as": "attempt",
+    "until": [{ "path": "$.response.status", "operator": "eq", "value": 200 }],
+    "action": { "type": "httpRequest", "method": "GET", "url": "api/health" }
+  }
+}
+```
+
+`repeat.until` accepts standard assertions — the same struct as everywhere else, including transform shorthands and object-form `path`/`value`. For example: `"until": [{ "count": "$.matches", "operator": "gte", "value": 1 }]`.
+
+#### Test-level loop
+
+The loop body contains a `steps` array, matching the level it wraps:
+
+```json
+{
+  "forEach": {
+    "items": "{{users}}",
+    "as": "user",
+    "steps": [
+      {
+        "action": {
+          "type": "httpRequest",
+          "method": "POST",
+          "url": "api/users",
+          "body": { "name": "{{user.name}}" }
+        }
+      },
+      {
+        "assertions": [
+          { "path": "$.response.status", "operator": "eq", "value": 201 }
+        ]
+      }
+    ]
+  }
+}
+```
+
+#### Execution order within a block
+
+When `match`, loops, `assertions`, and `extract` coexist on the same object, execution order is:
+
+1. `match` runs first (populates `$.matches`/`$.match`/`$.lastMatch`)
+2. Loop runs (if present), with its nested body (each iteration runs the full execution order recursively)
+3. `assertions` run (against root context with match results available)
+4. `extract` runs last (only if all assertions passed)
+
+If a loop is present alongside assertions, the assertions outside the loop run after the loop completes. Assertions inside the loop body run per iteration. Extract inside a loop body runs per iteration.
+
+This order applies recursively at each nesting level. A forEach body with its own match, assertions, and extract follows the same 1-2-3-4 sequence per iteration.
+
+One loop per nesting level — `forEach`/`for`/`repeat` are mutually exclusive on the same object.
+
+#### Extract in loops
+
+Extract inside a loop body runs per iteration. Extract keys support `{{var}}` interpolation, allowing dynamic variable names. The loop executor injects an `index` property (zero-based iteration index) on the `as` variable for each iteration, so `{{entry.index}}` resolves to `0`, `1`, etc.:
+
+```json
+{
+  "forEach": {
+    "items": "$.matches",
+    "as": "entry",
+    "assertions": [
+      {
+        "path": "$.variables.entry.response.status",
+        "operator": "eq",
+        "value": 200
+      }
+    ],
+    "extract": {
+      "userId_{{entry.index}}": "$.variables.entry.response.body.id"
+    }
+  }
+}
+```
+
+Without dynamic keys, extract in a loop overwrites the same variable each iteration — only the last iteration's value survives. Dynamic keys make extract in loops useful for collecting per-iteration values.
+
+Extract paths in a match block resolve against the root context (same as assertions). `"userId": "$.response.body.id"` must become `"userId": "$.match.response.body.id"`.
+
+### Full before/after example
+
+Before:
+
+```json
+{
+  "match": {
+    "origin": "api-gateway",
+    "method": "POST",
+    "url": "user-service/api/users"
+  },
+  "count": { "operator": "eq", "value": 1 },
+  "assertionScope": "first",
+  "assertions": [
+    { "path": "$.request.body.email", "operator": "eq", "value": "{{email}}" },
+    { "path": "$.response.status", "operator": "eq", "value": 201 }
+  ]
+}
+```
+
+After:
+
+```json
+{
+  "match": {
+    "path": "$.traffic",
+    "where": [
+      { "path": "$$.origin", "operator": "eq", "value": "api-gateway" },
+      { "path": "$$.request.method", "operator": "eq", "value": "POST" },
+      {
+        "path": "$$.request.url",
+        "operator": "contains",
+        "value": "/api/users"
+      }
+    ],
+    "count": 1
+  },
+  "assertions": [
+    {
+      "path": "$.match.request.body.email",
+      "operator": "eq",
+      "value": "{{email}}"
+    },
+    { "path": "$.match.response.status", "operator": "eq", "value": 201 }
+  ]
+}
+```
+
+Example — filtering on response (previously impossible):
+
+```json
+{
+  "match": {
+    "path": "$.traffic",
+    "where": [
+      { "path": "$$.request.method", "operator": "eq", "value": "POST" },
+      {
+        "path": "$$.request.url",
+        "operator": "contains",
+        "value": "/api/users"
+      },
+      { "path": "$$.response.status", "operator": "eq", "value": 201 }
+    ],
+    "count": { "operator": "gte", "value": 1 }
+  },
+  "assertions": [{ "path": "$.match.response.body.id", "operator": "exists" }]
+}
+```
+
+## Operator Cleanup
+
+### Remove `length` operator
+
+The `length` assertion operator is redundant with the `count` shorthand / `transform: "length"`. Remove it.
+
+### Remove `type` operator
+
+The `type` assertion operator is redundant with the `type` shorthand / `transform: "type"`. With the shorthand, `type` checks compose with any operator (`eq`, `ne`, `in`), making a dedicated `type` operator unnecessary.
+
+Before:
+
+```json
+{ "path": "$.val", "operator": "type", "value": "string" }
+```
+
+After (equivalent options):
+
+```json
+{ "type": "$.val", "operator": "eq", "value": "string" }
+{ "type": "$.val", "operator": "ne", "value": "string" }
+{ "type": "$.val", "operator": "in", "value": ["string", "number"] }
+```
+
+### Unify `contains` / `arrayContains`
+
+Currently three separate operators exist:
+
+- `contains` / `notContains` — string substring match
+- `arrayContains` / `arrayNotContains` — array element membership
+- (no `objContains` exists)
+
+These should be unified into `contains` / `notContains` that dispatch based on the type of the actual value:
+
+| Actual type | `contains` behavior |
+| ----------- | ------------------- |
+| string      | substring match     |
+| array       | element membership  |
+| object      | key membership      |
+
+For any other actual type (`number`, `boolean`, `null`), `contains` fails with a type error — not a silent false. The error should name the actual type and suggest the correct approach. This catches cases where a path resolves to an unexpected type rather than silently passing or failing.
+
+This cuts four operators to two, removes the need for users to pick the right variant, and adds object key checking for free.
+
+`containsIgnoreCase` / `notContainsIgnoreCase` remain string-only (case comparison doesn't apply to arrays/objects). If the actual value is not a string, these operators fail with a type error.
+
+Note: `arrayContains` / `arrayNotContains` predate this branch. This cleanup can ship alongside or independently.
+
+## Scope of Changes
+
+### Code changes (test-agent, Go)
+
+- **`assertion_engine.go`**
+  - `EvaluateDocPath`: remove `.length` special case; add negative indexing support for array brackets; add `$$` resolution (resolve against scoped iterator context when path starts with `$$`)
+  - `CompareValues`: remove `length`, `type`, `arrayContains`, `arrayNotContains` operators; update `contains`/`notContains` to dispatch on type
+  - `ValidateAssertion`: support transform shorthands (`count`, `type`, `keys`, `values`, `entries`) as alternative source fields; support object form for `path` and `value` with `from`/`transform`
+- **`block_validators.go`**
+  - `ValidateHttpCallBlock`: rewrite match logic — iterate over `match.path` source array, run `match.where` assertions against each element using `$$` scoping (with recursive `or`/`and`/`not` support), collect passing elements as `matches`. Inject `$.matches`, `$.match`, `$.lastMatch` into root context with stack-based push/pop for nested matches. If `as` is set, also save to `$.variables.<name>`. Desugar `count` on match into a count assertion before running assertions. Remove block-level `count`, `assertionScope`, and per-log document assembly. Remove `ValidateSelfBlock` — all blocks run assertions against root context.
+  - `ValidateConsoleLogBlock`: remove entirely — console log filtering uses the same `match.where` pattern.
+- **`document_assembler.go`** — Add `requestTimelineIndex`/`responseTimelineIndex` to traffic entries. Add helper to inject `matches`/`match`/`lastMatch` keys into root context.
+- **`step_validator.go`** — Remove self-block vs match-block distinction. All assertion blocks run against root context. Update extract logic in match blocks to resolve against root context. Support `{{var}}` interpolation in extract keys for dynamic variable names in loops.
+- **`loop_executor.go`** — Restructure loop execution to support nested body content. Loop body becomes a context-aware execution scope (step-level body allows actions; assertion-level body does not). Remove inline loop modifier pattern.
+- **`step_runner.go`** — Remove step-level and action-level loop modifier detection (`getStepLoop`, `getActionLoop`). Loops are now explicit nested structures within the step definition.
+
+### Code changes (definition-validator, TypeScript)
+
+- **`validate-assertions.ts`** — Support transform shorthands and object form for `path`/`value`. Remove block-level `count`, `assertionScope`, `consoleAssertions`, `service`, `length` operator, `type` operator validation. Update `contains` validation. Add `from`/`transform` field validation. Validate `from` has `$.`-prefixed path (with the dot, not just `$`). Validate new `match` structure: require `path` (string), validate optional `where` (non-empty array of assertion objects with `$$`-prefixed paths, with recursive `or`/`and`/`not` support). Validate optional `count` on match (number or `{operator, value}` object). Validate optional `as` on match. Validate `$$` is only used inside `where` context.
+- **`validate-loops.ts`** — Restructure loop validation for nested body content. Loop body validated recursively — step-level bodies allow `action`, assertion-level bodies do not, test-level bodies contain `steps`. Remove inline loop modifier validation from step/action/assertion-block levels. Remove forEach+match mutual exclusion check (nesting makes this composable).
+
+### Definition file changes
+
+All `.dokkimi/` definition files need migration:
+
+Loop restructuring:
+
+- Inline loop modifiers (`forEach`/`for`/`repeat` as sibling keys) → nested loop objects with body content inside
+- Step-level and action-level loop modifiers → nested loop at appropriate level
+- Test-level loop modifiers → nested loop with `steps` array
+
+Match block migration:
+
+- `match: { origin, method, url }` → `match: { path: "$.traffic", where: [...] }` with `$$`-prefixed assertion paths
+- `$.response.*` in match-block assertions → `$.match.response.*`
+- `$.request.*` in match-block assertions → `$.match.request.*`
+- `$.responseTime` in match-block assertions → `$.match.responseTime`
+- `count` blocks → `count` on match (e.g., `"count": 1`) or `{ "count": "$.matches", ... }` assertion
+- `assertionScope` → remove (use `$.match`, `$.lastMatch`, or forEach over `$.matches`)
+- Extract rules inside match blocks: `$.response.*` → `$.match.response.*`
+
+Console log / service migration:
+
+- `consoleAssertions` with `service`/`level`/`message` → `match: { path: "$.consoleLogs", where: [...] }` + regular `assertions`
+- `service` field on assertion blocks → `$$.origin` in match `where`
+
+Other assertion migrations:
+
+- `$.x.y.length` → `{ "count": "$.x.y", ... }` or `{ "path": { "from": "$.x.y", "transform": "length" }, ... }`
+- `{ "operator": "type", ... }` → `{ "type": "$.x.y", "operator": "eq", ... }`
+- `arrayContains` → `contains`
+- `arrayNotContains` → `notContains`
+
+### Documentation changes
+
+Primary reference:
+
+- **`shared/docs/dokkimi-instructions.md`** — Update assertion block section, assertion paths table, match block examples, operator table, remove count/assertionScope/consoleAssertions/service docs, add source resolution and transform docs, add negative indexing, add `$$` and `where` docs, add `or` in `where`, add `as` on match, update loop docs for nested structure
+
+Design docs (superseded — add "superseded by consistent-root-document.md" note):
+
+- **`docs/implemented/DESIGN-unified-root-context.md`** — Root context assembly; superseded by `$.match`/`$.matches` injection and `$$` scoping
+- **`docs/implemented/DESIGN-loops.md`** — Loop design; superseded by nested loop structure
+- **`docs/implemented/DESIGN-inline-validation.md`** — References `assertionScope` and `consoleAssertions`
+
+npm/CLI:
+
+- **`scripts/npm-readme.md`** — Update match block example
+
+Astro doc pages:
+
+- **`apps/landing/src/pages/docs/assertions.astro`** — Assertion syntax, operators, match blocks, transforms, `$$`/`where`
+- **`apps/landing/src/pages/docs/loops.astro`** — Nested loop structure, forEach/for/repeat body content
+- **`apps/landing/src/pages/docs/tests-and-steps.astro`** — Step-level assertion blocks, match blocks within steps
+
+Astro blog posts (contain removed concepts):
+
+- **`apps/landing/src/content/blog/posted/03-how-traffic-interception-works.md`** — Uses `consoleAssertions`, per-log `$` paths in match blocks
+- **`apps/landing/src/content/blog/posted/10-console-log-assertions.md`** — Heavily uses `consoleAssertions`; needs full rewrite to use `match: { path: "$.consoleLogs", where: [...] }` pattern
+
+Astro tutorials (contain removed concepts):
+
+- **`apps/landing/src/content/tutorials/posted/04-testing-llm-integrations.md`** — Uses `assertionScope`, `arrayContains`, `consoleAssertions`
+
+VSCode extension:
+
+- **`apps/vscode`** — Update autocomplete, snippets, and validation for new match structure, `$$`, removed fields/operators
+
+Build artifacts (regenerated from source — no manual edits, but verify after build):
+
+- `.publish-staging/shared/docs/dokkimi-instructions.md`
+- `.publish-staging/apps/cli/dist/dokkimi-instructions.md`
+- `apps/cli/dist/dokkimi-instructions.md`
+
+## Migration Path
+
+This is a breaking change. Since Dokkimi is greenfield with no backwards compatibility requirement, all changes ship at once:
+
+1. Update `EvaluateDocPath` — remove `.length` special case, add negative indexing, add `$$` resolution
+2. Add `requestTimelineIndex`/`responseTimelineIndex` to traffic entry assembly
+3. Update assertion engine — support transform shorthands and object form for `path`/`value`
+4. Update `CompareValues` — remove `length`/`type`/`arrayContains`/`arrayNotContains`, unify `contains`
+5. Rewrite match logic — implement `where`-based filtering with `$$` scoping and recursive `or`/`and`/`not` support, inject `$.matches`/`$.match`/`$.lastMatch` with stack-based push/pop, desugar `count` on match, support optional `as`
+6. Remove self-block concept — unify all assertion blocks against root context
+7. Remove `count` block, `assertionScope`, `consoleAssertions`, `service` fields
+8. Restructure loop execution — nested body content, context-aware validation, remove inline modifier pattern
+9. Update definition validator (match, loops, transforms, `or`/`and`/`not`, `as`, dynamic extract keys)
+10. Update all definition files (match blocks, extract paths, console log assertions, loop restructuring)
+11. Update all documentation
+12. Ship as a single release
