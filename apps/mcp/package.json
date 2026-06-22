@@ -1,6 +1,6 @@
 {
   "name": "@dokkimi/mcp",
-  "version": "0.4.2",
+  "version": "0.5.0",
   "license": "Elastic-2.0",
   "private": true,
   "type": "module",
@@ -17,14 +17,14 @@
     "@dokkimi/definition-resolver": "workspace:*",
     "@dokkimi/definition-validator": "workspace:*",
     "@dokkimi/telemetry": "workspace:*",
-    "@modelcontextprotocol/sdk": "^1.12.1"
+    "@modelcontextprotocol/sdk": "^1.29.0"
   },
   "devDependencies": {
     "@types/jest": "^30.0.0",
-    "@types/node": "^25.6.2",
-    "jest": "^30.4.1",
-    "ts-jest": "^29.4.9",
-    "tsup": "^8.5.0",
+    "@types/node": "^26.0.0",
+    "jest": "^30.4.2",
+    "ts-jest": "^29.4.11",
+    "tsup": "^8.5.1",
     "typescript": "^6.0.3"
   },
   "jest": {
