@@ -38,7 +38,7 @@
     "build:all": "yarn workspaces foreach --all --topological run build",
     "test": "yarn workspaces foreach --all run test",
     "lint": "eslint . && ./scripts/go-lint.sh",
-    "lint:fix": "eslint . --fix && ./scripts/go-lint.sh --fix",
+    "lint:fix": "eslint . --fix && prettier --write \"**/*.{json,md,yml,yaml}\" && ./scripts/go-lint.sh --fix",
     "format": "prettier --write \"**/*.{ts,tsx,js,jsx,mjs,cjs,json,md,yml,yaml}\"",
     "format:check": "prettier --check \"**/*.{ts,tsx,js,jsx,mjs,cjs,json,md,yml,yaml}\"",
     "prepare": "husky",

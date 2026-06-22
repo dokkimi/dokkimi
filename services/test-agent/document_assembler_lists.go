@@ -1,6 +1,7 @@
 package main
 
 import (
+	"log"
 	"sort"
 	"time"
 )
@@ -11,7 +12,11 @@ type timelineEntry struct {
 }
 
 func assembleTrafficList(httpLogs []HttpLogMessage, stepExec StepExecution) ([]interface{}, []timelineEntry) {
-	startTime, endTime := stepTimeWindow(stepExec)
+	startTime, endTime, err := stepTimeWindow(stepExec)
+	if err != nil {
+		log.Printf("assembleTrafficList: %v", err)
+		return []interface{}{}, nil
+	}
 	var traffic []interface{}
 	var timeline []timelineEntry
 	for i := range httpLogs {
@@ -67,11 +72,17 @@ func assembleTrafficList(httpLogs []HttpLogMessage, stepExec StepExecution) ([]i
 			},
 		})
 		if l.StatusCode != nil {
+			respTs := ts
+			respLogTime := logTime
+			if l.ResponseReceivedAt != nil {
+				respTs = *l.ResponseReceivedAt
+				respLogTime = parseLogTimestamp(respTs)
+			}
 			timeline = append(timeline, timelineEntry{
-				timestamp: logTime,
+				timestamp: respLogTime,
 				entry: map[string]interface{}{
 					"type":         "httpResponse",
-					"timestamp":    ts,
+					"timestamp":    respTs,
 					"trafficIndex": trafficIdx,
 					"direction":    "response",
 					"from":         from,
@@ -88,7 +99,11 @@ func assembleTrafficList(httpLogs []HttpLogMessage, stepExec StepExecution) ([]i
 }
 
 func assembleConsoleLogList(consoleLogs []ConsoleLogMessage, stepExec StepExecution) ([]interface{}, []timelineEntry) {
-	startTime, endTime := stepTimeWindow(stepExec)
+	startTime, endTime, err := stepTimeWindow(stepExec)
+	if err != nil {
+		log.Printf("assembleConsoleLogList: %v", err)
+		return nil, nil
+	}
 	var result []interface{}
 	var timeline []timelineEntry
 	for _, l := range consoleLogs {
@@ -121,7 +136,11 @@ func assembleConsoleLogList(consoleLogs []ConsoleLogMessage, stepExec StepExecut
 }
 
 func assembleDbLogList(dbLogs []DatabaseLogMessage, stepExec StepExecution) ([]interface{}, []timelineEntry) {
-	startTime, endTime := stepTimeWindow(stepExec)
+	startTime, endTime, err := stepTimeWindow(stepExec)
+	if err != nil {
+		log.Printf("assembleDbLogList: %v", err)
+		return nil, nil
+	}
 	var result []interface{}
 	var timeline []timelineEntry
 	for _, l := range dbLogs {
@@ -168,7 +187,7 @@ func mergeTimeline(slices ...[]timelineEntry) []interface{} {
 		entries = append(entries, s...)
 	}
 
-	sort.Slice(entries, func(i, j int) bool {
+	sort.SliceStable(entries, func(i, j int) bool {
 		return entries[i].timestamp.Before(entries[j].timestamp)
 	})
 

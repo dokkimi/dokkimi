@@ -1,6 +1,7 @@
 package main
 
 import (
+	"strings"
 	"testing"
 	"time"
 )
@@ -894,6 +895,178 @@ func TestValidateBlock_MatchThenAssertions(t *testing.T) {
 			if r.Path == "$.match.request.method" {
 				t.Error("assertion should not be evaluated when count fails")
 			}
+		}
+	})
+}
+
+func TestWhereWithValueRef(t *testing.T) {
+	t.Run("where value resolved from root context variable", func(t *testing.T) {
+		rootCtx := map[string]interface{}{
+			"traffic": []interface{}{
+				map[string]interface{}{"origin": "svc-a", "request": map[string]interface{}{"method": "GET"}},
+				map[string]interface{}{"origin": "svc-b", "request": map[string]interface{}{"method": "POST"}},
+			},
+			"variables": map[string]interface{}{
+				"expectedOrigin": "svc-b",
+			},
+		}
+
+		match := &MatchCriteria{
+			Path: "$.traffic",
+			Where: []WhereEntry{
+				{Path: "$$.origin", Operator: "eq", Value: map[string]interface{}{"from": "$.variables.expectedOrigin"}},
+			},
+		}
+		result, err := ExecuteMatch(match, rootCtx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(result.Matches) != 1 {
+			t.Fatalf("expected 1 match, got %d", len(result.Matches))
+		}
+		m := result.Match.(map[string]interface{})
+		if m["origin"] != "svc-b" {
+			t.Errorf("expected origin=svc-b, got %v", m["origin"])
+		}
+	})
+}
+
+func TestEmptyMatchTargetedErrors(t *testing.T) {
+	t.Run("zero matches produces targeted error for $.match paths", func(t *testing.T) {
+		buf := NewStepLogBuffer()
+		now := time.Now()
+		status := 200
+		buf.AddHttpLog(HttpLogMessage{
+			Method: "GET", URL: "/test", StatusCode: &status,
+			Timestamp:       now.Format(time.RFC3339Nano),
+			RequestHeaders:  map[string]interface{}{},
+			ResponseHeaders: map[string]interface{}{},
+			ResponseBody:    map[string]interface{}{},
+			Origin:          strPtr("gateway"),
+		})
+
+		varCtx := NewVariableContext()
+		sv := NewStepValidator(buf, varCtx)
+
+		step := TestStep{
+			Action: StepAction{Type: "wait"},
+			Assertions: []AssertionBlock{
+				{
+					Match: &MatchCriteria{
+						Path: "$.traffic",
+						Where: []WhereEntry{
+							{Path: "$$.origin", Operator: "eq", Value: "nonexistent"},
+						},
+					},
+					Assertions: []Assertion{
+						{Path: "$.match.request.method", Operator: "eq", Value: "GET"},
+						{Path: "$.match.response.status", Operator: "eq", Value: float64(200)},
+					},
+				},
+			},
+		}
+		stepExec := StepExecution{
+			StartTime: now.Add(-200 * time.Millisecond).Format(time.RFC3339Nano),
+			EndTime:   now.Add(200 * time.Millisecond).Format(time.RFC3339Nano),
+		}
+
+		results, passed := sv.validateStep(step, stepExec, nil)
+		if passed {
+			t.Error("expected step to fail")
+		}
+
+		matchErrors := 0
+		for _, r := range results {
+			if !r.Passed && r.Path == "$.match.request.method" {
+				matchErrors++
+				if r.Error == "" {
+					t.Error("expected targeted error message for $.match path")
+				}
+			}
+		}
+		if matchErrors == 0 {
+			t.Error("expected at least one targeted error for $.match path")
+		}
+	})
+}
+
+func TestMatchPathNonArray(t *testing.T) {
+	t.Run("match path resolving to non-array returns error", func(t *testing.T) {
+		rootCtx := map[string]interface{}{
+			"response": map[string]interface{}{
+				"body": map[string]interface{}{"name": "Alice"},
+			},
+		}
+
+		match := &MatchCriteria{Path: "$.response.body"}
+		_, err := ExecuteMatch(match, rootCtx)
+		if err == nil {
+			t.Error("expected error for non-array match path")
+		}
+		if err != nil && !strings.Contains(err.Error(), "must resolve to an array") {
+			t.Errorf("expected array error, got: %s", err.Error())
+		}
+	})
+}
+
+func TestBlockExtractWithinMatch(t *testing.T) {
+	t.Run("extract within a match block saves resolved value", func(t *testing.T) {
+		buf := NewStepLogBuffer()
+		now := time.Now()
+		status := 201
+
+		buf.AddHttpLog(HttpLogMessage{
+			Method: "POST", URL: "/orders", StatusCode: &status,
+			Timestamp:       now.Format(time.RFC3339Nano),
+			RequestHeaders:  map[string]interface{}{},
+			ResponseHeaders: map[string]interface{}{},
+			ResponseBody:    map[string]interface{}{"orderId": "xyz789"},
+			Origin:          strPtr("checkout"),
+		})
+
+		varCtx := NewVariableContext()
+		sv := NewStepValidator(buf, varCtx)
+
+		step := TestStep{
+			Action: StepAction{Type: "wait"},
+			Assertions: []AssertionBlock{
+				{
+					Match: &MatchCriteria{
+						Path: "$.traffic",
+						Where: []WhereEntry{
+							{Path: "$$.origin", Operator: "eq", Value: "checkout"},
+						},
+					},
+					Assertions: []Assertion{
+						{Path: "$.match.response.body.orderId", Operator: "eq", Value: "xyz789"},
+					},
+					Extract: map[string]ExtractRule{
+						"capturedOrderId": {Path: "$.match.response.body.orderId"},
+					},
+				},
+			},
+		}
+		stepExec := StepExecution{
+			StartTime: now.Add(-200 * time.Millisecond).Format(time.RFC3339Nano),
+			EndTime:   now.Add(200 * time.Millisecond).Format(time.RFC3339Nano),
+		}
+
+		results, passed := sv.validateStep(step, stepExec, nil)
+		if !passed {
+			t.Errorf("expected step to pass, got failing results:")
+			for _, r := range results {
+				if !r.Passed {
+					t.Errorf("  path=%s op=%s err=%s", r.Path, r.Operator, r.Error)
+				}
+			}
+		}
+
+		val, ok := varCtx.variables["capturedOrderId"]
+		if !ok {
+			t.Fatal("expected capturedOrderId to be set")
+		}
+		if val != "xyz789" {
+			t.Errorf("expected capturedOrderId=xyz789, got %v", val)
 		}
 	})
 }

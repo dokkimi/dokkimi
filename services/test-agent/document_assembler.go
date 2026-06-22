@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"math"
 	"strings"
@@ -103,7 +104,11 @@ func AssembleDbDocument(log *DatabaseLogMessage) map[string]interface{} {
 
 // FindDirectRequestLog finds the HTTP log for the step's own action.
 func FindDirectRequestLog(httpLogs []HttpLogMessage, action StepAction, stepExec StepExecution) *HttpLogMessage {
-	startTime, endTime := stepTimeWindow(stepExec)
+	startTime, endTime, err := stepTimeWindow(stepExec)
+	if err != nil {
+		log.Printf("FindDirectRequestLog: %v", err)
+		return nil
+	}
 
 	var candidates []*HttpLogMessage
 	for i := range httpLogs {
@@ -160,7 +165,11 @@ func FindDirectRequestLog(httpLogs []HttpLogMessage, action StepAction, stepExec
 
 // FindDirectDatabaseLog finds the database log for a dbQuery action.
 func FindDirectDatabaseLog(dbLogs []DatabaseLogMessage, action StepAction, stepExec StepExecution) *DatabaseLogMessage {
-	startTime, endTime := stepTimeWindow(stepExec)
+	startTime, endTime, err := stepTimeWindow(stepExec)
+	if err != nil {
+		log.Printf("FindDirectDatabaseLog: %v", err)
+		return nil
+	}
 
 	var candidates []*DatabaseLogMessage
 	for i := range dbLogs {
@@ -198,20 +207,20 @@ func FindDirectDatabaseLog(dbLogs []DatabaseLogMessage, action StepAction, stepE
 	return best
 }
 
-func stepTimeWindow(stepExec StepExecution) (time.Time, time.Time) {
+func stepTimeWindow(stepExec StepExecution) (time.Time, time.Time, error) {
 	start, startErr := time.Parse(time.RFC3339Nano, stepExec.StartTime)
-	end, endErr := time.Parse(time.RFC3339Nano, stepExec.EndTime)
 	if startErr != nil {
-		log.Printf("Warning: failed to parse step StartTime %q: %v", stepExec.StartTime, startErr)
+		return time.Time{}, time.Time{}, fmt.Errorf("failed to parse step StartTime %q: %w", stepExec.StartTime, startErr)
 	}
+	end, endErr := time.Parse(time.RFC3339Nano, stepExec.EndTime)
 	if endErr != nil {
-		log.Printf("Warning: failed to parse step EndTime %q: %v", stepExec.EndTime, endErr)
+		return time.Time{}, time.Time{}, fmt.Errorf("failed to parse step EndTime %q: %w", stepExec.EndTime, endErr)
 	}
 	// No backward buffer on start — the test-agent controls the step start
 	// time so there's no clock skew. Forward buffer on end catches interceptor
 	// logs that arrive slightly after the step response returns.
 	end = end.Add(timestampBufferMs * time.Millisecond)
-	return start, end
+	return start, end, nil
 }
 
 func stepExecMidpoint(stepExec StepExecution) int64 {

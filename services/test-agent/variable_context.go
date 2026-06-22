@@ -148,7 +148,11 @@ func (vc *VariableContext) ResolveAction(action StepAction) (StepAction, error) 
 		if err != nil {
 			return resolved, fmt.Errorf("resolving params: %w", err)
 		}
-		resolved.Params = resolvedParams.(map[string]interface{})
+		if m, ok := resolvedParams.(map[string]interface{}); ok {
+			resolved.Params = m
+		} else {
+			return resolved, fmt.Errorf("resolving params: expected object, got %T", resolvedParams)
+		}
 	}
 
 	// Resolve sub-actions in parallel blocks.
@@ -225,6 +229,31 @@ func (vc *VariableContext) resolveAssertions(assertions []Assertion) []Assertion
 		if pathStr, ok := a.Path.(string); ok && pathStr != "" {
 			if rv, err := vc.Resolve(pathStr); err == nil {
 				resolvedAssertions[j].Path = rv
+			}
+		}
+		if a.Count != "" {
+			if rv, err := vc.Resolve(a.Count); err == nil {
+				resolvedAssertions[j].Count = rv
+			}
+		}
+		if a.Type != "" {
+			if rv, err := vc.Resolve(a.Type); err == nil {
+				resolvedAssertions[j].Type = rv
+			}
+		}
+		if a.Keys != "" {
+			if rv, err := vc.Resolve(a.Keys); err == nil {
+				resolvedAssertions[j].Keys = rv
+			}
+		}
+		if a.Values != "" {
+			if rv, err := vc.Resolve(a.Values); err == nil {
+				resolvedAssertions[j].Values = rv
+			}
+		}
+		if a.Entries != "" {
+			if rv, err := vc.Resolve(a.Entries); err == nil {
+				resolvedAssertions[j].Entries = rv
 			}
 		}
 		if a.Value != nil {

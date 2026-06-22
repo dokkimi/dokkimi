@@ -7,7 +7,22 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 )
+
+var regexCache sync.Map // pattern string → *regexp.Regexp
+
+func getOrCompileRegex(pattern string) (*regexp.Regexp, error) {
+	if cached, ok := regexCache.Load(pattern); ok {
+		return cached.(*regexp.Regexp), nil
+	}
+	re, err := regexp.Compile(pattern)
+	if err != nil {
+		return nil, err
+	}
+	regexCache.Store(pattern, re)
+	return re, nil
+}
 
 func CompareValues(operator string, actual, expected interface{}) AssertionResult {
 	switch operator {
@@ -55,7 +70,7 @@ func CompareValues(operator string, actual, expected interface{}) AssertionResul
 		return containsIgnoreCaseDispatch(actual, expected, true)
 	case "matches":
 		pattern := fmt.Sprintf("%v", expected)
-		re, err := regexp.Compile(pattern)
+		re, err := getOrCompileRegex(pattern)
 		if err != nil {
 			return AssertionResult{Passed: false, Error: fmt.Sprintf("Invalid regex pattern: %s", expected)}
 		}

@@ -315,8 +315,7 @@ export function validateStep(
         (b: unknown) =>
           typeof b === 'object' &&
           b !== null &&
-          !('match' in (b as Record<string, unknown>)) &&
-          !('service' in (b as Record<string, unknown>)),
+          !('match' in (b as Record<string, unknown>)),
       )
     ) {
       warn(
@@ -336,9 +335,11 @@ export function validateStep(
     } else {
       for (let ai = 0; ai < step.assertions.length; ai++) {
         const block = step.assertions[ai] as Record<string, unknown>;
-        if (block && typeof block === 'object') {
-          validateAssertionBlock(block, `${ctx}.assertions[${ai}]`, r);
+        if (!block || typeof block !== 'object' || Array.isArray(block)) {
+          err(r, `${ctx}.assertions[${ai}]: must be an object`);
+          continue;
         }
+        validateAssertionBlock(block, `${ctx}.assertions[${ai}]`, r);
       }
     }
   }

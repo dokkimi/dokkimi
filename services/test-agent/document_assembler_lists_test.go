@@ -338,4 +338,27 @@ func TestAnnotateTimelineIndices(t *testing.T) {
 			t.Errorf("expected nil responseTimelineIndex, got %v", entry["responseTimelineIndex"])
 		}
 	})
+
+	t.Run("correct indices with interleaved non-HTTP entries", func(t *testing.T) {
+		traffic := []interface{}{
+			map[string]interface{}{"url": "/api"},
+		}
+		timeline := []interface{}{
+			map[string]interface{}{"type": "consoleLog", "message": "startup"},
+			map[string]interface{}{"trafficIndex": float64(0), "direction": "request"},
+			map[string]interface{}{"type": "dbQuery", "query": "SELECT 1"},
+			map[string]interface{}{"trafficIndex": float64(0), "direction": "response"},
+			map[string]interface{}{"type": "consoleLog", "message": "done"},
+		}
+
+		annotateTimelineIndices(traffic, timeline)
+
+		entry := traffic[0].(map[string]interface{})
+		if entry["requestTimelineIndex"] != float64(1) {
+			t.Errorf("expected requestTimelineIndex=1 (after consoleLog), got %v", entry["requestTimelineIndex"])
+		}
+		if entry["responseTimelineIndex"] != float64(3) {
+			t.Errorf("expected responseTimelineIndex=3 (after dbQuery), got %v", entry["responseTimelineIndex"])
+		}
+	})
 }

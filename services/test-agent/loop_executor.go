@@ -65,8 +65,14 @@ func setForVars(varCtx *VariableContext, as string, name string, value int, inde
 }
 
 // setRepeatVars sets the loop variable for a repeat iteration.
-func setRepeatVars(varCtx *VariableContext, as string, index int) {
+// Meta-variables (index) are only set when name is non-empty.
+func setRepeatVars(varCtx *VariableContext, as string, name string, index int) {
 	varCtx.Set(as, float64(index))
+	if name != "" {
+		varCtx.Set(name, map[string]interface{}{
+			"index": float64(index),
+		})
+	}
 }
 
 // setLoopResult sets completed/iterations on the named loop variable after a loop finishes.
@@ -181,7 +187,7 @@ func buildIterationPlan(forEach *ForEachLoop, forLoop *ForLoop, repeat *RepeatLo
 			idx := i
 			plan.Iterations = append(plan.Iterations, Iteration{
 				Label:   fmt.Sprintf("[%s=%d]", repeat.As, idx),
-				SetupFn: func() { setRepeatVars(varCtx, repeat.As, idx) },
+				SetupFn: func() { setRepeatVars(varCtx, repeat.As, repeat.Name, idx) },
 			})
 		}
 	}

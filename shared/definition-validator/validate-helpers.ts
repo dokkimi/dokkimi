@@ -57,6 +57,22 @@ export function validatePathFormat(
     }
   }
 
+  if (pathValue.startsWith('$$.')) {
+    err(
+      r,
+      `${ctx}: path "${pathValue}" uses "$$." which is only valid inside where clauses. Use "$." for assertion paths.`,
+    );
+    return;
+  }
+
+  if (pathValue.startsWith('$$')) {
+    err(
+      r,
+      `${ctx}: path "${pathValue}" uses "$$" which is only valid as "$$." inside where clauses`,
+    );
+    return;
+  }
+
   if (pathValue.startsWith('$.')) {
     return;
   }

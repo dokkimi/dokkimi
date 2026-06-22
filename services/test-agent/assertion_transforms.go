@@ -196,35 +196,13 @@ func resolveTransformExtract(doc map[string]interface{}, variable string, rule E
 }
 
 // applyTransform converts a map to an array using the specified transform.
+// It delegates to applyAssertionTransform and wraps errors with the variable name.
 func applyTransform(obj map[string]interface{}, transform string, variable string) (interface{}, error) {
-	keys := make([]string, 0, len(obj))
-	for k := range obj {
-		keys = append(keys, k)
+	result, err := applyAssertionTransform(obj, transform)
+	if err != nil {
+		return nil, fmt.Errorf("Failed to extract variable '%s': %w", variable, err)
 	}
-	sort.Strings(keys)
-
-	switch transform {
-	case "keys":
-		result := make([]interface{}, len(keys))
-		for i, k := range keys {
-			result[i] = k
-		}
-		return result, nil
-	case "values":
-		result := make([]interface{}, len(keys))
-		for i, k := range keys {
-			result[i] = obj[k]
-		}
-		return result, nil
-	case "entries":
-		result := make([]interface{}, len(keys))
-		for i, k := range keys {
-			result[i] = map[string]interface{}{"key": k, "value": obj[k]}
-		}
-		return result, nil
-	default:
-		return nil, fmt.Errorf("Failed to extract variable '%s': unknown transform '%s'", variable, transform)
-	}
+	return result, nil
 }
 
 func sortedKeys[V any](m map[string]V) []string {

@@ -997,7 +997,7 @@ describe('validateAssertionBlock', () => {
         'ctx',
         r,
       );
-      expect(r.errors.some((e) => e.includes('must start with "$."'))).toBe(
+      expect(r.errors.some((e) => e.includes('only valid inside where'))).toBe(
         true,
       );
     });

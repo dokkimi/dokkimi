@@ -214,7 +214,8 @@ func (sv *StepValidator) validateBlock(block AssertionBlock, rootCtx map[string]
 	}
 
 	// 3. Assertions — with targeted errors for empty match results
-	emptyMatch := block.Match != nil && rootCtx["match"] == nil
+	matches, _ := rootCtx["matches"].([]interface{})
+	emptyMatch := block.Match != nil && len(matches) == 0
 	emptyMatchHandled := make(map[int]bool)
 
 	if emptyMatch {
@@ -324,15 +325,12 @@ func (sv *StepValidator) executeBlockLoop(loop interface{}, rootCtx map[string]i
 		return results
 
 	case *ForLoop:
-		step := l.Step
-		if step == 0 {
-			step = 1
-		}
+		values := forRangeValues(l)
 		var results []AssertionResult
-		for i := l.From; (step > 0 && i <= l.To) || (step < 0 && i >= l.To); i += step {
-			sv.varCtx.Set(l.As, float64(i))
+		for idx, v := range values {
+			sv.varCtx.Set(l.As, float64(v))
 			if l.Name != "" {
-				sv.varCtx.Set(l.Name, map[string]interface{}{"index": float64(i - l.From)})
+				sv.varCtx.Set(l.Name, map[string]interface{}{"index": float64(idx)})
 			}
 			rootCtx["variables"] = sv.varCtx.Snapshot()
 			results = append(results, sv.runLoopIterationBody(l.Assertions, l.Match, l.Extract, l.ForEach, l.For, l.Repeat, rootCtx, matchStack)...)

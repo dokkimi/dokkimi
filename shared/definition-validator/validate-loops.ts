@@ -297,9 +297,8 @@ function validateForLoop(
       if (fl.step > 0 && fl.from > fl.to) {
         err(r, `${ctx}: "from" must be <= "to" when "step" is positive`);
       }
-      // from == to with negative step is rejected: use step >= 1 (or omit) for single-iteration ranges.
-      if (fl.step < 0 && fl.from <= fl.to) {
-        err(r, `${ctx}: "from" must be > "to" when "step" is negative`);
+      if (fl.step < 0 && fl.from < fl.to) {
+        err(r, `${ctx}: "from" must be >= "to" when "step" is negative`);
       }
     }
   } else if (

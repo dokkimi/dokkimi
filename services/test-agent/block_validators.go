@@ -25,7 +25,7 @@ func ExecuteMatch(match *MatchCriteria, rootCtx map[string]interface{}, scopedCt
 		return nil, fmt.Errorf("match path must resolve to an array: %s", match.Path)
 	}
 
-	var matches []interface{}
+	matches := make([]interface{}, 0)
 	for _, elem := range arr {
 		if len(match.Where) == 0 {
 			matches = append(matches, elem)

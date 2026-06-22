@@ -102,12 +102,6 @@
               ]
             }
           },
-          "extract": {
-            "firstReqIdx": "$.traffic[0].requestTimelineIndex",
-            "firstRespIdx": "$.traffic[0].responseTimelineIndex",
-            "secondReqIdx": "$.traffic[1].requestTimelineIndex",
-            "secondRespIdx": "$.traffic[1].responseTimelineIndex"
-          },
           "assertions": [
             {
               "assertions": [
@@ -124,8 +118,7 @@
                     "value": "/timeline-first"
                   }
                 ],
-                "count": 1,
-                "as": "firstCall"
+                "count": 1
               },
               "assertions": [
                 {
@@ -133,7 +126,11 @@
                   "operator": "lt",
                   "value": { "from": "$.match.responseTimelineIndex" }
                 }
-              ]
+              ],
+              "extract": {
+                "firstReqIdx": "$.match.requestTimelineIndex",
+                "firstRespIdx": "$.match.responseTimelineIndex"
+              }
             },
             {
               "match": {
@@ -145,8 +142,7 @@
                     "value": "/timeline-second"
                   }
                 ],
-                "count": 1,
-                "as": "secondCall"
+                "count": 1
               },
               "assertions": [
                 {
@@ -154,7 +150,11 @@
                   "operator": "lt",
                   "value": { "from": "$.match.responseTimelineIndex" }
                 }
-              ]
+              ],
+              "extract": {
+                "secondReqIdx": "$.match.requestTimelineIndex",
+                "secondRespIdx": "$.match.responseTimelineIndex"
+              }
             }
           ]
         },
@@ -175,12 +175,12 @@
                   "value": { "from": "$.variables.secondReqIdx" }
                 },
                 {
-                  "path": "$.variables.firstRespIdx",
-                  "operator": "lte",
-                  "value": { "from": "$.variables.secondReqIdx" }
+                  "path": "$.variables.firstReqIdx",
+                  "operator": "lt",
+                  "value": { "from": "$.variables.firstRespIdx" }
                 },
                 {
-                  "path": "$.variables.firstReqIdx",
+                  "path": "$.variables.secondReqIdx",
                   "operator": "lt",
                   "value": { "from": "$.variables.secondRespIdx" }
                 }

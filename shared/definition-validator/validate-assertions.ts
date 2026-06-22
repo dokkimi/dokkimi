@@ -101,7 +101,7 @@ export function validateWhereEntry(
     err(r, `${ctx}: must have one of: path, or, and, not`);
     return;
   }
-  if (formCount > 1 && !(hasPath && !hasOr && !hasAnd && !hasNot)) {
+  if (formCount > 1) {
     err(r, `${ctx}: only one of path, or, and, not may be specified`);
     return;
   }
@@ -112,8 +112,9 @@ export function validateWhereEntry(
     } else if (!e.path.startsWith('$$.')) {
       err(r, `${ctx}: where path must start with "$$." (scoped element)`);
     }
-    if (
-      e.operator !== undefined &&
+    if (e.operator === undefined) {
+      err(r, `${ctx}: "operator" is required`);
+    } else if (
       !VALID_ASSERTION_OPERATORS.includes(
         e.operator as (typeof VALID_ASSERTION_OPERATORS)[number],
       )
@@ -361,9 +362,12 @@ export function validateAssertion(
     }
   }
 
-  // Validate operator
-  if (
-    a.operator !== undefined &&
+  // Validate operator — required unless disabled
+  if (a.operator === undefined) {
+    if (!a.disabled) {
+      err(r, `${ctx}: "operator" is required`);
+    }
+  } else if (
     !VALID_ASSERTION_OPERATORS.includes(
       a.operator as (typeof VALID_ASSERTION_OPERATORS)[number],
     )
@@ -400,9 +404,11 @@ export function validateAssertionBlock(
     } else {
       for (let i = 0; i < block.assertions.length; i++) {
         const a = block.assertions[i] as Record<string, unknown>;
-        if (a && typeof a === 'object') {
-          validateAssertion(a, `${ctx}.assertions[${i}]`, r);
+        if (!a || typeof a !== 'object' || Array.isArray(a)) {
+          err(r, `${ctx}.assertions[${i}]: must be an object`);
+          continue;
         }
+        validateAssertion(a, `${ctx}.assertions[${i}]`, r);
       }
     }
   }

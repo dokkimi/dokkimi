@@ -162,10 +162,26 @@ func TestSetForVars(t *testing.T) {
 
 func TestSetRepeatVars(t *testing.T) {
 	varCtx := NewVariableContext()
-	setRepeatVars(varCtx, "attempt", 3)
+	setRepeatVars(varCtx, "attempt", "", 3)
 
 	if v, _ := varCtx.ResolveTyped("{{attempt}}"); v != float64(3) {
 		t.Errorf("expected 3, got %v", v)
+	}
+}
+
+func TestSetRepeatVars_WithName(t *testing.T) {
+	varCtx := NewVariableContext()
+	setRepeatVars(varCtx, "attempt", "retryLoop", 2)
+
+	if v, _ := varCtx.ResolveTyped("{{attempt}}"); v != float64(2) {
+		t.Errorf("expected 2, got %v", v)
+	}
+	meta, ok := varCtx.variables["retryLoop"].(map[string]interface{})
+	if !ok {
+		t.Fatal("expected retryLoop meta-variable to be a map")
+	}
+	if meta["index"] != float64(2) {
+		t.Errorf("expected index 2, got %v", meta["index"])
 	}
 }
 
@@ -690,7 +706,7 @@ func TestRunLoop_NestedLoopBody(t *testing.T) {
 								Match: &MatchCriteria{
 									Path: "$.traffic",
 									Where: []WhereEntry{
-										{Path: "$$.origin", Operator: "eq", Value: "svc-a"},
+										{Path: "$$.origin", Operator: "eq", Value: "{{svcName}}"},
 									},
 								},
 								Assertions: []Assertion{
@@ -988,36 +1004,34 @@ func TestRunLoop_RepeatUntilWithSourceFieldShorthands(t *testing.T) {
 }
 
 func TestRunLoop_ExtractWithDynamicKeys(t *testing.T) {
-	t.Run("forEach extract with interpolated keys saves per-iteration variables", func(t *testing.T) {
+	t.Run("forEach extract with interpolated keys saves per-iteration variables via executeExtract", func(t *testing.T) {
 		varCtx := NewVariableContext()
-		plan := IterationPlan{
-			Iterations: []Iteration{
-				{Label: "user-0", SetupFn: func() { varCtx.Set("idx", float64(0)) }},
-				{Label: "user-1", SetupFn: func() { varCtx.Set("idx", float64(1)) }},
-				{Label: "user-2", SetupFn: func() { varCtx.Set("idx", float64(2)) }},
+		buf := NewStepLogBuffer()
+		sv := NewStepValidator(buf, varCtx)
+
+		rootCtx := map[string]interface{}{
+			"response": map[string]interface{}{
+				"body": map[string]interface{}{"id": "abc123"},
 			},
-			LoopName: "users",
+			"variables": varCtx.Snapshot(),
 		}
 
-		_, err := runLoop(plan, varCtx, func(iterIdx int, iter Iteration) (map[string]interface{}, error) {
-			iter.SetupFn()
-			// Simulate that variable extraction happens with dynamic key "user_{{idx}}"
-			key := fmt.Sprintf("user_%d", iterIdx)
-			varCtx.Set(key, fmt.Sprintf("result_%d", iterIdx))
-			return nil, nil
-		})
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
+		for i := 0; i < 3; i++ {
+			varCtx.Set("idx", float64(i))
+			rootCtx["variables"] = varCtx.Snapshot()
+			extract := map[string]ExtractRule{
+				"user_{{idx}}": {Path: "$.response.body.id"},
+			}
+			sv.executeExtract(extract, rootCtx)
 		}
 
-		// Verify dynamic keys were stored correctly
 		for i := 0; i < 3; i++ {
 			key := fmt.Sprintf("user_%d", i)
 			val, ok := varCtx.variables[key]
 			if !ok {
 				t.Errorf("expected variable %q to exist", key)
-			} else if val != fmt.Sprintf("result_%d", i) {
-				t.Errorf("variable %q = %v, want result_%d", key, val, i)
+			} else if val != "abc123" {
+				t.Errorf("variable %q = %v, want abc123", key, val)
 			}
 		}
 	})
