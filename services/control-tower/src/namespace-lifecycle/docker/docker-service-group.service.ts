@@ -276,6 +276,7 @@ export class DockerServiceGroupService {
     configPaths: InstanceConfigPaths,
     caBundlePaths: CaBundlePaths,
     databaseNames: string[],
+    instanceItemId: string,
     browser?: BrowserConfig,
   ): Promise<void> {
     const config = getConfig();
@@ -291,7 +292,7 @@ export class DockerServiceGroupService {
       instanceItemName: 'chromium',
       healthCheckEndpoint: '/json/version',
       servicePort: String(config.services.chromium.port),
-      namespaceItemId: 'chromium',
+      namespaceItemId: instanceItemId,
       testAgentUrl: `http://test-agent-service:${config.services.testAgent.port}`,
     });
 

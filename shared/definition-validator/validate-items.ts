@@ -81,7 +81,15 @@ function validateServiceItem(
     warn(r, `${label}: SERVICE should have "image"`);
   }
   if (!item.healthCheck || typeof item.healthCheck !== 'string') {
-    err(r, `${label}: SERVICE requires "healthCheck" (string)`);
+    err(
+      r,
+      `${label}: SERVICE requires "healthCheck" (string — HTTP path like "/health" or "tcp" for TCP-only)`,
+    );
+  } else if (item.healthCheck !== 'tcp' && !item.healthCheck.startsWith('/')) {
+    err(
+      r,
+      `${label}: "healthCheck" must be an HTTP path starting with "/" (e.g., "/health") or "tcp" for TCP port check`,
+    );
   }
   validatePort(item.port, 'port', label, r);
   validatePort(item.debugPort, 'debugPort', label, r);

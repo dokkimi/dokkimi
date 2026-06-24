@@ -119,7 +119,7 @@ Your services connect using any S3 SDK with endpoint `http://minio:9000`. You ca
 
 ## Current limitations
 
-The main constraint is that **the service must expose an HTTP health check on its primary port.** Kafka speaks its own wire protocol on port 9092, and RabbitMQ uses AMQP on port 5672. Dokkimi's health checks are HTTP-based, so services without an HTTP endpoint on their application port aren't directly supported.
+Dokkimi intercepts HTTP traffic and database wire protocols (Postgres, MySQL, MongoDB, Redis). **Pub/sub message brokers like Kafka and RabbitMQ can run as SERVICE items** — they'll boot, pass health checks, and your services can connect to them — **but Dokkimi can't intercept or assert on messages flowing through them.** You can verify that your service called the right HTTP endpoints, but you can't verify what messages were published to a Kafka topic or consumed from a RabbitMQ queue.
 
 ## DATABASE vs SERVICE: when to use which
 

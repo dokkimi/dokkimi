@@ -150,6 +150,42 @@ describe('validateItem', () => {
       );
     });
 
+    it('accepts tcp health check', () => {
+      const r = makeResult();
+      validateItem(
+        {
+          type: 'SERVICE',
+          name: 'kafka',
+          port: 9092,
+          healthCheck: 'tcp',
+        },
+        0,
+        '/f.json',
+        r,
+        fs,
+      );
+      expect(r.errors).toHaveLength(0);
+    });
+
+    it('errors on healthCheck that is not a path or tcp', () => {
+      const r = makeResult();
+      validateItem(
+        {
+          type: 'SERVICE',
+          name: 'svc',
+          port: 3000,
+          healthCheck: 'health',
+        },
+        0,
+        '/f.json',
+        r,
+        fs,
+      );
+      expect(
+        r.errors.some((e) => e.includes('must be an HTTP path starting with')),
+      ).toBe(true);
+    });
+
     it('errors on invalid port', () => {
       const r = makeResult();
       validateItem(

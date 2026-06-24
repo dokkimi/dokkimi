@@ -192,7 +192,7 @@ A containerized application deployed with an interceptor sidecar for traffic cap
 | `type`        | `"SERVICE"`       | Item type                                                                                                           |
 | `name`        | string            | Unique name (1-63 chars, lowercase alphanumeric + hyphens, must start/end with alphanumeric). Used as DNS hostname. |
 | `port`        | integer (1-65535) | Port the service listens on                                                                                         |
-| `healthCheck` | string            | HTTP path for health checks (e.g., `"/health"`, `"/ready"`)                                                         |
+| `healthCheck` | string            | Health check: HTTP path (e.g., `"/health"`) or `"tcp"` for TCP port check                                           |
 
 **Optional fields:**
 

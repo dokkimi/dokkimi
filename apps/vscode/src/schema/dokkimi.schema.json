@@ -147,7 +147,7 @@
         },
         "healthCheck": {
           "type": "string",
-          "description": "HTTP endpoint path for health checks (e.g., '/health')."
+          "description": "Health check: HTTP path (e.g., '/health') or 'tcp' for TCP port check (non-HTTP services)."
         },
         "uiPath": {
           "type": "string",

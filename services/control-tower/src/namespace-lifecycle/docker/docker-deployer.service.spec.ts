@@ -447,7 +447,10 @@ describe('DockerDeployerService', () => {
           ],
         },
       });
-      ctx.instanceItemIds = new Map([['web-app', 'item-web']]);
+      ctx.instanceItemIds = new Map([
+        ['web-app', 'item-web'],
+        ['chromium', 'item-chromium'],
+      ]);
 
       await service.deploy(ctx);
 

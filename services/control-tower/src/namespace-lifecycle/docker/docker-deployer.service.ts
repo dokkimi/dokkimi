@@ -160,6 +160,7 @@ export class DockerDeployerService {
         );
       });
 
+      const chromiumItemId = ctx.instanceItemIds.get('chromium');
       const chromiumPromise = attachChromium
         ? this.serviceGroup.createChromiumGroup(
             networkName,
@@ -168,6 +169,7 @@ export class DockerDeployerService {
             configPaths,
             caBundlePaths,
             databaseNames,
+            chromiumItemId || 'chromium',
             ctx.definition.config?.browser,
           )
         : Promise.resolve();

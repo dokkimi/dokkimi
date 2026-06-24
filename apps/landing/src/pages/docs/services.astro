@@ -16,7 +16,7 @@ import CodeBlock from '../../components/CodeBlock.astro';
       <tr><td><code>type</code></td><td><code>"SERVICE"</code></td><td>Item type</td></tr>
       <tr><td><code>name</code></td><td>string</td><td>Unique name (1-63 chars, lowercase alphanumeric + hyphens, must start/end with alphanumeric). Used as DNS hostname.</td></tr>
       <tr><td><code>port</code></td><td>integer</td><td>Port the service listens on (1-65535)</td></tr>
-      <tr><td><code>healthCheck</code></td><td>string</td><td>HTTP path for health checks (e.g., <code>/health</code>)</td></tr>
+      <tr><td><code>healthCheck</code></td><td>string</td><td>HTTP path (e.g., <code>/health</code>) or <code>"tcp"</code> for TCP port check (non-HTTP services)</td></tr>
     </tbody>
   </table>
 
@@ -102,7 +102,7 @@ import CodeBlock from '../../components/CodeBlock.astro';
   <p>Your services connect using any S3-compatible SDK with endpoint <code>http://minio:9000</code>.</p>
 
   <div class="callout">
-    <p><strong>Any Docker image works</strong> as long as it exposes an HTTP health check endpoint on the same port your application connects to. Use the <code>command</code> field to override the default CMD for images that need a subcommand to start (like MinIO's <code>server /data</code>). For infrastructure that uses non-HTTP protocols (like Kafka or RabbitMQ), you may need an image variant that includes an HTTP health endpoint. Databases that need Dokkimi's query interception and logging should use the <a href="/docs/databases">DATABASE</a> item type instead.</p>
+    <p><strong>Any Docker image works.</strong> Use an HTTP path (like <code>/health</code>) for services with an HTTP endpoint, or <code>"tcp"</code> for services that use non-HTTP protocols (custom TCP servers). Use the <code>command</code> field to override the default CMD for images that need a subcommand to start (like MinIO's <code>server /data</code>). Note: Dokkimi intercepts HTTP traffic and database wire protocols — pub/sub message brokers (Kafka, RabbitMQ) can run as SERVICE items but Dokkimi can't intercept or assert on messages flowing through them. Databases that need query interception should use the <a href="/docs/databases">DATABASE</a> item type instead.</p>
   </div>
 
   <h2>DNS and inter-service communication</h2>

@@ -151,12 +151,27 @@ export class RunsService implements OnApplicationBootstrap {
 
     const snapshotDefinition = stripInitFileContent(definition);
 
+    const hasUi =
+      Array.isArray(definition.tests) &&
+      definition.tests.some((t: any) =>
+        (t.steps ?? []).some((s: any) => s.action?.type === 'ui'),
+      );
+
     await this.prisma.client.$transaction(async (tx) => {
       for (const item of definition.items) {
         await tx.instanceItem.create({
           data: {
             instanceId,
             itemDefinitionName: item.name,
+          },
+        });
+      }
+
+      if (hasUi) {
+        await tx.instanceItem.create({
+          data: {
+            instanceId,
+            itemDefinitionName: 'chromium',
           },
         });
       }

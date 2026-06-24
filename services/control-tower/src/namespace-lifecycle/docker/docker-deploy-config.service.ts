@@ -84,8 +84,9 @@ export class DockerDeployConfigService {
         .map((item) => ctx.instanceItemIds.get(item.name))
         .filter((id): id is string => id !== undefined);
 
-      if (hasUiSteps(ctx.definition)) {
-        expectedNamespaceItemIds.push('chromium');
+      const chromiumItemId = ctx.instanceItemIds.get('chromium');
+      if (hasUiSteps(ctx.definition) && chromiumItemId) {
+        expectedNamespaceItemIds.push(chromiumItemId);
       }
     }
 
