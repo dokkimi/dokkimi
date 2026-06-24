@@ -49,6 +49,7 @@ func NewTestExecutor(interceptorURL string, timeout time.Duration, databaseQuery
 		MaxIdleConnsPerHost: 10,
 		IdleConnTimeout:     90 * time.Second,
 		Proxy:               nil,
+		DisableCompression:  true,
 	}
 
 	varCtx := NewVariableContext()

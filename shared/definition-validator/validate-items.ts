@@ -85,6 +85,17 @@ function validateServiceItem(
   }
   validatePort(item.port, 'port', label, r);
   validatePort(item.debugPort, 'debugPort', label, r);
+  if (item.command !== undefined) {
+    if (!Array.isArray(item.command)) {
+      err(r, `${label}: "command" must be an array of strings`);
+    } else {
+      for (let i = 0; i < item.command.length; i++) {
+        if (typeof item.command[i] !== 'string') {
+          err(r, `${label}: command[${i}] must be a string`);
+        }
+      }
+    }
+  }
   if (item.env !== undefined) {
     if (!Array.isArray(item.env)) {
       err(r, `${label}: "env" must be an array`);

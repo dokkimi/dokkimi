@@ -84,6 +84,11 @@ class DefinitionItemDto {
   @IsString()
   mountPath?: string | null;
 
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  command?: string[] | null;
+
   // Database fields
   @IsOptional()
   @IsString()

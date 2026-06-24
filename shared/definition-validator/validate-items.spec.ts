@@ -253,6 +253,64 @@ describe('validateItem', () => {
       );
       expect(r.errors).toHaveLength(0);
     });
+
+    it('accepts valid command array', () => {
+      const r = makeResult();
+      validateItem(
+        {
+          type: 'SERVICE',
+          name: 'svc',
+          port: 3000,
+          healthCheck: '/h',
+          command: ['server', '/data'],
+        },
+        0,
+        '/f.json',
+        r,
+        fs,
+      );
+      expect(r.errors).toHaveLength(0);
+    });
+
+    it('errors when command is not an array', () => {
+      const r = makeResult();
+      validateItem(
+        {
+          type: 'SERVICE',
+          name: 'svc',
+          port: 3000,
+          healthCheck: '/h',
+          command: 'server /data',
+        },
+        0,
+        '/f.json',
+        r,
+        fs,
+      );
+      expect(
+        r.errors.some((e) => e.includes('"command" must be an array')),
+      ).toBe(true);
+    });
+
+    it('errors when command entries are not strings', () => {
+      const r = makeResult();
+      validateItem(
+        {
+          type: 'SERVICE',
+          name: 'svc',
+          port: 3000,
+          healthCheck: '/h',
+          command: ['server', 42],
+        },
+        0,
+        '/f.json',
+        r,
+        fs,
+      );
+      expect(
+        r.errors.some((e) => e.includes('command[1] must be a string')),
+      ).toBe(true);
+    });
   });
 
   describe('DATABASE', () => {

@@ -3,19 +3,98 @@ import DocsLayout from '../../layouts/DocsLayout.astro';
 import CodeBlock from '../../components/CodeBlock.astro';
 ---
 
-<DocsLayout title="AI Integration — Dokkimi Docs" description="How Dokkimi works with AI assistants to write test definitions and debug failures.">
+<DocsLayout title="AI Integration — Dokkimi Docs" description="How Dokkimi works with AI assistants through MCP, context files, and structured output.">
   <h1>AI Integration</h1>
-  <p class="subtitle">Dokkimi is designed to work with AI assistants out of the box.</p>
+  <p class="subtitle">Dokkimi ships with a full MCP server and auto-configures your AI agent on install. No setup required.</p>
 
-  <h2>How it works</h2>
-  <p>When you install Dokkimi, it updates your AI assistant's context files so the assistant automatically knows about Dokkimi's definition format, CLI commands, and capabilities. There's nothing to configure — your AI assistant is ready to write and debug Dokkimi tests immediately after installation.</p>
-  <p>Specifically, Dokkimi adds a reference to <code>~/.dokkimi/dokkimi-instructions.md</code> (the complete specification) in your assistant's context configuration. This means tools like Claude Code, Cursor, and similar AI coding assistants can:</p>
-  <ul>
-    <li>Write test definitions from natural language descriptions</li>
-    <li>Add assertions to existing tests</li>
-    <li>Create shared fragments and wire up <code>$ref</code> references</li>
-    <li>Debug failing tests using structured output</li>
-  </ul>
+  <h2>MCP server</h2>
+  <p>Dokkimi includes a <a href="https://modelcontextprotocol.io" target="_blank" rel="noopener noreferrer">Model Context Protocol</a> (MCP) server that gives your AI agent direct access to Dokkimi's capabilities as native tool calls. When you install Dokkimi, it automatically registers the MCP server with Claude Code, Cursor, and GitHub Copilot — your agent can validate, run, and debug tests without shelling out to the CLI.</p>
+
+  <p>The MCP server exposes these tool groups:</p>
+
+  <h3>Authoring</h3>
+  <table>
+    <thead>
+      <tr><th>Tool</th><th>Description</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>get_reference</code></td><td>Look up any section of the Dokkimi spec (item types, assertion operators, config fields). The agent calls this before writing definitions to get the exact field names and constraints.</td></tr>
+      <tr><td><code>validate_file</code></td><td>Validate a definition or fragment file against the schema. Returns structured errors and warnings.</td></tr>
+      <tr><td><code>list_definitions</code></td><td>List all runnable definition files in the project.</td></tr>
+      <tr><td><code>list_fragments</code></td><td>List all shared fragment files.</td></tr>
+      <tr><td><code>resolve_definition</code></td><td>Resolve a definition file — expand <code>$ref</code> references, interpolate <code>${{'{{'}}VAR{{'}}'}}</code> variables, and return the fully resolved output.</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Running</h3>
+  <table>
+    <thead>
+      <tr><th>Tool</th><th>Description</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>run_tests</code></td><td>Run test definitions by name, path, or pattern. Returns pass/fail summary with run ID.</td></tr>
+      <tr><td><code>watch_run</code></td><td>Stream live status updates from an in-progress run.</td></tr>
+      <tr><td><code>stop</code></td><td>Stop a running test.</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Debugging</h3>
+  <table>
+    <thead>
+      <tr><th>Tool</th><th>Description</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>get_run_summary</code></td><td>Get a high-level summary of the last run — pass/fail counts, timing, container statuses.</td></tr>
+      <tr><td><code>get_failures</code></td><td>Get detailed failure information — which assertions failed, expected vs actual values.</td></tr>
+      <tr><td><code>get_step_detail</code></td><td>Drill into a specific test step — the request sent, response received, and each assertion result.</td></tr>
+      <tr><td><code>get_traffic</code></td><td>Retrieve captured HTTP traffic between services — full request/response bodies, headers, and timing.</td></tr>
+      <tr><td><code>diff_traffic</code></td><td>Compare traffic between two runs to identify what changed.</td></tr>
+      <tr><td><code>get_console_logs</code></td><td>Retrieve stdout/stderr logs from any service container.</td></tr>
+      <tr><td><code>get_db_logs</code></td><td>Retrieve intercepted database queries and their results.</td></tr>
+      <tr><td><code>get_container_status</code></td><td>Check the status of each container in the namespace (running, healthy, exited, etc.).</td></tr>
+      <tr><td><code>dump_results</code></td><td>Export the entire run as structured JSON — the same output as <code>dokkimi dump</code>.</td></tr>
+      <tr><td><code>diagnose</code></td><td>Automated diagnosis of a failed run — analyzes logs, traffic, and assertions to suggest likely causes.</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Management</h3>
+  <table>
+    <thead>
+      <tr><th>Tool</th><th>Description</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>status</code></td><td>Check if Dokkimi is running, and list active or recent instances.</td></tr>
+      <tr><td><code>get_run_history</code></td><td>List past runs with their results.</td></tr>
+      <tr><td><code>doctor</code></td><td>Diagnose installation issues (Docker, images, config).</td></tr>
+      <tr><td><code>clean</code></td><td>Remove orphaned containers and networks.</td></tr>
+      <tr><td><code>init</code></td><td>Scaffold a new <code>.dokkimi/</code> project.</td></tr>
+    </tbody>
+  </table>
+
+  <h3>What this means in practice</h3>
+  <p>Instead of writing a definition, switching to the terminal, running <code>dokkimi validate</code>, reading the output, going back to the editor, and iterating — your AI agent does this in a single loop:</p>
+  <ol>
+    <li>Calls <code>get_reference</code> to look up the spec for the item type it needs</li>
+    <li>Writes the definition file</li>
+    <li>Calls <code>validate_file</code> to check for errors</li>
+    <li>Calls <code>run_tests</code> to execute the tests</li>
+    <li>If a test fails, calls <code>get_failures</code> and <code>get_traffic</code> to diagnose</li>
+    <li>Fixes the issue and re-runs — all without leaving the conversation</li>
+  </ol>
+
+  <h2>Auto-registration</h2>
+  <p>When you install Dokkimi, it automatically configures itself with every supported AI tool:</p>
+  <table>
+    <thead>
+      <tr><th>Tool</th><th>What gets configured</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>Claude Code</td><td>MCP server in <code>~/.claude.json</code>, context in <code>~/.claude/CLAUDE.md</code></td></tr>
+      <tr><td>Cursor</td><td>MCP server in <code>~/.cursor/mcp.json</code>, rules in <code>~/.cursor/rules/dokkimi.md</code></td></tr>
+      <tr><td>GitHub Copilot</td><td>Context in <code>~/.github/copilot-instructions.md</code></td></tr>
+    </tbody>
+  </table>
+  <p>The complete Dokkimi specification is written to <code>~/.dokkimi/dokkimi-instructions.md</code> and referenced from each tool's context. This means your agent knows the full definition format, all assertion operators, and every CLI command — without you pointing it to docs.</p>
 
   <h2>Writing tests with AI</h2>
   <p>Just describe what you want to test. Your AI assistant already has the full Dokkimi spec in context:</p>
@@ -25,33 +104,24 @@ I have an API gateway (port 3000), an order service (port 3001),
 and a Postgres database. Mock Stripe for payment processing."`} lang="bash" />
   <p>The AI will generate a valid definition file with the correct item types, connection strings, mock configuration, and assertion blocks — no need to tell it where to find the docs.</p>
 
-  <h2>Debugging with dokkimi dump</h2>
-  <p>When a test fails, <code>dokkimi dump</code> exports the entire run as structured JSON — captured HTTP traffic, console logs, assertion results, and timing data:</p>
-  <CodeBlock code={`# Export only failed instances
-dokkimi dump --failed -o failures.json`} lang="bash" />
-  <p>Your AI assistant can read this file and diagnose the failure:</p>
-  <CodeBlock code={`# In your AI assistant:
-"The checkout test failed. Read failures.json and trace through
-the captured traffic to tell me what went wrong."`} lang="bash" />
-  <p>The dump contains everything the AI needs to diagnose the issue without access to your cluster — request/response bodies, inter-service calls, service logs, and the full test definition.</p>
+  <h2>Debugging with AI</h2>
+  <p>When a test fails, your AI agent can use the MCP tools to diagnose the issue directly:</p>
+  <CodeBlock code={`# The agent calls these MCP tools automatically:
+get_failures      → sees which assertions failed and why
+get_traffic       → traces the HTTP calls between services
+get_console_logs  → checks service logs for errors
+get_db_logs       → reviews database queries
 
-  <h2>The dump file</h2>
-  <p>The JSON output from <code>dokkimi dump</code> includes:</p>
-  <ul>
-    <li><strong>Definition</strong> — the full resolved test definition (items, variables, tests)</li>
-    <li><strong>HTTP logs</strong> — every inter-service HTTP call with request and response bodies, headers, and timing</li>
-    <li><strong>Console logs</strong> — stdout/stderr from every service, with timestamps and detected log levels</li>
-    <li><strong>Assertion results</strong> — which assertions passed, which failed, and the expected vs actual values</li>
-    <li><strong>Database logs</strong> — queries executed and their results</li>
-    <li><strong>Execution logs</strong> — step-by-step timeline of the test run</li>
-  </ul>
-  <p>See the <a href="/docs/cli">CLI Reference</a> for the full output structure.</p>
+# Or exports everything at once:
+dump_results      → full structured JSON snapshot of the run`} lang="bash" />
+  <p>The agent gets the same visibility you'd get from <code>dokkimi inspect</code> — captured HTTP traffic, console logs, assertion results, database queries — but can process it programmatically and suggest fixes.</p>
 
   <h2>Tips for AI-assisted workflows</h2>
   <ul>
-    <li><strong>Use <code>dokkimi validate</code> after generation.</strong> Run <code>dokkimi validate</code> on AI-generated definitions to catch schema errors before deploying.</li>
+    <li><strong>Let the agent validate as it writes.</strong> The agent can call <code>validate_file</code> after every edit to catch schema errors before running tests.</li>
     <li><strong>Save dumps from CI.</strong> Add <code>dokkimi dump --failed -o artifacts/failures.json</code> to your CI failure handler so dump files are always available for debugging.</li>
     <li><strong>Include your service code.</strong> When debugging, share the relevant endpoint handler code alongside the dump. The dump shows <em>what happened</em>; your code shows <em>why</em>.</li>
+    <li><strong>Use <code>get_reference</code> liberally.</strong> If the agent seems uncertain about field names or operators, telling it to "check the Dokkimi reference" triggers a <code>get_reference</code> call that gives it the exact spec.</li>
   </ul>
 
   <div class="nav-links">

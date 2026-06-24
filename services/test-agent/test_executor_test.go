@@ -20,6 +20,29 @@ func TestNewTestExecutor(t *testing.T) {
 	}
 }
 
+func TestTestExecutor_DisableCompression(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ae := r.Header.Get("Accept-Encoding")
+		if ae != "" {
+			t.Errorf("Expected no Accept-Encoding header, got %q", ae)
+		}
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"ok": true}`))
+	}))
+	defer server.Close()
+
+	executor := NewTestExecutor(server.URL, 30*time.Second, nil, nil)
+
+	step := TestStep{
+		Action: StepAction{Type: "httpRequest", Method: "GET", URL: "svc/test"},
+	}
+	ctx := context.Background()
+	_, err := executor.executeStep(ctx, step, 0)
+	if err != nil {
+		t.Fatalf("executeStep() error = %v", err)
+	}
+}
+
 func TestTestExecutor_ExecuteStep(t *testing.T) {
 	// Create a test server that simulates the interceptor
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

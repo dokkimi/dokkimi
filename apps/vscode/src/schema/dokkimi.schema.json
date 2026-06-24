@@ -159,6 +159,11 @@
           "minimum": 1,
           "maximum": 65535
         },
+        "command": {
+          "type": "array",
+          "description": "Override the Docker image's default CMD (e.g., [\"server\", \"/data\"]).",
+          "items": { "type": "string" }
+        },
         "env": {
           "type": "array",
           "description": "Environment variables passed to the container.",

@@ -1,0 +1,13 @@
+type: SERVICE
+name: elasticsearch
+image: elasticsearch:8.17.0
+port: 9200
+healthCheck: /_cluster/health
+env:
+  - name: discovery.type
+    value: single-node
+  - name: xpack.security.enabled
+    value: 'false'
+  - name: ES_JAVA_OPTS
+    value: '-Xms256m -Xmx256m'
+minMemory: 512

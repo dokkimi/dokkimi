@@ -1,6 +1,9 @@
 package main
 
 import (
+	"bytes"
+	"compress/gzip"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -446,5 +449,78 @@ func TestHealthCheckForServiceShouldForward(t *testing.T) {
 	// Should get the INTERCEPTOR's health response
 	if body2 != `{"status":"healthy"}` {
 		t.Errorf("Expected interceptor health response %q, got %q", `{"status":"healthy"}`, body2)
+	}
+}
+
+func TestHandleRequest_GzipResponseForwardsCompressedBytes(t *testing.T) {
+	// When the original caller sends Accept-Encoding: gzip, Go's transport
+	// passes the compressed response through without auto-decompressing.
+	// The interceptor must forward the compressed bytes unchanged while
+	// decompressing a copy for logging.
+	jsonPayload := `{"status":"green","cluster_name":"docker-cluster"}`
+	var compressedBuf bytes.Buffer
+	gw := gzip.NewWriter(&compressedBuf)
+	gw.Write([]byte(jsonPayload))
+	gw.Close()
+	compressedBytes := compressedBuf.Bytes()
+
+	targetServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Encoding", "gzip")
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.Write(compressedBytes)
+	}))
+	defer targetServer.Close()
+
+	cfg := &Config{
+		RequestTimeout:  30 * time.Second,
+		MaxIdleConns:    100,
+		IdleConnTimeout: 90 * time.Second,
+		Namespace:       "test-ns",
+		Origin:          "test-origin",
+		LogActions:      true,
+	}
+	cache := NewMockCache(5 * time.Minute)
+	urlMapFunc := func() UrlMap { return make(UrlMap) }
+	mockManager := NewMockManager(cache, nil, "test-origin", urlMapFunc)
+	proxyService := NewProxyService(cfg, mockManager, urlMapFunc)
+	logger := NewLogger("http://localhost:5000", 5*time.Second, nil)
+	defer logger.Stop()
+
+	// The caller explicitly requests gzip — Go's transport won't auto-decompress
+	req := httptest.NewRequest("GET", targetServer.URL+"/test", nil)
+	req.Header.Set("Accept-Encoding", "gzip")
+	w := httptest.NewRecorder()
+
+	handleRequest(w, req, proxyService, logger, nil, cache, cfg)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("Expected status 200, got %d", w.Code)
+	}
+
+	// The forwarded response must still be gzip-compressed (transparent proxy)
+	if w.Header().Get("Content-Encoding") != "gzip" {
+		t.Error("Expected Content-Encoding: gzip to be forwarded to client")
+	}
+
+	// The raw bytes forwarded to the client should be the original compressed bytes
+	if !bytes.Equal(w.Body.Bytes(), compressedBytes) {
+		t.Errorf("Expected forwarded body to be original compressed bytes (%d bytes), got %d bytes",
+			len(compressedBytes), w.Body.Len())
+	}
+
+	// Verify the compressed bytes decompress to valid JSON (proves the interceptor
+	// didn't corrupt the response while decompressing for logging)
+	gr, err := gzip.NewReader(bytes.NewReader(w.Body.Bytes()))
+	if err != nil {
+		t.Fatalf("Failed to create gzip reader from forwarded body: %v", err)
+	}
+	decompressed, err := io.ReadAll(gr)
+	gr.Close()
+	if err != nil {
+		t.Fatalf("Failed to decompress forwarded body: %v", err)
+	}
+	if string(decompressed) != jsonPayload {
+		t.Errorf("Expected decompressed body %q, got %q", jsonPayload, string(decompressed))
 	}
 }

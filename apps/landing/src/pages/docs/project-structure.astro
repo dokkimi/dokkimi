@@ -95,6 +95,26 @@ env:
     <p><strong>$&#123;&#123;VAR&#125;&#125; vs &#123;&#123;VAR&#125;&#125;</strong> — These are different systems. <code>$&#123;&#123;VAR&#125;&#125;</code> is resolved at build time from the config file. <code>&#123;&#123;VAR&#125;&#125;</code> is resolved at runtime from test <a href="/docs/variables">variables</a>. If a <code>$&#123;&#123;VAR&#125;&#125;</code> reference doesn't match any key in <code>env</code>, the resolver errors.</p>
   </div>
 
+  <h2>Isolation model</h2>
+  <p>Each runnable definition file creates its own isolated Docker namespace — a dedicated network with its own services, databases, browser, and DNS. No state is shared between definitions. When a run finishes, the entire namespace is destroyed.</p>
+  <p>Tests <em>within</em> a single definition share the same namespace intentionally. This lets you write multi-step workflows where test 2 depends on state that test 1 created — for example, creating a user in one test and verifying their data persists in the next. Tests within a definition execute sequentially in order.</p>
+  <p>For scenarios that need completely independent data, put them in separate definition files. Each file gets its own fresh environment. You can run multiple definitions in parallel with <code>dokkimi run --max-parallel N</code>, and they'll never interfere with each other because each runs in its own isolated namespace.</p>
+
+  <h2>Test runtime</h2>
+  <p>Dokkimi's orchestration layer adds under a second of overhead. What determines your total runtime is your containers and your tests:</p>
+  <ul>
+    <li><strong>Container startup</strong> — each image boots and must pass its health check before tests begin. Lightweight images (Alpine-based, small JVM heaps) start faster. Elasticsearch with 256MB heap takes ~15 seconds; a Node.js service takes 2–3.</li>
+    <li><strong>Health check convergence</strong> — all items must be healthy simultaneously. A single slow container holds up the entire run.</li>
+    <li><strong>Test step execution</strong> — your HTTP requests, database queries, and assertions. Parallel steps (<code>type: parallel</code>) can cut wall-clock time when steps are independent.</li>
+  </ul>
+  <p>To keep runs fast:</p>
+  <ul>
+    <li>Set <code>minMemory</code> and <code>minCpu</code> for resource-hungry containers (Elasticsearch, JVM-based services) so they get enough resources to start quickly.</li>
+    <li>Keep database init files small — large seed scripts run before health checks pass.</li>
+    <li>Use lighter image variants where possible (<code>-alpine</code>, <code>-slim</code>).</li>
+    <li>Split unrelated test scenarios into separate definitions and run them in parallel with <code>dokkimi run --max-parallel N</code>.</li>
+  </ul>
+
   <h2>.dokignore</h2>
   <p>You can create a <code>.dokkimi/.dokignore</code> file to exclude files from cloud/CI test runs. It uses the same syntax as <code>.gitignore</code>:</p>
   <CodeBlock code={`# Ignore experimental definitions

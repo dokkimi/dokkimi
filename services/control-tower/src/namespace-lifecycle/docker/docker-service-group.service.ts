@@ -231,6 +231,7 @@ export class DockerServiceGroupService {
         'io.dokkimi.role': 'service',
         'io.dokkimi.item-name': item.name,
       },
+      ...(item.command ? { cmd: item.command } : {}),
       ...(testAgentIP
         ? {
             logConfig: {

@@ -76,6 +76,7 @@ export const VALID_ITEM_KEYS: Record<string, Set<string>> = {
     'maxMemory',
     'localDevPath',
     'mountPath',
+    'command',
   ]),
   DATABASE: new Set([
     'type',

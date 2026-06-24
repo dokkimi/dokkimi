@@ -202,6 +202,7 @@ A containerized application deployed with an interceptor sidecar for traffic cap
 | `image`       | string            | —       | Docker image URI (e.g., `"my-service:latest"`).                             |
 | `uiPath`      | string            | —       | URL path to service's UI (e.g., `"/"`, `"/app"`) — enables "Open UI" button |
 | `debugPort`   | integer (1-65535) | —       | Remote debugging port (e.g., 9229 for Node.js `--inspect`)                  |
+| `command`     | string[]          | —       | Override Docker image's default CMD (e.g., `["server", "/data"]`)           |
 | `env`         | array             | —       | Environment variables: `[{ "name": "KEY", "value": "VALUE" }, ...]`         |
 | `minCpu`      | number (≥ 0)      | —       | Minimum CPU cores (e.g., 0.25)                                              |
 | `minMemory`   | number (≥ 0)      | —       | Minimum memory in MB                                                        |

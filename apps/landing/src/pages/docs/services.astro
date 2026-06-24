@@ -30,6 +30,7 @@ import CodeBlock from '../../components/CodeBlock.astro';
       <tr><td><code>image</code></td><td>string</td><td>—</td><td>Docker image URI (e.g., <code>my-service:latest</code>)</td></tr>
       <tr><td><code>uiPath</code></td><td>string</td><td>—</td><td>URL path to service's UI (e.g., <code>/</code>) — enables "Open UI" button</td></tr>
       <tr><td><code>debugPort</code></td><td>integer</td><td>—</td><td>Remote debugging port (e.g., 9229 for Node.js <code>--inspect</code>)</td></tr>
+      <tr><td><code>command</code></td><td>string[]</td><td>—</td><td>Override the Docker image's default CMD (e.g., <code>["server", "/data"]</code>)</td></tr>
       <tr><td><code>env</code></td><td>array</td><td>—</td><td>Environment variables (see below)</td></tr>
       <tr><td><code>minCpu</code></td><td>number</td><td>—</td><td>Minimum CPU cores (e.g., 0.25)</td></tr>
       <tr><td><code>minMemory</code></td><td>number</td><td>—</td><td>Minimum memory in MB</td></tr>
@@ -66,6 +67,43 @@ import CodeBlock from '../../components/CodeBlock.astro';
   "maxCpu": 1,
   "maxMemory": 1024
 }`} lang="json" />
+
+  <h2>Infrastructure services</h2>
+  <p>SERVICE items aren't limited to your application code. Any Docker container can be a service — including infrastructure like Elasticsearch, Kafka, RabbitMQ, or anything else with a health check endpoint. This lets you test against real infrastructure without mocking it.</p>
+
+  <h3>Elasticsearch</h3>
+  <CodeBlock code={`{
+  "type": "SERVICE",
+  "name": "elasticsearch",
+  "image": "elasticsearch:8.17.0",
+  "port": 9200,
+  "healthCheck": "/_cluster/health",
+  "env": [
+    { "name": "discovery.type", "value": "single-node" },
+    { "name": "xpack.security.enabled", "value": "false" },
+    { "name": "ES_JAVA_OPTS", "value": "-Xms256m -Xmx256m" }
+  ]
+}`} lang="json" />
+  <p>Your services connect to it at <code>elasticsearch:9200</code> — the same way they would in production. Dokkimi handles DNS routing within the Docker network.</p>
+
+  <h3>MinIO (S3-compatible object storage)</h3>
+  <CodeBlock code={`{
+  "type": "SERVICE",
+  "name": "minio",
+  "image": "minio/minio:latest",
+  "port": 9000,
+  "healthCheck": "/minio/health/live",
+  "command": ["server", "/data"],
+  "env": [
+    { "name": "MINIO_ROOT_USER", "value": "minioadmin" },
+    { "name": "MINIO_ROOT_PASSWORD", "value": "minioadmin" }
+  ]
+}`} lang="json" />
+  <p>Your services connect using any S3-compatible SDK with endpoint <code>http://minio:9000</code>.</p>
+
+  <div class="callout">
+    <p><strong>Any Docker image works</strong> as long as it exposes an HTTP health check endpoint on the same port your application connects to. Use the <code>command</code> field to override the default CMD for images that need a subcommand to start (like MinIO's <code>server /data</code>). For infrastructure that uses non-HTTP protocols (like Kafka or RabbitMQ), you may need an image variant that includes an HTTP health endpoint. Databases that need Dokkimi's query interception and logging should use the <a href="/docs/databases">DATABASE</a> item type instead.</p>
+  </div>
 
   <h2>DNS and inter-service communication</h2>
   <p>Service names are DNS hostnames within the Docker network. Use the <code>name</code> of another item as the hostname when one service connects to another. For example, if you have a database item named <code>postgres-db</code>, your service connects to it at <code>postgres-db:5432</code>.</p>

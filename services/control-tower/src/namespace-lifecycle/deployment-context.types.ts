@@ -83,6 +83,7 @@ export interface DefinitionItem {
   maxMemory?: number | null;
   localDevPath?: string | null;
   mountPath?: string | null;
+  command?: string[] | null;
 
   // Database fields
   database?: string | null;
