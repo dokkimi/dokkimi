@@ -529,7 +529,7 @@ Field name mapping: `mockMethod` → `method`, `mockOrigin` → `origin`, `mockT
 
 ### BROKER
 
-A message broker instance with a transparent proxy sidecar that captures all published and delivered messages. Currently only AMQP (RabbitMQ) is supported.
+A message broker instance with a transparent proxy sidecar that captures all published and delivered messages.
 
 **Required fields:**
 
@@ -537,32 +537,33 @@ A message broker instance with a transparent proxy sidecar that captures all pub
 | -------- | ---------- | --------------------------------------------------------------------------------------------------------- |
 | `type`   | `"BROKER"` | Item type                                                                                                 |
 | `name`   | string     | Unique name (1-63 chars, lowercase alphanumeric + hyphens). Used as DNS hostname for service connections. |
-| `broker` | enum       | Broker engine: `"amqp"`                                                                                   |
+| `broker` | enum       | Broker engine: `"amqp"` or `"kafka"`                                                                      |
 
 **Optional fields:**
 
-| Field         | Type              | Default | Description                                                         |
-| ------------- | ----------------- | ------- | ------------------------------------------------------------------- |
-| `description` | string            | —       | Human-readable description (max 500 chars)                          |
-| `image`       | string            | —       | Custom Docker image (e.g. `"rabbitmq:3.13-management"`)             |
-| `port`        | integer (1-65535) | —       | Native broker port (default: 5672 for AMQP)                         |
-| `healthCheck` | string            | —       | Health check endpoint or `"tcp"`                                    |
-| `env`         | array             | —       | Environment variables: `[{ "name": "KEY", "value": "VALUE" }, ...]` |
-| `command`     | string[]          | —       | Override Docker image CMD                                           |
-| `minCpu`      | number (≥ 0)      | —       | Minimum CPU cores                                                   |
-| `minMemory`   | number (≥ 0)      | —       | Minimum memory in MB                                                |
-| `maxCpu`      | number (≥ 0)      | —       | Maximum CPU cores                                                   |
-| `maxMemory`   | number (≥ 0)      | —       | Maximum memory in MB                                                |
+| Field         | Type              | Default | Description                                                                   |
+| ------------- | ----------------- | ------- | ----------------------------------------------------------------------------- |
+| `description` | string            | —       | Human-readable description (max 500 chars)                                    |
+| `image`       | string            | —       | Custom Docker image (e.g. `"rabbitmq:3.13-management"`, `"apache/kafka:3.9"`) |
+| `port`        | integer (1-65535) | —       | Native broker port (default: 5672 for AMQP, 9092 for Kafka)                   |
+| `healthCheck` | string            | —       | Health check endpoint or `"tcp"`                                              |
+| `env`         | array             | —       | Environment variables: `[{ "name": "KEY", "value": "VALUE" }, ...]`           |
+| `command`     | string[]          | —       | Override Docker image CMD                                                     |
+| `minCpu`      | number (≥ 0)      | —       | Minimum CPU cores                                                             |
+| `minMemory`   | number (≥ 0)      | —       | Minimum memory in MB                                                          |
+| `maxCpu`      | number (≥ 0)      | —       | Maximum CPU cores                                                             |
+| `maxMemory`   | number (≥ 0)      | —       | Maximum memory in MB                                                          |
 
 **Broker engine details:**
 
-| Engine | Default image | Native port | Default connection string        |
-| ------ | ------------- | ----------- | -------------------------------- |
-| `amqp` | rabbitmq:3    | 5672        | `amqp://guest:guest@{name}:5672` |
+| Engine  | Default image      | Native port | Default connection string         |
+| ------- | ------------------ | ----------- | --------------------------------- |
+| `amqp`  | rabbitmq:3         | 5672        | `amqp://guest:guest@{name}:5672`  |
+| `kafka` | apache/kafka:4.3.1 | 9092        | `{name}:9092` (bootstrap servers) |
 
 **Examples:**
 
-Minimal:
+Minimal AMQP:
 
 ```json
 {
@@ -572,7 +573,17 @@ Minimal:
 }
 ```
 
-With custom image and credentials:
+Minimal Kafka:
+
+```json
+{
+  "type": "BROKER",
+  "name": "kafka",
+  "broker": "kafka"
+}
+```
+
+With custom image and credentials (AMQP):
 
 ```json
 {
@@ -589,9 +600,11 @@ With custom image and credentials:
 
 **Important notes:**
 
-- **Broker names are DNS hostnames.** Services connect to the broker using the broker item's `name` as the hostname and the broker's native port (5672 for AMQP). For example: `"amqp://guest:guest@rabbitmq:5672"` where `rabbitmq` is the BROKER item name.
+- **Broker names are DNS hostnames.** Services connect to the broker using the broker item's `name` as the hostname and the broker's native port (5672 for AMQP, 9092 for Kafka). For example: `"amqp://guest:guest@rabbitmq:5672"` where `rabbitmq` is the BROKER item name, or `"kafka:9092"` for Kafka bootstrap servers.
 - The broker-proxy sidecar is injected transparently — it captures all published and delivered messages without modifying wire traffic.
-- Message logs include protocol-specific metadata (e.g. `exchange`, `routingKey` for AMQP) and are available for assertions via `$.messageLogs`.
+- Message logs include protocol-specific metadata and are available for assertions via `$.messageLogs`:
+  - AMQP: `exchange`, `routingKey`
+  - Kafka: `topic`, `partition`, `key`, `offset` (consume only)
 
 **Connecting services to brokers:** Use the broker item's `name` as the hostname in your service's environment variables:
 
@@ -602,6 +615,16 @@ With custom image and credentials:
   "port": 3000,
   "healthCheck": "/health",
   "env": [{ "name": "AMQP_URL", "value": "amqp://guest:guest@rabbitmq:5672" }]
+}
+```
+
+```json
+{
+  "type": "SERVICE",
+  "name": "my-service",
+  "port": 3000,
+  "healthCheck": "/health",
+  "env": [{ "name": "KAFKA_BROKERS", "value": "kafka:9092" }]
 }
 ```
 
@@ -1623,20 +1646,31 @@ All assertion paths start with `$.` and resolve against the unified root context
 
 Each entry in `$.messageLogs` has the following fields:
 
-| Field        | Type   | Description                                               |
-| ------------ | ------ | --------------------------------------------------------- |
-| `timestamp`  | string | ISO timestamp of the message event                        |
-| `broker`     | string | Broker item name (e.g. `"rabbitmq"`)                      |
-| `brokerType` | string | Protocol type (e.g. `"amqp"`)                             |
-| `operation`  | string | `"publish"` or `"deliver"`                                |
-| `body`       | any    | Message body (parsed JSON if valid, otherwise raw string) |
+| Field        | Type   | Description                                                           |
+| ------------ | ------ | --------------------------------------------------------------------- |
+| `timestamp`  | string | ISO timestamp of the message event                                    |
+| `broker`     | string | Broker item name (e.g. `"rabbitmq"`)                                  |
+| `brokerType` | string | Protocol type (e.g. `"amqp"`)                                         |
+| `operation`  | string | `"publish"` / `"deliver"` (AMQP) or `"produce"` / `"consume"` (Kafka) |
+| `body`       | any    | Message body (parsed JSON if valid, otherwise raw string)             |
 
-Protocol-specific metadata fields are spread at the top level of each entry. For AMQP, these include:
+Protocol-specific metadata fields are spread at the top level of each entry.
+
+AMQP metadata:
 
 | Field        | Type   | Description                                |
 | ------------ | ------ | ------------------------------------------ |
 | `exchange`   | string | AMQP exchange the message was published to |
 | `routingKey` | string | AMQP routing key used for the message      |
+
+Kafka metadata:
+
+| Field       | Type    | Description                                          |
+| ----------- | ------- | ---------------------------------------------------- |
+| `topic`     | string  | Kafka topic                                          |
+| `partition` | integer | Partition index                                      |
+| `key`       | any     | Message key (string or parsed JSON, null if not set) |
+| `offset`    | integer | Message offset (consume only)                        |
 
 ---
 

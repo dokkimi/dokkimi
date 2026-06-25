@@ -3,9 +3,9 @@ import DocsLayout from '../../layouts/DocsLayout.astro';
 import CodeBlock from '../../components/CodeBlock.astro';
 ---
 
-<DocsLayout title="Brokers — Dokkimi Docs" description="Add message brokers like RabbitMQ to your test environment with transparent message log interception.">
+<DocsLayout title="Brokers — Dokkimi Docs" description="Add message brokers like RabbitMQ and Kafka to your test environment with transparent message log interception.">
   <h1>Brokers</h1>
-  <p class="subtitle">Add message brokers to your test environment. Dokkimi deploys a transparent proxy sidecar that captures all published and delivered messages without modifying wire traffic.</p>
+  <p class="subtitle">Add message brokers to your test environment. Dokkimi deploys a transparent proxy sidecar that captures all published and consumed messages without modifying wire traffic.</p>
 
   <h2>Required fields</h2>
   <table>
@@ -15,7 +15,7 @@ import CodeBlock from '../../components/CodeBlock.astro';
     <tbody>
       <tr><td><code>type</code></td><td><code>"BROKER"</code></td><td>Item type</td></tr>
       <tr><td><code>name</code></td><td>string</td><td>Unique name (1-63 chars). Used as DNS hostname for service connections.</td></tr>
-      <tr><td><code>broker</code></td><td>enum</td><td><code>"amqp"</code></td></tr>
+      <tr><td><code>broker</code></td><td>enum</td><td><code>"amqp"</code> or <code>"kafka"</code></td></tr>
     </tbody>
   </table>
 
@@ -26,7 +26,7 @@ import CodeBlock from '../../components/CodeBlock.astro';
     </thead>
     <tbody>
       <tr><td><code>description</code></td><td>string</td><td>&mdash;</td><td>Human-readable description (max 500 chars)</td></tr>
-      <tr><td><code>image</code></td><td>string</td><td>per engine</td><td>Custom Docker image (e.g. <code>"rabbitmq:3.13-management"</code>)</td></tr>
+      <tr><td><code>image</code></td><td>string</td><td>per engine</td><td>Custom Docker image (e.g. <code>"rabbitmq:3.13-management"</code>, <code>"apache/kafka:3.9"</code>)</td></tr>
       <tr><td><code>port</code></td><td>integer</td><td>per engine</td><td>Native broker port</td></tr>
       <tr><td><code>healthCheck</code></td><td>string</td><td>&mdash;</td><td>Health check endpoint or <code>"tcp"</code></td></tr>
       <tr><td><code>env</code></td><td>array</td><td>&mdash;</td><td>Environment variables: <code>[&#123; "name": "KEY", "value": "VALUE" &#125;]</code></td></tr>
@@ -45,12 +45,14 @@ import CodeBlock from '../../components/CodeBlock.astro';
     </thead>
     <tbody>
       <tr><td><code>amqp</code></td><td>rabbitmq:3</td><td>5672</td><td><code>amqp://guest:guest@&#123;name&#125;:5672</code></td></tr>
+      <tr><td><code>kafka</code></td><td>apache/kafka:4.3.1</td><td>9092</td><td><code>&#123;name&#125;:9092</code> (bootstrap servers)</td></tr>
     </tbody>
   </table>
 
   <h2>How it works</h2>
-  <p>When you add a BROKER item, Dokkimi deploys a <strong>broker-proxy</strong> sidecar alongside the broker container. The proxy sits between your services and the broker, transparently relaying all wire protocol frames. It inspects publish and deliver operations to capture message metadata and bodies, which become available as <code>$.messageLogs</code> in your test assertions.</p>
-  <p>Your services connect to the broker using the item's <code>name</code> as the hostname and the broker's native port (5672 for AMQP). No code changes needed &mdash; the proxy is invisible to your application.</p>
+  <p>When you add a BROKER item, Dokkimi deploys a <strong>broker-proxy</strong> sidecar alongside the broker container. The proxy sits between your services and the broker, transparently relaying all wire protocol traffic. It inspects produce/publish and consume/deliver operations to capture message metadata and bodies, which become available as <code>$.messageLogs</code> in your test assertions.</p>
+  <p>Your services connect to the broker using the item's <code>name</code> as the hostname and the broker's native port (5672 for AMQP, 9092 for Kafka). No code changes needed &mdash; the proxy is invisible to your application.</p>
+  <p>Kafka runs in KRaft mode (no ZooKeeper required) as a single-node broker, suitable for integration testing.</p>
 
   <h2>Examples</h2>
 
@@ -61,7 +63,14 @@ import CodeBlock from '../../components/CodeBlock.astro';
   "broker": "amqp"
 }`} lang="json" />
 
-  <h3>Custom image with credentials</h3>
+  <h3>Basic Kafka</h3>
+  <CodeBlock code={`{
+  "type": "BROKER",
+  "name": "kafka",
+  "broker": "kafka"
+}`} lang="json" />
+
+  <h3>Custom image with credentials (AMQP)</h3>
   <CodeBlock code={`{
   "type": "BROKER",
   "name": "rabbitmq",
@@ -79,6 +88,11 @@ type: BROKER
 name: rabbitmq
 broker: amqp`} lang="yaml" />
 
+  <CodeBlock code={`# .dokkimi/shared/kafka.yaml
+type: BROKER
+name: kafka
+broker: kafka`} lang="yaml" />
+
   <h2>Connecting services</h2>
   <p>Use the broker item's <code>name</code> as the hostname in your service's environment variables:</p>
   <CodeBlock code={`{
@@ -92,6 +106,17 @@ broker: amqp`} lang="yaml" />
   ]
 }`} lang="json" />
 
+  <CodeBlock code={`{
+  "type": "SERVICE",
+  "name": "event-processor",
+  "image": "event-processor:latest",
+  "port": 3000,
+  "healthCheck": "/health",
+  "env": [
+    { "name": "KAFKA_BROKERS", "value": "kafka:9092" }
+  ]
+}`} lang="json" />
+
   <h2>Asserting on message logs</h2>
   <p>Captured messages are available via <code>$.messageLogs</code> in wait step assertions. Each entry contains:</p>
   <table>
@@ -100,15 +125,29 @@ broker: amqp`} lang="yaml" />
     </thead>
     <tbody>
       <tr><td><code>broker</code></td><td>Broker item name</td></tr>
-      <tr><td><code>brokerType</code></td><td>Protocol type (e.g. <code>"amqp"</code>)</td></tr>
-      <tr><td><code>operation</code></td><td><code>"publish"</code> or <code>"deliver"</code></td></tr>
+      <tr><td><code>brokerType</code></td><td>Protocol type (<code>"amqp"</code> or <code>"kafka"</code>)</td></tr>
+      <tr><td><code>operation</code></td><td><code>"publish"</code> / <code>"deliver"</code> (AMQP) or <code>"produce"</code> / <code>"consume"</code> (Kafka)</td></tr>
       <tr><td><code>body</code></td><td>Message body (parsed JSON or raw string)</td></tr>
       <tr><td><code>timestamp</code></td><td>ISO timestamp</td></tr>
     </tbody>
   </table>
-  <p>AMQP messages also include <code>exchange</code> and <code>routingKey</code> fields.</p>
 
-  <h3>Example: verify a publish was logged</h3>
+  <p>Protocol-specific metadata fields are also available at the top level of each entry:</p>
+  <table>
+    <thead>
+      <tr><th>Protocol</th><th>Field</th><th>Description</th></tr>
+    </thead>
+    <tbody>
+      <tr><td rowspan="2">AMQP</td><td><code>exchange</code></td><td>Exchange the message was published to</td></tr>
+      <tr><td><code>routingKey</code></td><td>Routing key used for the message</td></tr>
+      <tr><td rowspan="4">Kafka</td><td><code>topic</code></td><td>Kafka topic</td></tr>
+      <tr><td><code>partition</code></td><td>Partition index</td></tr>
+      <tr><td><code>key</code></td><td>Message key (string or parsed JSON)</td></tr>
+      <tr><td><code>offset</code></td><td>Message offset (consume only)</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Example: verify an AMQP publish</h3>
   <CodeBlock code={`{
   "name": "Verify message was published",
   "action": { "type": "wait", "durationMs": 500 },
@@ -118,6 +157,22 @@ broker: amqp`} lang="yaml" />
         { "count": "$.messageLogs", "operator": "gte", "value": 1 },
         { "path": "$.messageLogs[0].operation", "operator": "eq", "value": "publish" },
         { "path": "$.messageLogs[0].routingKey", "operator": "eq", "value": "order-events" },
+        { "path": "$.messageLogs[0].body.orderId", "operator": "eq", "value": 42 }
+      ]
+    }
+  ]
+}`} lang="json" />
+
+  <h3>Example: verify a Kafka produce</h3>
+  <CodeBlock code={`{
+  "name": "Verify message was produced to Kafka",
+  "action": { "type": "wait", "durationMs": 500 },
+  "assertions": [
+    {
+      "assertions": [
+        { "count": "$.messageLogs", "operator": "gte", "value": 1 },
+        { "path": "$.messageLogs[0].operation", "operator": "eq", "value": "produce" },
+        { "path": "$.messageLogs[0].topic", "operator": "eq", "value": "order-events" },
         { "path": "$.messageLogs[0].body.orderId", "operator": "eq", "value": 42 }
       ]
     }

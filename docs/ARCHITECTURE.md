@@ -199,20 +199,23 @@ All variants log asynchronously via a buffered channel (capacity 1000) and POST 
 
 The broker proxy follows the same sidecar pattern as DB Proxy but for message brokers. It sits between the application and the broker, transparently relaying all wire protocol frames while inspecting specific operations for logging.
 
-Currently one variant:
-
 | Variant | Internal Port | Wire Protocol            | Logged Operations            | Health Check                        |
 | ------- | ------------- | ------------------------ | ---------------------------- | ----------------------------------- |
 | AMQP    | 35672         | AMQP 0-9-1 frame parsing | Basic.Publish, Basic.Deliver | TCP connect to upstream broker port |
+| Kafka   | 39092         | Kafka binary protocol    | Produce, Fetch               | TCP connect to upstream broker port |
 
-The proxy forwards every frame unchanged via raw TCP relay before inspecting it. Only publish and deliver frames are parsed to extract message metadata (exchange, routing key, content type) and body. Message logs are POSTed to both Control Tower (`/logs/message`) and the test agent (`/logs/message`), following the same dual-delivery pattern as HTTP logs.
+The proxy forwards every message unchanged via raw TCP relay before inspecting it. Only produce/publish and deliver/fetch operations are parsed to extract message metadata and body. Message logs are POSTed to both Control Tower (`/logs/message`) and the test agent (`/logs/message`), following the same dual-delivery pattern as HTTP logs.
 
-Protocol-specific metadata (e.g. `exchange`, `routingKey` for AMQP) is stored in a `metadata` JSON column, keeping the schema extensible for future broker protocols (e.g. Kafka).
+Protocol-specific metadata is stored in a `metadata` JSON column:
+
+- AMQP: `exchange`, `routingKey`
+- Kafka: `topic`, `partition`, `key`, `offset` (consume only)
 
 Infrastructure lives in `services/broker-proxy/`:
 
 - `shared/` — config, health checker, message logger (reused across protocols)
 - `amqp/` — AMQP 0-9-1 proxy, protocol parser, connection relay
+- `kafka/` — Kafka binary protocol proxy, request/response parser, produce/fetch interception
 
 ---
 

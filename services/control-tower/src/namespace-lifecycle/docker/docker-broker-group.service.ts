@@ -54,6 +54,11 @@ export class DockerBrokerGroupService {
     if (item.broker.toLowerCase() === 'amqp') {
       brokerEnv.RABBITMQ_NODE_PORT = String(brokerCfg.internalPort);
     }
+    // Kafka: configure listeners on internal port, advertise via proxy port
+    if (item.broker.toLowerCase() === 'kafka') {
+      brokerEnv.KAFKA_LISTENERS = `PLAINTEXT://0.0.0.0:${brokerCfg.internalPort},CONTROLLER://localhost:9093`;
+      brokerEnv.KAFKA_ADVERTISED_LISTENERS = `PLAINTEXT://${containerName}:${brokerCfg.nativePort}`;
+    }
 
     await this.dockerClient.runContainer({
       name: brokerProxyName,
@@ -90,6 +95,8 @@ export class DockerBrokerGroupService {
     switch (brokerType.toLowerCase()) {
       case 'amqp':
         return DOKKIMI_IMAGES.brokerProxyAmqp;
+      case 'kafka':
+        return DOKKIMI_IMAGES.brokerProxyKafka;
       default:
         throw new Error(`Unsupported broker type: ${brokerType}`);
     }

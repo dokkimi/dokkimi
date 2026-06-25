@@ -117,11 +117,24 @@ The `command` field overrides the image's default CMD. MinIO's image ships with 
 
 Your services connect using any S3 SDK with endpoint `http://minio:9000`. You can create buckets and upload files in test steps using MinIO's HTTP API, then verify your service handles the uploaded content correctly.
 
-## Current limitations
+## Message brokers: the BROKER item type
 
-Dokkimi intercepts HTTP traffic and database wire protocols (Postgres, MySQL, MongoDB, Redis). **Pub/sub message brokers like Kafka and RabbitMQ can run as SERVICE items** — they'll boot, pass health checks, and your services can connect to them — **but Dokkimi can't intercept or assert on messages flowing through them.** You can verify that your service called the right HTTP endpoints, but you can't verify what messages were published to a Kafka topic or consumed from a RabbitMQ queue.
+For message brokers like RabbitMQ, Dokkimi has a dedicated BROKER item type. Like DATABASE items get a DB proxy sidecar for query interception, BROKER items get a **broker-proxy sidecar** that transparently intercepts all published and delivered messages — without modifying wire traffic.
 
-## DATABASE vs SERVICE: when to use which
+```yaml
+items:
+  - type: BROKER
+    name: rabbitmq
+    broker: amqp
+```
+
+Your services connect to `rabbitmq:5672` using any AMQP client library, and every message published or delivered flows through the proxy. Captured messages are available as `$.messageLogs` in your test assertions — you can verify the exchange, routing key, and message body.
+
+You _could_ run RabbitMQ as a SERVICE item instead, but you'd lose message interception. Use BROKER when you want to assert on what your services are publishing and consuming, not just that they connected.
+
+See the [Brokers documentation](/docs/brokers) for the full field reference and assertion examples.
+
+## DATABASE vs SERVICE vs BROKER: when to use which
 
 Use DATABASE when you want:
 
@@ -129,14 +142,20 @@ Use DATABASE when you want:
 - **Init script support** — automatic execution of `.sql` or `.js` seed files before tests run
 - **Native connection semantics** — Dokkimi configures the correct ports, users, and passwords automatically
 
+Use BROKER when you want:
+
+- **Message interception and logging** — every published and delivered message is captured by the broker-proxy sidecar
+- **Protocol-aware assertions** — assert on exchange, routing key, message body, and operation type via `$.messageLogs`
+- **Native broker semantics** — Dokkimi configures the correct ports and proxy automatically
+
 Use SERVICE when you want:
 
 - **Any Docker image** — Elasticsearch, MinIO, Meilisearch, or any custom container
 - **HTTP traffic interception** — all HTTP calls to and from the service are captured (same as application services)
 - **Full control** — you configure the image, ports, environment, and health check yourself
 
-Both types get full DNS routing, network isolation, and automatic teardown. The difference is that DATABASE items get the additional DB proxy sidecar for wire-protocol query logging, while SERVICE items get the interceptor sidecar for HTTP traffic logging.
+All three types get full DNS routing, network isolation, and automatic teardown. DATABASE items get a DB proxy sidecar for wire-protocol query logging, BROKER items get a broker-proxy sidecar for message interception, and SERVICE items get the interceptor sidecar for HTTP traffic logging.
 
 ## The broader point
 
-When people ask "does Dokkimi support Elasticsearch?" the answer is yes — the same way it supports any Docker container. The four native database types get extra capabilities (query interception), but the SERVICE item is deliberately general-purpose. If your architecture includes infrastructure beyond Postgres and Redis, it belongs in your test environment, not behind a mock.
+When people ask "does Dokkimi support Elasticsearch?" or "does Dokkimi support RabbitMQ?" the answer is yes. Databases get query interception, brokers get message interception, and the SERVICE item handles everything else with HTTP traffic logging. If your architecture includes infrastructure beyond Postgres and Redis, it belongs in your test environment, not behind a mock.

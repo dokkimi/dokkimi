@@ -1,0 +1,4 @@
+type: BROKER
+name: kafka
+description: Shared Kafka broker — reference with $ref from definitions
+broker: kafka

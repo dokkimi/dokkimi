@@ -289,7 +289,7 @@
         "broker": {
           "type": "string",
           "description": "Broker protocol type.",
-          "enum": ["amqp"]
+          "enum": ["amqp", "kafka"]
         },
         "version": {
           "type": "string",

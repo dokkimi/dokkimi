@@ -21,6 +21,7 @@ services=(
     "db-proxy/mongo"
     "db-proxy/redis"
     "broker-proxy/amqp"
+    "broker-proxy/kafka"
 )
 
 # Build each service

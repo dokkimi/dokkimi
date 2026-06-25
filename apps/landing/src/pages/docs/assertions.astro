@@ -46,7 +46,7 @@ import CodeBlock from '../../components/CodeBlock.astro';
       <tr><th>Field</th><th>Type</th><th>Required</th><th>Description</th></tr>
     </thead>
     <tbody>
-      <tr><td><code>path</code></td><td>string</td><td>Yes</td><td>Data source to query: <code>$.traffic</code> for HTTP traffic, <code>$.consoleLogs</code> for console output</td></tr>
+      <tr><td><code>path</code></td><td>string</td><td>Yes</td><td>Data source to query: <code>$.traffic</code> for HTTP traffic, <code>$.consoleLogs</code> for console output, <code>$.messageLogs</code> for broker messages, <code>$.dbLogs</code> for database queries</td></tr>
       <tr><td><code>where</code></td><td>array</td><td>No</td><td>Filter entries. Each clause uses <code>$$.</code> prefix to reference fields on the matched entry</td></tr>
       <tr><td><code>count</code></td><td>integer or object</td><td>No</td><td>Assert how many entries match. An integer asserts an exact count. An object <code>&#123; "operator": "gte", "value": 1 &#125;</code> supports range operators (<code>eq</code>, <code>gt</code>, <code>gte</code>, <code>lt</code>, <code>lte</code>). If omitted, at least one match is expected.</td></tr>
     </tbody>
@@ -141,6 +141,42 @@ import CodeBlock from '../../components/CodeBlock.astro';
       <tr><td><code>$$.service</code></td><td>string</td><td>Service name that emitted the log</td></tr>
       <tr><td><code>$$.level</code></td><td>enum</td><td>Log level: <code>INFO</code>, <code>WARN</code>, <code>ERROR</code>, <code>DEBUG</code></td></tr>
       <tr><td><code>$$.message</code></td><td>string</td><td>Log message content</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Message log block</h2>
+  <p>Asserts on broker messages (AMQP or Kafka) captured during the step. Uses <code>match</code> with <code>path: "$.messageLogs"</code>:</p>
+  <CodeBlock code={`{
+  "match": {
+    "path": "$.messageLogs",
+    "where": [
+      { "path": "$$.operation", "operator": "eq", "value": "produce" },
+      { "path": "$$.brokerType", "operator": "eq", "value": "kafka" },
+      { "path": "$$.topic", "operator": "eq", "value": "order-events" }
+    ],
+    "count": 1
+  },
+  "assertions": [
+    { "path": "$.match.body.orderId", "operator": "eq", "value": 42 }
+  ]
+}`} lang="json" />
+
+  <h3>Message log where fields</h3>
+  <table>
+    <thead>
+      <tr><th>Path</th><th>Type</th><th>Description</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>$$.broker</code></td><td>string</td><td>Broker item name</td></tr>
+      <tr><td><code>$$.brokerType</code></td><td>enum</td><td><code>"amqp"</code> or <code>"kafka"</code></td></tr>
+      <tr><td><code>$$.operation</code></td><td>enum</td><td><code>"publish"</code> / <code>"deliver"</code> (AMQP) or <code>"produce"</code> / <code>"consume"</code> (Kafka)</td></tr>
+      <tr><td><code>$$.body</code></td><td>any</td><td>Message body (parsed JSON or raw string)</td></tr>
+      <tr><td><code>$$.exchange</code></td><td>string</td><td>AMQP exchange name</td></tr>
+      <tr><td><code>$$.routingKey</code></td><td>string</td><td>AMQP routing key</td></tr>
+      <tr><td><code>$$.topic</code></td><td>string</td><td>Kafka topic</td></tr>
+      <tr><td><code>$$.partition</code></td><td>integer</td><td>Kafka partition index</td></tr>
+      <tr><td><code>$$.key</code></td><td>string/object</td><td>Kafka message key</td></tr>
+      <tr><td><code>$$.offset</code></td><td>integer</td><td>Kafka message offset (consume only)</td></tr>
     </tbody>
   </table>
 

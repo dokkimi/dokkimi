@@ -21,7 +21,7 @@ export const VALID_DATABASES = [
   'redis',
 ] as const;
 
-export const VALID_BROKERS = ['amqp'] as const;
+export const VALID_BROKERS = ['amqp', 'kafka'] as const;
 
 export const VALID_HTTP_METHODS = [
   'GET',
