@@ -6,6 +6,7 @@
     { "$ref": "#/definitions/RefFragment" },
     { "$ref": "#/definitions/ServiceItem" },
     { "$ref": "#/definitions/DatabaseItem" },
+    { "$ref": "#/definitions/BrokerItem" },
     { "$ref": "#/definitions/MockItem" },
     { "$ref": "#/definitions/HttpRequestItem" },
     { "$ref": "#/definitions/DbQueryItem" },
@@ -92,6 +93,7 @@
         { "$ref": "#/definitions/RefItem" },
         { "$ref": "#/definitions/ServiceItem" },
         { "$ref": "#/definitions/DatabaseItem" },
+        { "$ref": "#/definitions/BrokerItem" },
         { "$ref": "#/definitions/MockItem" },
         { "$ref": "#/definitions/HttpRequestItem" },
         { "$ref": "#/definitions/DbQueryItem" }
@@ -248,6 +250,51 @@
           "type": "array",
           "description": "Array of init file IDs.",
           "items": { "type": "string" }
+        },
+        "minCpu": {
+          "type": "number",
+          "description": "Minimum CPU cores requested."
+        },
+        "minMemory": {
+          "type": "number",
+          "description": "Minimum memory in MB requested."
+        },
+        "maxCpu": {
+          "type": "number",
+          "description": "Maximum CPU cores allowed."
+        },
+        "maxMemory": {
+          "type": "number",
+          "description": "Maximum memory in MB allowed."
+        }
+      }
+    },
+
+    "BrokerItem": {
+      "type": "object",
+      "required": ["type", "name", "broker"],
+      "additionalProperties": false,
+      "properties": {
+        "type": { "type": "string", "const": "BROKER" },
+        "name": {
+          "type": "string",
+          "description": "Unique name (DNS label). Lowercase alphanumeric with hyphens, 1-63 chars.",
+          "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$",
+          "maxLength": 63
+        },
+        "description": {
+          "type": "string",
+          "description": "Human-readable description."
+        },
+        "broker": {
+          "type": "string",
+          "description": "Broker protocol type.",
+          "enum": ["amqp"]
+        },
+        "version": {
+          "type": "string",
+          "description": "Broker image version tag (e.g. \"3\" for rabbitmq:3). Must start with a digit.",
+          "pattern": "^[0-9][a-zA-Z0-9.\\-]*$"
         },
         "minCpu": {
           "type": "number",

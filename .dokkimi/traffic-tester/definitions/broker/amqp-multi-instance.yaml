@@ -1,0 +1,139 @@
+name: amqp-multi-instance
+description: |
+  Two independent RabbitMQ brokers in the same namespace. Validates
+  that Docker DNS routing, broker-proxy sidecar isolation, and
+  message log attribution all work correctly when multiple AMQP
+  brokers coexist.
+config:
+  timeoutSeconds: 120
+items:
+  - $ref: ../../shared/service-a.yaml
+  - type: BROKER
+    name: events-broker
+    broker: amqp
+    version: '3'
+  - type: BROKER
+    name: commands-broker
+    broker: amqp
+    version: '3'
+tests:
+  - name: Messages route to the correct broker
+    variables:
+      eventsUrl: amqp://guest:guest@events-broker:5672
+      commandsUrl: amqp://guest:guest@commands-broker:5672
+    steps:
+      - name: Publish an event to the events broker
+        action:
+          type: httpRequest
+          method: POST
+          url: service-a/amqp/publish
+          headers:
+            Content-Type: application/json
+          body:
+            connectionString: '{{eventsUrl}}'
+            exchange: ''
+            routingKey: events-q
+            message:
+              type: event
+              name: user.signed-up
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 201
+
+      - name: Publish a command to the commands broker
+        action:
+          type: httpRequest
+          method: POST
+          url: service-a/amqp/publish
+          headers:
+            Content-Type: application/json
+          body:
+            connectionString: '{{commandsUrl}}'
+            exchange: ''
+            routingKey: commands-q
+            message:
+              type: command
+              name: send-welcome-email
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 201
+
+      - name: Consume from events broker only gets events
+        action:
+          type: httpRequest
+          method: POST
+          url: service-a/amqp/consume
+          headers:
+            Content-Type: application/json
+          body:
+            connectionString: '{{eventsUrl}}'
+            queue: events-q
+            count: 1
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 201
+              - path: $.response.body.messages[0].type
+                operator: eq
+                value: event
+
+      - name: Consume from commands broker only gets commands
+        action:
+          type: httpRequest
+          method: POST
+          url: service-a/amqp/consume
+          headers:
+            Content-Type: application/json
+          body:
+            connectionString: '{{commandsUrl}}'
+            queue: commands-q
+            count: 1
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 201
+              - path: $.response.body.messages[0].type
+                operator: eq
+                value: command
+
+  - name: Message logs are attributed to the correct broker
+    variables:
+      eventsUrl: amqp://guest:guest@events-broker:5672
+    steps:
+      - name: Publish to events broker
+        action:
+          type: httpRequest
+          method: POST
+          url: service-a/amqp/publish
+          headers:
+            Content-Type: application/json
+          body:
+            connectionString: '{{eventsUrl}}'
+            exchange: ''
+            routingKey: attribution-q
+            message:
+              check: attribution
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 201
+
+      - name: Verify log broker name is events-broker
+        action:
+          type: wait
+          durationMs: 500
+        assertions:
+          - assertions:
+              - count: $.messageLogs
+                operator: gte
+                value: 1
+              - path: $.messageLogs[0].broker
+                operator: eq
+                value: events-broker

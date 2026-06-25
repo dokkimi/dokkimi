@@ -4,6 +4,7 @@ import { StorageService } from './storage.service';
 import { HttpLogProcessorService } from './processors/http-log-processor.service';
 import { ConsoleLogProcessorService } from './processors/console-log-processor.service';
 import { DatabaseLogProcessorService } from './processors/database-log-processor.service';
+import { MessageLogProcessorService } from './processors/message-log-processor.service';
 import { TestExecutionLogProcessorService } from './processors/test-execution-log-processor.service';
 import { TestValidationLogProcessorService } from './processors/test-validation-log-processor.service';
 import { UiTimelineService } from './ui-timeline.service';
@@ -19,6 +20,7 @@ import { PrismaModule } from '../prisma/prisma.module';
     HttpLogProcessorService,
     ConsoleLogProcessorService,
     DatabaseLogProcessorService,
+    MessageLogProcessorService,
     TestExecutionLogProcessorService,
     TestValidationLogProcessorService,
     UiTimelineService,

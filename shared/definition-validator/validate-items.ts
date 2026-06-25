@@ -5,6 +5,7 @@ import {
   DESCRIPTION_MAX_LENGTH,
   VALID_ITEM_TYPES,
   VALID_DATABASES,
+  VALID_BROKERS,
   VALID_HTTP_METHODS,
   VALID_MOCK_METHODS,
   VALID_REQUEST_PROTOCOLS,
@@ -156,6 +157,34 @@ function validateDatabaseItem(
       for (const fp of item.initFilePaths) {
         validateInitFile(fp as string, label, sourceFile, r, fs);
       }
+    }
+  }
+}
+
+const BROKER_VERSION_RE = /^\d[a-zA-Z0-9.-]*$/;
+
+function validateBrokerItem(
+  item: Record<string, unknown>,
+  label: string,
+  r: ValidationResult,
+): void {
+  if (
+    !item.broker ||
+    !VALID_BROKERS.includes(item.broker as (typeof VALID_BROKERS)[number])
+  ) {
+    err(
+      r,
+      `${label}: BROKER requires "broker" as one of: ${VALID_BROKERS.join(', ')}`,
+    );
+  }
+  if (item.version !== undefined) {
+    if (typeof item.version !== 'string' || item.version.length === 0) {
+      err(r, `${label}: "version" must be a non-empty string`);
+    } else if (!BROKER_VERSION_RE.test(item.version)) {
+      err(
+        r,
+        `${label}: "version" must start with a digit and contain only alphanumeric characters, dots, and hyphens (e.g. "3", "3.13"; got "${item.version}")`,
+      );
     }
   }
 }
@@ -346,6 +375,9 @@ export function validateItem(
       break;
     case 'DATABASE':
       validateDatabaseItem(item, label, sourceFile, r, fs);
+      break;
+    case 'BROKER':
+      validateBrokerItem(item, label, r);
       break;
     case 'MOCK':
       validateMockItem(item, label, r);

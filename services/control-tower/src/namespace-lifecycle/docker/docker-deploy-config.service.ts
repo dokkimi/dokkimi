@@ -102,7 +102,7 @@ export class DockerDeployConfigService {
 
   buildDnsmasqConfig(
     dockerDnsIP: string,
-    databaseNames: string[],
+    directDnsNames: string[],
     interceptorIP: string,
   ): string {
     const config = getConfig();
@@ -111,7 +111,7 @@ export class DockerDeployConfigService {
 
     lines.push(`listen-address=${dnsNameserver}`);
 
-    for (const dbName of databaseNames) {
+    for (const dbName of directDnsNames) {
       lines.push(`server=/${dbName}/${dockerDnsIP}`);
     }
 

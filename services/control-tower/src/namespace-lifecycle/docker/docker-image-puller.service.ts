@@ -1,8 +1,10 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { DockerClientService } from './docker-client.service';
 import { DockerDatabaseGroupService } from './docker-database-group.service';
+import { DockerBrokerGroupService } from './docker-broker-group.service';
 import { DockerRegistryService } from './docker-registry.service';
 import { DatabaseConfigService } from '../builders/database-config.service';
+import { BrokerConfigService } from '../builders/broker-config.service';
 import {
   DOKKIMI_IMAGES,
   resolveBrowserImage,
@@ -17,6 +19,8 @@ export class DockerImagePullerService {
     private readonly dockerClient: DockerClientService,
     private readonly databaseConfig: DatabaseConfigService,
     private readonly databaseGroup: DockerDatabaseGroupService,
+    private readonly brokerConfig: BrokerConfigService,
+    private readonly brokerGroup: DockerBrokerGroupService,
     private readonly registryService: DockerRegistryService,
   ) {}
 
@@ -35,6 +39,9 @@ export class DockerImagePullerService {
     for (const item of ctx.definition.items) {
       if (item.type === 'DATABASE' && item.database) {
         infraImages.add(this.databaseGroup.getDbProxyImage(item.database));
+      }
+      if (item.type === 'BROKER' && item.broker) {
+        infraImages.add(this.brokerGroup.getBrokerProxyImage(item.broker));
       }
     }
 
@@ -70,6 +77,21 @@ export class DockerImagePullerService {
       if (!dbImages.has(dbConfig.image)) {
         dbImages.add(dbConfig.image);
         pulls.push(this.dockerClient.pullImage(dbConfig.image));
+      }
+    }
+
+    const brokerImages = new Set<string>();
+    for (const item of ctx.definition.items) {
+      if (item.type !== 'BROKER' || !item.broker) {
+        continue;
+      }
+      const bCfg = this.brokerConfig.getConfig(
+        item.broker,
+        item.version ?? undefined,
+      );
+      if (!brokerImages.has(bCfg.image)) {
+        brokerImages.add(bCfg.image);
+        pulls.push(this.dockerClient.pullImage(bCfg.image));
       }
     }
 

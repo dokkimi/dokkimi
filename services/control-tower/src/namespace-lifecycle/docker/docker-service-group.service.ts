@@ -124,7 +124,7 @@ export class DockerServiceGroupService {
     dockerDnsIP: string,
     configPaths: InstanceConfigPaths,
     caBundlePaths: CaBundlePaths,
-    databaseNames: string[],
+    directDnsNames: string[],
     testAgentIP?: string,
   ): Promise<{ userContainerId: string | null; interceptorName: string }> {
     if (!item.image) {
@@ -178,7 +178,7 @@ export class DockerServiceGroupService {
 
     const dnsmasqConf = this.deployConfig.buildDnsmasqConfig(
       dockerDnsIP,
-      databaseNames,
+      directDnsNames,
       interceptorIP,
     );
     const dnsmasqConfPath = this.dockerConfig.writeDnsmasqConfig(
@@ -275,7 +275,7 @@ export class DockerServiceGroupService {
     dockerDnsIP: string,
     configPaths: InstanceConfigPaths,
     caBundlePaths: CaBundlePaths,
-    databaseNames: string[],
+    directDnsNames: string[],
     instanceItemId: string,
     browser?: BrowserConfig,
   ): Promise<void> {
@@ -326,7 +326,7 @@ export class DockerServiceGroupService {
 
     const dnsmasqConf = this.deployConfig.buildDnsmasqConfig(
       dockerDnsIP,
-      databaseNames,
+      directDnsNames,
       interceptorIP,
     );
     const dnsmasqConfPath = this.dockerConfig.writeDnsmasqConfig(

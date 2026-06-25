@@ -95,7 +95,7 @@ func (e *TestExecutor) executeStepAt(ctx context.Context, fs flatStep) (StepExec
 		}
 
 		if e.stepValidator != nil && (len(iterStep.Assertions) > 0 || len(iterStep.Extract) > 0) {
-			results, passed := e.stepValidator.ValidateStepWithRetry(iterStep, iterExec, resp)
+			results, passed := e.stepValidator.ValidateStepWithRetry(iterStep, iterExec, resp, false)
 			if e.validationReporter != nil {
 				e.validationReporter.ReportStepResultsAsync(e.instanceID, si, results, passed)
 			}
@@ -160,7 +160,7 @@ func (e *TestExecutor) executeStepOnce(ctx context.Context, fs flatStep) (StepEx
 
 	// Inline validation: try immediately, retry if logs haven't arrived yet
 	if e.stepValidator != nil && (len(fs.step.Assertions) > 0 || len(fs.step.Extract) > 0) {
-		results, passed := e.stepValidator.ValidateStepWithRetry(fs.step, stepExec, resp)
+		results, passed := e.stepValidator.ValidateStepWithRetry(fs.step, stepExec, resp, fs.nextIsWait)
 
 		if e.validationReporter != nil {
 			e.validationReporter.ReportStepResultsAsync(e.instanceID, si, results, passed)

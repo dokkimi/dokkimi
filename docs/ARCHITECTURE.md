@@ -38,11 +38,12 @@ CT's internal feature modules:
 
 ### Go (run inside Docker containers as sidecars)
 
-| Service         | Responsibility                                                                                                                                                                                                         |
-| --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Interceptor** | HTTP traffic interception, mock responses, log publishing to Control Tower. Two variants: shared (external traffic) and sidecar (service-to-service)                                                                   |
-| **Test Agent**  | Reads test config from bind-mounted config file, executes test steps (HTTP, DB, UI, wait), validates assertions inline against in-memory logs, reports results to Control Tower, POSTs `/test-complete` when done      |
-| **DB Proxy**    | Wire protocol proxy sidecar for databases. Transparent TCP proxy that parses each database's native wire protocol to extract and log queries without modifying traffic. Variants for PostgreSQL, MySQL, MongoDB, Redis |
+| Service          | Responsibility                                                                                                                                                                                                                   |
+| ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Interceptor**  | HTTP traffic interception, mock responses, log publishing to Control Tower. Two variants: shared (external traffic) and sidecar (service-to-service)                                                                             |
+| **Test Agent**   | Reads test config from bind-mounted config file, executes test steps (HTTP, DB, UI, wait), validates assertions inline against in-memory logs, reports results to Control Tower, POSTs `/test-complete` when done                |
+| **DB Proxy**     | Wire protocol proxy sidecar for databases. Transparent TCP proxy that parses each database's native wire protocol to extract and log queries without modifying traffic. Variants for PostgreSQL, MySQL, MongoDB, Redis           |
+| **Broker Proxy** | Wire protocol proxy sidecar for message brokers. Transparent TCP proxy that relays all frames unchanged while inspecting publish/deliver operations to log message metadata and bodies. Currently supports AMQP 0-9-1 (RabbitMQ) |
 
 ### Applications
 
@@ -95,16 +96,17 @@ User runs: dokkimi run [target]
 │       via POST /logs/test-validation      │
 │    6. POSTs /test-complete to CT          │
 │                                           │
-│  Interceptors → POST /logs/http → TA + CT │
-│  Docker API  → GELF UDP → Test Agent      │
-│              → console log streaming → CT │
-│  DB Proxy    → POST /logs/database → CT   │
+│  Interceptors  → POST /logs/http → TA + CT  │
+│  Docker API   → GELF UDP → Test Agent       │
+│               → console log streaming → CT  │
+│  DB Proxy     → POST /logs/database → CT    │
+│  Broker Proxy → POST /logs/message → TA + CT│
 └───────────────┬───────────────────────────┘
                 │
                 ▼
 ┌─ Control Tower: log-processing module ────┐
-│ 1. Receives HTTP/console/DB/test-exec     │
-│    logs on /logs/*                        │
+│ 1. Receives HTTP/console/DB/message/      │
+│    test-exec logs on /logs/*              │
 │ 2. Writes to database                     │
 └───────────────┬───────────────────────────┘
                 │
@@ -155,6 +157,10 @@ dokkimi-{run-id} (Docker network)
 │   ├── db-proxy (primary container, network alias)
 │   └── postgres (joins db-proxy's network namespace)
 │
+├── rabbitmq group (shared network namespace)
+│   ├── broker-proxy (primary container, network alias)
+│   └── rabbitmq (joins broker-proxy's network namespace)
+│
 ├── test-agent (standalone container on network)
 │   └── test-agent (executes test steps)
 │
@@ -189,13 +195,32 @@ Each variant is a standalone Go binary that shares infrastructure from `services
 
 All variants log asynchronously via a buffered channel (capacity 1000) and POST each entry to Control Tower's `/logs/database` endpoint.
 
+### Broker Proxy
+
+The broker proxy follows the same sidecar pattern as DB Proxy but for message brokers. It sits between the application and the broker, transparently relaying all wire protocol frames while inspecting specific operations for logging.
+
+Currently one variant:
+
+| Variant | Internal Port | Wire Protocol            | Logged Operations            | Health Check                        |
+| ------- | ------------- | ------------------------ | ---------------------------- | ----------------------------------- |
+| AMQP    | 35672         | AMQP 0-9-1 frame parsing | Basic.Publish, Basic.Deliver | TCP connect to upstream broker port |
+
+The proxy forwards every frame unchanged via raw TCP relay before inspecting it. Only publish and deliver frames are parsed to extract message metadata (exchange, routing key, content type) and body. Message logs are POSTed to both Control Tower (`/logs/message`) and the test agent (`/logs/message`), following the same dual-delivery pattern as HTTP logs.
+
+Protocol-specific metadata (e.g. `exchange`, `routingKey` for AMQP) is stored in a `metadata` JSON column, keeping the schema extensible for future broker protocols (e.g. Kafka).
+
+Infrastructure lives in `services/broker-proxy/`:
+
+- `shared/` — config, health checker, message logger (reused across protocols)
+- `amqp/` — AMQP 0-9-1 proxy, protocol parser, connection relay
+
 ---
 
 ## Database
 
 SQLite, single file at `~/.dokkimi/dokkimi.db`. A PostgreSQL Prisma schema also exists for when Control Tower runs inside a Docker image (tested by Dokkimi's own definitions), but normal usage is always SQLite.
 
-Log ingestion is HTTP-only — interceptors and DB Proxy POST to Control Tower. Console logs are collected via Docker API log streaming.
+Log ingestion is HTTP-only — interceptors, DB Proxy, and Broker Proxy POST to Control Tower. Console logs are collected via Docker API log streaming.
 
 ---
 

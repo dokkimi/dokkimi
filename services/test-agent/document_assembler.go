@@ -253,6 +253,7 @@ func AssembleRootContext(
 	stepExec StepExecution,
 	httpLogs []HttpLogMessage,
 	dbLogs []DatabaseLogMessage,
+	msgLogs []MessageLogMessage,
 	consoleLogs []ConsoleLogMessage,
 	varCtx *VariableContext,
 	stepResp map[string]interface{},
@@ -260,8 +261,9 @@ func AssembleRootContext(
 	traffic, httpTimeline := assembleTrafficList(httpLogs, stepExec)
 	consoleLogList, consoleTimeline := assembleConsoleLogList(consoleLogs, stepExec)
 	dbLogList, dbTimeline := assembleDbLogList(dbLogs, stepExec)
+	msgLogList, msgTimeline := assembleMessageLogList(msgLogs, stepExec)
 
-	timeline := mergeTimeline(httpTimeline, consoleTimeline, dbTimeline)
+	timeline := mergeTimeline(httpTimeline, consoleTimeline, dbTimeline, msgTimeline)
 	annotateTimelineIndices(traffic, timeline)
 
 	rootCtx := map[string]interface{}{
@@ -269,6 +271,7 @@ func AssembleRootContext(
 		"traffic":     traffic,
 		"consoleLogs": consoleLogList,
 		"dbLogs":      dbLogList,
+		"messageLogs": msgLogList,
 		"timeline":    timeline,
 	}
 

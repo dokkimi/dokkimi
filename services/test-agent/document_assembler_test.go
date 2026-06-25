@@ -193,7 +193,7 @@ func TestAssembleRootContext(t *testing.T) {
 		varCtx := NewVariableContext()
 		varCtx.Set("foo", "bar")
 		step := TestStep{Action: StepAction{Type: "httpRequest", Method: "GET", URL: "api/items"}}
-		doc, _ := AssembleRootContext(step, stepExec, httpLogs, nil, nil, varCtx, nil)
+		doc, _ := AssembleRootContext(step, stepExec, httpLogs, nil, nil, nil, varCtx, nil)
 		resp, ok := doc["response"].(map[string]interface{})
 		if !ok {
 			t.Fatal("expected response in doc")
@@ -223,7 +223,7 @@ func TestAssembleRootContext(t *testing.T) {
 		}
 		varCtx := NewVariableContext()
 		step := TestStep{Action: StepAction{Type: "dbQuery", Database: "mydb", Query: "SELECT 1"}}
-		doc, _ := AssembleRootContext(step, stepExec, nil, dbLogs, nil, varCtx, nil)
+		doc, _ := AssembleRootContext(step, stepExec, nil, dbLogs, nil, nil, varCtx, nil)
 		resp := doc["response"].(map[string]interface{})
 		if resp["success"] != true {
 			t.Error("expected success true")
@@ -239,7 +239,7 @@ func TestAssembleRootContext(t *testing.T) {
 	t.Run("assembles root context for wait step", func(t *testing.T) {
 		varCtx := NewVariableContext()
 		step := TestStep{Action: StepAction{Type: "wait"}}
-		doc, _ := AssembleRootContext(step, stepExec, nil, nil, nil, varCtx, nil)
+		doc, _ := AssembleRootContext(step, stepExec, nil, nil, nil, nil, varCtx, nil)
 		resp := doc["response"].(map[string]interface{})
 		if len(resp) != 0 {
 			t.Errorf("expected empty response, got %v", resp)
@@ -257,7 +257,7 @@ func TestAssembleRootContext(t *testing.T) {
 				"pageTitle": "Dashboard",
 			},
 		}
-		doc, _ := AssembleRootContext(step, stepExec, nil, nil, nil, varCtx, stepResp)
+		doc, _ := AssembleRootContext(step, stepExec, nil, nil, nil, nil, varCtx, stepResp)
 		resp, ok := doc["response"].(map[string]interface{})
 		if !ok {
 			t.Fatal("expected response in doc")
@@ -281,7 +281,7 @@ func TestAssembleRootContext(t *testing.T) {
 	t.Run("assembles root context for UI step without stepResp", func(t *testing.T) {
 		varCtx := NewVariableContext()
 		step := TestStep{Action: StepAction{Type: "ui", Target: "frontend"}}
-		doc, _ := AssembleRootContext(step, stepExec, nil, nil, nil, varCtx, nil)
+		doc, _ := AssembleRootContext(step, stepExec, nil, nil, nil, nil, varCtx, nil)
 		resp, ok := doc["response"].(map[string]interface{})
 		if !ok {
 			t.Fatal("expected response in doc")
@@ -311,7 +311,7 @@ func TestAssembleRootContext(t *testing.T) {
 		}
 		varCtx := NewVariableContext()
 		step := TestStep{Action: StepAction{Type: "httpRequest", Method: "GET", URL: "api/items"}}
-		doc, _ := AssembleRootContext(step, stepExec, httpLogs, dbLogs, nil, varCtx, nil)
+		doc, _ := AssembleRootContext(step, stepExec, httpLogs, dbLogs, nil, nil, varCtx, nil)
 		timeline := doc["timeline"].([]interface{})
 		if len(timeline) < 2 {
 			t.Fatalf("expected at least 2 timeline entries, got %d", len(timeline))
@@ -349,7 +349,7 @@ func TestAssembleRootContext(t *testing.T) {
 		}
 		varCtx := NewVariableContext()
 		step := TestStep{Action: StepAction{Type: "httpRequest", Method: "GET", URL: "api/items"}}
-		doc, _ := AssembleRootContext(step, stepExec, httpLogs, nil, nil, varCtx, nil)
+		doc, _ := AssembleRootContext(step, stepExec, httpLogs, nil, nil, nil, varCtx, nil)
 		traffic := doc["traffic"].([]interface{})
 		if len(traffic) == 0 {
 			t.Fatal("expected traffic entries")
@@ -384,7 +384,7 @@ func TestAssembleRootContext(t *testing.T) {
 		}
 		varCtx := NewVariableContext()
 		step := TestStep{Action: StepAction{Type: "httpRequest", Method: "GET", URL: "api/timeout"}}
-		doc, _ := AssembleRootContext(step, stepExec, httpLogs, nil, nil, varCtx, nil)
+		doc, _ := AssembleRootContext(step, stepExec, httpLogs, nil, nil, nil, varCtx, nil)
 		traffic := doc["traffic"].([]interface{})
 		if len(traffic) == 0 {
 			t.Fatal("expected traffic entries")

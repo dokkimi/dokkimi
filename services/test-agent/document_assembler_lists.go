@@ -193,6 +193,50 @@ func assembleDbLogList(dbLogs []DatabaseLogMessage, stepExec StepExecution) ([]i
 	return result, timeline
 }
 
+func assembleMessageLogList(msgLogs []MessageLogMessage, stepExec StepExecution) ([]interface{}, []timelineEntry) {
+	startTime, endTime, err := stepTimeWindow(stepExec)
+	if err != nil {
+		log.Printf("assembleMessageLogList: %v", err)
+		return nil, nil
+	}
+	var result []interface{}
+	var timeline []timelineEntry
+	for _, l := range msgLogs {
+		logTime := parseLogTimestamp(l.Timestamp)
+		if logTime.Before(startTime) || logTime.After(endTime) {
+			continue
+		}
+		entry := map[string]interface{}{
+			"timestamp":  l.Timestamp,
+			"broker":     l.BrokerName,
+			"brokerType": l.BrokerType,
+			"operation":  l.Operation,
+			"body":       nilToEmptyMap(l.Body),
+		}
+		for k, v := range l.Metadata {
+			entry[k] = v
+		}
+		result = append(result, entry)
+		tlEntry := map[string]interface{}{
+			"type":      "message",
+			"timestamp": l.Timestamp,
+			"broker":    l.BrokerName,
+			"operation": l.Operation,
+		}
+		for k, v := range l.Metadata {
+			tlEntry[k] = v
+		}
+		timeline = append(timeline, timelineEntry{
+			timestamp: logTime,
+			entry:     tlEntry,
+		})
+	}
+	if result == nil {
+		result = []interface{}{}
+	}
+	return result, timeline
+}
+
 func mergeTimeline(slices ...[]timelineEntry) []interface{} {
 	var entries []timelineEntry
 	for _, s := range slices {

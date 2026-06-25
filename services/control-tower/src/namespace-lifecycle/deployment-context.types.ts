@@ -66,7 +66,7 @@ export interface DeployableDefinition {
  */
 export interface DefinitionItem {
   name: string;
-  type: 'SERVICE' | 'DATABASE' | 'MOCK';
+  type: 'SERVICE' | 'DATABASE' | 'BROKER' | 'MOCK';
   description?: string | null;
 
   // Service fields
@@ -84,6 +84,9 @@ export interface DefinitionItem {
   localDevPath?: string | null;
   mountPath?: string | null;
   command?: string[] | null;
+
+  // Broker fields
+  broker?: string | null;
 
   // Database fields
   database?: string | null;

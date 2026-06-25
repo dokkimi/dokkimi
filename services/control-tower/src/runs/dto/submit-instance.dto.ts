@@ -25,7 +25,7 @@ class DefinitionItemDto {
   name!: string;
 
   @IsString()
-  type!: 'SERVICE' | 'DATABASE' | 'MOCK';
+  type!: 'SERVICE' | 'DATABASE' | 'BROKER' | 'MOCK';
 
   @IsOptional()
   @IsString()
@@ -88,6 +88,11 @@ class DefinitionItemDto {
   @IsArray()
   @IsString({ each: true })
   command?: string[] | null;
+
+  // Broker fields
+  @IsOptional()
+  @IsString()
+  broker?: string | null;
 
   // Database fields
   @IsOptional()

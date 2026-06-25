@@ -78,7 +78,7 @@ func (e *TestExecutor) ExecuteTests(ctx context.Context, testConfig *TestConfig,
 				iter.SetupFn()
 			}
 
-			for _, fs := range tg.steps {
+			for i, fs := range tg.steps {
 				if fs.globalIndex < startAtStep {
 					continue
 				}
@@ -95,6 +95,9 @@ func (e *TestExecutor) ExecuteTests(ctx context.Context, testConfig *TestConfig,
 
 				fsWithLabel := fs
 				fsWithLabel.loopLabel = iter.Label
+				if i+1 < len(tg.steps) && tg.steps[i+1].step.Action.Type == "wait" {
+					fsWithLabel.nextIsWait = true
+				}
 
 				stepExec, err := e.executeStepAt(ctx, fsWithLabel)
 				stepExecutions = append(stepExecutions, stepExec)

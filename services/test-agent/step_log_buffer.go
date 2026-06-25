@@ -41,6 +41,19 @@ type DatabaseLogMessage struct {
 	Timestamp      string                   `json:"timestamp,omitempty"`
 }
 
+// MessageLogMessage represents a broker message log from broker-proxies.
+type MessageLogMessage struct {
+	InstanceID     string                 `json:"instanceId"`
+	InstanceItemID string                 `json:"instanceItemId,omitempty"`
+	BrokerType     string                 `json:"brokerType"`
+	BrokerName     string                 `json:"brokerName"`
+	Operation      string                 `json:"operation"` // "publish" or "deliver"
+	Body           interface{}            `json:"body"`
+	ContentType    string                 `json:"contentType,omitempty"`
+	Timestamp      string                 `json:"timestamp,omitempty"`
+	Metadata       map[string]interface{} `json:"metadata,omitempty"`
+}
+
 // ConsoleLogMessage represents a console log line from a service container (via GELF).
 type ConsoleLogMessage struct {
 	Service   string  `json:"service"`
@@ -54,6 +67,7 @@ type ConsoleLogMessage struct {
 type StepLogBuffer struct {
 	httpLogs    []HttpLogMessage
 	dbLogs      []DatabaseLogMessage
+	messageLogs []MessageLogMessage
 	consoleLogs []ConsoleLogMessage
 	mu          sync.Mutex
 	lastLogTime time.Time
@@ -80,6 +94,14 @@ func (b *StepLogBuffer) AddDbLog(log DatabaseLogMessage) {
 	b.lastLogTime = time.Now()
 }
 
+// AddMessageLog appends a broker message log to the buffer.
+func (b *StepLogBuffer) AddMessageLog(log MessageLogMessage) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.messageLogs = append(b.messageLogs, log)
+	b.lastLogTime = time.Now()
+}
+
 // AddConsoleLog appends a console log to the buffer.
 func (b *StepLogBuffer) AddConsoleLog(log ConsoleLogMessage) {
 	b.mu.Lock()
@@ -94,42 +116,47 @@ func (b *StepLogBuffer) Flush() {
 	defer b.mu.Unlock()
 	b.httpLogs = nil
 	b.dbLogs = nil
+	b.messageLogs = nil
 	b.consoleLogs = nil
 	b.lastLogTime = time.Time{}
 }
 
 // Snapshot returns copies of the current log buffers.
-func (b *StepLogBuffer) Snapshot() ([]HttpLogMessage, []DatabaseLogMessage, []ConsoleLogMessage) {
+func (b *StepLogBuffer) Snapshot() ([]HttpLogMessage, []DatabaseLogMessage, []MessageLogMessage, []ConsoleLogMessage) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	httpCopy := make([]HttpLogMessage, len(b.httpLogs))
 	copy(httpCopy, b.httpLogs)
 	dbCopy := make([]DatabaseLogMessage, len(b.dbLogs))
 	copy(dbCopy, b.dbLogs)
+	msgCopy := make([]MessageLogMessage, len(b.messageLogs))
+	copy(msgCopy, b.messageLogs)
 	consoleCopy := make([]ConsoleLogMessage, len(b.consoleLogs))
 	copy(consoleCopy, b.consoleLogs)
-	return httpCopy, dbCopy, consoleCopy
+	return httpCopy, dbCopy, msgCopy, consoleCopy
 }
 
 // SnapshotAndFlush atomically snapshots and clears the buffer.
-func (b *StepLogBuffer) SnapshotAndFlush() ([]HttpLogMessage, []DatabaseLogMessage, []ConsoleLogMessage) {
+func (b *StepLogBuffer) SnapshotAndFlush() ([]HttpLogMessage, []DatabaseLogMessage, []MessageLogMessage, []ConsoleLogMessage) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	httpCopy := b.httpLogs
 	dbCopy := b.dbLogs
+	msgCopy := b.messageLogs
 	consoleCopy := b.consoleLogs
 	b.httpLogs = nil
 	b.dbLogs = nil
+	b.messageLogs = nil
 	b.consoleLogs = nil
 	b.lastLogTime = time.Time{}
-	return httpCopy, dbCopy, consoleCopy
+	return httpCopy, dbCopy, msgCopy, consoleCopy
 }
 
 // LogCount returns the total number of logs in the buffer.
 func (b *StepLogBuffer) LogCount() int {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	return len(b.httpLogs) + len(b.dbLogs) + len(b.consoleLogs)
+	return len(b.httpLogs) + len(b.dbLogs) + len(b.messageLogs) + len(b.consoleLogs)
 }
 
 // LastLogTime returns the time the most recent log was added.
