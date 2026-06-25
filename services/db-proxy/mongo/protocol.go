@@ -53,11 +53,12 @@ type commandInfo struct {
 }
 
 type responseInfo struct {
-	ok     float64
-	n      int64
-	errmsg string
-	hasOk  bool
-	data   []map[string]interface{}
+	ok       float64
+	n        int64
+	errmsg   string
+	hasOk    bool
+	data     []map[string]interface{}
+	cursorID int64
 }
 
 // readMessage reads a complete MongoDB wire protocol message from the reader.
@@ -219,10 +220,55 @@ func extractResponseInfo(msg *mongoMessage, cmdName string) responseInfo {
 
 	docLen := int(binary.LittleEndian.Uint32(bsonDoc[0:4]))
 	if docLen >= 5 && docLen <= len(bsonDoc) {
-		info.data = extractResponseData(bsonDoc[:docLen], cmdName)
+		if cmdName == "find" || cmdName == "getMore" {
+			batch, cursorID := extractCursorBatch(bsonDoc[:docLen])
+			info.data = batch
+			info.cursorID = cursorID
+		} else {
+			info.data = extractResponseData(bsonDoc[:docLen], cmdName)
+		}
 	}
 
 	return info
+}
+
+// extractCursorBatch extracts the batch of documents and cursor ID from a cursor
+// response document. Works for both find (firstBatch) and getMore (nextBatch).
+func extractCursorBatch(rawDoc []byte) ([]map[string]interface{}, int64) {
+	var doc bson.D
+	if err := bson.Unmarshal(rawDoc, &doc); err != nil {
+		return nil, 0
+	}
+
+	for _, elem := range doc {
+		if elem.Key == "cursor" {
+			cursorDoc, ok := elem.Value.(bson.D)
+			if !ok {
+				return nil, 0
+			}
+			var results []map[string]interface{}
+			var cursorID int64
+			for _, ce := range cursorDoc {
+				if ce.Key == "firstBatch" || ce.Key == "nextBatch" {
+					arr, ok := ce.Value.(bson.A)
+					if !ok {
+						continue
+					}
+					results = make([]map[string]interface{}, 0, len(arr))
+					for _, item := range arr {
+						if d, ok := item.(bson.D); ok {
+							results = append(results, bsonDToMap(d))
+						}
+					}
+				}
+				if ce.Key == "id" {
+					cursorID = bsonNumToInt64(ce.Value)
+				}
+			}
+			return results, cursorID
+		}
+	}
+	return nil, 0
 }
 
 // extractResponseData parses the response BSON to produce result data matching
@@ -234,29 +280,10 @@ func extractResponseData(rawDoc []byte, cmdName string) []map[string]interface{}
 	}
 
 	switch cmdName {
-	case "find":
-		for _, elem := range doc {
-			if elem.Key == "cursor" {
-				cursorDoc, ok := elem.Value.(bson.D)
-				if !ok {
-					return nil
-				}
-				for _, ce := range cursorDoc {
-					if ce.Key == "firstBatch" {
-						arr, ok := ce.Value.(bson.A)
-						if !ok {
-							return nil
-						}
-						results := make([]map[string]interface{}, 0, len(arr))
-						for _, item := range arr {
-							if d, ok := item.(bson.D); ok {
-								results = append(results, bsonDToMap(d))
-							}
-						}
-						return results
-					}
-				}
-			}
+	case "find", "getMore":
+		batch, _ := extractCursorBatch(rawDoc)
+		if batch != nil {
+			return batch
 		}
 		return []map[string]interface{}{}
 
@@ -853,6 +880,21 @@ func bsonToInterface(v interface{}) interface{} {
 	default:
 		return v
 	}
+}
+
+// extractGetMoreCursorID extracts the cursor ID from a getMore command's BSON body.
+// The wire command looks like: {getMore: NumberLong(cursorID), collection: "...", ...}
+func extractGetMoreCursorID(rawBody []byte) int64 {
+	var doc bson.D
+	if err := bson.Unmarshal(rawBody, &doc); err != nil {
+		return 0
+	}
+	for _, elem := range doc {
+		if elem.Key == "getMore" {
+			return bsonNumToInt64(elem.Value)
+		}
+	}
+	return 0
 }
 
 // isDriverInternalCommand returns true for commands we don't want to log.

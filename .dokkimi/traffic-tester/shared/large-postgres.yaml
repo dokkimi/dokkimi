@@ -1,0 +1,5 @@
+type: DATABASE
+name: large-postgres-db
+description: PostgreSQL with 20000 generated records (~27MB of data)
+database: postgres
+initFilePath: ../init-files/init-large-postgres.sql

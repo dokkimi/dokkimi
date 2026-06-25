@@ -1,0 +1,5 @@
+type: DATABASE
+name: large-mongo-db
+description: MongoDB with 20000 generated documents (~27MB of data)
+database: mongodb
+initFilePath: ../init-files/init-large-mongo.js

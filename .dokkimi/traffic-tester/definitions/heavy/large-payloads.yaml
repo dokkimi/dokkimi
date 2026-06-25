@@ -1,0 +1,158 @@
+name: large-payloads
+description: |
+  Stress test for large data volumes. Seeds 20000 records (~27MB) in both
+  Postgres and MongoDB, then queries full result sets and passes them
+  between services as HTTP payloads. Validates that interceptors, db-proxies,
+  and the CT pipeline handle MB-scale data without truncation or corruption.
+config:
+  timeoutSeconds: 300
+items:
+  - $ref: ../../shared/service-a.yaml
+  - $ref: ../../shared/service-b.json
+  - $ref: ../../shared/large-postgres.yaml
+  - $ref: ../../shared/large-mongo.yaml
+variables:
+  pgConnStr: postgresql://dokkimi:dokkimi@large-postgres-db:5432/dokkimi
+  mongoConnStr: mongodb://dokkimi:dokkimi@large-mongo-db:27017/dokkimi?authSource=admin
+
+tests:
+  - name: Large database result sets
+    steps:
+      - name: Health check services
+        action:
+          type: parallel
+          actions:
+            - type: httpRequest
+              method: GET
+              url: service-a/health
+            - type: httpRequest
+              method: GET
+              url: service-b/health
+
+      - name: Query all Postgres records
+        action:
+          type: dbQuery
+          database: large-postgres-db
+          query: SELECT * FROM large_records ORDER BY id
+        assertions:
+          - assertions:
+              - count: $.response.data
+                operator: eq
+                value: 20000
+              - path: $.response.data[0].record_key
+                operator: eq
+                value: REC-00001
+              - path: $.response.data[19999].record_key
+                operator: eq
+                value: REC-20000
+              - path: $.response.data[0].metadata
+                operator: contains
+                value: priority
+
+      - name: Query all MongoDB records
+        action:
+          type: dbQuery
+          database: large-mongo-db
+          query: '{"operation":"find","collection":"large_records","filter":{}}'
+        assertions:
+          - assertions:
+              - count: $.response.data
+                operator: eq
+                value: 20000
+              - path: $.response.data[0].recordKey
+                operator: eq
+                value: REC-00001
+              - path: $.response.data[0].metadata.dimensions.width
+                operator: exists
+
+      - name: Query filtered Postgres subset
+        action:
+          type: dbQuery
+          database: large-postgres-db
+          query: "SELECT * FROM large_records WHERE category = 'alpha'"
+        assertions:
+          - assertions:
+              - count: $.response.data
+                operator: eq
+                value: 4000
+              - path: $.response.data[0].category
+                operator: eq
+                value: alpha
+
+  - name: Large HTTP payloads between services
+    steps:
+      - name: Service-a queries Postgres and returns full result set
+        action:
+          type: httpRequest
+          method: POST
+          url: service-a/fetch-large-pg
+          body:
+            queries:
+              - databaseType: postgres
+                connectionString: '{{pgConnStr}}'
+                command: SELECT * FROM large_records ORDER BY id
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+              - count: $.response.body.queryResults[0][0].result
+                operator: eq
+                value: 20000
+
+      - name: Service-a queries MongoDB and returns full result set
+        action:
+          type: httpRequest
+          method: POST
+          url: service-a/fetch-large-mongo
+          body:
+            queries:
+              - databaseType: mongodb
+                connectionString: '{{mongoConnStr}}'
+                command: '{"operation":"find","collection":"large_records","filter":{}}'
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+              - count: $.response.body.queryResults[0][0].result
+                operator: eq
+                value: 20000
+
+      - name: Service-a relays large query result to service-b
+        action:
+          type: httpRequest
+          method: POST
+          url: service-a/relay-large
+          body:
+            queries:
+              - databaseType: postgres
+                connectionString: '{{pgConnStr}}'
+                command: "SELECT * FROM large_records WHERE category = 'bravo'"
+            requests:
+              - baseURL: http://service-b:4000
+                method: POST
+                url: /echo-large
+                data:
+                  queries:
+                    - databaseType: postgres
+                      connectionString: '{{pgConnStr}}'
+                      command: 'SELECT count(*) FROM large_records'
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+              - count: $.response.body.queryResults[0][0].result
+                operator: eq
+                value: 4000
+
+      - name: Verify inter-service traffic was captured
+        action:
+          type: wait
+          durationMs: 2000
+        assertions:
+          - assertions:
+              - count: $.traffic
+                operator: gte
+                value: 1
