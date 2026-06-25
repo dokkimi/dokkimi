@@ -215,6 +215,7 @@ jobs:
           docker pull rabbitmq:3
           docker pull apache/kafka:4.3.1
           docker pull elasticsearch:8.17.0
+          docker pull minio/minio:RELEASE.2025-09-07T16-13-09Z
 
       - name: Run demo-oauth-flow tests
         timeout-minutes: 10

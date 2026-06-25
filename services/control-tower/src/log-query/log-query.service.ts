@@ -139,6 +139,34 @@ export class LogQueryService {
   }
 
   /**
+   * Gets message logs (broker produce/consume), optionally filtered by instanceId
+   */
+  async getMessageLogs(
+    instanceId?: string,
+    limit: number = 500,
+    offset: number = 0,
+  ) {
+    const where = instanceId ? { instanceId } : {};
+
+    const [logs, total] = await Promise.all([
+      this.prisma.messageLog.findMany({
+        where,
+        orderBy: { timestamp: 'desc' },
+        take: limit,
+        skip: offset,
+      }),
+      this.prisma.messageLog.count({ where }),
+    ]);
+
+    return {
+      logs,
+      total,
+      limit,
+      offset,
+    };
+  }
+
+  /**
    * Gets assertion results for a specific instance
    */
   async getAssertionResults(instanceId: string) {

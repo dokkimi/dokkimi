@@ -1,0 +1,5 @@
+type: DATABASE
+name: mongo-db
+description: MongoDB with heavy seed data — products, customers, events collections
+database: mongodb
+initFilePath: ../init-files/init-heavy-mongo.js

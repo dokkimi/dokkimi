@@ -157,6 +157,24 @@ export interface TestExecutionLogsResponse {
   total: number;
 }
 
+export interface MessageLog {
+  id: string;
+  instanceId: string | null;
+  instanceItemId: string | null;
+  brokerType: string;
+  brokerName: string;
+  operation: string;
+  body: unknown;
+  contentType: string | null;
+  metadata: Record<string, unknown> | null;
+  timestamp: string;
+}
+
+export interface MessageLogsResponse {
+  logs: MessageLog[];
+  total: number;
+}
+
 // ---------------------------------------------------------------------------
 // UI timeline — returned by GET /logs/ui-timeline/instance/:instanceId
 // ---------------------------------------------------------------------------

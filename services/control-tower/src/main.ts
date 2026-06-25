@@ -24,9 +24,12 @@ async function bootstrap() {
 
   const app = await NestFactory.create(AppModule, {
     logger: ColoredLoggerService.create('CT', '\x1b[36m'),
-    bodyParser: true,
+    bodyParser: false,
     rawBody: false,
   });
+
+  app.use(express.json({ limit: Infinity }));
+  app.use(express.urlencoded({ extended: true, limit: Infinity }));
 
   // Enable CORS for frontend access
   const corsOrigins = dokkimiConfig.cors?.origins || [];
@@ -40,28 +43,6 @@ async function bootstrap() {
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'X-Request-ID'],
   });
-
-  // Request size limits (10MB for JSON)
-  app.use(
-    (
-      req: express.Request,
-      res: express.Response,
-      next: express.NextFunction,
-    ) => {
-      if (req.headers['content-length']) {
-        const contentLength = parseInt(req.headers['content-length'], 10);
-        const maxSize = 10 * 1024 * 1024; // 10MB
-        if (contentLength > maxSize) {
-          return res.status(413).json({
-            statusCode: 413,
-            message: 'Request entity too large',
-            error: 'Payload Too Large',
-          });
-        }
-      }
-      next();
-    },
-  );
 
   // Request ID middleware for traceability
   app.use(

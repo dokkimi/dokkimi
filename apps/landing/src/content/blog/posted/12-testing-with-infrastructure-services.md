@@ -102,7 +102,7 @@ MinIO runs an S3-compatible API with a built-in health endpoint:
 items:
   - type: SERVICE
     name: minio
-    image: minio/minio:latest
+    image: minio/minio:RELEASE.2025-09-07T16-13-09Z
     port: 9000
     healthCheck: /minio/health/live
     command: ['server', '/data']

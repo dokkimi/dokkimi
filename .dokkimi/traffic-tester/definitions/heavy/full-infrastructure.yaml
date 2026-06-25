@@ -1,0 +1,651 @@
+name: full-infrastructure
+description: |
+  Heaviest possible definition — exercises every supported infrastructure type in
+  a single test environment: 3 services, 4 database types (Postgres, MySQL, MongoDB, Redis),
+  both broker types (Kafka, RabbitMQ), and Elasticsearch. 12 items total.
+  Validates that Dokkimi can orchestrate a large container fleet and that cross-cutting
+  operations work correctly when all infrastructure is present.
+config:
+  timeoutSeconds: 240
+items:
+  - $ref: ../../shared/service-a.yaml
+  - $ref: ../../shared/service-b.json
+  - $ref: ../../shared/service-c.yaml
+  - $ref: ../../shared/heavy-postgres.yaml
+  - $ref: ../../shared/heavy-mysql.yaml
+  - $ref: ../../shared/heavy-mongo.yaml
+  - $ref: ../../shared/redis.json
+  - $ref: ../../shared/kafka.yaml
+  - $ref: ../../shared/rabbitmq.yaml
+  - $ref: ../../shared/elasticsearch.yaml
+variables:
+  pgConnStr: postgresql://dokkimi:dokkimi@postgres-db:5432/dokkimi
+  mysqlConnStr: mysql://dokkimi:dokkimi@mysql-db:3306/dokkimi
+  mongoConnStr: mongodb://dokkimi:dokkimi@mongo-db:27017/dokkimi?authSource=admin
+  redisConnStr: redis://:dokkimi@redis-db:6379
+  kafkaBrokers: kafka:9092
+  amqpUrl: amqp://guest:guest@rabbitmq:5672
+
+tests:
+  - name: All infrastructure is healthy
+    steps:
+      - name: Health check all services and Elasticsearch
+        action:
+          type: parallel
+          actions:
+            - type: httpRequest
+              method: GET
+              url: service-a/health
+            - type: httpRequest
+              method: GET
+              url: service-b/health
+            - type: httpRequest
+              method: GET
+              url: service-c/health
+            - type: httpRequest
+              method: GET
+              url: elasticsearch/_cluster/health
+
+      - name: Verify all four databases are responsive
+        action:
+          type: parallel
+          actions:
+            - type: dbQuery
+              database: postgres-db
+              query: SELECT 1 as alive
+            - type: dbQuery
+              database: mysql-db
+              query: SELECT 1 as alive
+            - type: dbQuery
+              database: mongo-db
+              query: '{"operation":"findOne","collection":"products","filter":{"sku":"WDG-001"}}'
+            - type: dbQuery
+              database: redis-db
+              query: PING
+
+  - name: Write to every database type in parallel
+    steps:
+      - name: Parallel writes across all four databases
+        action:
+          type: parallel
+          actions:
+            - type: dbQuery
+              database: postgres-db
+              query: >-
+                INSERT INTO audit_log (entity_type, entity_id, action, actor, details)
+                VALUES ('INFRA_TEST', 'full-infra-001', 'CREATED', 'test-agent',
+                '{"source": "full-infrastructure test", "databases": 4, "brokers": 2}')
+                RETURNING id, entity_type, action
+            - type: dbQuery
+              database: mysql-db
+              query: >-
+                INSERT INTO notifications (recipient, channel, subject, body, status)
+                VALUES ('admin@example.com', 'email', 'Infrastructure Test',
+                'All 12 containers are running', 'sent')
+            - type: dbQuery
+              database: mongo-db
+              query: >-
+                {"operation":"insertOne","collection":"events",
+                "document":{"type":"infra_test","source":"full-infrastructure","containers":12,
+                "databases":["postgres","mysql","mongodb","redis"],
+                "brokers":["kafka","rabbitmq"],"search":"elasticsearch"}}
+            - type: dbQuery
+              database: redis-db
+              query: SET infra-test:status all-healthy
+
+      - name: Read back from all four databases
+        action:
+          type: parallel
+          actions:
+            - type: dbQuery
+              database: postgres-db
+              query: SELECT * FROM audit_log WHERE entity_id = 'full-infra-001'
+            - type: dbQuery
+              database: mysql-db
+              query: SELECT * FROM notifications WHERE subject = 'Infrastructure Test'
+            - type: dbQuery
+              database: mongo-db
+              query: '{"operation":"findOne","collection":"events","filter":{"type":"infra_test"}}'
+            - type: dbQuery
+              database: redis-db
+              query: GET infra-test:status
+
+  - name: Publish to both brokers and verify message logs
+    steps:
+      - name: Publish to Kafka and RabbitMQ in parallel
+        action:
+          type: parallel
+          actions:
+            - type: httpRequest
+              method: POST
+              url: service-a/kafka/produce
+              headers:
+                Content-Type: application/json
+              body:
+                brokers:
+                  - '{{kafkaBrokers}}'
+                topic: infra-events
+                messages:
+                  - key: infra-kafka-001
+                    value:
+                      event: infra.test.kafka
+                      source: service-a
+                      payload:
+                        databases:
+                          - postgres
+                          - mysql
+                          - mongodb
+                          - redis
+                        containers: 12
+                  - key: infra-kafka-002
+                    value:
+                      event: infra.test.kafka.batch
+                      source: service-a
+                      batchId: 1
+            - type: httpRequest
+              method: POST
+              url: service-b/amqp/publish
+              headers:
+                Content-Type: application/json
+              body:
+                connectionString: '{{amqpUrl}}'
+                exchange: infra-exchange
+                exchangeType: direct
+                routingKey: infra.test
+                bindQueue: infra-queue
+                message:
+                  event: infra.test.amqp
+                  source: service-b
+                  payload:
+                    description: Full infrastructure test message
+                    itemCount: 12
+
+      - name: Wait for broker proxies to capture messages
+        action:
+          type: wait
+          durationMs: 5000
+
+      - name: Verify Kafka messages were logged
+        action:
+          type: wait
+          durationMs: 2000
+        assertions:
+          - match:
+              path: $.messageLogs
+              where:
+                - path: $$.topic
+                  operator: eq
+                  value: infra-events
+                - path: $$.operation
+                  operator: eq
+                  value: produce
+              count:
+                operator: eq
+                value: 2
+          - match:
+              path: $.messageLogs
+              where:
+                - path: $$.topic
+                  operator: eq
+                  value: infra-events
+                - path: $$.key
+                  operator: eq
+                  value: infra-kafka-001
+              count: 1
+            assertions:
+              - path: $.match.body.event
+                operator: eq
+                value: infra.test.kafka
+              - count: $.match.body.payload.databases
+                operator: eq
+                value: 4
+
+      - name: Verify RabbitMQ message was logged
+        action:
+          type: wait
+          durationMs: 500
+        assertions:
+          - match:
+              path: $.messageLogs
+              where:
+                - path: $$.brokerType
+                  operator: eq
+                  value: amqp
+                - path: $$.operation
+                  operator: eq
+                  value: publish
+              count:
+                operator: gte
+                value: 1
+            assertions:
+              - path: $.match.body.event
+                operator: eq
+                value: infra.test.amqp
+              - path: $.match.body.source
+                operator: eq
+                value: service-b
+
+      - name: Consume from RabbitMQ to verify round-trip
+        action:
+          type: httpRequest
+          method: POST
+          url: service-c/amqp/consume
+          headers:
+            Content-Type: application/json
+          body:
+            connectionString: '{{amqpUrl}}'
+            queue: infra-queue
+            count: 1
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 201
+              - path: $.response.body.messages[0].event
+                operator: eq
+                value: infra.test.amqp
+
+  - name: Elasticsearch indexing with service-to-ES traffic interception
+    steps:
+      - name: Create an index
+        action:
+          type: httpRequest
+          method: PUT
+          url: elasticsearch/infra-products
+          headers:
+            Content-Type: application/json
+          body:
+            mappings:
+              properties:
+                sku:
+                  type: keyword
+                name:
+                  type: text
+                category:
+                  type: keyword
+                price_cents:
+                  type: integer
+                in_stock:
+                  type: boolean
+                tags:
+                  type: keyword
+                specs:
+                  type: object
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+              - path: $.response.body.acknowledged
+                operator: eq
+                value: true
+
+      - name: Bulk index products from Postgres data via service
+        action:
+          type: parallel
+          actions:
+            - type: httpRequest
+              method: PUT
+              url: elasticsearch/infra-products/_doc/1
+              headers:
+                Content-Type: application/json
+              body:
+                sku: WDG-001
+                name: Standard Widget
+                category: widgets
+                price_cents: 999
+                in_stock: true
+                tags:
+                  - popular
+                  - sale
+                specs:
+                  weight: 150g
+                  material: aluminum
+            - type: httpRequest
+              method: PUT
+              url: elasticsearch/infra-products/_doc/2
+              headers:
+                Content-Type: application/json
+              body:
+                sku: WDG-002
+                name: Premium Widget
+                category: widgets
+                price_cents: 2499
+                in_stock: true
+                tags:
+                  - premium
+                specs:
+                  weight: 200g
+                  material: titanium
+            - type: httpRequest
+              method: PUT
+              url: elasticsearch/infra-products/_doc/3
+              headers:
+                Content-Type: application/json
+              body:
+                sku: GDG-001
+                name: Basic Gadget
+                category: gadgets
+                price_cents: 1999
+                in_stock: true
+                tags:
+                  - new
+                specs:
+                  weight: 300g
+                  material: plastic
+            - type: httpRequest
+              method: PUT
+              url: elasticsearch/infra-products/_doc/4
+              headers:
+                Content-Type: application/json
+              body:
+                sku: GDG-002
+                name: Pro Gadget
+                category: gadgets
+                price_cents: 4999
+                in_stock: true
+                tags:
+                  - premium
+                  - pro
+                specs:
+                  weight: 450g
+                  material: carbon fiber
+            - type: httpRequest
+              method: PUT
+              url: elasticsearch/infra-products/_doc/5
+              headers:
+                Content-Type: application/json
+              body:
+                sku: GDG-003
+                name: Mega Gadget
+                category: gadgets
+                price_cents: 9999
+                in_stock: true
+                tags:
+                  - premium
+                  - limited
+                specs:
+                  weight: 800g
+                  material: titanium alloy
+
+      - name: Refresh index
+        action:
+          type: httpRequest
+          method: POST
+          url: elasticsearch/infra-products/_refresh
+
+      - name: Full-text search
+        action:
+          type: httpRequest
+          method: POST
+          url: elasticsearch/infra-products/_search
+          headers:
+            Content-Type: application/json
+          body:
+            query:
+              bool:
+                must:
+                  - match:
+                      name: widget
+                filter:
+                  - term:
+                      in_stock: true
+            sort:
+              - price_cents: asc
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+              - path: $.response.body.hits.total.value
+                operator: eq
+                value: 2
+              - path: $.response.body.hits.hits[0]._source.sku
+                operator: eq
+                value: WDG-001
+              - path: $.response.body.hits.hits[1]._source.sku
+                operator: eq
+                value: WDG-002
+
+      - name: Aggregation query
+        action:
+          type: httpRequest
+          method: POST
+          url: elasticsearch/infra-products/_search
+          headers:
+            Content-Type: application/json
+          body:
+            size: 0
+            aggs:
+              by_category:
+                terms:
+                  field: category
+              avg_price:
+                avg:
+                  field: price_cents
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+              - path: $.response.body.aggregations.avg_price.value
+                operator: gt
+                value: 0
+
+      - name: Service-a searches ES and we intercept the traffic
+        action:
+          type: httpRequest
+          method: POST
+          url: service-a/search-products
+          headers:
+            Content-Type: application/json
+          body:
+            requests:
+              - baseURL: http://elasticsearch
+                url: /infra-products/_search
+                method: POST
+                headers:
+                  Content-Type: application/json
+                data:
+                  query:
+                    term:
+                      category: gadgets
+                  sort:
+                    - price_cents: desc
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+          - match:
+              path: $.traffic
+              where:
+                - path: $$.origin
+                  operator: eq
+                  value: service-a
+                - path: $$.request.url
+                  operator: contains
+                  value: elasticsearch/infra-products/_search
+              count: 1
+            assertions:
+              - path: $.match.response.status
+                operator: eq
+                value: 200
+              - path: $.match.response.body.hits.total.value
+                operator: eq
+                value: 3
+
+  - name: Cross-database workflow — read from Mongo, write to Postgres, cache in Redis, log to MySQL
+    steps:
+      - name: Read product catalog from MongoDB
+        action:
+          type: dbQuery
+          database: mongo-db
+          query: '{"operation":"find","collection":"products","filter":{"category":"widgets"}}'
+        assertions:
+          - assertions:
+              - path: $.response.success
+                operator: eq
+                value: true
+              - count: $.response.data
+                operator: eq
+                value: 6
+
+      - name: Read customer from MongoDB
+        action:
+          type: dbQuery
+          database: mongo-db
+          query: '{"operation":"findOne","collection":"customers","filter":{"email":"alice@example.com"}}'
+        assertions:
+          - assertions:
+              - path: $.response.success
+                operator: eq
+                value: true
+              - path: $.response.data[0].tier
+                operator: eq
+                value: gold
+              - count: $.response.data[0].addresses
+                operator: eq
+                value: 3
+              - path: $.response.data[0].preferences.currency
+                operator: eq
+                value: USD
+
+      - name: Write order to Postgres based on Mongo data
+        action:
+          type: dbQuery
+          database: postgres-db
+          query: >-
+            INSERT INTO orders (user_id, status, total_cents, currency, shipping_address)
+            VALUES (1, 'cross-db-test', 4997, 'USD',
+            '{"street":"123 Main St","city":"Springfield","source":"mongodb-catalog"}')
+            RETURNING id, status
+        extract:
+          crossDbOrderId: $.response.data[0].id
+        assertions:
+          - assertions:
+              - path: $.response.success
+                operator: eq
+                value: true
+              - path: $.response.data[0].status
+                operator: eq
+                value: cross-db-test
+
+      - name: Cache the order in Redis and log to MySQL in parallel
+        action:
+          type: parallel
+          actions:
+            - type: dbQuery
+              database: redis-db
+              query: SET cross-db:order:{{crossDbOrderId}} cross-db-test
+            - type: dbQuery
+              database: mysql-db
+              query: >-
+                INSERT INTO notifications (recipient, channel, subject, body, status)
+                VALUES ('alice@example.com', 'email', 'Cross-DB Order',
+                'Your cross-database order has been placed', 'queued')
+
+      - name: Verify the cross-database chain
+        action:
+          type: parallel
+          actions:
+            - type: dbQuery
+              database: postgres-db
+              query: SELECT * FROM orders WHERE id = {{crossDbOrderId}}
+            - type: dbQuery
+              database: redis-db
+              query: GET cross-db:order:{{crossDbOrderId}}
+            - type: dbQuery
+              database: mysql-db
+              query: SELECT * FROM notifications WHERE subject = 'Cross-DB Order' ORDER BY id DESC LIMIT 1
+
+  - name: Concurrent service fan-out touching all infrastructure
+    steps:
+      - name: Three services hit different infrastructure in parallel
+        action:
+          type: parallel
+          actions:
+            - type: httpRequest
+              method: POST
+              url: service-a/infra-fanout-a
+              headers:
+                Content-Type: application/json
+              body:
+                queries:
+                  - databaseType: postgres
+                    connectionString: '{{pgConnStr}}'
+                    command: SELECT COUNT(*) as user_count FROM users
+                  - databaseType: redis
+                    connectionString: '{{redisConnStr}}'
+                    command: SET fanout:a:done true
+                response:
+                  value:
+                    service: a
+                    done: true
+            - type: httpRequest
+              method: POST
+              url: service-b/infra-fanout-b
+              headers:
+                Content-Type: application/json
+              body:
+                queries:
+                  - databaseType: mysql
+                    connectionString: '{{mysqlConnStr}}'
+                    command: SELECT COUNT(*) as product_count FROM products
+                  - databaseType: redis
+                    connectionString: '{{redisConnStr}}'
+                    command: SET fanout:b:done true
+                response:
+                  value:
+                    service: b
+                    done: true
+            - type: httpRequest
+              method: POST
+              url: service-c/infra-fanout-c
+              headers:
+                Content-Type: application/json
+              body:
+                queries:
+                  - databaseType: mongodb
+                    connectionString: '{{mongoConnStr}}'
+                    command: '{"operation":"count","collection":"products","filter":{}}'
+                  - databaseType: redis
+                    connectionString: '{{redisConnStr}}'
+                    command: SET fanout:c:done true
+                response:
+                  value:
+                    service: c
+                    done: true
+
+      - name: Verify all three fan-out operations completed via Redis
+        action:
+          type: httpRequest
+          method: POST
+          url: service-a/verify-fanout
+          headers:
+            Content-Type: application/json
+          body:
+            queries:
+              - databaseType: redis
+                connectionString: '{{redisConnStr}}'
+                command: GET fanout:a:done
+              - databaseType: redis
+                connectionString: '{{redisConnStr}}'
+                command: GET fanout:b:done
+              - databaseType: redis
+                connectionString: '{{redisConnStr}}'
+                command: GET fanout:c:done
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+              - path: $.response.body.queryResults[0][0].result
+                operator: eq
+                value: 'true'
+              - path: $.response.body.queryResults[1][0].result
+                operator: eq
+                value: 'true'
+              - path: $.response.body.queryResults[2][0].result
+                operator: eq
+                value: 'true'

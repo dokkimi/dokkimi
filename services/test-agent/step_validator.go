@@ -26,7 +26,7 @@ type StepValidator struct {
 	logBuffer         *StepLogBuffer
 	varCtx            *VariableContext
 	blockCache        resolvedBlocksCache
-	prevStepStartTime string // start time of the preceding step; used by wait steps to widen the message log time window
+	prevStepStartTime string
 }
 
 // NewStepValidator creates a new step validator.
@@ -34,6 +34,15 @@ func NewStepValidator(logBuffer *StepLogBuffer, varCtx *VariableContext) *StepVa
 	return &StepValidator{
 		logBuffer: logBuffer,
 		varCtx:    varCtx,
+	}
+}
+
+// RecordStepTime tracks the start time of a non-wait step so that subsequent
+// wait steps can widen their time window. Called for every step, even those
+// without assertions.
+func (sv *StepValidator) RecordStepTime(step TestStep, stepExec StepExecution) {
+	if step.Action.Type != "wait" {
+		sv.prevStepStartTime = stepExec.StartTime
 	}
 }
 
@@ -46,8 +55,6 @@ func (sv *StepValidator) ValidateStepWithRetry(step TestStep, stepExec StepExecu
 	sv.blockCache = resolvedBlocksCache{}
 	resetLowerKeyCache()
 
-	// For wait steps, widen the step execution window to include the
-	// preceding step so message logs from that step are visible.
 	effectiveExec := stepExec
 	if step.Action.Type == "wait" && sv.prevStepStartTime != "" {
 		effectiveExec.StartTime = sv.prevStepStartTime
@@ -58,7 +65,6 @@ func (sv *StepValidator) ValidateStepWithRetry(step TestStep, stepExec StepExecu
 		if !skipFlush {
 			sv.logBuffer.Flush()
 		}
-		sv.prevStepStartTime = stepExec.StartTime
 		return results, passed
 	}
 
@@ -70,7 +76,6 @@ func (sv *StepValidator) ValidateStepWithRetry(step TestStep, stepExec StepExecu
 			if !skipFlush {
 				sv.logBuffer.Flush()
 			}
-			sv.prevStepStartTime = stepExec.StartTime
 			return results, passed
 		}
 	}
@@ -79,7 +84,6 @@ func (sv *StepValidator) ValidateStepWithRetry(step TestStep, stepExec StepExecu
 	if !skipFlush {
 		sv.logBuffer.Flush()
 	}
-	sv.prevStepStartTime = stepExec.StartTime
 	return results, passed
 }
 

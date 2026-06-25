@@ -1,0 +1,5 @@
+type: DATABASE
+name: postgres-db
+description: PostgreSQL with heavy schema — users, orders, order_items, inventory, audit_log
+database: postgres
+initFilePath: ../init-files/init-heavy-postgres.sql

@@ -94,6 +94,10 @@ func (e *TestExecutor) executeStepAt(ctx context.Context, fs flatStep) (StepExec
 			}
 		}
 
+		if e.stepValidator != nil {
+			e.stepValidator.RecordStepTime(iterStep, iterExec)
+		}
+
 		if e.stepValidator != nil && (len(iterStep.Assertions) > 0 || len(iterStep.Extract) > 0) {
 			results, passed := e.stepValidator.ValidateStepWithRetry(iterStep, iterExec, resp, false)
 			if e.validationReporter != nil {
@@ -156,6 +160,10 @@ func (e *TestExecutor) executeStepOnce(ctx context.Context, fs flatStep) (StepEx
 				fmt.Sprintf("%s extraction failed: %v", label, extractErr), &si, nil)
 			return stepExec, fmt.Errorf("variable extraction failed: %w", extractErr)
 		}
+	}
+
+	if e.stepValidator != nil {
+		e.stepValidator.RecordStepTime(fs.step, stepExec)
 	}
 
 	// Inline validation: try immediately, retry if logs haven't arrived yet
