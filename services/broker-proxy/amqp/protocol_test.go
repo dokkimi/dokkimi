@@ -49,6 +49,21 @@ func TestReadFrame_InvalidEnd(t *testing.T) {
 	}
 }
 
+func TestReadFrame_OversizedFrame(t *testing.T) {
+	var buf bytes.Buffer
+	buf.WriteByte(frameMethod)
+	binary.Write(&buf, binary.BigEndian, uint16(0))
+	binary.Write(&buf, binary.BigEndian, uint32(100*1024*1024+1)) // just over 100MB
+
+	_, _, err := readFrame(&buf)
+	if err == nil {
+		t.Fatal("expected error for oversized frame")
+	}
+	if !bytes.Contains([]byte(err.Error()), []byte("exceeds maximum")) {
+		t.Errorf("expected 'exceeds maximum' in error, got: %v", err)
+	}
+}
+
 func TestParseBasicPublish(t *testing.T) {
 	var args bytes.Buffer
 	binary.Write(&args, binary.BigEndian, uint16(0)) // reserved-1

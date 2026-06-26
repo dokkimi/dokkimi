@@ -255,6 +255,8 @@ export class ConfigMapBuilderService {
     switch (brokerType.toLowerCase()) {
       case 'amqp':
         return 5672;
+      case 'kafka':
+        return 9092;
       default:
         return 5672;
     }

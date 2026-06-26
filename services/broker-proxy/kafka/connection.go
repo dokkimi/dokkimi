@@ -143,10 +143,12 @@ func (c *kafkaConnection) inspectResponse(payload []byte) {
 
 func (c *kafkaConnection) logRecord(operation, topic string, partition int32, offset int64, key, value []byte) {
 	var body interface{}
+	contentType := ""
 	if err := json.Unmarshal(value, &body); err == nil {
-		// valid JSON
+		contentType = "application/json"
 	} else if len(value) > 0 {
 		body = string(value)
+		contentType = "text/plain"
 	}
 
 	metadata := map[string]interface{}{
@@ -171,7 +173,7 @@ func (c *kafkaConnection) logRecord(operation, topic string, partition int32, of
 		BrokerName:     c.cfg.InstanceItemName,
 		Operation:      operation,
 		Body:           body,
-		ContentType:    "application/json",
+		ContentType:    contentType,
 		Timestamp:      time.Now().Format(time.RFC3339Nano),
 		Metadata:       metadata,
 	})

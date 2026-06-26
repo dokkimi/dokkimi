@@ -38,6 +38,7 @@ export interface BrokerProxyEnvVars extends Record<string, string | undefined> {
   CONTROL_TOWER_URL: string;
   NAMESPACE_ITEM_ID?: string;
   TEST_AGENT_URL?: string;
+  HEALTH_CHECK_ENDPOINT?: string;
 }
 
 export interface DbProxyEnvVars extends Record<string, string | undefined> {

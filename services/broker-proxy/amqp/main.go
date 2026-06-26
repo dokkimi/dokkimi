@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"log"
-	"net"
 	"os"
 	"os/signal"
 	"syscall"
@@ -36,16 +35,7 @@ func main() {
 		log.Fatalf("Proxy failed to listen: %v", err)
 	}
 
-	// Health check: TCP dial to the real broker on the internal port
-	healthChecker := shared.NewHealthCheckerWithFunc(cfg, func(ctx context.Context) error {
-		addr := net.JoinHostPort("localhost", cfg.BrokerPort)
-		conn, err := net.DialTimeout("tcp", addr, cfg.CheckTimeout)
-		if err != nil {
-			return err
-		}
-		conn.Close()
-		return nil
-	})
+	healthChecker := shared.NewHealthCheckerWithFunc(cfg, shared.BuildHealthCheckFunc(cfg))
 	healthChecker.Start()
 	defer healthChecker.Stop()
 

@@ -557,6 +557,167 @@ describe('validateItem', () => {
     });
   });
 
+  describe('BROKER', () => {
+    it('validates a valid AMQP broker', () => {
+      const r = makeResult();
+      validateItem(
+        { type: 'BROKER', name: 'rabbit', broker: 'amqp' },
+        0,
+        '/f.json',
+        r,
+        fs,
+      );
+      expect(r.errors).toHaveLength(0);
+    });
+
+    it('validates a valid Kafka broker', () => {
+      const r = makeResult();
+      validateItem(
+        { type: 'BROKER', name: 'kafka', broker: 'kafka' },
+        0,
+        '/f.json',
+        r,
+        fs,
+      );
+      expect(r.errors).toHaveLength(0);
+    });
+
+    it('errors on missing broker type', () => {
+      const r = makeResult();
+      validateItem({ type: 'BROKER', name: 'rabbit' }, 0, '/f.json', r, fs);
+      expect(r.errors.some((e) => e.includes('BROKER requires "broker"'))).toBe(
+        true,
+      );
+    });
+
+    it('errors on invalid broker type', () => {
+      const r = makeResult();
+      validateItem(
+        { type: 'BROKER', name: 'rabbit', broker: 'nats' },
+        0,
+        '/f.json',
+        r,
+        fs,
+      );
+      expect(r.errors.some((e) => e.includes('BROKER requires "broker"'))).toBe(
+        true,
+      );
+    });
+
+    it('errors on non-integer port', () => {
+      const r = makeResult();
+      validateItem(
+        { type: 'BROKER', name: 'rabbit', broker: 'amqp', port: 'banana' },
+        0,
+        '/f.json',
+        r,
+        fs,
+      );
+      expect(r.errors.some((e) => e.includes('port must be an integer'))).toBe(
+        true,
+      );
+    });
+
+    it('accepts valid port', () => {
+      const r = makeResult();
+      validateItem(
+        { type: 'BROKER', name: 'rabbit', broker: 'amqp', port: 5672 },
+        0,
+        '/f.json',
+        r,
+        fs,
+      );
+      expect(r.errors).toHaveLength(0);
+    });
+
+    it('errors on non-string healthCheck', () => {
+      const r = makeResult();
+      validateItem(
+        { type: 'BROKER', name: 'rabbit', broker: 'amqp', healthCheck: 123 },
+        0,
+        '/f.json',
+        r,
+        fs,
+      );
+      expect(
+        r.errors.some((e) => e.includes('"healthCheck" must be a string')),
+      ).toBe(true);
+    });
+
+    it('errors when command is not an array', () => {
+      const r = makeResult();
+      validateItem(
+        {
+          type: 'BROKER',
+          name: 'rabbit',
+          broker: 'amqp',
+          command: 'start',
+        },
+        0,
+        '/f.json',
+        r,
+        fs,
+      );
+      expect(
+        r.errors.some((e) => e.includes('"command" must be an array')),
+      ).toBe(true);
+    });
+
+    it('errors when env is not an array', () => {
+      const r = makeResult();
+      validateItem(
+        { type: 'BROKER', name: 'rabbit', broker: 'amqp', env: 'bad' },
+        0,
+        '/f.json',
+        r,
+        fs,
+      );
+      expect(r.errors.some((e) => e.includes('"env" must be an array'))).toBe(
+        true,
+      );
+    });
+
+    it('errors on malformed env entries', () => {
+      const r = makeResult();
+      validateItem(
+        {
+          type: 'BROKER',
+          name: 'rabbit',
+          broker: 'amqp',
+          env: [{ name: 'A' }],
+        },
+        0,
+        '/f.json',
+        r,
+        fs,
+      );
+      expect(
+        r.errors.some((e) => e.includes('env[0] must have "name" and "value"')),
+      ).toBe(true);
+    });
+
+    it('accepts all optional fields together', () => {
+      const r = makeResult();
+      validateItem(
+        {
+          type: 'BROKER',
+          name: 'rabbit',
+          broker: 'amqp',
+          image: 'rabbitmq:3.13',
+          port: 5672,
+          healthCheck: 'tcp',
+          command: ['rabbitmq-server'],
+          env: [{ name: 'K', value: 'V' }],
+        },
+        0,
+        '/f.json',
+        r,
+        fs,
+      );
+      expect(r.errors).toHaveLength(0);
+    });
+  });
+
   describe('MOCK', () => {
     it('validates a valid mock', () => {
       const r = makeResult();
@@ -717,19 +878,14 @@ describe('validateItem', () => {
 
     it('errors on non-string mockRequestBodyContains', () => {
       const r = makeResult();
-      validateItem(
-        {
-          type: 'MOCK',
-          name: 'mock-llm',
-          mockTarget: 'api.openai.com',
-          mockPath: '/',
-          mockRequestBodyContains: 123,
-        } as any,
-        0,
-        '/f.json',
-        r,
-        fs,
-      );
+      const item = {
+        type: 'MOCK',
+        name: 'mock-llm',
+        mockTarget: 'api.openai.com',
+        mockPath: '/',
+        mockRequestBodyContains: 123,
+      };
+      validateItem(item, 0, '/f.json', r, fs);
       expect(
         r.errors.some((e) =>
           e.includes('mockRequestBodyContains must be a string'),
@@ -761,19 +917,14 @@ describe('validateItem', () => {
 
     it('errors on non-string mockRequestBodyMatches', () => {
       const r = makeResult();
-      validateItem(
-        {
-          type: 'MOCK',
-          name: 'mock-llm',
-          mockTarget: 'api.openai.com',
-          mockPath: '/',
-          mockRequestBodyMatches: 123,
-        } as any,
-        0,
-        '/f.json',
-        r,
-        fs,
-      );
+      const badItem = {
+        type: 'MOCK',
+        name: 'mock-llm',
+        mockTarget: 'api.openai.com',
+        mockPath: '/',
+        mockRequestBodyMatches: 123,
+      };
+      validateItem(badItem, 0, '/f.json', r, fs);
       expect(
         r.errors.some((e) =>
           e.includes('mockRequestBodyMatches must be a string'),

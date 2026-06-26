@@ -296,6 +296,30 @@
           "description": "Broker image version tag (e.g. \"3\" for rabbitmq:3). Must start with a digit.",
           "pattern": "^[0-9][a-zA-Z0-9.\\-]*$"
         },
+        "image": {
+          "type": "string",
+          "description": "Custom Docker image URI (e.g., 'rabbitmq:3.13-management')."
+        },
+        "port": {
+          "type": "integer",
+          "description": "Port the broker listens on inside the container.",
+          "minimum": 1,
+          "maximum": 65535
+        },
+        "healthCheck": {
+          "type": "string",
+          "description": "Health check: HTTP path or 'tcp' for TCP port check."
+        },
+        "command": {
+          "type": "array",
+          "description": "Override the Docker image's default CMD.",
+          "items": { "type": "string" }
+        },
+        "env": {
+          "type": "array",
+          "description": "Environment variables passed to the container.",
+          "items": { "$ref": "#/definitions/EnvVar" }
+        },
         "minCpu": {
           "type": "number",
           "description": "Minimum CPU cores requested."

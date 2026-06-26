@@ -173,6 +173,7 @@ export interface BrokerProxyConfig {
   namespace: string;
   namespaceItemId?: string;
   testAgentUrl?: string;
+  healthCheckEndpoint?: string;
 }
 
 export function buildBrokerProxyEnvVars(
@@ -201,6 +202,7 @@ export function buildBrokerProxyEnvVars(
     CONTROL_TOWER_URL: buildClusterServiceUrl(config.services.controlTower),
     NAMESPACE_ITEM_ID: runtimeConfig.namespaceItemId,
     TEST_AGENT_URL: runtimeConfig.testAgentUrl,
+    HEALTH_CHECK_ENDPOINT: runtimeConfig.healthCheckEndpoint,
   };
 
   return toEnvArray(envVars);

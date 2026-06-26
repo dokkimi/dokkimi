@@ -42,6 +42,11 @@ func readFrame(r io.Reader) (*frame, []byte, error) {
 	channel := binary.BigEndian.Uint16(header[1:3])
 	size := binary.BigEndian.Uint32(header[3:7])
 
+	const maxFrameSize = 100 * 1024 * 1024 // 100 MB
+	if size > maxFrameSize {
+		return nil, nil, fmt.Errorf("frame size %d exceeds maximum %d", size, maxFrameSize)
+	}
+
 	// Read payload + frame-end byte
 	rest := make([]byte, size+1)
 	if _, err := io.ReadFull(r, rest); err != nil {

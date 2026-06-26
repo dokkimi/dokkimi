@@ -63,6 +63,9 @@ func (e *TestExecutor) ExecuteTests(ctx context.Context, testConfig *TestConfig,
 					lastTestIndex = tg.testIndex
 				}
 				e.varCtx.Reset()
+				if e.stepValidator != nil {
+					e.stepValidator.ResetStepTime()
+				}
 				if testConfig.Variables != nil {
 					for name, value := range testConfig.Variables {
 						e.varCtx.Set(name, value)

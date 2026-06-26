@@ -10,15 +10,16 @@ var Version = "dev"
 
 func LoadConfig() (*Config, error) {
 	cfg := &Config{
-		BrokerPort:       os.Getenv("BROKER_PORT"),
-		BrokerType:       os.Getenv("BROKER_TYPE"),
-		InstanceItemName: os.Getenv("INSTANCE_ITEM_NAME"),
-		InstanceID:       os.Getenv("NAMESPACE"),
-		InstanceItemID:   os.Getenv("NAMESPACE_ITEM_ID"),
-		ControlTowerURL:  os.Getenv("CONTROL_TOWER_URL"),
-		TestAgentURL:     os.Getenv("TEST_AGENT_URL"),
-		ProxyPort:        os.Getenv("PROXY_PORT"),
-		CheckTimeout:     5 * time.Second,
+		BrokerPort:          os.Getenv("BROKER_PORT"),
+		BrokerType:          os.Getenv("BROKER_TYPE"),
+		InstanceItemName:    os.Getenv("INSTANCE_ITEM_NAME"),
+		InstanceID:          os.Getenv("NAMESPACE"),
+		InstanceItemID:      os.Getenv("NAMESPACE_ITEM_ID"),
+		ControlTowerURL:     os.Getenv("CONTROL_TOWER_URL"),
+		TestAgentURL:        os.Getenv("TEST_AGENT_URL"),
+		ProxyPort:           os.Getenv("PROXY_PORT"),
+		HealthCheckEndpoint: os.Getenv("HEALTH_CHECK_ENDPOINT"),
+		CheckTimeout:        5 * time.Second,
 	}
 
 	if cfg.BrokerPort == "" {

@@ -187,6 +187,33 @@ function validateBrokerItem(
       );
     }
   }
+  validatePort(item.port, 'port', label, r);
+  if (item.healthCheck !== undefined && typeof item.healthCheck !== 'string') {
+    err(r, `${label}: "healthCheck" must be a string`);
+  }
+  if (item.command !== undefined) {
+    if (!Array.isArray(item.command)) {
+      err(r, `${label}: "command" must be an array of strings`);
+    } else {
+      for (let i = 0; i < item.command.length; i++) {
+        if (typeof item.command[i] !== 'string') {
+          err(r, `${label}: command[${i}] must be a string`);
+        }
+      }
+    }
+  }
+  if (item.env !== undefined) {
+    if (!Array.isArray(item.env)) {
+      err(r, `${label}: "env" must be an array`);
+    } else {
+      for (let i = 0; i < item.env.length; i++) {
+        const e = item.env[i] as Record<string, unknown>;
+        if (!e || typeof e.name !== 'string' || typeof e.value !== 'string') {
+          err(r, `${label}: env[${i}] must have "name" and "value" strings`);
+        }
+      }
+    }
+  }
 }
 
 function validateMockItem(

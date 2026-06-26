@@ -28,6 +28,7 @@ type MessageLogger struct {
 	testAgentClient *http.Client
 	logChan         chan MessageLogMessage
 	stopChan        chan struct{}
+	done            chan struct{}
 }
 
 func NewMessageLogger(logEndpointURL string, timeout time.Duration) *MessageLogger {
@@ -37,6 +38,7 @@ func NewMessageLogger(logEndpointURL string, timeout time.Duration) *MessageLogg
 		testAgentClient: &http.Client{Timeout: timeout},
 		logChan:         make(chan MessageLogMessage, 1000),
 		stopChan:        make(chan struct{}),
+		done:            make(chan struct{}),
 	}
 
 	go logger.worker()
@@ -57,12 +59,20 @@ func (l *MessageLogger) Log(message MessageLogMessage) {
 }
 
 func (l *MessageLogger) worker() {
+	defer close(l.done)
 	for {
 		select {
 		case message := <-l.logChan:
 			l.sendLog(message)
 		case <-l.stopChan:
-			return
+			for {
+				select {
+				case message := <-l.logChan:
+					l.sendLog(message)
+				default:
+					return
+				}
+			}
 		}
 	}
 }
@@ -125,14 +135,9 @@ func (l *MessageLogger) Stop() {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	for {
-		select {
-		case message := <-l.logChan:
-			l.sendLog(message)
-		case <-ctx.Done():
-			return
-		default:
-			return
-		}
+	select {
+	case <-l.done:
+	case <-ctx.Done():
+		log.Printf("[MessageLogger] Stop timed out waiting for worker to drain")
 	}
 }

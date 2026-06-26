@@ -37,6 +37,12 @@ func NewStepValidator(logBuffer *StepLogBuffer, varCtx *VariableContext) *StepVa
 	}
 }
 
+// ResetStepTime clears the previous step start time so it doesn't leak
+// across test boundaries.
+func (sv *StepValidator) ResetStepTime() {
+	sv.prevStepStartTime = ""
+}
+
 // RecordStepTime tracks the start time of a non-wait step so that subsequent
 // wait steps can widen their time window. Called for every step, even those
 // without assertions.

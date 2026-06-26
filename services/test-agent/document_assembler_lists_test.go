@@ -244,6 +244,91 @@ func TestAssembleDbLogList(t *testing.T) {
 	})
 }
 
+func TestAssembleMessageLogList(t *testing.T) {
+	exec := stepExecWindow("2024-01-01T00:00:00.000Z", "2024-01-01T00:00:05.000Z")
+
+	t.Run("returns empty list when no logs", func(t *testing.T) {
+		result, timeline := assembleMessageLogList(nil, exec)
+		if len(result) != 0 {
+			t.Errorf("expected empty, got %d", len(result))
+		}
+		if len(timeline) != 0 {
+			t.Errorf("expected empty timeline, got %d", len(timeline))
+		}
+	})
+
+	t.Run("includes log within time window", func(t *testing.T) {
+		logs := []MessageLogMessage{
+			{
+				BrokerType: "amqp",
+				BrokerName: "rabbitmq",
+				Operation:  "publish",
+				Body:       map[string]interface{}{"key": "value"},
+				Timestamp:  "2024-01-01T00:00:02.000Z",
+			},
+		}
+		result, timeline := assembleMessageLogList(logs, exec)
+		if len(result) != 1 {
+			t.Fatalf("expected 1 entry, got %d", len(result))
+		}
+		entry := result[0].(map[string]interface{})
+		if entry["broker"] != "rabbitmq" {
+			t.Errorf("expected rabbitmq, got %v", entry["broker"])
+		}
+		if entry["operation"] != "publish" {
+			t.Errorf("expected publish, got %v", entry["operation"])
+		}
+		if entry["brokerType"] != "amqp" {
+			t.Errorf("expected amqp, got %v", entry["brokerType"])
+		}
+		if len(timeline) != 1 {
+			t.Errorf("expected 1 timeline entry, got %d", len(timeline))
+		}
+		if timeline[0].entry["type"] != "message" {
+			t.Errorf("expected message, got %v", timeline[0].entry["type"])
+		}
+	})
+
+	t.Run("excludes log outside time window", func(t *testing.T) {
+		logs := []MessageLogMessage{
+			{
+				BrokerType: "amqp",
+				BrokerName: "rabbitmq",
+				Operation:  "publish",
+				Timestamp:  "2023-12-31T23:59:59.000Z",
+			},
+		}
+		result, _ := assembleMessageLogList(logs, exec)
+		if len(result) != 0 {
+			t.Errorf("expected 0 entries, got %d", len(result))
+		}
+	})
+
+	t.Run("metadata merged flat into entry", func(t *testing.T) {
+		logs := []MessageLogMessage{
+			{
+				BrokerType: "amqp",
+				BrokerName: "rabbitmq",
+				Operation:  "publish",
+				Body:       map[string]interface{}{"msg": "hello"},
+				Timestamp:  "2024-01-01T00:00:01.000Z",
+				Metadata:   map[string]interface{}{"exchange": "amq.topic", "routingKey": "orders.new"},
+			},
+		}
+		result, timeline := assembleMessageLogList(logs, exec)
+		entry := result[0].(map[string]interface{})
+		if entry["exchange"] != "amq.topic" {
+			t.Errorf("expected exchange=amq.topic, got %v", entry["exchange"])
+		}
+		if entry["routingKey"] != "orders.new" {
+			t.Errorf("expected routingKey=orders.new, got %v", entry["routingKey"])
+		}
+		if timeline[0].entry["exchange"] != "amq.topic" {
+			t.Errorf("expected timeline exchange=amq.topic, got %v", timeline[0].entry["exchange"])
+		}
+	})
+}
+
 func TestMergeTimeline(t *testing.T) {
 	t.Run("merges and sorts by timestamp", func(t *testing.T) {
 		t1 := time.Date(2024, 1, 1, 0, 0, 1, 0, time.UTC)

@@ -6,10 +6,44 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"sync"
 	"time"
 )
+
+// BuildHealthCheckFunc returns a check function based on the config's
+// HealthCheckEndpoint. Empty or "tcp" → TCP dial; otherwise HTTP GET.
+func BuildHealthCheckFunc(cfg *Config) func(ctx context.Context) error {
+	if cfg.HealthCheckEndpoint == "" || cfg.HealthCheckEndpoint == "tcp" {
+		return func(ctx context.Context) error {
+			addr := net.JoinHostPort("localhost", cfg.BrokerPort)
+			conn, err := net.DialTimeout("tcp", addr, cfg.CheckTimeout)
+			if err != nil {
+				return err
+			}
+			conn.Close()
+			return nil
+		}
+	}
+	client := &http.Client{Timeout: cfg.CheckTimeout}
+	url := fmt.Sprintf("http://localhost:%s%s", cfg.BrokerPort, cfg.HealthCheckEndpoint)
+	return func(ctx context.Context) error {
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+		if err != nil {
+			return err
+		}
+		resp, err := client.Do(req)
+		if err != nil {
+			return err
+		}
+		resp.Body.Close()
+		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+			return fmt.Errorf("health check returned status %d", resp.StatusCode)
+		}
+		return nil
+	}
+}
 
 type HealthChecker struct {
 	config           *Config

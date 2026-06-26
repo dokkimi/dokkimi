@@ -28,8 +28,8 @@ async function bootstrap() {
     rawBody: false,
   });
 
-  app.use(express.json({ limit: Infinity }));
-  app.use(express.urlencoded({ extended: true, limit: Infinity }));
+  app.use(express.json({ limit: '100mb' }));
+  app.use(express.urlencoded({ extended: true, limit: '100mb' }));
 
   // Enable CORS for frontend access
   const corsOrigins = dokkimiConfig.cors?.origins || [];

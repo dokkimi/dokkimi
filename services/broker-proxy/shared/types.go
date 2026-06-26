@@ -5,15 +5,16 @@ import (
 )
 
 type Config struct {
-	BrokerPort       string
-	BrokerType       string // "amqp"
-	InstanceItemName string
-	InstanceItemID   string
-	InstanceID       string
-	ControlTowerURL  string
-	TestAgentURL     string
-	ProxyPort        string
-	CheckTimeout     time.Duration
+	BrokerPort          string
+	BrokerType          string // "amqp"
+	InstanceItemName    string
+	InstanceItemID      string
+	InstanceID          string
+	ControlTowerURL     string
+	TestAgentURL        string
+	ProxyPort           string
+	HealthCheckEndpoint string
+	CheckTimeout        time.Duration
 }
 
 type HealthState string
