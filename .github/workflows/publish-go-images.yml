@@ -43,6 +43,14 @@ jobs:
             context: services/db-proxy
             dockerfile: services/db-proxy/redis/Dockerfile
             image: db-proxy-redis
+          - service: broker-proxy-amqp
+            context: services/broker-proxy
+            dockerfile: services/broker-proxy/amqp/Dockerfile
+            image: broker-proxy-amqp
+          - service: broker-proxy-kafka
+            context: services/broker-proxy
+            dockerfile: services/broker-proxy/kafka/Dockerfile
+            image: broker-proxy-kafka
 
     steps:
       - name: Checkout
