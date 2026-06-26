@@ -20,6 +20,7 @@ import CodeBlock from '../../components/CodeBlock.astro';
     <tbody>
       <tr><td><code>items</code></td><td>array or string</td><td>Yes</td><td>Inline array, <code>&#123;&#123;variable&#125;&#125;</code> reference, or <code>$.response.body.path</code></td></tr>
       <tr><td><code>as</code></td><td>string</td><td>Yes</td><td>Variable name for the current item</td></tr>
+      <tr><td><code>name</code></td><td>string</td><td>No</td><td>Exposes loop metadata: <code>&#123;&#123;name.index&#125;&#125;</code>, <code>&#123;&#123;name.items&#125;&#125;</code>, <code>&#123;&#123;name.iterations&#125;&#125;</code>, <code>&#123;&#123;name.completed&#125;&#125;</code></td></tr>
       <tr><td><code>delayMs</code></td><td>integer</td><td>No</td><td>Milliseconds to wait between iterations</td></tr>
     </tbody>
   </table>
@@ -48,9 +49,41 @@ import CodeBlock from '../../components/CodeBlock.astro';
   ]
 }`} lang="json" />
 
-  <p>To access loop metadata (index, items array), add an optional <code>name</code> to the loop. The named variable exposes <code>&#123;&#123;name.index&#125;&#125;</code> (0-based) and <code>&#123;&#123;name.items&#125;&#125;</code> (the full items array).</p>
+  <h3>Loop name and metadata</h3>
+  <p>The <code>as</code> field gives you the current item. The <code>name</code> field gives you everything else &mdash; the iteration index, the total items, and (after the loop finishes) how many iterations ran and whether the loop completed. Without <code>name</code>, you can only access the current item.</p>
 
-  <p>You can reference a variable instead of an inline array:</p>
+  <p>Use <code>name</code> when you need to:</p>
+  <ul>
+    <li>Number iterations &mdash; <code>&#123;&#123;name.index&#125;&#125;</code> is the 0-based iteration counter</li>
+    <li>Build dynamic extract keys &mdash; e.g. <code>"userId_&#123;&#123;userLoop.index&#125;&#125;"</code> creates <code>userId_0</code>, <code>userId_1</code>, etc.</li>
+    <li>Reference the full items array &mdash; <code>&#123;&#123;name.items&#125;&#125;</code></li>
+    <li>Check loop results in a later step &mdash; <code>&#123;&#123;name.completed&#125;&#125;</code> and <code>&#123;&#123;name.iterations&#125;&#125;</code></li>
+  </ul>
+
+  <p>Example &mdash; extracting a different variable per iteration using the index:</p>
+  <CodeBlock code={`{
+  "name": "Create user {{user.name}}",
+  "forEach": {
+    "items": [
+      { "name": "Alice", "email": "alice@test.com" },
+      { "name": "Bob", "email": "bob@test.com" }
+    ],
+    "as": "user",
+    "name": "userLoop"
+  },
+  "action": {
+    "type": "httpRequest",
+    "method": "POST",
+    "url": "api-gateway/api/users",
+    "body": { "name": "{{user.name}}", "email": "{{user.email}}" }
+  },
+  "extract": {
+    "userId_{{userLoop.index}}": "$.response.body.id"
+  }
+}`} lang="json" />
+  <p>After this loop, <code>&#123;&#123;userId_0&#125;&#125;</code> and <code>&#123;&#123;userId_1&#125;&#125;</code> hold the IDs of Alice and Bob respectively.</p>
+
+  <p>You can also reference a variable instead of an inline array:</p>
   <CodeBlock code={`"forEach": {
   "items": "{{users}}",
   "as": "user"
@@ -68,6 +101,7 @@ import CodeBlock from '../../components/CodeBlock.astro';
       <tr><td><code>to</code></td><td>integer</td><td>Yes</td><td>End value (inclusive)</td></tr>
       <tr><td><code>step</code></td><td>integer</td><td>No</td><td>Increment per iteration (defaults to 1). Use negative step for descending ranges.</td></tr>
       <tr><td><code>as</code></td><td>string</td><td>Yes</td><td>Variable name for the current value</td></tr>
+      <tr><td><code>name</code></td><td>string</td><td>No</td><td>Exposes loop metadata: <code>&#123;&#123;name.index&#125;&#125;</code>, <code>&#123;&#123;name.iterations&#125;&#125;</code>, <code>&#123;&#123;name.completed&#125;&#125;</code></td></tr>
       <tr><td><code>delayMs</code></td><td>integer</td><td>No</td><td>Milliseconds to wait between iterations</td></tr>
     </tbody>
   </table>
@@ -95,6 +129,7 @@ import CodeBlock from '../../components/CodeBlock.astro';
     <tbody>
       <tr><td><code>count</code></td><td>integer</td><td>Yes</td><td>Maximum number of iterations</td></tr>
       <tr><td><code>as</code></td><td>string</td><td>Yes</td><td>Variable name for the iteration counter (0-based)</td></tr>
+      <tr><td><code>name</code></td><td>string</td><td>No</td><td>Exposes loop metadata: <code>&#123;&#123;name.index&#125;&#125;</code>, <code>&#123;&#123;name.iterations&#125;&#125;</code>, <code>&#123;&#123;name.completed&#125;&#125;</code></td></tr>
       <tr><td><code>delayMs</code></td><td>integer</td><td>No</td><td>Milliseconds to wait between iterations</td></tr>
       <tr><td><code>until</code></td><td>array of assertions</td><td>No</td><td>Checked after each iteration; all must pass to stop early</td></tr>
     </tbody>
