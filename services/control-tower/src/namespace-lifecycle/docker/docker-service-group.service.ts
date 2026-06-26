@@ -124,7 +124,7 @@ export class DockerServiceGroupService {
     dockerDnsIP: string,
     configPaths: InstanceConfigPaths,
     caBundlePaths: CaBundlePaths,
-    databaseNames: string[],
+    directDnsNames: string[],
     testAgentIP?: string,
   ): Promise<{ userContainerId: string | null; interceptorName: string }> {
     if (!item.image) {
@@ -178,7 +178,7 @@ export class DockerServiceGroupService {
 
     const dnsmasqConf = this.deployConfig.buildDnsmasqConfig(
       dockerDnsIP,
-      databaseNames,
+      directDnsNames,
       interceptorIP,
     );
     const dnsmasqConfPath = this.dockerConfig.writeDnsmasqConfig(
@@ -231,6 +231,7 @@ export class DockerServiceGroupService {
         'io.dokkimi.role': 'service',
         'io.dokkimi.item-name': item.name,
       },
+      ...(item.command ? { cmd: item.command } : {}),
       ...(testAgentIP
         ? {
             logConfig: {
@@ -274,7 +275,8 @@ export class DockerServiceGroupService {
     dockerDnsIP: string,
     configPaths: InstanceConfigPaths,
     caBundlePaths: CaBundlePaths,
-    databaseNames: string[],
+    directDnsNames: string[],
+    instanceItemId: string,
     browser?: BrowserConfig,
   ): Promise<void> {
     const config = getConfig();
@@ -290,7 +292,7 @@ export class DockerServiceGroupService {
       instanceItemName: 'chromium',
       healthCheckEndpoint: '/json/version',
       servicePort: String(config.services.chromium.port),
-      namespaceItemId: 'chromium',
+      namespaceItemId: instanceItemId,
       testAgentUrl: `http://test-agent-service:${config.services.testAgent.port}`,
     });
 
@@ -324,7 +326,7 @@ export class DockerServiceGroupService {
 
     const dnsmasqConf = this.deployConfig.buildDnsmasqConfig(
       dockerDnsIP,
-      databaseNames,
+      directDnsNames,
       interceptorIP,
     );
     const dnsmasqConfPath = this.dockerConfig.writeDnsmasqConfig(

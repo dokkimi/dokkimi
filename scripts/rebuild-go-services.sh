@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Script to rebuild all Go service Docker images
-# This rebuilds: interceptor, test-agent, and db-proxy variants (postgres, mysql, mongo, redis)
+# This rebuilds: interceptor, test-agent, db-proxy variants, and broker-proxy variants
 
 set -e  # Exit on any error
 
@@ -20,6 +20,8 @@ services=(
     "db-proxy/mysql"
     "db-proxy/mongo"
     "db-proxy/redis"
+    "broker-proxy/amqp"
+    "broker-proxy/kafka"
 )
 
 # Build each service
@@ -28,13 +30,15 @@ for service in "${services[@]}"; do
     image_name=$(basename "$service" | sed 's|db-proxy/||')
     if [[ "$service" == db-proxy/* ]]; then
         image_tag="db-proxy-${image_name}"
-        # For db-proxy services, use db-proxy/ as build context to include shared module
         build_context="services/db-proxy"
+    elif [[ "$service" == broker-proxy/* ]]; then
+        image_tag="broker-proxy-${image_name}"
+        build_context="services/broker-proxy"
     else
         image_tag="$image_name"
         build_context="services/${service}"
     fi
-    
+
     echo "Building ghcr.io/dokkimi/${image_tag}:${VERSION}..."
     docker build -t "ghcr.io/dokkimi/${image_tag}:${VERSION}" \
         -t "ghcr.io/dokkimi/${image_tag}:latest" \
@@ -54,6 +58,8 @@ for service in "${services[@]}"; do
     image_name=$(basename "$service" | sed 's|db-proxy/||')
     if [[ "$service" == db-proxy/* ]]; then
         image_tag="db-proxy-${image_name}"
+    elif [[ "$service" == broker-proxy/* ]]; then
+        image_tag="broker-proxy-${image_name}"
     else
         image_tag="$image_name"
     fi

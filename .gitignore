@@ -59,6 +59,8 @@ services/db-proxy/postgres/postgres
 services/db-proxy/mysql/mysql
 services/db-proxy/mongo/mongo
 services/db-proxy/redis/redis
+services/broker-proxy/amqp/amqp
+services/broker-proxy/kafka/kafka
 
 # VSCode extension packaging
 *.vsix

@@ -2,6 +2,7 @@ import { DokkimiConfig, buildClusterServiceUrl } from './config.types';
 import {
   InterceptorEnvVars,
   TestAgentEnvVars,
+  BrokerProxyEnvVars,
   DbProxyEnvVars,
 } from './go-service-env.types';
 
@@ -159,6 +160,49 @@ export function buildDbProxyEnvVars(
     DB_USER: runtimeConfig.dbUser,
     DB_PASSWORD: runtimeConfig.dbPassword,
     DB_NAME: runtimeConfig.dbName,
+  };
+
+  return toEnvArray(envVars);
+}
+
+export interface BrokerProxyConfig {
+  brokerType: string;
+  brokerPort: string;
+  proxyPort: string;
+  instanceItemName: string;
+  namespace: string;
+  namespaceItemId?: string;
+  testAgentUrl?: string;
+  healthCheckEndpoint?: string;
+}
+
+export function buildBrokerProxyEnvVars(
+  config: DokkimiConfig,
+  runtimeConfig: BrokerProxyConfig,
+): Array<{ name: string; value: string }> {
+  if (!runtimeConfig.brokerType) {
+    throw new Error('brokerType is required for BrokerProxy');
+  }
+  if (!runtimeConfig.brokerPort) {
+    throw new Error('brokerPort is required for BrokerProxy');
+  }
+  if (!runtimeConfig.instanceItemName) {
+    throw new Error('instanceItemName is required for BrokerProxy');
+  }
+  if (!runtimeConfig.namespace) {
+    throw new Error('namespace is required for BrokerProxy');
+  }
+
+  const envVars: BrokerProxyEnvVars = {
+    BROKER_TYPE: runtimeConfig.brokerType,
+    BROKER_PORT: runtimeConfig.brokerPort,
+    PROXY_PORT: runtimeConfig.proxyPort,
+    INSTANCE_ITEM_NAME: runtimeConfig.instanceItemName,
+    NAMESPACE: runtimeConfig.namespace,
+    CONTROL_TOWER_URL: buildClusterServiceUrl(config.services.controlTower),
+    NAMESPACE_ITEM_ID: runtimeConfig.namespaceItemId,
+    TEST_AGENT_URL: runtimeConfig.testAgentUrl,
+    HEALTH_CHECK_ENDPOINT: runtimeConfig.healthCheckEndpoint,
   };
 
   return toEnvArray(envVars);

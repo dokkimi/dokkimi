@@ -41,6 +41,11 @@ export interface DokkimiConfig {
     url: string;
   };
 
+  images: {
+    databases: Record<string, string>;
+    brokers: Record<string, string>;
+  };
+
   storage: {
     dir: string;
     initFilesDir: string;

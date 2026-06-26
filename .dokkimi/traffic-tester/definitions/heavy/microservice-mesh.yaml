@@ -1,0 +1,793 @@
+name: microservice-mesh
+description: |
+  Heavy microservice mesh — simulates an e-commerce order flow across 3 services,
+  2 databases, 1 broker, and 3 mocked external APIs. Exercises inter-service HTTP
+  chains, database writes, Kafka event publishing, and mock interactions in a
+  single definition with many concurrent operations.
+config:
+  timeoutSeconds: 180
+items:
+  - $ref: ../../shared/service-a.yaml
+  - $ref: ../../shared/service-b.json
+  - $ref: ../../shared/service-c.yaml
+  - $ref: ../../shared/heavy-postgres.yaml
+  - $ref: ../../shared/redis.json
+  - $ref: ../../shared/kafka.yaml
+  - type: MOCK
+    name: mock-payment-api
+    mockTarget: api.stripe.com
+    mockPath: /v1/charges
+    mockMethod: POST
+    mockResponseStatus: 200
+    mockResponseBody:
+      id: ch_test_heavy_001
+      object: charge
+      amount: 4997
+      currency: usd
+      status: succeeded
+      metadata:
+        order_ref: heavy-test
+  - type: MOCK
+    name: mock-email-api
+    mockTarget: api.sendgrid.com
+    mockPath: /v3/mail/send
+    mockMethod: POST
+    mockResponseStatus: 202
+    mockResponseBody:
+      message: queued
+  - type: MOCK
+    name: mock-sms-api
+    mockTarget: api.twilio.com
+    mockPath: /2010-04-01/Accounts/AC_heavy/Messages.json
+    mockMethod: POST
+    mockResponseStatus: 201
+    mockResponseBody:
+      sid: SM_heavy_test_001
+      status: queued
+      to: '+15551234567'
+variables:
+  pgConnStr: postgresql://dokkimi:dokkimi@postgres-db:5432/dokkimi
+  redisConnStr: redis://:dokkimi@redis-db:6379
+  kafkaBrokers: kafka:9092
+
+tests:
+  - name: Full order placement flow — gateway → processor → DB → Kafka → notifications
+    timeoutSeconds: 120
+    steps:
+      - name: Verify all services are healthy
+        action:
+          type: parallel
+          actions:
+            - type: httpRequest
+              method: GET
+              url: service-a/health
+            - type: httpRequest
+              method: GET
+              url: service-b/health
+            - type: httpRequest
+              method: GET
+              url: service-c/health
+
+      - name: Gateway (A) receives order and forwards to order processor (B)
+        action:
+          type: httpRequest
+          method: POST
+          url: service-a/place-order
+          headers:
+            Content-Type: application/json
+          body:
+            requests:
+              - baseURL: http://service-b
+                url: /process-order
+                method: POST
+                data:
+                  queries:
+                    - databaseType: postgres
+                      connectionString: '{{pgConnStr}}'
+                      command: >-
+                        INSERT INTO orders (user_id, status, total_cents, currency, shipping_address)
+                        VALUES (1, 'processing', 4997, 'USD',
+                        '{"street":"123 Main St","city":"Springfield","state":"IL","zip":"62701"}')
+                        RETURNING id, status, total_cents;
+                  response:
+                    value:
+                      orderId: order-from-b
+                      status: processing
+        extract:
+          gatewayResponse: $.response.body.results[0].orderId
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+              - path: $.response.body.results[0].orderId
+                operator: eq
+                value: order-from-b
+          - match:
+              path: $.traffic
+              where:
+                - path: $$.origin
+                  operator: eq
+                  value: service-a
+                - path: $$.request.url
+                  operator: contains
+                  value: service-b/process-order
+              count:
+                operator: eq
+                value: 1
+            assertions:
+              - path: $.match.response.status
+                operator: eq
+                value: 200
+
+      - name: Order processor (B) publishes event to Kafka
+        action:
+          type: httpRequest
+          method: POST
+          url: service-b/kafka/produce
+          headers:
+            Content-Type: application/json
+          body:
+            brokers:
+              - '{{kafkaBrokers}}'
+            topic: order-events
+            messages:
+              - key: order-heavy-001
+                value:
+                  event: order.placed
+                  orderId: order-heavy-001
+                  userId: 1
+                  items:
+                    - sku: WDG-001
+                      name: Standard Widget
+                      quantity: 2
+                      unitPriceCents: 999
+                    - sku: WDG-003
+                      name: Mini Widget
+                      quantity: 1
+                      unitPriceCents: 499
+                    - sku: ACC-001
+                      name: Widget Adapter
+                      quantity: 2
+                      unitPriceCents: 799
+                  totalCents: 4997
+                  currency: USD
+                  shippingAddress:
+                    street: 123 Main St
+                    city: Springfield
+                    state: IL
+                    zip: '62701'
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 201
+          - match:
+              path: $.messageLogs
+              where:
+                - path: $$.topic
+                  operator: eq
+                  value: order-events
+                - path: $$.operation
+                  operator: eq
+                  value: produce
+              count:
+                operator: gte
+                value: 1
+            assertions:
+              - path: $.match.body.event
+                operator: eq
+                value: order.placed
+              - path: $.match.body.orderId
+                operator: eq
+                value: order-heavy-001
+              - count: $.match.body.items
+                operator: eq
+                value: 3
+              - path: $.match.body.totalCents
+                operator: eq
+                value: 4997
+              - path: $.match.key
+                operator: eq
+                value: order-heavy-001
+
+      - name: Cache order status in Redis
+        action:
+          type: httpRequest
+          method: POST
+          url: service-a/cache-order
+          headers:
+            Content-Type: application/json
+          body:
+            queries:
+              - databaseType: redis
+                connectionString: '{{redisConnStr}}'
+                command: SET order:heavy-001:status processing
+              - databaseType: redis
+                connectionString: '{{redisConnStr}}'
+                command: SET order:heavy-001:total 4997
+              - databaseType: redis
+                connectionString: '{{redisConnStr}}'
+                command: SET order:heavy-001:user alice@example.com
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+
+      - name: Gateway (A) calls payment API (mocked Stripe) via service-b
+        action:
+          type: httpRequest
+          method: POST
+          url: service-a/charge-order
+          headers:
+            Content-Type: application/json
+          body:
+            requests:
+              - baseURL: http://service-b
+                url: /charge
+                method: POST
+                data:
+                  requests:
+                    - baseURL: https://api.stripe.com
+                      url: /v1/charges
+                      method: POST
+                      headers:
+                        Authorization: Bearer sk_test_heavy
+                        Content-Type: application/json
+                      data:
+                        amount: 4997
+                        currency: usd
+                        source: tok_visa
+                        metadata:
+                          order_ref: order-heavy-001
+                  response:
+                    value:
+                      charged: true
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+              - path: $.response.body.results[0].charged
+                operator: eq
+                value: true
+          - match:
+              path: $.traffic
+              where:
+                - path: $$.origin
+                  operator: eq
+                  value: service-a
+                - path: $$.request.url
+                  operator: contains
+                  value: service-b/charge
+              count:
+                operator: eq
+                value: 1
+          - match:
+              path: $.traffic
+              where:
+                - path: $$.origin
+                  operator: eq
+                  value: service-b
+                - path: $$.request.url
+                  operator: contains
+                  value: api.stripe.com
+              count:
+                operator: eq
+                value: 1
+            assertions:
+              - path: $.match.response.body.status
+                operator: eq
+                value: succeeded
+              - path: $.match.response.body.amount
+                operator: eq
+                value: 4997
+
+      - name: Service-c sends notification emails and SMS (mocked APIs)
+        action:
+          type: httpRequest
+          method: POST
+          url: service-c/send-notifications
+          headers:
+            Content-Type: application/json
+          body:
+            requests:
+              - baseURL: https://api.sendgrid.com
+                url: /v3/mail/send
+                method: POST
+                headers:
+                  Authorization: Bearer SG.heavy_test_key
+                  Content-Type: application/json
+                data:
+                  personalizations:
+                    - to:
+                        - email: alice@example.com
+                      subject: 'Order Confirmed: order-heavy-001'
+                  from:
+                    email: orders@shop.example.com
+                  content:
+                    - type: text/html
+                      value: '<h1>Thank you for your order!</h1><p>Order total: $49.97</p>'
+              - baseURL: https://api.twilio.com
+                url: /2010-04-01/Accounts/AC_heavy/Messages.json
+                method: POST
+                data:
+                  To: '+15551234567'
+                  From: '+15559876543'
+                  Body: 'Your order order-heavy-001 has been confirmed. Total: $49.97'
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+          - match:
+              path: $.traffic
+              where:
+                - path: $$.origin
+                  operator: eq
+                  value: service-c
+                - path: $$.request.url
+                  operator: contains
+                  value: api.sendgrid.com
+              count:
+                operator: eq
+                value: 1
+            assertions:
+              - path: $.match.response.status
+                operator: eq
+                value: 202
+          - match:
+              path: $.traffic
+              where:
+                - path: $$.origin
+                  operator: eq
+                  value: service-c
+                - path: $$.request.url
+                  operator: contains
+                  value: api.twilio.com
+              count:
+                operator: eq
+                value: 1
+            assertions:
+              - path: $.match.response.status
+                operator: eq
+                value: 201
+              - path: $.match.response.body.sid
+                operator: eq
+                value: SM_heavy_test_001
+
+      - name: Verify Redis cached the order status
+        action:
+          type: httpRequest
+          method: POST
+          url: service-a/check-cache
+          headers:
+            Content-Type: application/json
+          body:
+            queries:
+              - databaseType: redis
+                connectionString: '{{redisConnStr}}'
+                command: GET order:heavy-001:status
+              - databaseType: redis
+                connectionString: '{{redisConnStr}}'
+                command: GET order:heavy-001:total
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+              - path: $.response.body.queryResults[0][0].result
+                operator: eq
+                value: processing
+              - path: $.response.body.queryResults[1][0].result
+                operator: eq
+                value: '4997'
+
+      - name: Verify order was persisted in Postgres
+        action:
+          type: dbQuery
+          database: postgres-db
+          query: SELECT * FROM orders WHERE status = 'processing' ORDER BY id DESC LIMIT 1
+        assertions:
+          - assertions:
+              - path: $.response.success
+                operator: eq
+                value: true
+              - count: $.response.data
+                operator: gte
+                value: 1
+              - path: $.response.data[0].total_cents
+                operator: eq
+                value: 4997
+              - path: $.response.data[0].currency
+                operator: eq
+                value: USD
+
+  - name: Parallel order processing — multiple orders through the pipeline simultaneously
+    steps:
+      - name: Place three orders in parallel through the gateway
+        action:
+          type: parallel
+          actions:
+            - type: httpRequest
+              method: POST
+              url: service-a/order-1
+              headers:
+                Content-Type: application/json
+              body:
+                queries:
+                  - databaseType: postgres
+                    connectionString: '{{pgConnStr}}'
+                    command: >-
+                      INSERT INTO orders (user_id, status, total_cents, currency)
+                      VALUES (2, 'pending', 2499, 'USD') RETURNING id, status;
+                response:
+                  value:
+                    orderId: parallel-order-1
+            - type: httpRequest
+              method: POST
+              url: service-b/order-2
+              headers:
+                Content-Type: application/json
+              body:
+                queries:
+                  - databaseType: postgres
+                    connectionString: '{{pgConnStr}}'
+                    command: >-
+                      INSERT INTO orders (user_id, status, total_cents, currency)
+                      VALUES (3, 'pending', 9999, 'USD') RETURNING id, status;
+                response:
+                  value:
+                    orderId: parallel-order-2
+            - type: httpRequest
+              method: POST
+              url: service-c/order-3
+              headers:
+                Content-Type: application/json
+              body:
+                queries:
+                  - databaseType: postgres
+                    connectionString: '{{pgConnStr}}'
+                    command: >-
+                      INSERT INTO orders (user_id, status, total_cents, currency)
+                      VALUES (4, 'pending', 1998, 'USD') RETURNING id, status;
+                response:
+                  value:
+                    orderId: parallel-order-3
+
+      - name: Publish order events for all three orders in parallel
+        action:
+          type: parallel
+          actions:
+            - type: httpRequest
+              method: POST
+              url: service-a/kafka/produce
+              headers:
+                Content-Type: application/json
+              body:
+                brokers:
+                  - '{{kafkaBrokers}}'
+                topic: parallel-orders
+                messages:
+                  - key: parallel-order-1
+                    value:
+                      event: order.placed
+                      orderId: parallel-order-1
+                      userId: 2
+                      totalCents: 2499
+            - type: httpRequest
+              method: POST
+              url: service-b/kafka/produce
+              headers:
+                Content-Type: application/json
+              body:
+                brokers:
+                  - '{{kafkaBrokers}}'
+                topic: parallel-orders
+                messages:
+                  - key: parallel-order-2
+                    value:
+                      event: order.placed
+                      orderId: parallel-order-2
+                      userId: 3
+                      totalCents: 9999
+            - type: httpRequest
+              method: POST
+              url: service-c/kafka/produce
+              headers:
+                Content-Type: application/json
+              body:
+                brokers:
+                  - '{{kafkaBrokers}}'
+                topic: parallel-orders
+                messages:
+                  - key: parallel-order-3
+                    value:
+                      event: order.placed
+                      orderId: parallel-order-3
+                      userId: 4
+                      totalCents: 1998
+        assertions:
+          - match:
+              path: $.messageLogs
+              where:
+                - path: $$.topic
+                  operator: eq
+                  value: parallel-orders
+                - path: $$.operation
+                  operator: eq
+                  value: produce
+              count:
+                operator: eq
+                value: 3
+
+      - name: Cache all three order statuses in Redis in parallel
+        action:
+          type: parallel
+          actions:
+            - type: httpRequest
+              method: POST
+              url: service-a/cache-1
+              headers:
+                Content-Type: application/json
+              body:
+                queries:
+                  - databaseType: redis
+                    connectionString: '{{redisConnStr}}'
+                    command: SET order:par-1:status pending
+                  - databaseType: redis
+                    connectionString: '{{redisConnStr}}'
+                    command: SET order:par-1:total 2499
+            - type: httpRequest
+              method: POST
+              url: service-b/cache-2
+              headers:
+                Content-Type: application/json
+              body:
+                queries:
+                  - databaseType: redis
+                    connectionString: '{{redisConnStr}}'
+                    command: SET order:par-2:status pending
+                  - databaseType: redis
+                    connectionString: '{{redisConnStr}}'
+                    command: SET order:par-2:total 9999
+            - type: httpRequest
+              method: POST
+              url: service-c/cache-3
+              headers:
+                Content-Type: application/json
+              body:
+                queries:
+                  - databaseType: redis
+                    connectionString: '{{redisConnStr}}'
+                    command: SET order:par-3:status pending
+                  - databaseType: redis
+                    connectionString: '{{redisConnStr}}'
+                    command: SET order:par-3:total 1998
+
+      - name: Wait for all async operations to settle
+        action:
+          type: wait
+          durationMs: 2000
+
+      - name: Verify Postgres has all three new orders
+        action:
+          type: dbQuery
+          database: postgres-db
+          query: SELECT COUNT(*) as cnt FROM orders WHERE status = 'pending'
+        assertions:
+          - assertions:
+              - path: $.response.success
+                operator: eq
+                value: true
+              - path: $.response.data[0].cnt
+                operator: gte
+                value: 3
+
+      - name: Verify all Redis caches were set
+        action:
+          type: httpRequest
+          method: POST
+          url: service-a/verify-redis
+          headers:
+            Content-Type: application/json
+          body:
+            queries:
+              - databaseType: redis
+                connectionString: '{{redisConnStr}}'
+                command: GET order:par-1:status
+              - databaseType: redis
+                connectionString: '{{redisConnStr}}'
+                command: GET order:par-2:status
+              - databaseType: redis
+                connectionString: '{{redisConnStr}}'
+                command: GET order:par-3:status
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+              - path: $.response.body.queryResults[0][0].result
+                operator: eq
+                value: pending
+              - path: $.response.body.queryResults[1][0].result
+                operator: eq
+                value: pending
+              - path: $.response.body.queryResults[2][0].result
+                operator: eq
+                value: pending
+
+  - name: Multi-hop with DB writes at each hop
+    steps:
+      - name: Chain A → B → C where each service writes to Postgres
+        action:
+          type: httpRequest
+          method: POST
+          url: service-a/chained-audit
+          headers:
+            Content-Type: application/json
+          body:
+            queries:
+              - databaseType: postgres
+                connectionString: '{{pgConnStr}}'
+                command: >-
+                  INSERT INTO audit_log (entity_type, entity_id, action, actor, details)
+                  VALUES ('ORDER', 'chain-001', 'RECEIVED', 'service-a',
+                  '{"step": 1, "message": "Order received at gateway"}')
+                  RETURNING id;
+            requests:
+              - baseURL: http://service-b
+                url: /audit-hop-2
+                method: POST
+                data:
+                  queries:
+                    - databaseType: postgres
+                      connectionString: '{{pgConnStr}}'
+                      command: >-
+                        INSERT INTO audit_log (entity_type, entity_id, action, actor, details)
+                        VALUES ('ORDER', 'chain-001', 'PROCESSED', 'service-b',
+                        '{"step": 2, "message": "Order validated and processed"}')
+                        RETURNING id;
+                  requests:
+                    - baseURL: http://service-c
+                      url: /audit-hop-3
+                      method: POST
+                      data:
+                        queries:
+                          - databaseType: postgres
+                            connectionString: '{{pgConnStr}}'
+                            command: >-
+                              INSERT INTO audit_log (entity_type, entity_id, action, actor, details)
+                              VALUES ('ORDER', 'chain-001', 'FULFILLED', 'service-c',
+                              '{"step": 3, "message": "Order fulfilled and shipped"}')
+                              RETURNING id;
+                        response:
+                          value:
+                            finalStep: true
+                            actor: service-c
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+          - match:
+              path: $.traffic
+              where:
+                - path: $$.origin
+                  operator: eq
+                  value: service-a
+                - path: $$.request.url
+                  operator: contains
+                  value: service-b/audit-hop-2
+              count:
+                operator: eq
+                value: 1
+          - match:
+              path: $.traffic
+              where:
+                - path: $$.origin
+                  operator: eq
+                  value: service-b
+                - path: $$.request.url
+                  operator: contains
+                  value: service-c/audit-hop-3
+              count:
+                operator: eq
+                value: 1
+
+      - name: Verify all three audit entries were written
+        action:
+          type: dbQuery
+          database: postgres-db
+          query: >-
+            SELECT entity_type, entity_id, action, actor
+            FROM audit_log
+            WHERE entity_id = 'chain-001'
+            ORDER BY id
+        assertions:
+          - assertions:
+              - path: $.response.success
+                operator: eq
+                value: true
+              - count: $.response.data
+                operator: eq
+                value: 3
+              - path: $.response.data[0].actor
+                operator: eq
+                value: service-a
+              - path: $.response.data[0].action
+                operator: eq
+                value: RECEIVED
+              - path: $.response.data[1].actor
+                operator: eq
+                value: service-b
+              - path: $.response.data[1].action
+                operator: eq
+                value: PROCESSED
+              - path: $.response.data[2].actor
+                operator: eq
+                value: service-c
+              - path: $.response.data[2].action
+                operator: eq
+                value: FULFILLED
+
+  - name: Inventory check with large query result set
+    steps:
+      - name: Query all inventory items with full details
+        action:
+          type: dbQuery
+          database: postgres-db
+          query: >-
+            SELECT i.sku, i.name, i.description, i.quantity_available, i.unit_price_cents,
+                   i.category, i.tags, i.created_at,
+                   COALESCE(SUM(oi.quantity), 0) as total_ordered,
+                   i.quantity_available - COALESCE(SUM(oi.quantity), 0) as net_available
+            FROM inventory i
+            LEFT JOIN order_items oi ON i.sku = oi.sku
+            GROUP BY i.sku, i.name, i.description, i.quantity_available, i.unit_price_cents,
+                     i.category, i.tags, i.created_at
+            ORDER BY i.category, i.sku
+        assertions:
+          - assertions:
+              - path: $.response.success
+                operator: eq
+                value: true
+              - count: $.response.data
+                operator: eq
+                value: 30
+              - path: $.response.data[0].category
+                operator: eq
+                value: accessories
+              - path: $.response.data[0].sku
+                operator: eq
+                value: ACC-001
+
+      - name: Cross-reference orders with users — join query
+        action:
+          type: dbQuery
+          database: postgres-db
+          query: >-
+            SELECT u.name as customer_name, u.email,
+                   o.id as order_id, o.status, o.total_cents, o.currency,
+                   COUNT(oi.id) as item_count,
+                   SUM(oi.quantity) as total_quantity
+            FROM users u
+            JOIN orders o ON u.id = o.user_id
+            JOIN order_items oi ON o.id = oi.order_id
+            GROUP BY u.name, u.email, o.id, o.status, o.total_cents, o.currency
+            ORDER BY o.id
+        assertions:
+          - assertions:
+              - path: $.response.success
+                operator: eq
+                value: true
+              - count: $.response.data
+                operator: gte
+                value: 30
+              - path: $.response.data[0].customer_name
+                operator: eq
+                value: Alice Johnson
+              - path: $.response.data[0].status
+                operator: eq
+                value: completed

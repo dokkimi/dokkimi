@@ -1,0 +1,5 @@
+type: BROKER
+name: rabbitmq
+description: Shared RabbitMQ broker — reference with $ref from definitions
+broker: amqp
+version: '3'

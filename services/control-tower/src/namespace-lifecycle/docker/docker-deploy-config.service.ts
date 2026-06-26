@@ -84,8 +84,9 @@ export class DockerDeployConfigService {
         .map((item) => ctx.instanceItemIds.get(item.name))
         .filter((id): id is string => id !== undefined);
 
-      if (hasUiSteps(ctx.definition)) {
-        expectedNamespaceItemIds.push('chromium');
+      const chromiumItemId = ctx.instanceItemIds.get('chromium');
+      if (hasUiSteps(ctx.definition) && chromiumItemId) {
+        expectedNamespaceItemIds.push(chromiumItemId);
       }
     }
 
@@ -101,7 +102,7 @@ export class DockerDeployConfigService {
 
   buildDnsmasqConfig(
     dockerDnsIP: string,
-    databaseNames: string[],
+    directDnsNames: string[],
     interceptorIP: string,
   ): string {
     const config = getConfig();
@@ -110,7 +111,7 @@ export class DockerDeployConfigService {
 
     lines.push(`listen-address=${dnsNameserver}`);
 
-    for (const dbName of databaseNames) {
+    for (const dbName of directDnsNames) {
       lines.push(`server=/${dbName}/${dockerDnsIP}`);
     }
 

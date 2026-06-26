@@ -23,6 +23,10 @@ describe('LogProcessorController', () => {
     process: jest.fn().mockResolvedValue(undefined),
   };
 
+  const mockMessageLogProcessor: any = {
+    process: jest.fn().mockResolvedValue(undefined),
+  };
+
   const mockTelemetry: any = {
     track: jest.fn(),
   };
@@ -32,6 +36,7 @@ describe('LogProcessorController', () => {
       mockHttpLogProcessor,
       mockConsoleLogProcessor,
       mockDatabaseLogProcessor,
+      mockMessageLogProcessor,
       mockTestExecutionLogProcessor,
       mockTestValidationLogProcessor,
       mockTelemetry,
@@ -113,9 +118,9 @@ describe('LogProcessorController', () => {
         databaseType: 'postgres',
         databaseName: 'db',
         query: 'INSERT',
-        params: ['a', 'b'],
+        params: { '0': 'a', '1': 'b' },
         success: false,
-        data: null,
+        data: undefined,
         rowsAffected: 0,
         error: 'constraint violation',
         duration: 12,
@@ -125,7 +130,7 @@ describe('LogProcessorController', () => {
       await controller.receiveDatabaseLog(body);
 
       const call = mockDatabaseLogProcessor.process.mock.calls[0][0];
-      expect(call.params).toEqual(['a', 'b']);
+      expect(call.params).toEqual({ '0': 'a', '1': 'b' });
       expect(call.error).toBe('constraint violation');
       expect(call.rowsAffected).toBe(0);
     });
@@ -222,7 +227,9 @@ describe('LogProcessorController', () => {
       await controller.receiveDatabaseLog({
         instanceId: 'inst-1',
         databaseType: 'pg',
+        databaseName: 'db',
         query: 'q',
+        success: true,
       });
       await controller.receiveTestExecutionLog({
         instanceId: 'inst-1',

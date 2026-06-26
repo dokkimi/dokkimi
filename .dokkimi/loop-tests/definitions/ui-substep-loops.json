@@ -50,7 +50,8 @@
               {
                 "forEach": {
                   "items": "{{posts}}",
-                  "as": "post"
+                  "as": "post",
+                  "delayMs": 500
                 },
                 "steps": [
                   {

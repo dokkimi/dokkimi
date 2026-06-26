@@ -82,6 +82,17 @@ telemetry:
   posthogApiKey:
   posthogHost: https://us.i.posthog.com
 
+# Default images (used when the user doesn't specify a version)
+images:
+  databases:
+    postgres: 'postgres:15'
+    mysql: 'mysql:8'
+    mongodb: 'mongo:7'
+    redis: 'redis:7-alpine'
+  brokers:
+    amqp: 'rabbitmq:3'
+    kafka: 'apache/kafka:4.3.1'
+
 # API Keys (for service-to-service authentication)
 apiKeys: {}
 

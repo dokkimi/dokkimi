@@ -1,9 +1,11 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"log"
 	"math"
+	"reflect"
 	"strings"
 	"time"
 )
@@ -181,7 +183,7 @@ func FindDirectDatabaseLog(dbLogs []DatabaseLogMessage, action StepAction, stepE
 		if log.DatabaseName != action.Database {
 			continue
 		}
-		if strings.TrimSpace(log.Query) != strings.TrimSpace(action.Query) {
+		if !queriesMatch(log.Query, action.Query) {
 			continue
 		}
 		candidates = append(candidates, log)
@@ -205,6 +207,22 @@ func FindDirectDatabaseLog(dbLogs []DatabaseLogMessage, action StepAction, stepE
 		}
 	}
 	return best
+}
+
+// queriesMatch compares two query strings structurally. Both are parsed as
+// JSON; if either fails to parse, it falls back to exact string comparison.
+// This handles BSON round-trip differences (key ordering, float formatting).
+func queriesMatch(a, b string) bool {
+	a = strings.TrimSpace(a)
+	b = strings.TrimSpace(b)
+	if a == b {
+		return true
+	}
+	var parsedA, parsedB interface{}
+	if json.Unmarshal([]byte(a), &parsedA) != nil || json.Unmarshal([]byte(b), &parsedB) != nil {
+		return false
+	}
+	return reflect.DeepEqual(parsedA, parsedB)
 }
 
 func stepTimeWindow(stepExec StepExecution) (time.Time, time.Time, error) {
@@ -253,6 +271,7 @@ func AssembleRootContext(
 	stepExec StepExecution,
 	httpLogs []HttpLogMessage,
 	dbLogs []DatabaseLogMessage,
+	msgLogs []MessageLogMessage,
 	consoleLogs []ConsoleLogMessage,
 	varCtx *VariableContext,
 	stepResp map[string]interface{},
@@ -260,8 +279,9 @@ func AssembleRootContext(
 	traffic, httpTimeline := assembleTrafficList(httpLogs, stepExec)
 	consoleLogList, consoleTimeline := assembleConsoleLogList(consoleLogs, stepExec)
 	dbLogList, dbTimeline := assembleDbLogList(dbLogs, stepExec)
+	msgLogList, msgTimeline := assembleMessageLogList(msgLogs, stepExec)
 
-	timeline := mergeTimeline(httpTimeline, consoleTimeline, dbTimeline)
+	timeline := mergeTimeline(httpTimeline, consoleTimeline, dbTimeline, msgTimeline)
 	annotateTimelineIndices(traffic, timeline)
 
 	rootCtx := map[string]interface{}{
@@ -269,13 +289,14 @@ func AssembleRootContext(
 		"traffic":     traffic,
 		"consoleLogs": consoleLogList,
 		"dbLogs":      dbLogList,
+		"messageLogs": msgLogList,
 		"timeline":    timeline,
 	}
 
 	actionLogFound := true
 
 	switch step.Action.Type {
-	case "wait":
+	case "wait", "parallel":
 		rootCtx["request"] = map[string]interface{}{}
 		rootCtx["response"] = map[string]interface{}{}
 		rootCtx["responseTime"] = nil

@@ -5,6 +5,7 @@ import {
   IsNumber,
   IsIn,
 } from 'class-validator';
+import { Type } from 'class-transformer';
 
 export class DatabaseLogMessageDto {
   @IsString()
@@ -31,6 +32,7 @@ export class DatabaseLogMessageDto {
   success!: boolean;
 
   @IsOptional()
+  @Type(() => Object)
   data?: unknown[];
 
   @IsOptional()

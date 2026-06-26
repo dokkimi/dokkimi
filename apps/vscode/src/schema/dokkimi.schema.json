@@ -6,6 +6,7 @@
     { "$ref": "#/definitions/RefFragment" },
     { "$ref": "#/definitions/ServiceItem" },
     { "$ref": "#/definitions/DatabaseItem" },
+    { "$ref": "#/definitions/BrokerItem" },
     { "$ref": "#/definitions/MockItem" },
     { "$ref": "#/definitions/HttpRequestItem" },
     { "$ref": "#/definitions/DbQueryItem" },
@@ -92,6 +93,7 @@
         { "$ref": "#/definitions/RefItem" },
         { "$ref": "#/definitions/ServiceItem" },
         { "$ref": "#/definitions/DatabaseItem" },
+        { "$ref": "#/definitions/BrokerItem" },
         { "$ref": "#/definitions/MockItem" },
         { "$ref": "#/definitions/HttpRequestItem" },
         { "$ref": "#/definitions/DbQueryItem" }
@@ -147,7 +149,7 @@
         },
         "healthCheck": {
           "type": "string",
-          "description": "HTTP endpoint path for health checks (e.g., '/health')."
+          "description": "Health check: HTTP path (e.g., '/health') or 'tcp' for TCP port check (non-HTTP services)."
         },
         "uiPath": {
           "type": "string",
@@ -158,6 +160,11 @@
           "description": "Port for remote debugging (e.g., 9229 for Node.js --inspect).",
           "minimum": 1,
           "maximum": 65535
+        },
+        "command": {
+          "type": "array",
+          "description": "Override the Docker image's default CMD (e.g., [\"server\", \"/data\"]).",
+          "items": { "type": "string" }
         },
         "env": {
           "type": "array",
@@ -243,6 +250,75 @@
           "type": "array",
           "description": "Array of init file IDs.",
           "items": { "type": "string" }
+        },
+        "minCpu": {
+          "type": "number",
+          "description": "Minimum CPU cores requested."
+        },
+        "minMemory": {
+          "type": "number",
+          "description": "Minimum memory in MB requested."
+        },
+        "maxCpu": {
+          "type": "number",
+          "description": "Maximum CPU cores allowed."
+        },
+        "maxMemory": {
+          "type": "number",
+          "description": "Maximum memory in MB allowed."
+        }
+      }
+    },
+
+    "BrokerItem": {
+      "type": "object",
+      "required": ["type", "name", "broker"],
+      "additionalProperties": false,
+      "properties": {
+        "type": { "type": "string", "const": "BROKER" },
+        "name": {
+          "type": "string",
+          "description": "Unique name (DNS label). Lowercase alphanumeric with hyphens, 1-63 chars.",
+          "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$",
+          "maxLength": 63
+        },
+        "description": {
+          "type": "string",
+          "description": "Human-readable description."
+        },
+        "broker": {
+          "type": "string",
+          "description": "Broker protocol type.",
+          "enum": ["amqp", "kafka"]
+        },
+        "version": {
+          "type": "string",
+          "description": "Broker image version tag (e.g. \"3\" for rabbitmq:3). Must start with a digit.",
+          "pattern": "^[0-9][a-zA-Z0-9.\\-]*$"
+        },
+        "image": {
+          "type": "string",
+          "description": "Custom Docker image URI (e.g., 'rabbitmq:3.13-management')."
+        },
+        "port": {
+          "type": "integer",
+          "description": "Port the broker listens on inside the container.",
+          "minimum": 1,
+          "maximum": 65535
+        },
+        "healthCheck": {
+          "type": "string",
+          "description": "Health check: HTTP path or 'tcp' for TCP port check."
+        },
+        "command": {
+          "type": "array",
+          "description": "Override the Docker image's default CMD.",
+          "items": { "type": "string" }
+        },
+        "env": {
+          "type": "array",
+          "description": "Environment variables passed to the container.",
+          "items": { "$ref": "#/definitions/EnvVar" }
         },
         "minCpu": {
           "type": "number",

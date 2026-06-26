@@ -2,19 +2,20 @@
 
 ## What is Dokkimi?
 
-Dokkimi is a platform for testing microservice architectures. It spins up isolated Docker environments where you can deploy your services, databases, and mocks together as a complete environment. An interceptor sidecar is injected into each service to capture all inter-service HTTP traffic, giving you full visibility into how your services communicate. You can then run automated test suites that make requests, query databases, and assert on responses, inter-service calls, and even console logs — all without modifying your application code.
+Dokkimi is a platform for testing microservice architectures. It spins up isolated Docker environments where you can deploy your services, databases, message brokers, and mocks together as a complete environment. An interceptor sidecar is injected into each service to capture all inter-service HTTP traffic, and a broker-proxy sidecar is injected alongside each broker to capture all published and delivered messages — giving you full visibility into how your services communicate. You can then run automated test suites that make requests, query databases, and assert on responses, inter-service calls, message logs, and even console logs — all without modifying your application code.
 
 Key capabilities:
 
-- **Isolated environments** — each test run gets its own Docker network with dedicated services and databases
+- **Isolated environments** — each test run gets its own Docker network with dedicated services, databases, and message brokers
 - **Traffic interception** — all HTTP traffic between services is captured and available for assertions
+- **Message log interception** — all messages published to and delivered from message brokers are captured and available for assertions
 - **Mock external APIs** — intercept outbound requests to third-party services and return controlled responses
-- **Automated testing** — sequential and parallel test steps with rich assertions on responses, inter-service traffic, and logs
+- **Automated testing** — sequential and parallel test steps with rich assertions on responses, inter-service traffic, message logs, and logs
 - **Database seeding** — initialize databases with SQL or JS scripts before tests run
 
 ## Definition Files
 
-You are helping a developer write Dokkimi definition files. These are JSON files in a `.dokkimi/` folder that describe the test environment: services, databases, mocks, and automated tests.
+You are helping a developer write Dokkimi definition files. These are JSON files in a `.dokkimi/` folder that describe the test environment: services, databases, message brokers, mocks, and automated tests.
 
 This document is the complete reference. All valid fields, types, operators, and constraints are documented below.
 
@@ -153,7 +154,7 @@ This resolves `${{API_HOST}}` at build time, and the resulting string becomes a 
 
 **Always use shared fragments and `$ref`.** Do NOT copy-paste item definitions into every definition file. Instead:
 
-1. Create each SERVICE, DATABASE, and MOCK as a **shared fragment** in a separate file (e.g., `.dokkimi/shared/my-service.json`).
+1. Create each SERVICE, DATABASE, BROKER, and MOCK as a **shared fragment** in a separate file (e.g., `.dokkimi/shared/my-service.json`).
 2. In runnable definitions, reference them with `$ref`:
 
 ```json
@@ -192,7 +193,7 @@ A containerized application deployed with an interceptor sidecar for traffic cap
 | `type`        | `"SERVICE"`       | Item type                                                                                                           |
 | `name`        | string            | Unique name (1-63 chars, lowercase alphanumeric + hyphens, must start/end with alphanumeric). Used as DNS hostname. |
 | `port`        | integer (1-65535) | Port the service listens on                                                                                         |
-| `healthCheck` | string            | HTTP path for health checks (e.g., `"/health"`, `"/ready"`)                                                         |
+| `healthCheck` | string            | Health check: HTTP path (e.g., `"/health"`) or `"tcp"` for TCP port check                                           |
 
 **Optional fields:**
 
@@ -202,6 +203,7 @@ A containerized application deployed with an interceptor sidecar for traffic cap
 | `image`       | string            | —       | Docker image URI (e.g., `"my-service:latest"`).                             |
 | `uiPath`      | string            | —       | URL path to service's UI (e.g., `"/"`, `"/app"`) — enables "Open UI" button |
 | `debugPort`   | integer (1-65535) | —       | Remote debugging port (e.g., 9229 for Node.js `--inspect`)                  |
+| `command`     | string[]          | —       | Override Docker image's default CMD (e.g., `["server", "/data"]`)           |
 | `env`         | array             | —       | Environment variables: `[{ "name": "KEY", "value": "VALUE" }, ...]`         |
 | `minCpu`      | number (≥ 0)      | —       | Minimum CPU cores (e.g., 0.25)                                              |
 | `minMemory`   | number (≥ 0)      | —       | Minimum memory in MB                                                        |
@@ -522,6 +524,109 @@ When multiple calls hit the same endpoint with different payloads (LLM APIs, Gra
 ```
 
 Field name mapping: `mockMethod` → `method`, `mockOrigin` → `origin`, `mockTarget` → `target`, `mockPath` → `path`, `mockDelayMs` → `delayMs`, `mockResponseStatus` → `responseStatus`, `mockResponseHeaders` → `responseHeaders`, `mockResponseBody` → `responseBody`, `mockRequestBodyContains` → `requestBodyContains`, `mockRequestBodyMatches` → `requestBodyMatches`.
+
+---
+
+### BROKER
+
+A message broker instance with a transparent proxy sidecar that captures all published and delivered messages.
+
+**Required fields:**
+
+| Field    | Type       | Description                                                                                               |
+| -------- | ---------- | --------------------------------------------------------------------------------------------------------- |
+| `type`   | `"BROKER"` | Item type                                                                                                 |
+| `name`   | string     | Unique name (1-63 chars, lowercase alphanumeric + hyphens). Used as DNS hostname for service connections. |
+| `broker` | enum       | Broker engine: `"amqp"` or `"kafka"`                                                                      |
+
+**Optional fields:**
+
+| Field         | Type              | Default | Description                                                                   |
+| ------------- | ----------------- | ------- | ----------------------------------------------------------------------------- |
+| `description` | string            | —       | Human-readable description (max 500 chars)                                    |
+| `image`       | string            | —       | Custom Docker image (e.g. `"rabbitmq:3.13-management"`, `"apache/kafka:3.9"`) |
+| `port`        | integer (1-65535) | —       | Native broker port (default: 5672 for AMQP, 9092 for Kafka)                   |
+| `healthCheck` | string            | —       | Health check endpoint or `"tcp"`                                              |
+| `env`         | array             | —       | Environment variables: `[{ "name": "KEY", "value": "VALUE" }, ...]`           |
+| `command`     | string[]          | —       | Override Docker image CMD                                                     |
+| `minCpu`      | number (≥ 0)      | —       | Minimum CPU cores                                                             |
+| `minMemory`   | number (≥ 0)      | —       | Minimum memory in MB                                                          |
+| `maxCpu`      | number (≥ 0)      | —       | Maximum CPU cores                                                             |
+| `maxMemory`   | number (≥ 0)      | —       | Maximum memory in MB                                                          |
+
+**Broker engine details:**
+
+| Engine  | Default image      | Native port | Default connection string         |
+| ------- | ------------------ | ----------- | --------------------------------- |
+| `amqp`  | rabbitmq:3         | 5672        | `amqp://guest:guest@{name}:5672`  |
+| `kafka` | apache/kafka:4.3.1 | 9092        | `{name}:9092` (bootstrap servers) |
+
+**Examples:**
+
+Minimal AMQP:
+
+```json
+{
+  "type": "BROKER",
+  "name": "rabbitmq",
+  "broker": "amqp"
+}
+```
+
+Minimal Kafka:
+
+```json
+{
+  "type": "BROKER",
+  "name": "kafka",
+  "broker": "kafka"
+}
+```
+
+With custom image and credentials (AMQP):
+
+```json
+{
+  "type": "BROKER",
+  "name": "rabbitmq",
+  "broker": "amqp",
+  "image": "rabbitmq:3.13-management",
+  "env": [
+    { "name": "RABBITMQ_DEFAULT_USER", "value": "myuser" },
+    { "name": "RABBITMQ_DEFAULT_PASS", "value": "mypass" }
+  ]
+}
+```
+
+**Important notes:**
+
+- **Broker names are DNS hostnames.** Services connect to the broker using the broker item's `name` as the hostname and the broker's native port (5672 for AMQP, 9092 for Kafka). For example: `"amqp://guest:guest@rabbitmq:5672"` where `rabbitmq` is the BROKER item name, or `"kafka:9092"` for Kafka bootstrap servers.
+- The broker-proxy sidecar is injected transparently — it captures all published and delivered messages without modifying wire traffic.
+- Message logs include protocol-specific metadata and are available for assertions via `$.messageLogs`:
+  - AMQP: `exchange`, `routingKey`
+  - Kafka: `topic`, `partition`, `key`, `offset` (consume only)
+
+**Connecting services to brokers:** Use the broker item's `name` as the hostname in your service's environment variables:
+
+```json
+{
+  "type": "SERVICE",
+  "name": "my-service",
+  "port": 3000,
+  "healthCheck": "/health",
+  "env": [{ "name": "AMQP_URL", "value": "amqp://guest:guest@rabbitmq:5672" }]
+}
+```
+
+```json
+{
+  "type": "SERVICE",
+  "name": "my-service",
+  "port": 3000,
+  "healthCheck": "/health",
+  "env": [{ "name": "KAFKA_BROKERS", "value": "kafka:9092" }]
+}
+```
 
 ---
 
@@ -1294,6 +1399,7 @@ Asserts on the step's own outcome:
 - HTTP step → the response (`$.response.status`, `$.response.body`, `$.response.headers.*`, `$.responseTime`).
 - DB query step → the query result (`$.response.success`, `$.response.data`, `$.response.rowsAffected`, `$.response.error`, `$.response.duration`).
 - UI step → variables newly pulled out by the action's `extract` sub-steps, exposed as `$.variables.<varName>` (e.g. `$.variables.errorText`).
+- Wait step → captured logs within the step's time window (`$.messageLogs`, `$.traffic`, `$.consoleLogs`, `$.dbLogs`).
 
 ```json
 {
@@ -1323,7 +1429,7 @@ Filters an array from the root context (traffic, console logs, DB logs, etc.) an
 
 | Field   | Type              | Required | Description                                                                                                                                                                                                  |
 | ------- | ----------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `path`  | string            | Yes      | JSONPath to the array to filter (e.g. `"$.traffic"`, `"$.consoleLogs"`, `"$.dbLogs"`)                                                                                                                        |
+| `path`  | string            | Yes      | JSONPath to the array to filter (e.g. `"$.traffic"`, `"$.consoleLogs"`, `"$.dbLogs"`, `"$.messageLogs"`)                                                                                                     |
 | `where` | array             | No       | Array of filter entries — each entry tests a field on the iterator element (see below)                                                                                                                       |
 | `count` | integer or object | No       | Assert on the number of matching entries. Integer shorthand (e.g. `1`) or `{ "operator": "eq", "value": 1 }`. Count operators: `"eq"`, `"gt"`, `"gte"`, `"lt"`, `"lte"`. Default: at least 1 match expected. |
 | `as`    | string            | No       | Save the matched entries array as a named variable for use in later steps                                                                                                                                    |
@@ -1527,13 +1633,44 @@ All assertion paths start with `$.` and resolve against the unified root context
 
 **Other root context fields:**
 
-| Path                  | Description                                  |
-| --------------------- | -------------------------------------------- |
-| `$.variables.varName` | Access a variable by name                    |
-| `$.traffic`           | Array of all captured HTTP traffic entries   |
-| `$.consoleLogs`       | Array of all console log entries             |
-| `$.dbLogs`            | Array of all database log entries            |
-| `$.timeline`          | Ordered array of all events (traffic + logs) |
+| Path                  | Description                                      |
+| --------------------- | ------------------------------------------------ |
+| `$.variables.varName` | Access a variable by name                        |
+| `$.traffic`           | Array of all captured HTTP traffic entries       |
+| `$.consoleLogs`       | Array of all console log entries                 |
+| `$.dbLogs`            | Array of all database log entries                |
+| `$.messageLogs`       | Array of all captured broker message log entries |
+| `$.timeline`          | Ordered array of all events (traffic + logs)     |
+
+**Message log entry fields (`$.messageLogs`):**
+
+Each entry in `$.messageLogs` has the following fields:
+
+| Field        | Type   | Description                                                           |
+| ------------ | ------ | --------------------------------------------------------------------- |
+| `timestamp`  | string | ISO timestamp of the message event                                    |
+| `broker`     | string | Broker item name (e.g. `"rabbitmq"`)                                  |
+| `brokerType` | string | Protocol type (e.g. `"amqp"`)                                         |
+| `operation`  | string | `"publish"` / `"deliver"` (AMQP) or `"produce"` / `"consume"` (Kafka) |
+| `body`       | any    | Message body (parsed JSON if valid, otherwise raw string)             |
+
+Protocol-specific metadata fields are spread at the top level of each entry.
+
+AMQP metadata:
+
+| Field        | Type   | Description                                |
+| ------------ | ------ | ------------------------------------------ |
+| `exchange`   | string | AMQP exchange the message was published to |
+| `routingKey` | string | AMQP routing key used for the message      |
+
+Kafka metadata:
+
+| Field       | Type    | Description                                          |
+| ----------- | ------- | ---------------------------------------------------- |
+| `topic`     | string  | Kafka topic                                          |
+| `partition` | integer | Partition index                                      |
+| `key`       | any     | Message key (string or parsed JSON, null if not set) |
+| `offset`    | integer | Message offset (consume only)                        |
 
 ---
 

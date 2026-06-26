@@ -109,18 +109,19 @@ import CodeBlock from '../../components/CodeBlock.astro';
   </table>
 
   <h2>UI Action</h2>
-  <p>Drive a real Chromium browser to test user-facing flows. When a definition contains UI actions, Dokkimi automatically attaches a headless Chromium sidecar to the test pod.</p>
+  <p>Drive a real Chromium browser to test user-facing flows. When a definition contains UI actions, Dokkimi automatically attaches a headless Chromium sidecar to the test environment.</p>
   <CodeBlock code={`{
   "action": {
     "type": "ui",
-    "url": "http://web-app:3000/posts/new",
-    "subSteps": [
-      { "action": "waitForSelector", "selector": "[data-testid=\\"post-form\\"]" },
-      { "action": "fill", "selector": "#title", "value": "My new post" },
-      { "action": "fill", "selector": "#body", "value": "Post content here." },
-      { "action": "click", "selector": "[data-testid=\\"publish-btn\\"]" },
-      { "action": "waitForSelector", "selector": "[data-testid=\\"success-toast\\"]" },
-      { "action": "screenshot", "name": "post-published" }
+    "target": "web-app",
+    "steps": [
+      { "visit": "/posts/new" },
+      { "waitFor": "[data-testid='post-form']" },
+      { "type": { "selector": "#title", "text": "My new post" } },
+      { "type": { "selector": "#body", "text": "Post content here." } },
+      { "click": "[data-testid='publish-btn']" },
+      { "waitFor": "[data-testid='success-toast']" },
+      { "screenshot": "post-published" }
     ]
   }
 }`} lang="json" />
@@ -131,36 +132,37 @@ import CodeBlock from '../../components/CodeBlock.astro';
     </thead>
     <tbody>
       <tr><td><code>type</code></td><td><code>"ui"</code></td><td>Yes</td><td>Action type</td></tr>
-      <tr><td><code>url</code></td><td>string</td><td>Yes</td><td>The URL to navigate to. Use <code>http://service-name:port/path</code> format.</td></tr>
-      <tr><td><code>subSteps</code></td><td>array</td><td>Yes</td><td>Ordered list of browser interactions to perform.</td></tr>
+      <tr><td><code>target</code></td><td>string</td><td>Yes</td><td>Name of a SERVICE item with a <code>uiPath</code> field.</td></tr>
+      <tr><td><code>steps</code></td><td>array</td><td>Yes</td><td>Ordered list of browser interactions to perform.</td></tr>
     </tbody>
   </table>
 
   <h3>Available sub-steps</h3>
+  <p>Each sub-step is an object with a single discriminator key. The key determines the sub-step type.</p>
   <table>
     <thead>
-      <tr><th>Sub-step</th><th>Fields</th><th>Description</th></tr>
+      <tr><th>Key</th><th>Value</th><th>Description</th></tr>
     </thead>
     <tbody>
-      <tr><td><code>click</code></td><td><code>selector</code></td><td>Click an element.</td></tr>
-      <tr><td><code>fill</code></td><td><code>selector</code>, <code>value</code></td><td>Clear a field and type a value.</td></tr>
-      <tr><td><code>type</code></td><td><code>selector</code>, <code>value</code></td><td>Type text without clearing first.</td></tr>
-      <tr><td><code>select</code></td><td><code>selector</code>, <code>value</code></td><td>Select an option from a dropdown.</td></tr>
-      <tr><td><code>hover</code></td><td><code>selector</code></td><td>Hover over an element.</td></tr>
-      <tr><td><code>waitForSelector</code></td><td><code>selector</code></td><td>Wait until an element appears in the DOM.</td></tr>
-      <tr><td><code>screenshot</code></td><td><code>name</code></td><td>Capture a screenshot. Used for visual regression testing.</td></tr>
-      <tr><td><code>scroll</code></td><td><code>x</code>, <code>y</code></td><td>Scroll the page by the given offset.</td></tr>
-      <tr><td><code>key</code></td><td><code>key</code></td><td>Press a keyboard key (e.g. <code>Enter</code>, <code>Escape</code>).</td></tr>
-      <tr><td><code>upload</code></td><td><code>selector</code>, <code>files</code></td><td>Upload files to a file input.</td></tr>
-      <tr><td><code>drag</code></td><td><code>source</code>, <code>target</code></td><td>Drag from one element to another.</td></tr>
-      <tr><td><code>extract</code></td><td><code>selector</code>, <code>attribute</code>, <code>variable</code></td><td>Extract a value from the page into a variable.</td></tr>
-      <tr><td><code>viewport</code></td><td><code>width</code>, <code>height</code></td><td>Set browser viewport dimensions (pixels). Persists across subsequent UI actions until changed.</td></tr>
+      <tr><td><code>visit</code></td><td>string (URL path)</td><td>Navigate to a path on the target service.</td></tr>
+      <tr><td><code>click</code></td><td>string (selector)</td><td>Click an element.</td></tr>
+      <tr><td><code>type</code></td><td><code>&#123; selector, text &#125;</code></td><td>Type text into a field (clears first).</td></tr>
+      <tr><td><code>select</code></td><td><code>&#123; selector, value &#125;</code></td><td>Select an option from a dropdown.</td></tr>
+      <tr><td><code>hover</code></td><td>string (selector)</td><td>Hover over an element.</td></tr>
+      <tr><td><code>waitFor</code></td><td>string or <code>&#123; selector, text? &#125;</code></td><td>Wait until an element appears. Optionally check for text content.</td></tr>
+      <tr><td><code>screenshot</code></td><td>string (name)</td><td>Capture a screenshot.</td></tr>
+      <tr><td><code>scroll</code></td><td><code>&#123; x?, y? &#125;</code></td><td>Scroll the page by the given offset.</td></tr>
+      <tr><td><code>key</code></td><td>string (key name)</td><td>Press a keyboard key (e.g. <code>Enter</code>, <code>Escape</code>).</td></tr>
+      <tr><td><code>upload</code></td><td><code>&#123; selector, files &#125;</code></td><td>Upload files to a file input.</td></tr>
+      <tr><td><code>drag</code></td><td><code>&#123; source, target &#125;</code></td><td>Drag from one element to another.</td></tr>
+      <tr><td><code>extract</code></td><td>object</td><td>Extract values from the page into variables. Keys are variable names, values are source objects with <code>from</code>, <code>selector</code>, etc.</td></tr>
+      <tr><td><code>viewport</code></td><td><code>&#123; width, height &#125;</code></td><td>Set browser viewport dimensions (pixels).</td></tr>
     </tbody>
   </table>
 
   <h3>Visual regression with screenshots</h3>
   <p>Screenshots captured during a test run are saved as artifacts. To enable visual regression testing, add <code>match: true</code> to the screenshot sub-step:</p>
-  <CodeBlock code={`{ "action": "screenshot", "name": "checkout-page", "match": true }`} lang="json" />
+  <CodeBlock code={`{ "screenshot": "checkout-page", "match": true }`} lang="json" />
   <p>When <code>match: true</code> is set, Dokkimi compares the capture against a baseline stored in <code>.dokkimi/&lt;project&gt;/baselines/</code>. If no baseline exists yet (first run), or if the diff exceeds the threshold, it appears as a pending baseline. Review and approve pending baselines with <code>dokkimi baselines</code>.</p>
 
   <div class="callout">

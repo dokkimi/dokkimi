@@ -19,6 +19,7 @@ export interface ItemDefinitionLike {
   maxMemory?: number | null;
   localDevPath?: string | null;
   mountPath?: string | null;
+  broker?: string | null;
   database?: string | null;
   initFiles?: { filename: string }[] | null;
   dbName?: string | null;
@@ -61,6 +62,14 @@ export interface DatabaseInfo {
 
 export type DatabaseMap = Record<string, DatabaseInfo>;
 
+export interface BrokerInfo {
+  type: string;
+  port: number;
+  instanceItemId: string;
+}
+
+export type BrokerMap = Record<string, BrokerInfo>;
+
 @Injectable()
 export class ConfigMapBuilderService {
   /**
@@ -84,6 +93,7 @@ export class ConfigMapBuilderService {
     // Build URL map from config items
     const urlMap: UrlMap = {};
     const databaseMap: DatabaseMap = {};
+    const brokerMap: BrokerMap = {};
 
     // Build container name to instanceItemId mapping
     const podNameToNamespaceItemId: Record<string, string> = {};
@@ -116,12 +126,9 @@ export class ConfigMapBuilderService {
           };
         }
       } else if (item.type === 'DATABASE' && item.containerName && item.id) {
-        // Build database map entry
-        // Extract database type from item (should have a database field)
         const dbType = item.database || 'postgres';
         const normalizedDbType = this.normalizeDatabaseType(dbType);
 
-        // Use credentials from item or fall back to config defaults (matching DatabaseConfigService)
         const config = getConfig();
         const dbName = item.dbName ?? config.database.defaultName;
         const dbUser = item.dbUser ?? config.database.defaultUser;
@@ -133,6 +140,12 @@ export class ConfigMapBuilderService {
           password: dbPassword,
           database: dbName,
           port: this.getNativeDbPort(normalizedDbType),
+          instanceItemId: item.id,
+        };
+      } else if (item.type === 'BROKER' && item.containerName && item.id) {
+        brokerMap[item.containerName] = {
+          type: item.broker || 'amqp',
+          port: this.getNativeBrokerPort(item.broker || 'amqp'),
           instanceItemId: item.id,
         };
       }
@@ -148,9 +161,12 @@ export class ConfigMapBuilderService {
       ),
     };
 
-    // Add databaseMap if there are any databases
     if (Object.keys(databaseMap).length > 0) {
       data.databaseMap = JSON.stringify(databaseMap, null, 2);
+    }
+
+    if (Object.keys(brokerMap).length > 0) {
+      data.brokerMap = JSON.stringify(brokerMap, null, 2);
     }
 
     // Add test configuration if provided
@@ -233,6 +249,17 @@ export class ConfigMapBuilderService {
       return 'mysql';
     }
     return normalized;
+  }
+
+  private getNativeBrokerPort(brokerType: string): number {
+    switch (brokerType.toLowerCase()) {
+      case 'amqp':
+        return 5672;
+      case 'kafka':
+        return 9092;
+      default:
+        return 5672;
+    }
   }
 
   private getNativeDbPort(normalizedDbType: string): number {

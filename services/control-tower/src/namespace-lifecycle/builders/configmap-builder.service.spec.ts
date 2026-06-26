@@ -663,6 +663,111 @@ describe('ConfigMapBuilderService', () => {
     });
   });
 
+  describe('buildInterceptorConfigMap - brokerMap', () => {
+    const namespace = 'dokkimi-test-namespace';
+
+    it('should build brokerMap with correct port for AMQP', () => {
+      const items = [
+        {
+          id: 'item-1',
+          type: 'BROKER' as const,
+          containerName: 'rabbitmq',
+          name: 'RabbitMQ',
+          broker: 'amqp',
+          port: null,
+          domain: null,
+        },
+      ];
+
+      const configMap = service.buildInterceptorConfigMap(namespace, items, []);
+
+      const brokerMap = JSON.parse(configMap.data?.brokerMap || '{}') as Record<
+        string,
+        any
+      >;
+      expect(brokerMap['rabbitmq']).toEqual({
+        type: 'amqp',
+        port: 5672,
+        instanceItemId: 'item-1',
+      });
+    });
+
+    it('should build brokerMap with correct port for Kafka', () => {
+      const items = [
+        {
+          id: 'item-1',
+          type: 'BROKER' as const,
+          containerName: 'kafka',
+          name: 'Kafka',
+          broker: 'kafka',
+          port: null,
+          domain: null,
+        },
+      ];
+
+      const configMap = service.buildInterceptorConfigMap(namespace, items, []);
+
+      const brokerMap = JSON.parse(configMap.data?.brokerMap || '{}') as Record<
+        string,
+        any
+      >;
+      expect(brokerMap['kafka']).toEqual({
+        type: 'kafka',
+        port: 9092,
+        instanceItemId: 'item-1',
+      });
+    });
+
+    it('should handle multiple brokers of different types', () => {
+      const items = [
+        {
+          id: 'item-1',
+          type: 'BROKER' as const,
+          containerName: 'rabbitmq',
+          name: 'RabbitMQ',
+          broker: 'amqp',
+          port: null,
+          domain: null,
+        },
+        {
+          id: 'item-2',
+          type: 'BROKER' as const,
+          containerName: 'kafka',
+          name: 'Kafka',
+          broker: 'kafka',
+          port: null,
+          domain: null,
+        },
+      ];
+
+      const configMap = service.buildInterceptorConfigMap(namespace, items, []);
+
+      const brokerMap = JSON.parse(configMap.data?.brokerMap || '{}') as Record<
+        string,
+        any
+      >;
+      expect(brokerMap['rabbitmq'].port).toBe(5672);
+      expect(brokerMap['kafka'].port).toBe(9092);
+    });
+
+    it('should not include brokerMap if no brokers present', () => {
+      const items = [
+        {
+          id: 'item-1',
+          type: 'SERVICE' as const,
+          containerName: 'test-service',
+          name: 'Test Service',
+          port: 8080,
+          domain: null,
+        },
+      ];
+
+      const configMap = service.buildInterceptorConfigMap(namespace, items, []);
+
+      expect(configMap.data?.brokerMap).toBeUndefined();
+    });
+  });
+
   describe('buildDbCredentialsConfigMap', () => {
     const namespace = 'dokkimi-test-namespace';
 

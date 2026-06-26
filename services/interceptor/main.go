@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"compress/gzip"
 	"context"
 	"crypto/rsa"
 	"crypto/tls"
@@ -311,14 +312,23 @@ func handleRequest(w http.ResponseWriter, r *http.Request, proxy *ProxyService, 
 			http.Error(w, fmt.Sprintf("Error reading response: %v", err), http.StatusInternalServerError)
 			return
 		}
-		// Parse response body for logging
+		// Parse response body for logging — decompress if gzip-encoded
 		if len(responseBodyBytes) > 0 {
-			// Try to parse as JSON
+			loggableBytes := responseBodyBytes
+			if strings.EqualFold(resp.Header.Get("Content-Encoding"), "gzip") {
+				gr, gzErr := gzip.NewReader(bytes.NewReader(responseBodyBytes))
+				if gzErr == nil {
+					if decompressed, readErr := io.ReadAll(gr); readErr == nil {
+						loggableBytes = decompressed
+					}
+					gr.Close()
+				}
+			}
 			var jsonBody interface{}
-			if err := json.Unmarshal(responseBodyBytes, &jsonBody); err == nil {
+			if err := json.Unmarshal(loggableBytes, &jsonBody); err == nil {
 				responseBody = jsonBody
 			} else {
-				responseBody = string(responseBodyBytes)
+				responseBody = string(loggableBytes)
 			}
 		}
 	}

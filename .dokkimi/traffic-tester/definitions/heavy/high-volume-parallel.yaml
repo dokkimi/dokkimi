@@ -1,0 +1,861 @@
+name: high-volume-parallel
+description: |
+  Stress tests with large payloads, many parallel operations, bulk database
+  operations, and deep variable extraction chains. Validates that Dokkimi handles
+  high concurrency and large data volumes without choking the interceptor, the
+  test agent, or the log-processing pipeline.
+config:
+  timeoutSeconds: 180
+items:
+  - $ref: ../../shared/service-a.yaml
+  - $ref: ../../shared/service-b.json
+  - $ref: ../../shared/service-c.yaml
+  - $ref: ../../shared/heavy-postgres.yaml
+  - $ref: ../../shared/heavy-mongo.yaml
+  - $ref: ../../shared/redis.json
+  - $ref: ../../shared/kafka.yaml
+variables:
+  pgConnStr: postgresql://dokkimi:dokkimi@postgres-db:5432/dokkimi
+  mongoConnStr: mongodb://dokkimi:dokkimi@mongo-db:27017/dokkimi?authSource=admin
+  redisConnStr: redis://:dokkimi@redis-db:6379
+  kafkaBrokers: kafka:9092
+
+tests:
+  - name: Large payload — bulk order creation with many items
+    steps:
+      - name: Submit a large order with 10 line items
+        action:
+          type: httpRequest
+          method: POST
+          url: service-a/bulk-order
+          headers:
+            Content-Type: application/json
+          body:
+            response:
+              value:
+                orderId: bulk-order-001
+                status: accepted
+                itemCount: 10
+                totalCents: 52940
+                items:
+                  - sku: WDG-001
+                    name: Standard Widget
+                    quantity: 5
+                    unitPriceCents: 999
+                    subtotalCents: 4995
+                  - sku: WDG-002
+                    name: Premium Widget
+                    quantity: 3
+                    unitPriceCents: 2499
+                    subtotalCents: 7497
+                  - sku: WDG-003
+                    name: Mini Widget
+                    quantity: 10
+                    unitPriceCents: 499
+                    subtotalCents: 4990
+                  - sku: GDG-001
+                    name: Basic Gadget
+                    quantity: 2
+                    unitPriceCents: 1999
+                    subtotalCents: 3998
+                  - sku: GDG-002
+                    name: Pro Gadget
+                    quantity: 1
+                    unitPriceCents: 4999
+                    subtotalCents: 4999
+                  - sku: GDG-003
+                    name: Mega Gadget
+                    quantity: 2
+                    unitPriceCents: 9999
+                    subtotalCents: 19998
+                  - sku: ACC-001
+                    name: Widget Adapter
+                    quantity: 5
+                    unitPriceCents: 799
+                    subtotalCents: 3995
+                  - sku: ACC-002
+                    name: Gadget Case
+                    quantity: 1
+                    unitPriceCents: 1499
+                    subtotalCents: 1499
+                  - sku: ACC-003
+                    name: Power Supply
+                    quantity: 1
+                    unitPriceCents: 2999
+                    subtotalCents: 2999
+                  - sku: ACC-004
+                    name: Calibration Kit
+                    quantity: 1
+                    unitPriceCents: 3999
+                    subtotalCents: 3999
+                shippingAddress:
+                  street: 123 Main St
+                  suite: Apt 4B
+                  city: Springfield
+                  state: IL
+                  zip: '62701'
+                  country: US
+                billingAddress:
+                  street: 500 Commerce Blvd
+                  city: Springfield
+                  state: IL
+                  zip: '62704'
+                  country: US
+                customer:
+                  email: alice@example.com
+                  name: Alice Johnson
+                  phone: '+15551234567'
+                  tier: gold
+        extract:
+          bulkOrderId: $.response.body.orderId
+          bulkItemCount: $.response.body.itemCount
+          bulkTotal: $.response.body.totalCents
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+              - path: $.response.body.orderId
+                operator: eq
+                value: bulk-order-001
+              - count: $.response.body.items
+                operator: eq
+                value: 10
+              - path: $.response.body.totalCents
+                operator: eq
+                value: 52940
+              - path: $.response.body.items[0].sku
+                operator: eq
+                value: WDG-001
+              - path: $.response.body.items[5].sku
+                operator: eq
+                value: GDG-003
+              - path: $.response.body.items[9].sku
+                operator: eq
+                value: ACC-004
+              - path: $.response.body.shippingAddress.suite
+                operator: eq
+                value: Apt 4B
+              - path: $.response.body.customer.tier
+                operator: eq
+                value: gold
+
+      - name: Verify extracted variables are correct
+        action:
+          type: httpRequest
+          method: POST
+          url: service-a/echo-vars
+          headers:
+            Content-Type: application/json
+          body:
+            response:
+              value:
+                orderId: '{{bulkOrderId}}'
+                itemCount: '{{bulkItemCount}}'
+                total: '{{bulkTotal}}'
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+              - path: $.response.body.orderId
+                operator: eq
+                value: bulk-order-001
+              - path: $.response.body.itemCount
+                operator: eq
+                value: '10'
+              - path: $.response.body.total
+                operator: eq
+                value: '52940'
+
+  - name: Five-way parallel fan-out with large responses
+    steps:
+      - name: Five concurrent requests each returning large payloads
+        action:
+          type: parallel
+          actions:
+            - type: httpRequest
+              method: POST
+              url: service-a/large-resp-1
+              headers:
+                Content-Type: application/json
+              body:
+                queries:
+                  - databaseType: postgres
+                    connectionString: '{{pgConnStr}}'
+                    command: SELECT * FROM inventory ORDER BY sku
+                response:
+                  value:
+                    source: service-a
+                    segment: inventory
+            - type: httpRequest
+              method: POST
+              url: service-b/large-resp-2
+              headers:
+                Content-Type: application/json
+              body:
+                queries:
+                  - databaseType: postgres
+                    connectionString: '{{pgConnStr}}'
+                    command: >-
+                      SELECT u.name, u.email, COUNT(o.id) as order_count, SUM(o.total_cents) as total_spent
+                      FROM users u LEFT JOIN orders o ON u.id = o.user_id
+                      GROUP BY u.name, u.email ORDER BY u.name
+                response:
+                  value:
+                    source: service-b
+                    segment: users-with-orders
+            - type: httpRequest
+              method: POST
+              url: service-c/large-resp-3
+              headers:
+                Content-Type: application/json
+              body:
+                queries:
+                  - databaseType: postgres
+                    connectionString: '{{pgConnStr}}'
+                    command: >-
+                      SELECT o.id, o.status, o.total_cents, o.currency,
+                      json_agg(json_build_object('sku', oi.sku, 'name', oi.name, 'qty', oi.quantity, 'price', oi.unit_price_cents))
+                      as items
+                      FROM orders o JOIN order_items oi ON o.id = oi.order_id
+                      GROUP BY o.id, o.status, o.total_cents, o.currency ORDER BY o.id
+                response:
+                  value:
+                    source: service-c
+                    segment: orders-with-items
+            - type: httpRequest
+              method: POST
+              url: service-a/large-resp-4
+              headers:
+                Content-Type: application/json
+              body:
+                queries:
+                  - databaseType: mongodb
+                    connectionString: '{{mongoConnStr}}'
+                    command: '{"operation":"find","collection":"products","filter":{}}'
+                response:
+                  value:
+                    source: service-a
+                    segment: mongo-products
+            - type: httpRequest
+              method: POST
+              url: service-b/large-resp-5
+              headers:
+                Content-Type: application/json
+              body:
+                queries:
+                  - databaseType: mongodb
+                    connectionString: '{{mongoConnStr}}'
+                    command: '{"operation":"find","collection":"customers","filter":{}}'
+                response:
+                  value:
+                    source: service-b
+                    segment: mongo-customers
+
+  - name: Bulk Postgres writes with verification
+    steps:
+      - name: Insert 10 inventory items in a single query
+        action:
+          type: dbQuery
+          database: postgres-db
+          query: >-
+            INSERT INTO inventory (sku, name, description, quantity_available, unit_price_cents, category, tags) VALUES
+            ('BULK-001', 'Bulk Item 1', 'Generated by high-volume test', 100, 1099, 'bulk', ARRAY['test']),
+            ('BULK-002', 'Bulk Item 2', 'Generated by high-volume test', 200, 2099, 'bulk', ARRAY['test']),
+            ('BULK-003', 'Bulk Item 3', 'Generated by high-volume test', 300, 3099, 'bulk', ARRAY['test']),
+            ('BULK-004', 'Bulk Item 4', 'Generated by high-volume test', 400, 4099, 'bulk', ARRAY['test']),
+            ('BULK-005', 'Bulk Item 5', 'Generated by high-volume test', 500, 5099, 'bulk', ARRAY['test']),
+            ('BULK-006', 'Bulk Item 6', 'Generated by high-volume test', 600, 6099, 'bulk', ARRAY['test']),
+            ('BULK-007', 'Bulk Item 7', 'Generated by high-volume test', 700, 7099, 'bulk', ARRAY['test']),
+            ('BULK-008', 'Bulk Item 8', 'Generated by high-volume test', 800, 8099, 'bulk', ARRAY['test']),
+            ('BULK-009', 'Bulk Item 9', 'Generated by high-volume test', 900, 9099, 'bulk', ARRAY['test']),
+            ('BULK-010', 'Bulk Item 10', 'Generated by high-volume test', 1000, 10099, 'bulk', ARRAY['test'])
+            RETURNING sku, name, quantity_available
+        assertions:
+          - assertions:
+              - path: $.response.success
+                operator: eq
+                value: true
+              - count: $.response.data
+                operator: eq
+                value: 10
+
+      - name: Verify all 10 items are queryable
+        action:
+          type: dbQuery
+          database: postgres-db
+          query: >-
+            SELECT sku, name, quantity_available, unit_price_cents
+            FROM inventory
+            WHERE category = 'bulk'
+            ORDER BY sku
+        assertions:
+          - assertions:
+              - path: $.response.success
+                operator: eq
+                value: true
+              - count: $.response.data
+                operator: eq
+                value: 10
+              - path: $.response.data[0].sku
+                operator: eq
+                value: BULK-001
+              - path: $.response.data[0].quantity_available
+                operator: eq
+                value: 100
+              - path: $.response.data[9].sku
+                operator: eq
+                value: BULK-010
+              - path: $.response.data[9].quantity_available
+                operator: eq
+                value: 1000
+
+      - name: Aggregate query over the full inventory
+        action:
+          type: dbQuery
+          database: postgres-db
+          query: >-
+            SELECT category,
+                   COUNT(*) as item_count,
+                   SUM(quantity_available) as total_stock,
+                   AVG(unit_price_cents)::int as avg_price_cents,
+                   MIN(unit_price_cents) as min_price,
+                   MAX(unit_price_cents) as max_price
+            FROM inventory
+            GROUP BY category
+            ORDER BY category
+        assertions:
+          - assertions:
+              - path: $.response.success
+                operator: eq
+                value: true
+              - count: $.response.data
+                operator: gte
+                value: 4
+              - path: $.response.data[0].category
+                operator: eq
+                value: accessories
+
+  - name: Bulk MongoDB operations with large documents
+    steps:
+      - name: Wait for MongoDB init data to settle
+        action:
+          type: wait
+          durationMs: 3000
+
+      - name: Insert many documents into MongoDB
+        action:
+          type: dbQuery
+          database: mongo-db
+          query: >-
+            {"operation":"insertMany","collection":"bulk_orders","documents":[
+              {"orderId":"BULK-ORD-001","customer":"alice","items":[{"sku":"WDG-001","qty":5},{"sku":"GDG-001","qty":2}],"total":89.93,"status":"completed","metadata":{"source":"high-volume-test","batch":1}},
+              {"orderId":"BULK-ORD-002","customer":"bob","items":[{"sku":"WDG-002","qty":1},{"sku":"ACC-001","qty":3}],"total":48.96,"status":"pending","metadata":{"source":"high-volume-test","batch":1}},
+              {"orderId":"BULK-ORD-003","customer":"carol","items":[{"sku":"GDG-002","qty":1}],"total":49.99,"status":"completed","metadata":{"source":"high-volume-test","batch":1}},
+              {"orderId":"BULK-ORD-004","customer":"dave","items":[{"sku":"GDG-003","qty":1},{"sku":"ACC-002","qty":1},{"sku":"ACC-003","qty":1}],"total":144.97,"status":"shipped","metadata":{"source":"high-volume-test","batch":1}},
+              {"orderId":"BULK-ORD-005","customer":"eve","items":[{"sku":"WDG-001","qty":10},{"sku":"WDG-003","qty":10}],"total":149.80,"status":"completed","metadata":{"source":"high-volume-test","batch":1}},
+              {"orderId":"BULK-ORD-006","customer":"frank","items":[{"sku":"GDG-001","qty":3},{"sku":"ACC-004","qty":1}],"total":99.96,"status":"pending","metadata":{"source":"high-volume-test","batch":2}},
+              {"orderId":"BULK-ORD-007","customer":"grace","items":[{"sku":"WDG-002","qty":2},{"sku":"GDG-002","qty":1}],"total":99.97,"status":"completed","metadata":{"source":"high-volume-test","batch":2}},
+              {"orderId":"BULK-ORD-008","customer":"hank","items":[{"sku":"ACC-001","qty":5},{"sku":"ACC-002","qty":2},{"sku":"ACC-003","qty":1}],"total":72.93,"status":"shipped","metadata":{"source":"high-volume-test","batch":2}}
+            ]}
+        assertions:
+          - assertions:
+              - path: $.response.success
+                operator: eq
+                value: true
+
+      - name: Query completed orders from MongoDB
+        action:
+          type: dbQuery
+          database: mongo-db
+          query: '{"operation":"find","collection":"bulk_orders","filter":{"status":"completed"}}'
+        assertions:
+          - assertions:
+              - path: $.response.success
+                operator: eq
+                value: true
+              - count: $.response.data
+                operator: eq
+                value: 4
+
+      - name: Update all pending orders to processing
+        action:
+          type: dbQuery
+          database: mongo-db
+          query: '{"operation":"updateMany","collection":"bulk_orders","filter":{"status":"pending"},"update":{"$set":{"status":"processing","updatedAt":"2026-06-25T12:00:00Z"}}}'
+        assertions:
+          - assertions:
+              - path: $.response.success
+                operator: eq
+                value: true
+
+      - name: Verify the update
+        action:
+          type: dbQuery
+          database: mongo-db
+          query: '{"operation":"find","collection":"bulk_orders","filter":{"status":"processing"}}'
+        assertions:
+          - assertions:
+              - path: $.response.success
+                operator: eq
+                value: true
+              - count: $.response.data
+                operator: eq
+                value: 2
+              - path: $.response.data[0].status
+                operator: eq
+                value: processing
+              - path: $.response.data[1].status
+                operator: eq
+                value: processing
+
+  - name: Kafka batch produce and consume with many messages
+    steps:
+      - name: Produce a batch of 8 messages to Kafka
+        action:
+          type: httpRequest
+          method: POST
+          url: service-a/kafka/produce
+          headers:
+            Content-Type: application/json
+          body:
+            brokers:
+              - '{{kafkaBrokers}}'
+            topic: high-volume-events
+            messages:
+              - key: event-001
+                value:
+                  type: order.created
+                  orderId: HV-001
+                  amount: 89.93
+              - key: event-002
+                value:
+                  type: order.created
+                  orderId: HV-002
+                  amount: 48.96
+              - key: event-003
+                value:
+                  type: order.created
+                  orderId: HV-003
+                  amount: 49.99
+              - key: event-004
+                value:
+                  type: order.shipped
+                  orderId: HV-004
+                  carrier: FedEx
+                  tracking: FX-HEAVY-001
+              - key: event-005
+                value:
+                  type: order.shipped
+                  orderId: HV-005
+                  carrier: UPS
+                  tracking: UP-HEAVY-002
+              - key: event-006
+                value:
+                  type: inventory.low
+                  sku: GDG-003
+                  remaining: 5
+              - key: event-007
+                value:
+                  type: payment.received
+                  orderId: HV-001
+                  amount: 89.93
+                  method: credit_card
+              - key: event-008
+                value:
+                  type: payment.received
+                  orderId: HV-003
+                  amount: 49.99
+                  method: paypal
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 201
+              - path: $.response.body.produced
+                operator: eq
+                value: 8
+
+      - name: Wait for broker proxy to capture all messages
+        action:
+          type: wait
+          durationMs: 3000
+
+      - name: Verify all 8 messages were logged
+        action:
+          type: wait
+          durationMs: 500
+        assertions:
+          - match:
+              path: $.messageLogs
+              where:
+                - path: $$.topic
+                  operator: eq
+                  value: high-volume-events
+                - path: $$.operation
+                  operator: eq
+                  value: produce
+              count:
+                operator: eq
+                value: 8
+          - match:
+              path: $.messageLogs
+              where:
+                - path: $$.topic
+                  operator: eq
+                  value: high-volume-events
+                - path: $$.body.type
+                  operator: eq
+                  value: order.created
+              count:
+                operator: eq
+                value: 3
+          - match:
+              path: $.messageLogs
+              where:
+                - path: $$.topic
+                  operator: eq
+                  value: high-volume-events
+                - path: $$.body.type
+                  operator: eq
+                  value: order.shipped
+              count:
+                operator: eq
+                value: 2
+          - match:
+              path: $.messageLogs
+              where:
+                - path: $$.topic
+                  operator: eq
+                  value: high-volume-events
+                - path: $$.body.type
+                  operator: eq
+                  value: payment.received
+              count:
+                operator: eq
+                value: 2
+
+      - name: Consume messages and verify round-trip
+        action:
+          type: httpRequest
+          method: POST
+          url: service-b/kafka/consume
+          headers:
+            Content-Type: application/json
+          body:
+            brokers:
+              - '{{kafkaBrokers}}'
+            topic: high-volume-events
+            groupId: high-volume-consumer
+            count: 8
+            fromBeginning: true
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 201
+              - count: $.response.body.messages
+                operator: gte
+                value: 8
+
+  - name: Deep variable extraction chain across many steps
+    steps:
+      - name: 'Step 1: Query user from Postgres'
+        action:
+          type: dbQuery
+          database: postgres-db
+          query: SELECT id, email, name FROM users WHERE email = 'alice@example.com'
+        extract:
+          userId: $.response.data[0].id
+          userEmail: $.response.data[0].email
+          userName: $.response.data[0].name
+        assertions:
+          - assertions:
+              - path: $.response.success
+                operator: eq
+                value: true
+              - path: $.response.data[0].name
+                operator: eq
+                value: Alice Johnson
+
+      - name: 'Step 2: Query orders for user'
+        action:
+          type: dbQuery
+          database: postgres-db
+          query: SELECT id, status, total_cents FROM orders WHERE user_id = {{userId}} ORDER BY id LIMIT 1
+        extract:
+          orderId: $.response.data[0].id
+          orderStatus: $.response.data[0].status
+          orderTotal: $.response.data[0].total_cents
+        assertions:
+          - assertions:
+              - path: $.response.success
+                operator: eq
+                value: true
+              - path: $.response.data[0].status
+                operator: eq
+                value: completed
+
+      - name: 'Step 3: Query order items using extracted orderId'
+        action:
+          type: dbQuery
+          database: postgres-db
+          query: SELECT sku, name, quantity, unit_price_cents FROM order_items WHERE order_id = {{orderId}} ORDER BY id
+        extract:
+          firstItemSku: $.response.data[0].sku
+          firstItemName: $.response.data[0].name
+        assertions:
+          - assertions:
+              - path: $.response.success
+                operator: eq
+                value: true
+              - count: $.response.data
+                operator: gte
+                value: 1
+
+      - name: 'Step 4: Look up inventory for the first item'
+        action:
+          type: dbQuery
+          database: postgres-db
+          query: SELECT * FROM inventory WHERE sku = '{{firstItemSku}}'
+        extract:
+          stockAvailable: $.response.data[0].quantity_available
+          itemCategory: $.response.data[0].category
+        assertions:
+          - assertions:
+              - path: $.response.success
+                operator: eq
+                value: true
+              - path: $.response.data[0].sku
+                operator: eq
+                value: '{{firstItemSku}}'
+
+      - name: 'Step 5: Look up same product in MongoDB'
+        action:
+          type: dbQuery
+          database: mongo-db
+          query: '{"operation":"findOne","collection":"products","filter":{"sku":"{{firstItemSku}}"}}'
+        extract:
+          mongoProductName: $.response.data[0].name
+          mongoProductPrice: $.response.data[0].price
+        assertions:
+          - assertions:
+              - path: $.response.success
+                operator: eq
+                value: true
+              - path: $.response.data[0].sku
+                operator: eq
+                value: '{{firstItemSku}}'
+
+      - name: 'Step 6: Cache the full lookup chain in Redis'
+        action:
+          type: httpRequest
+          method: POST
+          url: service-a/cache-chain
+          headers:
+            Content-Type: application/json
+          body:
+            queries:
+              - databaseType: redis
+                connectionString: '{{redisConnStr}}'
+                command: SET chain:user {{userName}}
+              - databaseType: redis
+                connectionString: '{{redisConnStr}}'
+                command: SET chain:order {{orderId}}
+              - databaseType: redis
+                connectionString: '{{redisConnStr}}'
+                command: SET chain:item {{firstItemSku}}
+              - databaseType: redis
+                connectionString: '{{redisConnStr}}'
+                command: SET chain:stock {{stockAvailable}}
+              - databaseType: redis
+                connectionString: '{{redisConnStr}}'
+                command: SET chain:category {{itemCategory}}
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+
+      - name: 'Step 7: Publish chain result to Kafka'
+        action:
+          type: httpRequest
+          method: POST
+          url: service-a/kafka/produce
+          headers:
+            Content-Type: application/json
+          body:
+            brokers:
+              - '{{kafkaBrokers}}'
+            topic: chain-results
+            messages:
+              - key: chain-{{userId}}
+                value:
+                  userId: '{{userId}}'
+                  userName: '{{userName}}'
+                  userEmail: '{{userEmail}}'
+                  orderId: '{{orderId}}'
+                  orderStatus: '{{orderStatus}}'
+                  firstItemSku: '{{firstItemSku}}'
+                  firstItemName: '{{firstItemName}}'
+                  stockAvailable: '{{stockAvailable}}'
+                  category: '{{itemCategory}}'
+                  mongoName: '{{mongoProductName}}'
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 201
+
+      - name: 'Step 8: Verify the chain message was logged with all extracted values'
+        action:
+          type: wait
+          durationMs: 2000
+        assertions:
+          - match:
+              path: $.messageLogs
+              where:
+                - path: $$.topic
+                  operator: eq
+                  value: chain-results
+                - path: $$.operation
+                  operator: eq
+                  value: produce
+              count: 1
+            assertions:
+              - path: $.match.body.userName
+                operator: eq
+                value: Alice Johnson
+              - path: $.match.body.userEmail
+                operator: eq
+                value: alice@example.com
+              - path: $.match.body.orderStatus
+                operator: eq
+                value: completed
+              - path: $.match.body.firstItemSku
+                operator: eq
+                value: '{{firstItemSku}}'
+              - path: $.match.body.mongoName
+                operator: eq
+                value: '{{mongoProductName}}'
+
+  - name: Parallel inter-service chains with large bodies
+    steps:
+      - name: Three independent service chains running in parallel
+        action:
+          type: parallel
+          actions:
+            - type: httpRequest
+              method: POST
+              url: service-a/chain-1
+              headers:
+                Content-Type: application/json
+              body:
+                requests:
+                  - baseURL: http://service-b
+                    url: /chain-1-hop
+                    method: POST
+                    data:
+                      requests:
+                        - baseURL: http://service-c
+                          url: /chain-1-final
+                          method: POST
+                          data:
+                            response:
+                              value:
+                                chain: 1
+                                hops: 3
+                                payload:
+                                  items: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+                                  metadata:
+                                    source: service-c
+                                    timestamp: '2026-06-25T12:00:00Z'
+                                    tags: [heavy, stress, parallel]
+            - type: httpRequest
+              method: POST
+              url: service-b/chain-2
+              headers:
+                Content-Type: application/json
+              body:
+                requests:
+                  - baseURL: http://service-c
+                    url: /chain-2-hop
+                    method: POST
+                    data:
+                      requests:
+                        - baseURL: http://service-a
+                          url: /chain-2-final
+                          method: POST
+                          data:
+                            response:
+                              value:
+                                chain: 2
+                                hops: 3
+                                payload:
+                                  items:
+                                    [11, 12, 13, 14, 15, 16, 17, 18, 19, 20]
+                                  metadata:
+                                    source: service-a
+                                    timestamp: '2026-06-25T12:00:01Z'
+                                    tags: [heavy, stress, reverse]
+            - type: httpRequest
+              method: POST
+              url: service-c/chain-3
+              headers:
+                Content-Type: application/json
+              body:
+                requests:
+                  - baseURL: http://service-a
+                    url: /chain-3-hop
+                    method: POST
+                    data:
+                      requests:
+                        - baseURL: http://service-b
+                          url: /chain-3-final
+                          method: POST
+                          data:
+                            response:
+                              value:
+                                chain: 3
+                                hops: 3
+                                payload:
+                                  items:
+                                    [21, 22, 23, 24, 25, 26, 27, 28, 29, 30]
+                                  metadata:
+                                    source: service-b
+                                    timestamp: '2026-06-25T12:00:02Z'
+                                    tags: [heavy, stress, circular]
+
+      - name: Verify traffic from all three parallel chains
+        action:
+          type: wait
+          durationMs: 1000
+        assertions:
+          - match:
+              path: $.traffic
+              where:
+                - path: $$.origin
+                  operator: eq
+                  value: service-a
+              count:
+                operator: gte
+                value: 2
+          - match:
+              path: $.traffic
+              where:
+                - path: $$.origin
+                  operator: eq
+                  value: service-b
+              count:
+                operator: gte
+                value: 2
+          - match:
+              path: $.traffic
+              where:
+                - path: $$.origin
+                  operator: eq
+                  value: service-c
+              count:
+                operator: gte
+                value: 2

@@ -5,6 +5,7 @@ import { DockerCaService } from './docker-ca.service';
 import { DockerLogCollectorService } from './docker-log-collector.service';
 import { DockerServiceGroupService } from './docker-service-group.service';
 import { DockerDatabaseGroupService } from './docker-database-group.service';
+import { DockerBrokerGroupService } from './docker-broker-group.service';
 import { DockerDeployConfigService } from './docker-deploy-config.service';
 import { DockerImagePullerService } from './docker-image-puller.service';
 import { sanitizeContainerName } from '../../utils/name.utils';
@@ -26,6 +27,7 @@ export class DockerDeployerService {
     private readonly logCollector: DockerLogCollectorService,
     private readonly serviceGroup: DockerServiceGroupService,
     private readonly databaseGroup: DockerDatabaseGroupService,
+    private readonly brokerGroup: DockerBrokerGroupService,
     private readonly deployConfig: DockerDeployConfigService,
     private readonly imagePuller: DockerImagePullerService,
     private readonly instanceItemService: InstanceItemService,
@@ -60,8 +62,8 @@ export class DockerDeployerService {
       const caBundlePaths =
         this.caService.prepareCaBundleForInstance(instanceId);
 
-      const databaseNames = ctx.definition.items
-        .filter((i) => i.type === 'DATABASE')
+      const directDnsNames = ctx.definition.items
+        .filter((i) => i.type === 'DATABASE' || i.type === 'BROKER')
         .map((i) => sanitizeContainerName(i.name));
 
       await this.deployConfig.writeConfig(ctx, configPaths);
@@ -129,6 +131,45 @@ export class DockerDeployerService {
       );
       this.throwOnSettledErrors(phase2Results);
 
+      // Phase 2b: All brokers in parallel
+      const brokerItems = ctx.definition.items.filter(
+        (i) => i.type === 'BROKER',
+      );
+      const phase2bResults = await Promise.allSettled(
+        brokerItems.map(async (item) => {
+          const containerName = sanitizeContainerName(item.name);
+          const instanceItemId = ctx.instanceItemIds.get(item.name);
+
+          if (instanceItemId) {
+            await this.instanceItemService.updateInstanceItemContainerName(
+              instanceItemId,
+              containerName,
+            );
+            await this.instanceItemService.updateInstanceItemStatus(
+              instanceItemId,
+              ItemStatus.STARTING,
+            );
+          }
+
+          await this.brokerGroup.createBrokerGroup(
+            networkName,
+            instanceId,
+            item,
+            containerName,
+            instanceItemId || '',
+          );
+
+          const brokerProxyName = `${containerName}-brokerproxy-${instanceId}`;
+          await this.logCollector.startCollecting(
+            instanceId,
+            brokerProxyName,
+            `${item.name}-brokerproxy`,
+            undefined,
+          );
+        }),
+      );
+      this.throwOnSettledErrors(phase2bResults);
+
       // Phase 3: All services + chromium in parallel
       const svcItems = ctx.definition.items.filter((i) => i.type === 'SERVICE');
       const servicePromises = svcItems.map(async (item) => {
@@ -155,11 +196,12 @@ export class DockerDeployerService {
           dockerDnsIP,
           configPaths,
           caBundlePaths,
-          databaseNames,
+          directDnsNames,
           testAgentIP,
         );
       });
 
+      const chromiumItemId = ctx.instanceItemIds.get('chromium');
       const chromiumPromise = attachChromium
         ? this.serviceGroup.createChromiumGroup(
             networkName,
@@ -167,7 +209,8 @@ export class DockerDeployerService {
             dockerDnsIP,
             configPaths,
             caBundlePaths,
-            databaseNames,
+            directDnsNames,
+            chromiumItemId || 'chromium',
             ctx.definition.config?.browser,
           )
         : Promise.resolve();

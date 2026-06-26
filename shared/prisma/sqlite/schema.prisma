@@ -113,6 +113,7 @@ model NamespaceInstance {
   httpLogs          HttpLog[]
   consoleLogs       ConsoleLog[]
   databaseLogs      DatabaseLog[]
+  messageLogs       MessageLog[]
   testExecutionLogs TestExecutionLog[]
   assertionResults  AssertionResult[]
   artifacts         Artifact[]
@@ -225,6 +226,28 @@ model DatabaseLog {
   @@index([timestamp])
   @@index([databaseType])
   @@map("database_logs")
+}
+
+// Message broker logs (publish/deliver via broker-proxy)
+model MessageLog {
+  id             String   @id @default(uuid())
+  instanceId     String?
+  instanceItemId String?
+  brokerType     String // "amqp", "kafka", etc.
+  brokerName     String // Broker item name
+  operation      String // "publish" or "deliver"
+  body           Json?
+  contentType    String?
+  metadata       Json?  // Protocol-specific fields (e.g. exchange/routingKey for AMQP, topic/partition for Kafka)
+  timestamp      DateTime @default(now())
+
+  instance NamespaceInstance? @relation(fields: [instanceId], references: [id], onDelete: Cascade)
+
+  @@index([instanceId])
+  @@index([instanceItemId])
+  @@index([brokerName])
+  @@index([timestamp])
+  @@map("message_logs")
 }
 
 // Test execution logs

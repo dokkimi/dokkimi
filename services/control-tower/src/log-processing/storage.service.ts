@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { HttpLogMessage, ConsoleLogMessage } from '../types/messages';
 import { DatabaseLogMessageDto } from './dto/database-log-message.dto';
+import { MessageLogMessageDto } from './dto/message-log-message.dto';
 import { TestExecutionLogMessageDto } from './dto/test-execution-log-message.dto';
 import { TestValidationLogMessageDto } from './dto/test-validation-log-message.dto';
 
@@ -127,6 +128,36 @@ export class StorageService {
       return databaseLog.id;
     } catch (error) {
       this.logger.error(`Error storing database log:`, error);
+      throw error;
+    }
+  }
+
+  async storeMessageLog(message: MessageLogMessageDto): Promise<string> {
+    try {
+      const messageLog = await this.prisma.messageLog.create({
+        data: {
+          instanceId: message.instanceId,
+          instanceItemId: message.instanceItemId ?? null,
+          brokerType: message.brokerType,
+          brokerName: message.brokerName,
+          operation: message.operation,
+          body: (message.body ?? undefined) as Prisma.InputJsonValue,
+          contentType: message.contentType ?? null,
+          timestamp: message.timestamp
+            ? new Date(message.timestamp)
+            : new Date(),
+          metadata: (message.metadata ?? undefined) as
+            | Prisma.InputJsonValue
+            | undefined,
+        },
+      });
+
+      this.logger.log(
+        `Stored message log: ${messageLog.id} for instance ${message.instanceId}`,
+      );
+      return messageLog.id;
+    } catch (error) {
+      this.logger.error(`Error storing message log:`, error);
       throw error;
     }
   }

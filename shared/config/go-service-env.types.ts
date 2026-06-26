@@ -29,6 +29,18 @@ export interface TestAgentEnvVars extends Record<string, string | undefined> {
   DEFAULT_VIEWPORT_HEIGHT?: string;
 }
 
+export interface BrokerProxyEnvVars extends Record<string, string | undefined> {
+  BROKER_TYPE: string;
+  BROKER_PORT: string;
+  PROXY_PORT: string;
+  INSTANCE_ITEM_NAME: string;
+  NAMESPACE: string;
+  CONTROL_TOWER_URL: string;
+  NAMESPACE_ITEM_ID?: string;
+  TEST_AGENT_URL?: string;
+  HEALTH_CHECK_ENDPOINT?: string;
+}
+
 export interface DbProxyEnvVars extends Record<string, string | undefined> {
   DATABASE_TYPE: string;
   DATABASE_PORT: string;

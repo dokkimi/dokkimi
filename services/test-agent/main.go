@@ -303,6 +303,21 @@ func main() {
 		w.WriteHeader(http.StatusOK)
 	})
 
+	// POST /logs/message — receive broker message logs from broker-proxies
+	mux.HandleFunc("/logs/message", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		var logMsg MessageLogMessage
+		if err := json.NewDecoder(r.Body).Decode(&logMsg); err != nil {
+			http.Error(w, fmt.Sprintf("Failed to decode log: %v", err), http.StatusBadRequest)
+			return
+		}
+		stepLogBuffer.AddMessageLog(logMsg)
+		w.WriteHeader(http.StatusOK)
+	})
+
 	// POST /execute — trigger test execution on demand (used in manual executionMode
 	// and for re-runs in run-tests-keep-alive mode)
 	mux.HandleFunc("/execute", func(w http.ResponseWriter, r *http.Request) {

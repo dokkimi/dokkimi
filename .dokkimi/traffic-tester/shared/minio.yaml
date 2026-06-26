@@ -1,0 +1,11 @@
+type: SERVICE
+name: minio
+image: minio/minio:RELEASE.2025-09-07T16-13-09Z
+port: 9000
+healthCheck: /minio/health/live
+command: ['server', '/data']
+env:
+  - name: MINIO_ROOT_USER
+    value: minioadmin
+  - name: MINIO_ROOT_PASSWORD
+    value: minioadmin

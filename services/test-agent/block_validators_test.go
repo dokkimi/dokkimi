@@ -520,7 +520,7 @@ func TestValidateStepWithRetry(t *testing.T) {
 			EndTime:   now.Add(200 * time.Millisecond).Format(time.RFC3339Nano),
 		}
 
-		results, passed := sv.ValidateStepWithRetry(step, stepExec, nil)
+		results, passed := sv.ValidateStepWithRetry(step, stepExec, nil, false)
 		if !passed {
 			t.Errorf("expected pass, got results: %+v", results)
 		}
@@ -556,7 +556,7 @@ func TestValidateStepWithRetry(t *testing.T) {
 			})
 		}()
 
-		results, passed := sv.ValidateStepWithRetry(step, stepExec, nil)
+		results, passed := sv.ValidateStepWithRetry(step, stepExec, nil, false)
 		if !passed {
 			t.Errorf("expected retry to eventually pass, got results: %+v", results)
 		}

@@ -1,0 +1,31 @@
+name: minio-infrastructure
+description: Proves MinIO works as a Dokkimi SERVICE item — create buckets, upload objects, and retrieve them via the S3-compatible HTTP API
+config:
+  timeoutSeconds: 60
+items:
+  - $ref: ../../shared/minio.yaml
+
+tests:
+  - name: MinIO is healthy and responsive
+    steps:
+      - name: Check liveness
+        action:
+          type: httpRequest
+          method: GET
+          url: minio/minio/health/live
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+
+      - name: Check cluster health
+        action:
+          type: httpRequest
+          method: GET
+          url: minio/minio/health/cluster
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200

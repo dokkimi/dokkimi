@@ -575,6 +575,7 @@ describe('DockerServiceGroupService', () => {
         configPaths,
         caBundlePaths,
         [],
+        'chromium-item-id',
       );
 
       expect(mockDockerClient.runContainer).toHaveBeenCalledTimes(3);
@@ -588,6 +589,7 @@ describe('DockerServiceGroupService', () => {
         configPaths,
         caBundlePaths,
         [],
+        'chromium-item-id',
       );
 
       const chromiumCall = mockDockerClient.runContainer.mock.calls[1][0];
@@ -603,6 +605,7 @@ describe('DockerServiceGroupService', () => {
         configPaths,
         caBundlePaths,
         [],
+        'chromium-item-id',
       );
 
       const dnsmasqCall = mockDockerClient.runContainer.mock.calls[2][0];
@@ -617,6 +620,7 @@ describe('DockerServiceGroupService', () => {
         configPaths,
         caBundlePaths,
         [],
+        'chromium-item-id',
       );
 
       const chromiumCall = mockDockerClient.runContainer.mock.calls[1][0];
@@ -639,6 +643,7 @@ describe('DockerServiceGroupService', () => {
         configPaths,
         caBundlePaths,
         [],
+        'chromium-item-id',
       );
 
       const chromiumCall = mockDockerClient.runContainer.mock.calls[1][0];

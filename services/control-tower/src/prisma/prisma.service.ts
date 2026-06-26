@@ -62,6 +62,10 @@ export class PrismaService implements OnModuleInit, OnModuleDestroy {
     return this.prisma.databaseLog;
   }
 
+  get messageLog(): PrismaClient['messageLog'] {
+    return this.prisma.messageLog;
+  }
+
   get testExecutionLog(): PrismaClient['testExecutionLog'] {
     return this.prisma.testExecutionLog;
   }

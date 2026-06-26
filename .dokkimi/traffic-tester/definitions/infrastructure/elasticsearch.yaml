@@ -1,0 +1,298 @@
+name: elasticsearch-infrastructure
+description: |
+  Proves Elasticsearch works as a Dokkimi SERVICE item — index, search,
+  delete documents via its REST API, and verify intercepted traffic
+  from service-to-ES calls.
+config:
+  timeoutSeconds: 120
+items:
+  - $ref: ../../shared/elasticsearch.yaml
+  - $ref: ../../shared/service-a.yaml
+
+tests:
+  - name: Elasticsearch cluster is healthy
+    steps:
+      - name: Check cluster health
+        action:
+          type: httpRequest
+          method: GET
+          url: elasticsearch/_cluster/health
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+              - path: $.response.body.status
+                operator: in
+                value: ['green', 'yellow']
+              - path: $.response.body.number_of_nodes
+                operator: eq
+                value: 1
+
+  - name: Index and search documents
+    steps:
+      - name: Create an index with mappings
+        action:
+          type: httpRequest
+          method: PUT
+          url: elasticsearch/products
+          headers:
+            Content-Type: application/json
+          body:
+            mappings:
+              properties:
+                name:
+                  type: text
+                category:
+                  type: keyword
+                price_cents:
+                  type: integer
+                in_stock:
+                  type: boolean
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+              - path: $.response.body.acknowledged
+                operator: eq
+                value: true
+
+      - name: Index a document
+        action:
+          type: httpRequest
+          method: PUT
+          url: elasticsearch/products/_doc/1
+          headers:
+            Content-Type: application/json
+          body:
+            name: Wireless Headphones
+            category: electronics
+            price_cents: 7999
+            in_stock: true
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [200, 201]
+              - path: $.response.body.result
+                operator: in
+                value: ['created', 'updated']
+
+      - name: Index a second document
+        action:
+          type: httpRequest
+          method: PUT
+          url: elasticsearch/products/_doc/2
+          headers:
+            Content-Type: application/json
+          body:
+            name: Mechanical Keyboard
+            category: electronics
+            price_cents: 12999
+            in_stock: true
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [200, 201]
+
+      - name: Index a third document in a different category
+        action:
+          type: httpRequest
+          method: PUT
+          url: elasticsearch/products/_doc/3
+          headers:
+            Content-Type: application/json
+          body:
+            name: Canvas Backpack
+            category: accessories
+            price_cents: 4999
+            in_stock: false
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [200, 201]
+
+      - name: Refresh the index for immediate searchability
+        action:
+          type: httpRequest
+          method: POST
+          url: elasticsearch/products/_refresh
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+
+      - name: Full-text search for headphones
+        action:
+          type: httpRequest
+          method: POST
+          url: elasticsearch/products/_search
+          headers:
+            Content-Type: application/json
+          body:
+            query:
+              match:
+                name: headphones
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+              - path: $.response.body.hits.total.value
+                operator: eq
+                value: 1
+              - path: $.response.body.hits.hits[0]._source.name
+                operator: eq
+                value: Wireless Headphones
+
+      - name: Filter by category
+        action:
+          type: httpRequest
+          method: POST
+          url: elasticsearch/products/_search
+          headers:
+            Content-Type: application/json
+          body:
+            query:
+              term:
+                category: electronics
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+              - path: $.response.body.hits.total.value
+                operator: eq
+                value: 2
+
+      - name: Search returns empty for non-existent products
+        action:
+          type: httpRequest
+          method: POST
+          url: elasticsearch/products/_search
+          headers:
+            Content-Type: application/json
+          body:
+            query:
+              match:
+                name: unicorn
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+              - path: $.response.body.hits.total.value
+                operator: eq
+                value: 0
+
+  - name: Delete and verify cleanup
+    steps:
+      - name: Delete a document
+        action:
+          type: httpRequest
+          method: DELETE
+          url: elasticsearch/products/_doc/1
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+              - path: $.response.body.result
+                operator: eq
+                value: deleted
+
+      - name: Refresh after delete
+        action:
+          type: httpRequest
+          method: POST
+          url: elasticsearch/products/_refresh
+
+      - name: Verify document is gone
+        action:
+          type: httpRequest
+          method: GET
+          url: elasticsearch/products/_doc/1
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 404
+              - path: $.response.body.found
+                operator: eq
+                value: false
+
+  - name: Intercepted traffic from service to Elasticsearch
+    steps:
+      - name: Seed an index with a document
+        action:
+          type: httpRequest
+          method: PUT
+          url: elasticsearch/traffic-products/_doc/1
+          headers:
+            Content-Type: application/json
+          body:
+            name: Wireless Headphones
+            category: electronics
+            price_cents: 7999
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [200, 201]
+
+      - name: Refresh for searchability
+        action:
+          type: httpRequest
+          method: POST
+          url: elasticsearch/traffic-products/_refresh
+
+      - name: Service-a searches Elasticsearch and we assert on the intercepted traffic
+        action:
+          type: httpRequest
+          method: POST
+          url: service-a/forward
+          headers:
+            Content-Type: application/json
+          body:
+            requests:
+              - baseURL: http://elasticsearch
+                url: /traffic-products/_search
+                method: POST
+                headers:
+                  Content-Type: application/json
+                data:
+                  query:
+                    match:
+                      name: headphones
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+          - match:
+              path: $.traffic
+              where:
+                - path: $$.origin
+                  operator: eq
+                  value: service-a
+                - path: $$.request.url
+                  operator: contains
+                  value: elasticsearch/traffic-products/_search
+              count: 1
+            assertions:
+              - path: $.match.request.body.query.match.name
+                operator: eq
+                value: headphones
+              - path: $.match.response.status
+                operator: eq
+                value: 200
+              - path: $.match.response.body.hits.total.value
+                operator: eq
+                value: 1
+              - path: $.match.response.body.hits.hits[0]._source.name
+                operator: eq
+                value: Wireless Headphones

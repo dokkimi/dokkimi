@@ -2,7 +2,7 @@
   "name": "dokkimi-vscode",
   "displayName": "Dokkimi",
   "description": "Dokkimi definition file authoring support — autocomplete, validation, and snippets for .dokkimi/ definition files.",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "license": "Elastic-2.0",
   "publisher": "dokkimi",
   "icon": "icon.png",
@@ -75,7 +75,7 @@
   },
   "devDependencies": {
     "@types/node": "^26.0.0",
-    "@types/vscode": "^1.125.0",
+    "@types/vscode": "^1.118.0",
     "@vscode/vsce": "^3.9.2",
     "esbuild": "^0.28.1",
     "typescript": "^6.0.3"

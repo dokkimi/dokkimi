@@ -28,9 +28,11 @@ export class DatabaseConfigService {
     const dbUser = credentials?.dbUser || config.database.defaultUser;
     const dbPassword =
       credentials?.dbPassword || config.database.defaultPassword;
+    const imgs = config.images.databases;
+
     const configs: Record<string, DatabaseConfig> = {
       postgres: {
-        image: `postgres:${version || '15'}`,
+        image: version ? `postgres:${version}` : imgs.postgres,
         environment: {
           POSTGRES_DB: dbName,
           POSTGRES_USER: dbUser,
@@ -39,7 +41,7 @@ export class DatabaseConfigService {
         ports: [5432],
       },
       mysql: {
-        image: `mysql:${version || '8'}`,
+        image: version ? `mysql:${version}` : imgs.mysql,
         environment: {
           MYSQL_DATABASE: dbName,
           MYSQL_USER: dbUser,
@@ -58,7 +60,7 @@ export class DatabaseConfigService {
         ],
       },
       mongodb: {
-        image: `mongo:${version || '7'}`,
+        image: version ? `mongo:${version}` : imgs.mongodb,
         environment: {
           MONGO_INITDB_DATABASE: dbName,
           ...(dbUser && dbPassword
@@ -71,7 +73,7 @@ export class DatabaseConfigService {
         ports: [27017],
       },
       redis: {
-        image: `redis:${version || '7-alpine'}`,
+        image: version ? `redis:${version}` : imgs.redis,
         environment: {
           ...(dbPassword ? { REDIS_PASSWORD: dbPassword } : {}),
         },
@@ -84,7 +86,7 @@ export class DatabaseConfigService {
 
     return (
       configs[databaseType.toLowerCase()] || {
-        image: `${databaseType}:latest`,
+        image: `${databaseType}:${version || 'latest'}`,
         environment: {},
         ports: [],
       }

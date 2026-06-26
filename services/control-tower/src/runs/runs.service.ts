@@ -151,12 +151,27 @@ export class RunsService implements OnApplicationBootstrap {
 
     const snapshotDefinition = stripInitFileContent(definition);
 
+    const hasUi =
+      Array.isArray(definition.tests) &&
+      definition.tests.some((t: any) =>
+        (t.steps ?? []).some((s: any) => s.action?.type === 'ui'),
+      );
+
     await this.prisma.client.$transaction(async (tx) => {
       for (const item of definition.items) {
         await tx.instanceItem.create({
           data: {
             instanceId,
             itemDefinitionName: item.name,
+          },
+        });
+      }
+
+      if (hasUi) {
+        await tx.instanceItem.create({
+          data: {
+            instanceId,
+            itemDefinitionName: 'chromium',
           },
         });
       }
@@ -181,13 +196,15 @@ export class RunsService implements OnApplicationBootstrap {
     const defItems = (def.items as any[]) || [];
     const defTests = (def.tests as any[]) || [];
 
-    const itemTypes = { service: 0, database: 0, mock: 0 };
+    const itemTypes = { service: 0, database: 0, broker: 0, mock: 0 };
     for (const item of defItems) {
       const type = (item.type || '').toUpperCase();
       if (type === 'SERVICE') {
         itemTypes.service++;
       } else if (type === 'DATABASE') {
         itemTypes.database++;
+      } else if (type === 'BROKER') {
+        itemTypes.broker++;
       } else if (type === 'MOCK') {
         itemTypes.mock++;
       }

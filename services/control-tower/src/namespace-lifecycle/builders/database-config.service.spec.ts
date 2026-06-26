@@ -93,8 +93,14 @@ describe('DatabaseConfigService', () => {
       expect(service.getConfig('redis').image).toBe('redis:7-alpine');
     });
 
-    it('should use latest tag for unknown database type even with version', () => {
+    it('should use provided version for unknown database type', () => {
       const config = service.getConfig('unknown-db', undefined, '3.2');
+
+      expect(config.image).toBe('unknown-db:3.2');
+    });
+
+    it('should fall back to latest for unknown database type without version', () => {
+      const config = service.getConfig('unknown-db');
 
       expect(config.image).toBe('unknown-db:latest');
     });

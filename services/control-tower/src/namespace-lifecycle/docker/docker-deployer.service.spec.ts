@@ -36,6 +36,10 @@ jest.mock('@dokkimi/config', () => ({
     { name: 'DATABASE_TYPE', value: 'postgres' },
     { name: 'DATABASE_PORT', value: '5432' },
   ]),
+  buildBrokerProxyEnvVars: jest.fn().mockReturnValue([
+    { name: 'BROKER_TYPE', value: 'amqp' },
+    { name: 'BROKER_PORT', value: '55672' },
+  ]),
   buildServiceUrl: jest
     .fn()
     .mockReturnValue('http://host.docker.internal:19001'),
@@ -115,6 +119,7 @@ const mockInstanceService = {
 // Import the real extracted services so they wire through to mocked dependencies
 import { DockerServiceGroupService } from './docker-service-group.service';
 import { DockerDatabaseGroupService } from './docker-database-group.service';
+import { DockerBrokerGroupService } from './docker-broker-group.service';
 import { DockerDeployConfigService } from './docker-deploy-config.service';
 import { DockerImagePullerService } from './docker-image-puller.service';
 
@@ -127,6 +132,15 @@ const mockDatabaseConfig = {
       POSTGRES_PASSWORD: 'dokkimi',
     },
     ports: [5432],
+  }),
+};
+
+const mockBrokerConfig = {
+  getConfig: jest.fn().mockReturnValue({
+    image: 'rabbitmq:3',
+    nativePort: 5672,
+    internalPort: 35672,
+    environment: {},
   }),
 };
 
@@ -214,10 +228,23 @@ describe('DockerDeployerService', () => {
       mockDatabaseConfig as any,
       mockRunStorage as any,
     );
+    const brokerGroupSvc = new DockerBrokerGroupService(
+      mockDockerClient as any,
+      {
+        getConfig: jest.fn().mockReturnValue({
+          image: 'rabbitmq:3',
+          environment: {},
+          nativePort: 5672,
+          internalPort: 55672,
+        }),
+      } as any,
+    );
     const imagePuller = new DockerImagePullerService(
       mockDockerClient as any,
       mockDatabaseConfig as any,
       databaseGroupSvc,
+      mockBrokerConfig as any,
+      brokerGroupSvc,
       mockRegistryService as any,
     );
 
@@ -228,6 +255,7 @@ describe('DockerDeployerService', () => {
       mockLogCollector as any,
       serviceGroupSvc,
       databaseGroupSvc,
+      brokerGroupSvc,
       deployConfig,
       imagePuller,
       mockInstanceItemService as any,
@@ -447,7 +475,10 @@ describe('DockerDeployerService', () => {
           ],
         },
       });
-      ctx.instanceItemIds = new Map([['web-app', 'item-web']]);
+      ctx.instanceItemIds = new Map([
+        ['web-app', 'item-web'],
+        ['chromium', 'item-chromium'],
+      ]);
 
       await service.deploy(ctx);
 

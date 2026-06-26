@@ -7,6 +7,7 @@ export const DESCRIPTION_MAX_LENGTH = 500;
 export const VALID_ITEM_TYPES = [
   'SERVICE',
   'DATABASE',
+  'BROKER',
   'MOCK',
   'HTTP_REQUEST',
   'DB_QUERY',
@@ -19,6 +20,8 @@ export const VALID_DATABASES = [
   'mongodb',
   'redis',
 ] as const;
+
+export const VALID_BROKERS = ['amqp', 'kafka'] as const;
 
 export const VALID_HTTP_METHODS = [
   'GET',
@@ -76,6 +79,7 @@ export const VALID_ITEM_KEYS: Record<string, Set<string>> = {
     'maxMemory',
     'localDevPath',
     'mountPath',
+    'command',
   ]),
   DATABASE: new Set([
     'type',
@@ -90,6 +94,23 @@ export const VALID_ITEM_KEYS: Record<string, Set<string>> = {
     'dbName',
     'dbUser',
     'dbPassword',
+    'minCpu',
+    'minMemory',
+    'maxCpu',
+    'maxMemory',
+  ]),
+  BROKER: new Set([
+    'type',
+    'name',
+    'description',
+    '$ref',
+    'broker',
+    'version',
+    'image',
+    'port',
+    'healthCheck',
+    'env',
+    'command',
     'minCpu',
     'minMemory',
     'maxCpu',

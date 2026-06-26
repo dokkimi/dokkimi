@@ -5,6 +5,7 @@ import {
   DESCRIPTION_MAX_LENGTH,
   VALID_ITEM_TYPES,
   VALID_DATABASES,
+  VALID_BROKERS,
   VALID_HTTP_METHODS,
   VALID_MOCK_METHODS,
   VALID_REQUEST_PROTOCOLS,
@@ -81,10 +82,29 @@ function validateServiceItem(
     warn(r, `${label}: SERVICE should have "image"`);
   }
   if (!item.healthCheck || typeof item.healthCheck !== 'string') {
-    err(r, `${label}: SERVICE requires "healthCheck" (string)`);
+    err(
+      r,
+      `${label}: SERVICE requires "healthCheck" (string — HTTP path like "/health" or "tcp" for TCP-only)`,
+    );
+  } else if (item.healthCheck !== 'tcp' && !item.healthCheck.startsWith('/')) {
+    err(
+      r,
+      `${label}: "healthCheck" must be an HTTP path starting with "/" (e.g., "/health") or "tcp" for TCP port check`,
+    );
   }
   validatePort(item.port, 'port', label, r);
   validatePort(item.debugPort, 'debugPort', label, r);
+  if (item.command !== undefined) {
+    if (!Array.isArray(item.command)) {
+      err(r, `${label}: "command" must be an array of strings`);
+    } else {
+      for (let i = 0; i < item.command.length; i++) {
+        if (typeof item.command[i] !== 'string') {
+          err(r, `${label}: command[${i}] must be a string`);
+        }
+      }
+    }
+  }
   if (item.env !== undefined) {
     if (!Array.isArray(item.env)) {
       err(r, `${label}: "env" must be an array`);
@@ -136,6 +156,61 @@ function validateDatabaseItem(
     } else {
       for (const fp of item.initFilePaths) {
         validateInitFile(fp as string, label, sourceFile, r, fs);
+      }
+    }
+  }
+}
+
+const BROKER_VERSION_RE = /^\d[a-zA-Z0-9.-]*$/;
+
+function validateBrokerItem(
+  item: Record<string, unknown>,
+  label: string,
+  r: ValidationResult,
+): void {
+  if (
+    !item.broker ||
+    !VALID_BROKERS.includes(item.broker as (typeof VALID_BROKERS)[number])
+  ) {
+    err(
+      r,
+      `${label}: BROKER requires "broker" as one of: ${VALID_BROKERS.join(', ')}`,
+    );
+  }
+  if (item.version !== undefined) {
+    if (typeof item.version !== 'string' || item.version.length === 0) {
+      err(r, `${label}: "version" must be a non-empty string`);
+    } else if (!BROKER_VERSION_RE.test(item.version)) {
+      err(
+        r,
+        `${label}: "version" must start with a digit and contain only alphanumeric characters, dots, and hyphens (e.g. "3", "3.13"; got "${item.version}")`,
+      );
+    }
+  }
+  validatePort(item.port, 'port', label, r);
+  if (item.healthCheck !== undefined && typeof item.healthCheck !== 'string') {
+    err(r, `${label}: "healthCheck" must be a string`);
+  }
+  if (item.command !== undefined) {
+    if (!Array.isArray(item.command)) {
+      err(r, `${label}: "command" must be an array of strings`);
+    } else {
+      for (let i = 0; i < item.command.length; i++) {
+        if (typeof item.command[i] !== 'string') {
+          err(r, `${label}: command[${i}] must be a string`);
+        }
+      }
+    }
+  }
+  if (item.env !== undefined) {
+    if (!Array.isArray(item.env)) {
+      err(r, `${label}: "env" must be an array`);
+    } else {
+      for (let i = 0; i < item.env.length; i++) {
+        const e = item.env[i] as Record<string, unknown>;
+        if (!e || typeof e.name !== 'string' || typeof e.value !== 'string') {
+          err(r, `${label}: env[${i}] must have "name" and "value" strings`);
+        }
       }
     }
   }
@@ -327,6 +402,9 @@ export function validateItem(
       break;
     case 'DATABASE':
       validateDatabaseItem(item, label, sourceFile, r, fs);
+      break;
+    case 'BROKER':
+      validateBrokerItem(item, label, r);
       break;
     case 'MOCK':
       validateMockItem(item, label, r);

@@ -1,0 +1,191 @@
+name: kafka-produce-consume
+description: |
+  Validates the Kafka broker proxy end-to-end: produce messages to a
+  Kafka topic via the traffic-tester, consume them back, and verify
+  that the broker-proxy captured message logs with correct metadata
+  (topic, partition, key).
+config:
+  timeoutSeconds: 120
+items:
+  - $ref: ../../shared/service-a.yaml
+  - $ref: ../../shared/kafka.yaml
+tests:
+  - name: Produce and consume a JSON message
+    variables:
+      kafkaBrokers: kafka:9092
+    steps:
+      - name: Produce a message to a topic
+        action:
+          type: httpRequest
+          method: POST
+          url: service-a/kafka/produce
+          headers:
+            Content-Type: application/json
+          body:
+            brokers:
+              - '{{kafkaBrokers}}'
+            topic: test-events
+            messages:
+              - key: user-42
+                value:
+                  event: user.created
+                  userId: 42
+                  email: alice@example.com
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 201
+
+      - name: Verify broker-proxy logged the produce
+        action:
+          type: wait
+          durationMs: 2000
+        assertions:
+          - assertions:
+              - count: $.messageLogs
+                operator: gte
+                value: 1
+              - path: $.messageLogs[0].operation
+                operator: eq
+                value: produce
+              - path: $.messageLogs[0].broker
+                operator: eq
+                value: kafka
+              - path: $.messageLogs[0].brokerType
+                operator: eq
+                value: kafka
+              - path: $.messageLogs[0].topic
+                operator: eq
+                value: test-events
+              - path: $.messageLogs[0].body.event
+                operator: eq
+                value: user.created
+
+      - name: Consume the message from the topic
+        action:
+          type: httpRequest
+          method: POST
+          url: service-a/kafka/consume
+          headers:
+            Content-Type: application/json
+          body:
+            brokers:
+              - '{{kafkaBrokers}}'
+            topic: test-events
+            groupId: test-consumer-1
+            count: 1
+            fromBeginning: true
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 201
+              - path: $.response.body.messages[0].event
+                operator: eq
+                value: user.created
+              - path: $.response.body.messages[0].userId
+                operator: eq
+                value: 42
+
+  - name: Produce multiple messages and verify all are logged
+    variables:
+      kafkaBrokers: kafka:9092
+    steps:
+      - name: Produce three messages
+        action:
+          type: httpRequest
+          method: POST
+          url: service-a/kafka/produce
+          headers:
+            Content-Type: application/json
+          body:
+            brokers:
+              - '{{kafkaBrokers}}'
+            topic: batch-events
+            messages:
+              - value:
+                  orderId: 1
+                  status: created
+              - value:
+                  orderId: 2
+                  status: created
+              - value:
+                  orderId: 3
+                  status: created
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 201
+              - path: $.response.body.produced
+                operator: eq
+                value: 3
+
+      - name: Verify all three publishes were logged
+        action:
+          type: wait
+          durationMs: 2000
+        assertions:
+          - assertions:
+              - count: $.messageLogs
+                operator: gte
+                value: 3
+          - match:
+              path: $.messageLogs
+              where:
+                - path: $$.topic
+                  operator: eq
+                  value: batch-events
+                - path: $$.operation
+                  operator: eq
+                  value: produce
+              count:
+                operator: gte
+                value: 3
+
+  - name: Produce with message key
+    variables:
+      kafkaBrokers: kafka:9092
+    steps:
+      - name: Produce a keyed message
+        action:
+          type: httpRequest
+          method: POST
+          url: service-a/kafka/produce
+          headers:
+            Content-Type: application/json
+          body:
+            brokers:
+              - '{{kafkaBrokers}}'
+            topic: keyed-topic
+            messages:
+              - key: order-123
+                value:
+                  orderId: 123
+                  action: shipped
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 201
+
+      - name: Verify key is captured in message log
+        action:
+          type: wait
+          durationMs: 2000
+        assertions:
+          - match:
+              path: $.messageLogs
+              where:
+                - path: $$.topic
+                  operator: eq
+                  value: keyed-topic
+              count: 1
+            assertions:
+              - path: $.match.key
+                operator: eq
+                value: order-123
+              - path: $.match.body.orderId
+                operator: eq
+                value: 123

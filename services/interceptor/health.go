@@ -205,7 +205,18 @@ func (h *HealthChecker) checkHealth() (ready bool, statusCode int, err error) {
 	var serviceIP string
 	serviceIP = ips[0].IP.String()
 
-	url := fmt.Sprintf("http://%s:%s%s", serviceIP, h.config.ServicePort, h.config.HealthCheckEndpoint)
+	addr := net.JoinHostPort(serviceIP, h.config.ServicePort)
+
+	if h.config.HealthCheckEndpoint == "tcp" {
+		conn, dialErr := net.DialTimeout("tcp", addr, h.config.CheckTimeout)
+		if dialErr != nil {
+			return false, 0, dialErr
+		}
+		conn.Close()
+		return true, 0, nil
+	}
+
+	url := fmt.Sprintf("http://%s%s", addr, h.config.HealthCheckEndpoint)
 
 	req, err := http.NewRequest(http.MethodGet, url, nil)
 	if err != nil {
@@ -214,19 +225,16 @@ func (h *HealthChecker) checkHealth() (ready bool, statusCode int, err error) {
 
 	resp, err := h.httpClient.Do(req)
 	if err != nil {
-		// Connection error, timeout, or other network error
 		return false, 0, err
 	}
 	defer resp.Body.Close()
 
 	statusCode = resp.StatusCode
 
-	// Success: HTTP 200 response (any endpoint that doesn't return 404)
 	if statusCode == http.StatusOK {
 		return true, statusCode, nil
 	}
 
-	// Failure: Non-200 response (including 404)
 	return false, statusCode, nil
 }
 

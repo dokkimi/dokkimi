@@ -51,13 +51,15 @@ jobs:
             services/interceptor/go.sum
             services/test-agent/go.sum
             services/db-proxy/postgres/go.sum
+            services/broker-proxy/amqp/go.sum
+            services/broker-proxy/kafka/go.sum
 
       - name: Go format check
         run: test -z "$(gofmt -l services/)"
 
       - name: Go vet
         run: |
-          for dir in services/interceptor services/test-agent services/db-proxy/postgres services/db-proxy/mysql services/db-proxy/mongo services/db-proxy/redis; do
+          for dir in services/interceptor services/test-agent services/db-proxy/postgres services/db-proxy/mysql services/db-proxy/mongo services/db-proxy/redis services/broker-proxy/amqp services/broker-proxy/kafka; do
             (cd "$dir" && go vet ./...)
           done
 
@@ -82,6 +84,8 @@ jobs:
             services/interceptor/go.sum
             services/test-agent/go.sum
             services/db-proxy/postgres/go.sum
+            services/broker-proxy/amqp/go.sum
+            services/broker-proxy/kafka/go.sum
 
       - name: Install dependencies
         run: yarn install --immutable
@@ -124,6 +128,12 @@ jobs:
 
       - name: Go tests — db-proxy-redis
         run: cd services/db-proxy/redis && go test ./...
+
+      - name: Go tests — broker-proxy-amqp
+        run: cd services/broker-proxy/amqp && go test ./...
+
+      - name: Go tests — broker-proxy-kafka
+        run: cd services/broker-proxy/kafka && go test ./...
 
   integration-tests:
     name: Integration Tests
@@ -183,6 +193,10 @@ jobs:
             docker build -t ghcr.io/dokkimi/db-proxy-${db}:latest \
               -f services/db-proxy/${db}/Dockerfile services/db-proxy &
           done
+          docker build -t ghcr.io/dokkimi/broker-proxy-amqp:latest \
+            -f services/broker-proxy/amqp/Dockerfile services/broker-proxy &
+          docker build -t ghcr.io/dokkimi/broker-proxy-kafka:latest \
+            -f services/broker-proxy/kafka/Dockerfile services/broker-proxy &
           wait
 
       - name: Free disk space
@@ -198,6 +212,10 @@ jobs:
           docker pull ghcr.io/dokkimi/nextjs-demo:0.1.0
           docker pull ghcr.io/dokkimi/traffic-tester:0.1.0
           docker pull ghcr.io/dokkimi/demo-oauth-flow:0.1.0
+          docker pull rabbitmq:3
+          docker pull apache/kafka:4.3.1
+          docker pull elasticsearch:8.17.0
+          docker pull minio/minio:RELEASE.2025-09-07T16-13-09Z
 
       - name: Run demo-oauth-flow tests
         timeout-minutes: 10

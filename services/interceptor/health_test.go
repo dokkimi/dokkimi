@@ -1,6 +1,7 @@
 package main
 
 import (
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -202,6 +203,68 @@ func splitHostPort(rawURL string) (string, string, error) {
 		return "", "", err
 	}
 	return u.Hostname(), u.Port(), nil
+}
+
+func TestHealthChecker_checkHealth_TCP(t *testing.T) {
+	// Start a raw TCP listener to simulate a non-HTTP service like Kafka
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("failed to start TCP listener: %v", err)
+	}
+	defer listener.Close()
+
+	_, port, err := net.SplitHostPort(listener.Addr().String())
+	if err != nil {
+		t.Fatalf("failed to parse listener address: %v", err)
+	}
+
+	checker := NewHealthChecker(&HealthConfig{
+		HealthCheckEndpoint: "tcp",
+		ServicePort:         port,
+		InstanceItemName:    "kafka",
+		InstanceID:          "namespace-123",
+		ControlTowerURL:     "http://localhost:3002",
+		CheckTimeout:        5 * time.Second,
+		Origin:              "127.0.0.1",
+	}, nil)
+	if checker == nil {
+		t.Fatal("NewHealthChecker returned nil")
+	}
+
+	ready, statusCode, err := checker.checkHealth()
+	if err != nil {
+		t.Errorf("checkHealth(tcp) error = %v", err)
+	}
+	if !ready {
+		t.Error("checkHealth(tcp) expected ready=true for listening port")
+	}
+	if statusCode != 0 {
+		t.Errorf("checkHealth(tcp) expected statusCode=0, got %d", statusCode)
+	}
+}
+
+func TestHealthChecker_checkHealth_TCP_Refused(t *testing.T) {
+	// Use a port that nothing is listening on
+	checker := NewHealthChecker(&HealthConfig{
+		HealthCheckEndpoint: "tcp",
+		ServicePort:         "19999",
+		InstanceItemName:    "kafka",
+		InstanceID:          "namespace-123",
+		ControlTowerURL:     "http://localhost:3002",
+		CheckTimeout:        2 * time.Second,
+		Origin:              "127.0.0.1",
+	}, nil)
+	if checker == nil {
+		t.Fatal("NewHealthChecker returned nil")
+	}
+
+	ready, _, err := checker.checkHealth()
+	if ready {
+		t.Error("checkHealth(tcp) expected ready=false for closed port")
+	}
+	if err == nil {
+		t.Error("checkHealth(tcp) expected error for closed port")
+	}
 }
 
 func TestHealthChecker_updateState(t *testing.T) {

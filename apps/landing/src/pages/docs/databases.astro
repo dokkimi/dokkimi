@@ -116,6 +116,14 @@ import CodeBlock from '../../components/CodeBlock.astro';
     <p><strong>Reserved database name:</strong> The <code>dokkimi_internal</code> database is reserved for Dokkimi's internal readiness checks. Do not use this name in your init scripts or application code.</p>
   </div>
 
+  <h2>Query interception and logging</h2>
+  <p>Every DATABASE item is paired with a <strong>DB proxy sidecar</strong> — a transparent proxy that intercepts all database queries at the wire protocol level. This means every SQL query, MongoDB operation, or Redis command your services execute is captured and logged automatically, without any changes to your application code.</p>
+  <p>You can inspect all captured queries after a run with <code>dokkimi inspect</code>, which shows every query alongside the HTTP traffic and console logs. This gives you full visibility into what your services actually did to the database during the test — not just what the API returned.</p>
+  <p>This is particularly valuable for debugging: when a test fails, you can see the exact queries that ran, in order, and trace the issue to a specific database interaction rather than guessing from HTTP responses alone.</p>
+  <div class="callout">
+    <p><strong>DATABASE vs SERVICE.</strong> Infrastructure that needs query-level interception and logging should use the DATABASE item type. If you need a data store that Dokkimi doesn't support natively (like Elasticsearch or DynamoDB), you can run it as a <a href="/docs/services#infrastructure-services">SERVICE</a> — it works the same way, you just won't get automatic query logging.</p>
+  </div>
+
   <h2>Connecting services to databases</h2>
   <p>Pass the connection string to your service via environment variables:</p>
   <CodeBlock code={`{

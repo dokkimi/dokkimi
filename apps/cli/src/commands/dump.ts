@@ -17,6 +17,7 @@ import type {
   AssertionResult,
   ArtifactRow,
   ArtifactsResponse,
+  MessageLogsResponse,
 } from '../lib/inspect-types';
 
 import { dumpPath } from '@dokkimi/config';
@@ -300,6 +301,7 @@ async function dumpInstance(
     httpRes,
     dbRes,
     consoleRes,
+    msgRes,
     execRes,
     assertions,
     artifactsRes,
@@ -316,6 +318,9 @@ async function dumpInstance(
     ),
     fetchJson<ConsoleLogsResponse>(
       `${ctUrl}/logs/console/instance/${instance.id}?limit=1000`,
+    ),
+    fetchJson<MessageLogsResponse>(
+      `${ctUrl}/logs/message/instance/${instance.id}?limit=500`,
     ),
     fetchJson<TestExecutionLogsResponse>(
       `${ctUrl}/logs/test-execution/instance/${instance.id}`,
@@ -338,6 +343,7 @@ async function dumpInstance(
     httpLogs: (httpRes?.logs ?? []).map((l) => stripIds(l)),
     databaseLogs: (dbRes?.logs ?? []).map((l) => stripIds(l)),
     consoleLogs: (consoleRes?.logs ?? []).map((l) => stripIds(l)),
+    messageLogs: (msgRes?.logs ?? []).map((l) => stripIds(l)),
     artifacts: hydrateArtifacts(
       artifactsRes?.artifacts ?? [],
       opts.inlineArtifacts,

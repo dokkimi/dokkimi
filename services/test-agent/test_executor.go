@@ -49,6 +49,7 @@ func NewTestExecutor(interceptorURL string, timeout time.Duration, databaseQuery
 		MaxIdleConnsPerHost: 10,
 		IdleConnTimeout:     90 * time.Second,
 		Proxy:               nil,
+		DisableCompression:  true,
 	}
 
 	varCtx := NewVariableContext()
@@ -115,6 +116,7 @@ type flatStep struct {
 	step          TestStep
 	testVariables map[string]interface{} // test-level variables to seed when this test starts
 	loopLabel     string                 // optional loop context for display (e.g., "[user=Alice]")
+	nextIsWait    bool                   // true when the following step is a wait action; skip flush so the wait inherits this step's logs
 }
 
 // label returns a 1-based "Step X.Y" string matching the CLI display.

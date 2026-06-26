@@ -75,6 +75,19 @@ export class LogQueryController {
   }
 
   /**
+   * GET /logs/message/instance/:instanceId
+   * Gets message logs (broker produce/consume) for a specific instance
+   */
+  @Get('message/instance/:instanceId')
+  async getMessageLogsByInstance(
+    @Param('instanceId') instanceId: string,
+    @Query('limit', new DefaultValuePipe(500), ParseIntPipe) limit?: number,
+    @Query('offset', new DefaultValuePipe(0), ParseIntPipe) offset?: number,
+  ) {
+    return this.logQueryService.getMessageLogs(instanceId, limit, offset);
+  }
+
+  /**
    * GET /logs/assertion-results/instance/:instanceId
    * Gets assertion results for a specific instance
    */

@@ -1,0 +1,550 @@
+name: amqp-publish-consume
+description: |
+  Validates the AMQP broker proxy end-to-end: publish messages to a
+  RabbitMQ exchange via the traffic-tester, consume them back, and
+  verify that the broker-proxy captured message logs. Also tests
+  transparent wire-level relay: exchange binding, direct routing,
+  topic exchanges, and large message bodies.
+config:
+  timeoutSeconds: 120
+items:
+  - $ref: ../../shared/service-a.yaml
+  - $ref: ../../shared/rabbitmq.yaml
+tests:
+  - name: Publish and consume a JSON message
+    variables:
+      amqpUrl: amqp://guest:guest@rabbitmq:5672
+    steps:
+      - name: Publish a message to the default exchange
+        action:
+          type: httpRequest
+          method: POST
+          url: service-a/amqp/publish
+          headers:
+            Content-Type: application/json
+          body:
+            connectionString: '{{amqpUrl}}'
+            exchange: ''
+            routingKey: test-queue
+            message:
+              event: user.created
+              userId: 42
+              email: alice@example.com
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 201
+
+      - name: Verify broker-proxy logged the publish
+        action:
+          type: wait
+          durationMs: 500
+        assertions:
+          - assertions:
+              - count: $.messageLogs
+                operator: gte
+                value: 1
+              - path: $.messageLogs[0].operation
+                operator: eq
+                value: publish
+              - path: $.messageLogs[0].broker
+                operator: eq
+                value: rabbitmq
+              - path: $.messageLogs[0].routingKey
+                operator: eq
+                value: test-queue
+              - path: $.messageLogs[0].body.event
+                operator: eq
+                value: user.created
+
+      - name: Consume the message from the queue
+        action:
+          type: httpRequest
+          method: POST
+          url: service-a/amqp/consume
+          headers:
+            Content-Type: application/json
+          body:
+            connectionString: '{{amqpUrl}}'
+            queue: test-queue
+            count: 1
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 201
+              - path: $.response.body.messages[0].event
+                operator: eq
+                value: user.created
+              - path: $.response.body.messages[0].userId
+                operator: eq
+                value: 42
+
+  - name: Publish multiple messages and verify all are logged
+    variables:
+      amqpUrl: amqp://guest:guest@rabbitmq:5672
+    steps:
+      - name: Publish three messages
+        action:
+          type: httpRequest
+          method: POST
+          url: service-a/amqp/publish-batch
+          headers:
+            Content-Type: application/json
+          body:
+            connectionString: '{{amqpUrl}}'
+            exchange: ''
+            routingKey: batch-queue
+            messages:
+              - orderId: 1
+                product: widget
+              - orderId: 2
+                product: gadget
+              - orderId: 3
+                product: gizmo
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 201
+
+      - name: Verify all publishes were logged
+        action:
+          type: wait
+          durationMs: 500
+        assertions:
+          - assertions:
+              - count: $.messageLogs
+                operator: gte
+                value: 3
+
+      - name: Consume all three messages
+        action:
+          type: httpRequest
+          method: POST
+          url: service-a/amqp/consume
+          headers:
+            Content-Type: application/json
+          body:
+            connectionString: '{{amqpUrl}}'
+            queue: batch-queue
+            count: 3
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 201
+              - count: $.response.body.messages
+                operator: eq
+                value: 3
+
+  - name: Direct exchange routing
+    variables:
+      amqpUrl: amqp://guest:guest@rabbitmq:5672
+    steps:
+      - name: Declare queue and publish with routing key
+        action:
+          type: httpRequest
+          method: POST
+          url: service-a/amqp/publish
+          headers:
+            Content-Type: application/json
+          body:
+            connectionString: '{{amqpUrl}}'
+            exchange: ''
+            routingKey: direct-queue
+            message:
+              action: ping
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 201
+
+      - name: Consume from direct-queue
+        action:
+          type: httpRequest
+          method: POST
+          url: service-a/amqp/consume
+          headers:
+            Content-Type: application/json
+          body:
+            connectionString: '{{amqpUrl}}'
+            queue: direct-queue
+            count: 1
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 201
+              - path: $.response.body.messages[0].action
+                operator: eq
+                value: ping
+
+  - name: Named exchange with binding
+    variables:
+      amqpUrl: amqp://guest:guest@rabbitmq:5672
+    steps:
+      - name: Declare exchange, queue, and binding then publish
+        action:
+          type: httpRequest
+          method: POST
+          url: service-a/amqp/publish
+          headers:
+            Content-Type: application/json
+          body:
+            connectionString: '{{amqpUrl}}'
+            exchange: events
+            exchangeType: topic
+            routingKey: order.created
+            bindQueue: order-events
+            message:
+              orderId: 100
+              total: 59.99
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 201
+
+      - name: Consume from the bound queue
+        action:
+          type: httpRequest
+          method: POST
+          url: service-a/amqp/consume
+          headers:
+            Content-Type: application/json
+          body:
+            connectionString: '{{amqpUrl}}'
+            queue: order-events
+            bindExchange: events
+            bindRoutingKey: 'order.*'
+            count: 1
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 201
+              - path: $.response.body.messages[0].orderId
+                operator: eq
+                value: 100
+              - path: $.response.body.messages[0].total
+                operator: eq
+                value: 59.99
+
+  - name: Message logs capture exchange and routing key
+    variables:
+      amqpUrl: amqp://guest:guest@rabbitmq:5672
+    steps:
+      - name: Publish to a named exchange
+        action:
+          type: httpRequest
+          method: POST
+          url: service-a/amqp/publish
+          headers:
+            Content-Type: application/json
+          body:
+            connectionString: '{{amqpUrl}}'
+            exchange: audit
+            exchangeType: direct
+            routingKey: user.login
+            message:
+              userId: 7
+              ip: 10.0.0.1
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 201
+
+      - name: Verify message log has exchange and routing key
+        action:
+          type: wait
+          durationMs: 500
+        assertions:
+          - assertions:
+              - count: $.messageLogs
+                operator: gte
+                value: 1
+              - path: $.messageLogs[0].exchange
+                operator: eq
+                value: audit
+              - path: $.messageLogs[0].routingKey
+                operator: eq
+                value: user.login
+              - path: $.messageLogs[0].brokerType
+                operator: eq
+                value: amqp
+
+  - name: Consumer subscription triggers deliver logging
+    variables:
+      amqpUrl: amqp://guest:guest@rabbitmq:5672
+    steps:
+      - name: Publish a message before subscribing
+        action:
+          type: httpRequest
+          method: POST
+          url: service-a/amqp/publish
+          headers:
+            Content-Type: application/json
+          body:
+            connectionString: '{{amqpUrl}}'
+            exchange: ''
+            routingKey: subscribe-queue
+            message:
+              event: order.placed
+              orderId: 999
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 201
+
+      - name: Subscribe to consume via Basic.Deliver
+        action:
+          type: httpRequest
+          method: POST
+          url: service-a/amqp/subscribe
+          headers:
+            Content-Type: application/json
+          body:
+            connectionString: '{{amqpUrl}}'
+            queue: subscribe-queue
+            count: 1
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 201
+              - path: $.response.body.messages[0].event
+                operator: eq
+                value: order.placed
+              - path: $.response.body.messages[0].orderId
+                operator: eq
+                value: 999
+
+      - name: Verify deliver operation was logged
+        action:
+          type: wait
+          durationMs: 500
+        assertions:
+          - assertions:
+              - count: $.messageLogs
+                operator: gte
+                value: 1
+              - path: $.messageLogs[0].operation
+                operator: eq
+                value: deliver
+
+  - name: Concurrent publishers through proxy
+    variables:
+      amqpUrl: amqp://guest:guest@rabbitmq:5672
+    steps:
+      - name: Publish to three queues simultaneously
+        action:
+          type: parallel
+          actions:
+            - type: httpRequest
+              method: POST
+              url: service-a/amqp/publish
+              headers:
+                Content-Type: application/json
+              body:
+                connectionString: '{{amqpUrl}}'
+                exchange: ''
+                routingKey: concurrent-q1
+                message:
+                  lane: 1
+            - type: httpRequest
+              method: POST
+              url: service-a/amqp/publish
+              headers:
+                Content-Type: application/json
+              body:
+                connectionString: '{{amqpUrl}}'
+                exchange: ''
+                routingKey: concurrent-q2
+                message:
+                  lane: 2
+            - type: httpRequest
+              method: POST
+              url: service-a/amqp/publish
+              headers:
+                Content-Type: application/json
+              body:
+                connectionString: '{{amqpUrl}}'
+                exchange: ''
+                routingKey: concurrent-q3
+                message:
+                  lane: 3
+
+      - name: Verify all three publishes were logged
+        action:
+          type: wait
+          durationMs: 500
+        assertions:
+          - assertions:
+              - count: $.messageLogs
+                operator: gte
+                value: 3
+
+      - name: Consume from all three queues
+        action:
+          type: httpRequest
+          method: POST
+          url: service-a/amqp/consume
+          headers:
+            Content-Type: application/json
+          body:
+            connectionString: '{{amqpUrl}}'
+            queue: concurrent-q1
+            count: 1
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 201
+              - path: $.response.body.messages[0].lane
+                operator: eq
+                value: 1
+
+      - name: Consume from q2
+        action:
+          type: httpRequest
+          method: POST
+          url: service-a/amqp/consume
+          headers:
+            Content-Type: application/json
+          body:
+            connectionString: '{{amqpUrl}}'
+            queue: concurrent-q2
+            count: 1
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 201
+              - path: $.response.body.messages[0].lane
+                operator: eq
+                value: 2
+
+      - name: Consume from q3
+        action:
+          type: httpRequest
+          method: POST
+          url: service-a/amqp/consume
+          headers:
+            Content-Type: application/json
+          body:
+            connectionString: '{{amqpUrl}}'
+            queue: concurrent-q3
+            count: 1
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 201
+              - path: $.response.body.messages[0].lane
+                operator: eq
+                value: 3
+
+  - name: Non-JSON message body
+    variables:
+      amqpUrl: amqp://guest:guest@rabbitmq:5672
+    steps:
+      - name: Publish a plain-text message
+        action:
+          type: httpRequest
+          method: POST
+          url: service-a/amqp/publish-raw
+          headers:
+            Content-Type: application/json
+          body:
+            connectionString: '{{amqpUrl}}'
+            exchange: ''
+            routingKey: raw-queue
+            body: 'Hello, plain text!'
+            contentType: text/plain
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 201
+
+      - name: Verify message log captured non-JSON body as string
+        action:
+          type: wait
+          durationMs: 500
+        assertions:
+          - assertions:
+              - count: $.messageLogs
+                operator: gte
+                value: 1
+              - path: $.messageLogs[0].body
+                operator: eq
+                value: 'Hello, plain text!'
+
+      - name: Consume the plain-text message
+        action:
+          type: httpRequest
+          method: POST
+          url: service-a/amqp/consume
+          headers:
+            Content-Type: application/json
+          body:
+            connectionString: '{{amqpUrl}}'
+            queue: raw-queue
+            count: 1
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 201
+              - path: $.response.body.messages[0]
+                operator: eq
+                value: 'Hello, plain text!'
+
+  - name: Large message body passes through proxy
+    variables:
+      amqpUrl: amqp://guest:guest@rabbitmq:5672
+    steps:
+      - name: Publish a message with a large payload
+        action:
+          type: httpRequest
+          method: POST
+          url: service-a/amqp/publish
+          headers:
+            Content-Type: application/json
+          body:
+            connectionString: '{{amqpUrl}}'
+            exchange: ''
+            routingKey: large-queue
+            message:
+              data: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+              sequence: 1
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 201
+
+      - name: Consume and verify large body arrived intact
+        action:
+          type: httpRequest
+          method: POST
+          url: service-a/amqp/consume
+          headers:
+            Content-Type: application/json
+          body:
+            connectionString: '{{amqpUrl}}'
+            queue: large-queue
+            count: 1
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 201
+              - path: $.response.body.messages[0].sequence
+                operator: eq
+                value: 1

@@ -23,9 +23,10 @@ type resolvedBlocksCache struct {
 
 // StepValidator validates assertions for a step using in-memory log buffers.
 type StepValidator struct {
-	logBuffer  *StepLogBuffer
-	varCtx     *VariableContext
-	blockCache resolvedBlocksCache
+	logBuffer         *StepLogBuffer
+	varCtx            *VariableContext
+	blockCache        resolvedBlocksCache
+	prevStepStartTime string
 }
 
 // NewStepValidator creates a new step validator.
@@ -36,30 +37,59 @@ func NewStepValidator(logBuffer *StepLogBuffer, varCtx *VariableContext) *StepVa
 	}
 }
 
+// ResetStepTime clears the previous step start time so it doesn't leak
+// across test boundaries.
+func (sv *StepValidator) ResetStepTime() {
+	sv.prevStepStartTime = ""
+}
+
+// RecordStepTime tracks the start time of a non-wait step so that subsequent
+// wait steps can widen their time window. Called for every step, even those
+// without assertions.
+func (sv *StepValidator) RecordStepTime(step TestStep, stepExec StepExecution) {
+	if step.Action.Type != "wait" {
+		sv.prevStepStartTime = stepExec.StartTime
+	}
+}
+
 // ValidateStepWithRetry tries validation immediately. If the result looks like
 // logs haven't arrived yet (retryable), it polls every 100ms and retries until
 // validation passes, a non-retryable failure occurs, or the deadline is hit.
-func (sv *StepValidator) ValidateStepWithRetry(step TestStep, stepExec StepExecution, stepResp map[string]interface{}) ([]AssertionResult, bool) {
+// When skipFlush is true the caller will handle flushing (used when the next
+// step is a wait that needs to inherit this step's buffered logs).
+func (sv *StepValidator) ValidateStepWithRetry(step TestStep, stepExec StepExecution, stepResp map[string]interface{}, skipFlush bool) ([]AssertionResult, bool) {
 	sv.blockCache = resolvedBlocksCache{}
 	resetLowerKeyCache()
-	results, passed := sv.validateStep(step, stepExec, stepResp)
+
+	effectiveExec := stepExec
+	if step.Action.Type == "wait" && sv.prevStepStartTime != "" {
+		effectiveExec.StartTime = sv.prevStepStartTime
+	}
+
+	results, passed := sv.validateStep(step, effectiveExec, stepResp)
 	if passed || !isRetryable(results) {
-		sv.logBuffer.Flush()
+		if !skipFlush {
+			sv.logBuffer.Flush()
+		}
 		return results, passed
 	}
 
 	deadline := time.Now().Add(validationMaxWait)
 	for time.Now().Before(deadline) {
 		time.Sleep(validationRetryInterval)
-		results, passed = sv.validateStep(step, stepExec, stepResp)
+		results, passed = sv.validateStep(step, effectiveExec, stepResp)
 		if passed || !isRetryable(results) {
-			sv.logBuffer.Flush()
+			if !skipFlush {
+				sv.logBuffer.Flush()
+			}
 			return results, passed
 		}
 	}
 
 	log.Printf("Validation retry timed out after %v", validationMaxWait)
-	sv.logBuffer.Flush()
+	if !skipFlush {
+		sv.logBuffer.Flush()
+	}
 	return results, passed
 }
 
@@ -106,7 +136,7 @@ func isCountRetryable(r AssertionResult) bool {
 // validateStep runs all assertion blocks for a step against the buffered logs.
 // stepResp is the document returned by the step executor (non-nil for UI steps).
 func (sv *StepValidator) validateStep(step TestStep, stepExec StepExecution, stepResp map[string]interface{}) ([]AssertionResult, bool) {
-	httpLogs, dbLogs, consoleLogs := sv.logBuffer.Snapshot()
+	httpLogs, dbLogs, msgLogs, consoleLogs := sv.logBuffer.Snapshot()
 	var results []AssertionResult
 
 	// Resolve variables in the step action so log matching compares resolved
@@ -116,7 +146,7 @@ func (sv *StepValidator) validateStep(step TestStep, stepExec StepExecution, ste
 		resolvedStep.Action = resolved
 	}
 
-	rootCtx, actionLogFound := AssembleRootContext(resolvedStep, stepExec, httpLogs, dbLogs, consoleLogs, sv.varCtx, stepResp)
+	rootCtx, actionLogFound := AssembleRootContext(resolvedStep, stepExec, httpLogs, dbLogs, msgLogs, consoleLogs, sv.varCtx, stepResp)
 
 	if !actionLogFound {
 		return []AssertionResult{{
