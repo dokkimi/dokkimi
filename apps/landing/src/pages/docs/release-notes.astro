@@ -1,0 +1,240 @@
+---
+import DocsLayout from '../../layouts/DocsLayout.astro';
+import CodeBlock from '../../components/CodeBlock.astro';
+---
+
+<DocsLayout title="Release Notes — Dokkimi Docs" description="What's new in each Dokkimi release.">
+  <h1>Release Notes</h1>
+  <p class="subtitle">What's new in each release.</p>
+
+  <h2>v0.5.1</h2>
+  <p><time datetime="2026-06-26">June 26, 2026</time></p>
+
+  <h3>Broker proxies (AMQP &amp; Kafka)</h3>
+  <p>New Go sidecar proxies that capture message broker traffic for test assertions, the same way the interceptor captures HTTP and the DB proxies capture database queries.</p>
+  <ul>
+    <li><strong>AMQP proxy</strong> &mdash; parses the AMQP 0-9-1 wire protocol at the frame level, tracking channel state machines through method frames, content headers, and body frames. Extracts exchange names, routing keys, queue names, and delivery metadata.</li>
+    <li><strong>Kafka proxy</strong> &mdash; parses the Kafka wire protocol, tracking correlation IDs to match requests with responses. Extracts messages from Produce requests and Fetch responses, handling flexible-version headers and record batch decoding.</li>
+  </ul>
+  <p>Both proxies forward captured messages to Control Tower for storage and to the test-agent for inline assertion evaluation.</p>
+
+  <h4>Definition syntax</h4>
+  <CodeBlock code={`items:
+  - type: BROKER
+    name: rabbitmq
+    broker: amqp
+
+  - type: BROKER
+    name: kafka
+    broker: kafka`} lang="yaml" />
+  <p>Broker items support optional <code>image</code>, <code>port</code>, <code>healthCheck</code>, <code>env</code>, and <code>command</code> fields for custom broker configurations. The proxy sidecar is deployed alongside the broker container automatically, and your application services connect through the proxy transparently. See the <a href="/docs/brokers">Brokers</a> docs for the full reference.</p>
+
+  <h3>Message log pipeline</h3>
+  <p>Captured messages flow through a complete pipeline: broker proxy capture &rarr; Control Tower ingestion and storage &rarr; test-agent document assembly within step time windows &rarr; assertion evaluation against message content and metadata.</p>
+  <p>The <code>dokkimi dump</code> command now includes message logs in its output for debugging.</p>
+
+  <h3>Elasticsearch support</h3>
+  <p>Elasticsearch works as a standard <code>SERVICE</code> item with its REST API doubling as both application endpoint and health check:</p>
+  <CodeBlock code={`items:
+  - type: SERVICE
+    name: elasticsearch
+    image: elasticsearch:8.17.0
+    port: 9200
+    healthCheck: /_cluster/health
+    env:
+      - name: discovery.type
+        value: single-node
+      - name: xpack.security.enabled
+        value: 'false'`} lang="yaml" />
+
+  <h3>Gzip decompression</h3>
+  <p>The interceptor now detects <code>Content-Encoding: gzip</code> on HTTP responses and decompresses bodies for logging. The original compressed bytes are forwarded to the client unchanged, so application behavior is unaffected while traffic logs show readable content.</p>
+
+  <h3>Bug fixes &amp; hardening</h3>
+  <ul>
+    <li><strong>AMQP frame size cap</strong> &mdash; 100MB maximum frame size to prevent overflow panics on malformed frames, matching the Kafka proxy's existing limit</li>
+    <li><strong>Kafka configmap port</strong> &mdash; <code>getNativeBrokerPort</code> was returning AMQP's port (5672) for all broker types; Kafka now correctly returns 9092</li>
+    <li><strong>Express body limit</strong> &mdash; changed from <code>Infinity</code> to <code>100mb</code></li>
+    <li><strong>Step validator reset</strong> &mdash; <code>ResetStepTime()</code> clears the previous step's time window between tests, preventing assertion time window leakage</li>
+    <li><strong>Kafka content type detection</strong> &mdash; message log records now detect JSON vs plaintext content types instead of leaving the field empty</li>
+    <li><strong>Broker field validation</strong> &mdash; <code>validateBrokerItem</code> now validates <code>port</code>, <code>healthCheck</code>, <code>command</code>, and <code>env</code> fields with the same checks as SERVICE items</li>
+    <li><strong>GHCR publish workflow</strong> &mdash; broker proxy images are now published to the GitHub Container Registry alongside all other Go sidecar images</li>
+  </ul>
+
+  <h3>New test definitions</h3>
+  <ul>
+    <li><strong>Broker tests</strong> &mdash; <code>amqp-publish-consume</code>, <code>amqp-multi-instance</code>, <code>kafka-produce-consume</code></li>
+    <li><strong>Load tests</strong> &mdash; <code>full-infrastructure</code>, <code>high-volume-parallel</code>, <code>large-payloads</code>, <code>microservice-mesh</code></li>
+  </ul>
+
+  <h2>v0.5.0</h2>
+  <p><time datetime="2026-06-22">June 22, 2026</time></p>
+  <p>Ground-up rearchitecture of the test engine, a new expression language, and loop support across the entire definition format.</p>
+
+  <h3>Unified root context (<code>$</code>)</h3>
+  <p>All assertion paths, extract paths, and variable references now resolve against a single document root:</p>
+  <ul>
+    <li><code>$.response.</code> &mdash; HTTP response data</li>
+    <li><code>$.variables.</code> &mdash; extracted and global variables</li>
+    <li><code>$.request.</code> &mdash; the original request</li>
+    <li><code>$.database.</code> &mdash; database query results</li>
+  </ul>
+  <p>This replaces the previous fragmented context where different path prefixes resolved against different objects.</p>
+
+  <h3><code>forEach</code> loops</h3>
+  <p>Loops are now supported at every level of a test definition:</p>
+  <ul>
+    <li><strong>Test level</strong> &mdash; <code>tests[].forEach</code></li>
+    <li><strong>Step level</strong> &mdash; <code>steps[].forEach</code></li>
+    <li><strong>Action level</strong> &mdash; <code>action.forEach</code></li>
+    <li><strong>Assertion block level</strong> &mdash; <code>assertions[].forEach</code></li>
+    <li><strong>UI substep level</strong></li>
+  </ul>
+  <p>Loop items can be an inline array or a variable reference. <code>as</code>/<code>name</code> bindings with an <code>index</code> property enable dynamic variable names in extract keys.</p>
+
+  <h3>Inline validation (test-agent rewrite)</h3>
+  <p>Assertion validation now runs inline in the Go test-agent against in-memory logs instead of round-tripping through Control Tower's TypeScript service. This eliminated ~8,900 lines of CT code, replaced with ~4,900 lines of focused Go, and cut average test runtime to ~110s by removing HTTP round-trips and DB queries from the hot path.</p>
+  <ul>
+    <li>Interceptors and GELF forward logs directly to the test-agent</li>
+    <li>Visual matching (go-pixmatch) also moved to test-agent</li>
+    <li>Control Tower's new role is slim: receive pre-validated results, store them, update run status</li>
+  </ul>
+
+  <h3>Assertion engine enhancements</h3>
+  <ul>
+    <li><code>transform</code> field on assertions (e.g. <code>length</code>, <code>keys</code>, <code>values</code>, <code>flatten</code>, <code>unique</code>, <code>lowercase</code>)</li>
+    <li>Scope-level <code>forEach</code> and <code>extract</code> on assertion blocks</li>
+    <li>New operators and tighter validation</li>
+    <li>Fixed <code>count</code> assertion retry logic for <code>gt</code> operator</li>
+  </ul>
+
+  <h3>JUnit XML reports &amp; CI integration</h3>
+  <ul>
+    <li>Generate JUnit XML reports per test run with per-test timing data</li>
+    <li>Post test results as a PR comment (update-in-place) with in-progress indicator</li>
+    <li>Write to <code>$GITHUB_STEP_SUMMARY</code> for the Actions job summary tab</li>
+    <li>Aggregate results across multiple <code>dokkimi run</code> invocations via <code>--dir</code> flag</li>
+    <li>Enrich failure output with console logs and test execution errors</li>
+    <li>New <code>dokkimi junit</code> standalone command (<code>--summary</code>, <code>--dir</code>, <code>--run</code>, <code>--failed</code>)</li>
+  </ul>
+
+  <h3>Test-agent refactor</h3>
+  <p>Broke apart the monolith Go files into focused, testable modules with ~4,000 lines of new unit test coverage.</p>
+
+  <h3>Definition resolver &amp; validator</h3>
+  <ul>
+    <li>Extracted <code>config-loader.ts</code>, <code>env-substitution.ts</code>, <code>glob-resolver.ts</code> from the monolith <code>resolve.ts</code></li>
+    <li>New <code>validate-loops.ts</code> and <code>validate-ui-substeps.ts</code> with ~1,600 lines of loop validation tests</li>
+    <li><code>validate-helpers.ts</code> for shared validation utilities</li>
+  </ul>
+
+  <h3>CLI improvements</h3>
+  <ul>
+    <li>Extracted <code>run-executor.ts</code>, <code>baselines-ops.ts</code>, <code>baselines-views.ts</code> from monolith command files</li>
+    <li>Improved <code>inspect</code> step-detail formatting</li>
+  </ul>
+
+  <h3>Docs &amp; landing site</h3>
+  <ul>
+    <li>New <a href="/docs/loops">Loops</a> docs page</li>
+    <li>Updated variable, assertion, and action docs for the unified root syntax</li>
+    <li>Two new design docs: unified root context and loops</li>
+  </ul>
+
+  <h3>Other</h3>
+  <ul>
+    <li>VSCode extension: expanded JSON schema and snippets for loops and new assertion fields</li>
+    <li>Docker: database config service improvements for concurrent database groups</li>
+    <li>GitHub Action: <code>junit-dir</code> and <code>report</code> inputs for multi-project support</li>
+  </ul>
+
+  <h2>v0.4.2</h2>
+  <p><time datetime="2026-06-12">June 12, 2026</time></p>
+
+  <h3>Bug fixes</h3>
+  <ul>
+    <li>Fixed hanging CI runs: sidecars now correctly resolve <code>host.docker.internal</code> when Control Tower binds to <code>0.0.0.0</code>, preventing containers from connecting to an unreachable bind address</li>
+    <li>Fixed stale runs that never clean up: added <code>RunCleanupService</code> to detect and terminate runs stuck in non-terminal states</li>
+    <li>Fixed test validation race condition: <code>POST /test-complete</code> now acquires a per-run lock and rechecks completion status, preventing duplicate validation when multiple test agents report simultaneously</li>
+  </ul>
+
+  <h3>New features</h3>
+  <ul>
+    <li>Added <code>dokkimi stop</code> command (CLI + MCP tool) to manually halt a running test suite</li>
+    <li>Control Tower now binds to the configured host instead of hardcoded <code>localhost</code>, controlled via <code>CONTROL_TOWER_HOST</code> env var</li>
+  </ul>
+
+  <h3>Improvements</h3>
+  <ul>
+    <li>Simplified service URL builder: split <code>buildServiceUrl(service, forCluster)</code> boolean flag into two explicit functions</li>
+    <li>Added unit tests for service URL builders and expanded test-validation controller coverage</li>
+    <li>CI pipeline: added <code>CONTROL_TOWER_HOST: 0.0.0.0</code> env override for integration tests, added config package test step</li>
+  </ul>
+
+  <h2>v0.4.1</h2>
+  <p><time datetime="2026-06-12">June 12, 2026</time></p>
+
+  <h3>Bug fix</h3>
+  <ul>
+    <li>Console log assertions now use Docker's real timestamps instead of Control Tower's wall-clock time, fixing intermittent <code>consoleAssertions</code> failures</li>
+  </ul>
+
+  <h3>Improvements</h3>
+  <ul>
+    <li>Removed all vestigial Fluent Bit references; console logs are now collected via Docker API streaming</li>
+    <li>Faster CI pipeline: parallelized Docker builds, added dependency caching, BuildKit cache mounts for Go services</li>
+    <li>Bumped Control Tower to Node.js 22, pinned Alpine 3.21 across Go Dockerfiles, bumped db-proxy Go to 1.26</li>
+    <li>Fixed CI warnings (Go cache path, upload-artifact v5)</li>
+    <li>Updated CI docs page, npm README, and Node.js prerequisite to 22+</li>
+  </ul>
+
+  <h2>v0.4.0</h2>
+  <p><time datetime="2026-06-05">June 5, 2026</time></p>
+
+  <h3>MCP server</h3>
+  <p>Dokkimi now ships with a local MCP server, giving LLMs interactive access to the CLI. Tools include <code>run_tests</code>, <code>dump_results</code>, <code>validate_file</code>, <code>get_reference</code>, and more.</p>
+
+  <h3>Run history &amp; per-project isolation</h3>
+  <ul>
+    <li><strong>Scoped teardown</strong> &mdash; <code>prepareForNewRun</code> stops and prunes runs per-project; other projects' data is never touched</li>
+    <li><strong>Per-run filesystem layout</strong> &mdash; snapshots, artifacts, and dump files stored under <code>~/.dokkimi/runs/&#123;timestamp&#125;/</code> instead of a flat global directory</li>
+    <li><strong>Configurable retention</strong> &mdash; completed runs kept up to <code>maxRunHistory</code> (default 2) per project, with per-project config overrides in <code>~/.dokkimi/config.json</code></li>
+    <li><strong>5 new MCP tools</strong> &mdash; <code>diagnose</code>, <code>diff_traffic</code>, <code>watch_run</code>, <code>get_run_history</code>, <code>get_container_status</code></li>
+    <li><strong><code>get_traffic</code> filters</strong> &mdash; method, statusCode, pathContains, mockedOnly</li>
+    <li><strong>Restart resilience</strong> &mdash; <code>RunStorageService</code> derives paths from DB on cache miss instead of throwing after a CT restart</li>
+  </ul>
+
+  <h3>MCP config tools &amp; run history browsing</h3>
+  <ul>
+    <li><code>get_config</code> / <code>set_config</code> MCP tools with per-project overrides and source annotations</li>
+    <li><code>--run</code> flag for <code>inspect</code> and <code>dump</code> with interactive run picker</li>
+    <li><code>runIndex</code> param for MCP <code>dump_results</code> to target older runs</li>
+    <li>Doctor/clean improvements: run storage size check, VACUUM after bulk deletes</li>
+  </ul>
+
+  <h3>Docker-only environments</h3>
+  <p>Removed Kubernetes support &mdash; Dokkimi now uses Docker environments exclusively.</p>
+
+  <h3>VSCode extension updates</h3>
+  <p>Integration with the VSCode Test Explorer. Install locally via <code>scripts/reinstall-ext.sh</code>.</p>
+
+  <h3>Other</h3>
+  <ul>
+    <li>Updated <code>llms.txt</code> with full content</li>
+    <li>Added GA4 analytics</li>
+    <li>AI crawler entries in <code>robots.txt</code></li>
+  </ul>
+
+  <h2>v0.3.7</h2>
+  <p><time datetime="2026-05-11">May 11, 2026</time></p>
+  <ul>
+    <li>Fixed a console log race condition that could cause garbled output during concurrent logging</li>
+    <li>First public open-source release under the Elastic License 2.0</li>
+    <li>Added SECURITY.md and CODE_OF_CONDUCT.md</li>
+  </ul>
+
+  <div class="nav-links">
+    <a href="/docs/cli">&larr; CLI Reference</a>
+    <span></span>
+  </div>
+</DocsLayout>
