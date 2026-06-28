@@ -1,9 +1,15 @@
 type: SERVICE
 name: hs-server
 description: Hyperswitch payment router — handles payment requests, routes to connectors
-image: dokkimi/hyperswitch-router:local
+image: docker.juspay.io/juspaydotin/hyperswitch-router:latest
 port: 8080
 healthCheck: /health
+command: ['/bin/bash', '/entrypoint.sh']
+mountFiles:
+  - source: ../docker/docker_compose.toml
+    target: /local/config/docker_compose.toml
+  - source: ../docker/entrypoint.sh
+    target: /entrypoint.sh
 env:
   - name: RUN_ENV
     value: development

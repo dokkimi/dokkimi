@@ -1,5 +1,12 @@
 #!/bin/bash
 
+echo "Generating RSA key..."
+mkdir -p /app/config/keys
+ruby -e "require 'openssl'; File.write('/app/config/keys/private.pem', OpenSSL::PKey::RSA.generate(2048).to_pem)"
+
+echo "Patching dev-only gem..."
+sed -i 's/require "annotate_rb"/require "annotate_rb" rescue nil/' /app/lib/tasks/annotate_rb.rake 2>/dev/null || true
+
 echo "Waiting for PostgreSQL..."
 until pg_isready -h lago-postgres -p 5432 -q 2>/dev/null; do
   sleep 2

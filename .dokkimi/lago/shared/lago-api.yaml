@@ -1,8 +1,12 @@
 type: SERVICE
 name: lago-api
-image: dokkimi/lago-api:local
+image: getlago/api:v1.48.1
 port: 3000
 healthCheck: /health
+entrypoint: ['/bin/bash', '/app/scripts/dokkimi-entrypoint.sh']
+mountFiles:
+  - source: ../docker/entrypoint.sh
+    target: /app/scripts/dokkimi-entrypoint.sh
 env:
   - name: DATABASE_URL
     value: postgresql://lago:changeme@lago-postgres:5432/lago

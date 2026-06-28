@@ -1,7 +1,7 @@
 type: DATABASE
 name: lago-postgres
 database: postgres
-version: '15-partman'
+image: getlago/postgres-partman:15.0-alpine
 dbName: lago
 dbUser: lago
 dbPassword: changeme
