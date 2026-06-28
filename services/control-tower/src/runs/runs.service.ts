@@ -191,6 +191,10 @@ export class RunsService implements OnApplicationBootstrap {
       instanceId,
       deployableDefinition.items,
     );
+    await this.runStorage.writeMountFiles(
+      instanceId,
+      deployableDefinition.items,
+    );
 
     const def = definition as unknown as Record<string, unknown>;
     const defItems = (def.items as any[]) || [];

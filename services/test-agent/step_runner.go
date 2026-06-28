@@ -176,8 +176,13 @@ func (e *TestExecutor) executeStepOnce(ctx context.Context, fs flatStep) (StepEx
 
 		summary := FormatStepResult(si, fs.label(), results, passed)
 		if !passed {
-			e.testExecutionLogger.LogEvent("STEP_FAILED", summary, &si, nil)
-			return stepExec, fmt.Errorf("assertion validation failed: %s", summary)
+			stopOnFailure := fs.step.StopOnFailure == nil || *fs.step.StopOnFailure
+			if stopOnFailure {
+				e.testExecutionLogger.LogEvent("STEP_FAILED", summary, &si, nil)
+				return stepExec, fmt.Errorf("assertion validation failed: %s", summary)
+			}
+			e.testExecutionLogger.LogEvent("STEP_WARNING",
+				fmt.Sprintf("%s (stopOnFailure=false, continuing)", summary), &si, nil)
 		}
 		log.Printf("%s", summary)
 	}

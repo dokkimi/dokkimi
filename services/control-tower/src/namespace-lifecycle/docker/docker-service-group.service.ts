@@ -1,3 +1,4 @@
+import * as path from 'path';
 import { Injectable, Logger } from '@nestjs/common';
 import {
   getConfig,
@@ -207,12 +208,27 @@ export class DockerServiceGroupService {
       }
     }
 
+    const mountFileBinds: string[] = [];
+    if (item.mountFiles?.length) {
+      const mountDir = await this.runStorage.getMountFilesDir(
+        instanceId,
+        item.name,
+      );
+      for (const mf of item.mountFiles) {
+        const safeName = path
+          .basename(mf.source)
+          .replace(/[^a-zA-Z0-9_.-]/g, '_');
+        mountFileBinds.push(`${mountDir}/${safeName}:${mf.target}:ro`);
+      }
+    }
+
     const userBinds = [
       ...this.caService.getServiceCaBinds(caBundlePaths),
       `${configPaths.resolvConfPath}:/etc/resolv.conf:ro`,
       ...(item.localDevPath && item.mountPath
         ? [`${item.localDevPath}:${item.mountPath}`]
         : []),
+      ...mountFileBinds,
     ];
 
     const userContainerId = await this.dockerClient.runContainer({
@@ -232,6 +248,7 @@ export class DockerServiceGroupService {
         'io.dokkimi.item-name': item.name,
       },
       ...(item.command ? { cmd: item.command } : {}),
+      ...(item.entrypoint ? { entrypoint: item.entrypoint } : {}),
       ...(testAgentIP
         ? {
             logConfig: {

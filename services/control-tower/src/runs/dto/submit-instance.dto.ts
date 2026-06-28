@@ -20,6 +20,18 @@ class InitFileDto {
   content!: string; // base64-encoded file content
 }
 
+class MountFileDto {
+  @IsString()
+  source!: string;
+
+  @IsString()
+  target!: string;
+
+  @IsBase64()
+  @MaxLength(10 * 1024 * 1024) // 10MB max base64 content
+  content!: string; // base64-encoded file content
+}
+
 class DefinitionItemDto {
   @IsString()
   name!: string;
@@ -88,6 +100,17 @@ class DefinitionItemDto {
   @IsArray()
   @IsString({ each: true })
   command?: string[] | null;
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  entrypoint?: string[] | null;
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => MountFileDto)
+  mountFiles?: MountFileDto[] | null;
 
   // Broker fields
   @IsOptional()

@@ -50,6 +50,13 @@ export interface InitFileEntry {
   content: Buffer;
 }
 
+export interface MountFileEntry {
+  itemName: string;
+  source: string;
+  target: string;
+  content: Buffer;
+}
+
 export interface ResolvedDefinition {
   /** The definition name */
   name: string;
@@ -57,6 +64,8 @@ export interface ResolvedDefinition {
   definition: Record<string, unknown>;
   /** Init files read from disk, ready to send to CT */
   initFiles: InitFileEntry[];
+  /** Mount files read from disk, ready to send to CT */
+  mountFiles: MountFileEntry[];
   /** Source file path */
   sourceFile: string;
 }
@@ -376,6 +385,62 @@ export function resolveDefinitions(target?: string): ResolverResult {
       continue;
     }
 
+    // Read mount files from disk (SERVICE items)
+    const mountFiles: MountFileEntry[] = [];
+    let mountFileError = false;
+    for (const ri of resolvedItems) {
+      const item = ri.item;
+      if (item.type !== 'SERVICE' || !Array.isArray(item.mountFiles)) {
+        continue;
+      }
+      const allowedRoot = path.dirname(dokkimiDir);
+      for (const mf of item.mountFiles as Array<{
+        source: string;
+        target: string;
+      }>) {
+        const absMountPath = path.resolve(
+          path.dirname(ri.sourceFile),
+          mf.source,
+        );
+        if (
+          !absMountPath.startsWith(allowedRoot + path.sep) &&
+          absMountPath !== allowedRoot
+        ) {
+          errors.push({
+            file: filePath,
+            errors: [
+              `Mount file path "${mf.source}" resolves outside the project directory`,
+            ],
+            warnings: [],
+          });
+          mountFileError = true;
+          continue;
+        }
+        if (!fs.existsSync(absMountPath)) {
+          errors.push({
+            file: filePath,
+            errors: [
+              `Mount file not found: "${mf.source}" (resolved to ${absMountPath})`,
+            ],
+            warnings: [],
+          });
+          mountFileError = true;
+          continue;
+        }
+        consumedFiles.add(absMountPath);
+        mountFiles.push({
+          itemName: item.name as string,
+          source: path.basename(absMountPath),
+          target: mf.target,
+          content: fs.readFileSync(absMountPath),
+        });
+      }
+    }
+
+    if (mountFileError) {
+      continue;
+    }
+
     // Interpolate ${{KEY}} references from config env
     const unresolved = new Set<string>();
     const finalDef = interpolateEnv(resolvedDef, config.env, unresolved);
@@ -395,6 +460,7 @@ export function resolveDefinitions(target?: string): ResolverResult {
       name,
       definition: finalDef,
       initFiles,
+      mountFiles,
       sourceFile: filePath,
     });
 

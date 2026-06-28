@@ -162,6 +162,43 @@ export class RunStorageService {
     return this.resolveInitFilesDir(instanceId, itemName);
   }
 
+  async writeMountFiles(
+    instanceId: string,
+    items: {
+      name: string;
+      type: string;
+      mountFiles?: { source: string; target: string; content: Buffer }[] | null;
+    }[],
+  ): Promise<void> {
+    for (const item of items) {
+      if (item.type !== 'SERVICE' || !item.mountFiles?.length) {
+        continue;
+      }
+      const dir = await this.resolveMountFilesDir(instanceId, item.name);
+      await fs.mkdir(dir, { recursive: true });
+      for (const mf of item.mountFiles) {
+        const safeName = path
+          .basename(mf.source)
+          .replace(/[^a-zA-Z0-9_.-]/g, '_');
+        const fullPath = path.join(dir, safeName);
+        if (!fullPath.startsWith(dir + path.sep)) {
+          this.logger.warn(
+            `Skipping mount file with unsafe name: "${mf.source}"`,
+          );
+          continue;
+        }
+        await fs.writeFile(fullPath, mf.content);
+      }
+    }
+  }
+
+  async getMountFilesDir(
+    instanceId: string,
+    itemName: string,
+  ): Promise<string> {
+    return this.resolveMountFilesDir(instanceId, itemName);
+  }
+
   /**
    * Persist a binary artifact under the instance's artifacts directory.
    *
@@ -264,6 +301,14 @@ export class RunStorageService {
   ): Promise<string> {
     const dir = await this.resolveInstanceDir(instanceId);
     return path.join(dir, 'db-init-files', itemName);
+  }
+
+  private async resolveMountFilesDir(
+    instanceId: string,
+    itemName: string,
+  ): Promise<string> {
+    const dir = await this.resolveInstanceDir(instanceId);
+    return path.join(dir, 'mount-files', itemName);
   }
 
   absoluteUri(uri: string): string {

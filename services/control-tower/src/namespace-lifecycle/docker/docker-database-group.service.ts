@@ -106,7 +106,7 @@ export class DockerDatabaseGroupService {
 
     await this.dockerClient.runContainer({
       name: dbContainerName,
-      image: dbConfig.image,
+      image: item.image || dbConfig.image,
       networkName,
       networkMode: `container:${dbProxyName}`,
       env: dbEnv,

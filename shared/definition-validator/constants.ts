@@ -80,6 +80,8 @@ export const VALID_ITEM_KEYS: Record<string, Set<string>> = {
     'localDevPath',
     'mountPath',
     'command',
+    'entrypoint',
+    'mountFiles',
   ]),
   DATABASE: new Set([
     'type',
@@ -87,6 +89,7 @@ export const VALID_ITEM_KEYS: Record<string, Set<string>> = {
     'description',
     '$ref',
     'database',
+    'image',
     'version',
     'initFilePath',
     'initFilePaths',
