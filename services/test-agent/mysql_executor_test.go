@@ -4,6 +4,85 @@ import (
 	"testing"
 )
 
+func TestCoerceMysqlString(t *testing.T) {
+	t.Run("INT returns int64", func(t *testing.T) {
+		got := coerceMysqlString("42", "INT")
+		if got != int64(42) {
+			t.Errorf("expected int64(42), got %v (%T)", got, got)
+		}
+	})
+
+	t.Run("BIGINT returns int64", func(t *testing.T) {
+		got := coerceMysqlString("9999999999", "BIGINT")
+		if got != int64(9999999999) {
+			t.Errorf("expected int64(9999999999), got %v (%T)", got, got)
+		}
+	})
+
+	t.Run("TINYINT returns int64", func(t *testing.T) {
+		got := coerceMysqlString("1", "TINYINT")
+		if got != int64(1) {
+			t.Errorf("expected int64(1), got %v (%T)", got, got)
+		}
+	})
+
+	t.Run("DECIMAL returns float64", func(t *testing.T) {
+		got := coerceMysqlString("49.99", "DECIMAL")
+		if got != float64(49.99) {
+			t.Errorf("expected float64(49.99), got %v (%T)", got, got)
+		}
+	})
+
+	t.Run("FLOAT returns float64", func(t *testing.T) {
+		got := coerceMysqlString("3.14", "FLOAT")
+		if got != float64(3.14) {
+			t.Errorf("expected float64(3.14), got %v (%T)", got, got)
+		}
+	})
+
+	t.Run("DOUBLE returns float64", func(t *testing.T) {
+		got := coerceMysqlString("2.718281828", "DOUBLE")
+		if got != float64(2.718281828) {
+			t.Errorf("expected float64(2.718281828), got %v (%T)", got, got)
+		}
+	})
+
+	t.Run("YEAR returns int64", func(t *testing.T) {
+		got := coerceMysqlString("2026", "YEAR")
+		if got != int64(2026) {
+			t.Errorf("expected int64(2026), got %v (%T)", got, got)
+		}
+	})
+
+	t.Run("negative integer", func(t *testing.T) {
+		got := coerceMysqlString("-100", "INT")
+		if got != int64(-100) {
+			t.Errorf("expected int64(-100), got %v (%T)", got, got)
+		}
+	})
+
+	t.Run("unparseable int falls back to string", func(t *testing.T) {
+		got := coerceMysqlString("not-a-number", "INT")
+		if got != "not-a-number" {
+			t.Errorf("expected string fallback, got %v (%T)", got, got)
+		}
+	})
+
+	t.Run("unknown type returns string", func(t *testing.T) {
+		got := coerceMysqlString("hello", "VARCHAR")
+		if got != "hello" {
+			t.Errorf("expected 'hello', got %v (%T)", got, got)
+		}
+	})
+
+	t.Run("empty type name returns string", func(t *testing.T) {
+		got := coerceMysqlString("5000", "")
+		if got != "5000" {
+			t.Errorf("expected string '5000', got %v (%T)", got, got)
+		}
+	})
+}
+
 func TestBindMysqlParams(t *testing.T) {
 	t.Run("returns nil for empty params", func(t *testing.T) {
 		result := bindMysqlParams("SELECT * FROM users WHERE id = ?", nil)

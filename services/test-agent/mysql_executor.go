@@ -142,17 +142,22 @@ func coerceMysqlValue(val interface{}, colTypes []*sql.ColumnType, idx int) inte
 	if !ok {
 		return val
 	}
-	s := string(b)
+	typeName := ""
 	if colTypes != nil && idx < len(colTypes) {
-		switch colTypes[idx].DatabaseTypeName() {
-		case "TINYINT", "SMALLINT", "MEDIUMINT", "INT", "BIGINT", "YEAR":
-			if v, err := strconv.ParseInt(s, 10, 64); err == nil {
-				return v
-			}
-		case "FLOAT", "DOUBLE", "DECIMAL":
-			if v, err := strconv.ParseFloat(s, 64); err == nil {
-				return v
-			}
+		typeName = colTypes[idx].DatabaseTypeName()
+	}
+	return coerceMysqlString(string(b), typeName)
+}
+
+func coerceMysqlString(s string, typeName string) interface{} {
+	switch typeName {
+	case "TINYINT", "SMALLINT", "MEDIUMINT", "INT", "BIGINT", "YEAR":
+		if v, err := strconv.ParseInt(s, 10, 64); err == nil {
+			return v
+		}
+	case "FLOAT", "DOUBLE", "DECIMAL":
+		if v, err := strconv.ParseFloat(s, 64); err == nil {
+			return v
 		}
 	}
 	return s

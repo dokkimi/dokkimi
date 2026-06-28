@@ -82,6 +82,8 @@ func (e *DatabaseQueryExecutor) executePostgresQuery(
 			return &DBQueryResult{Success: false, Error: errMsg, Duration: duration}, errors.New(errMsg)
 		}
 
+		colTypes, _ := rows.ColumnTypes()
+
 		var data []map[string]interface{}
 		for rows.Next() {
 			values := make([]interface{}, len(columns))
@@ -96,11 +98,7 @@ func (e *DatabaseQueryExecutor) executePostgresQuery(
 			}
 			row := make(map[string]interface{})
 			for i, col := range columns {
-				if b, ok := values[i].([]byte); ok {
-					row[col] = string(b)
-				} else {
-					row[col] = values[i]
-				}
+				row[col] = coercePostgresValue(values[i], colTypes, i)
 			}
 			data = append(data, row)
 		}
@@ -128,6 +126,38 @@ func (e *DatabaseQueryExecutor) executePostgresQuery(
 	}
 
 	return result, nil
+}
+
+// coercePostgresValue converts a scanned value to the appropriate Go type.
+// lib/pq returns most values as native types, but NUMERIC columns arrive as
+// []byte. We use the column's DatabaseTypeName to coerce to int64/float64.
+func coercePostgresValue(val interface{}, colTypes []*sql.ColumnType, idx int) interface{} {
+	if val == nil {
+		return nil
+	}
+	b, ok := val.([]byte)
+	if !ok {
+		return val
+	}
+	typeName := ""
+	if colTypes != nil && idx < len(colTypes) {
+		typeName = colTypes[idx].DatabaseTypeName()
+	}
+	return coercePostgresString(string(b), typeName)
+}
+
+func coercePostgresString(s string, typeName string) interface{} {
+	switch typeName {
+	case "INT2", "INT4", "INT8":
+		if v, err := strconv.ParseInt(s, 10, 64); err == nil {
+			return v
+		}
+	case "FLOAT4", "FLOAT8", "NUMERIC":
+		if v, err := strconv.ParseFloat(s, 64); err == nil {
+			return v
+		}
+	}
+	return s
 }
 
 // convertPostgresParams builds an ordered args slice from a map of positional
