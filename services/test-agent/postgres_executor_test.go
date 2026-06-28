@@ -4,6 +4,99 @@ import (
 	"testing"
 )
 
+func TestCoercePostgresString(t *testing.T) {
+	t.Run("INT2 returns int64", func(t *testing.T) {
+		got := coercePostgresString("42", "INT2")
+		if got != int64(42) {
+			t.Errorf("expected int64(42), got %v (%T)", got, got)
+		}
+	})
+
+	t.Run("INT4 returns int64", func(t *testing.T) {
+		got := coercePostgresString("5000", "INT4")
+		if got != int64(5000) {
+			t.Errorf("expected int64(5000), got %v (%T)", got, got)
+		}
+	})
+
+	t.Run("INT8 returns int64", func(t *testing.T) {
+		got := coercePostgresString("9999999999", "INT8")
+		if got != int64(9999999999) {
+			t.Errorf("expected int64(9999999999), got %v (%T)", got, got)
+		}
+	})
+
+	t.Run("NUMERIC integer value returns float64", func(t *testing.T) {
+		got := coercePostgresString("5000", "NUMERIC")
+		if got != float64(5000) {
+			t.Errorf("expected float64(5000), got %v (%T)", got, got)
+		}
+	})
+
+	t.Run("NUMERIC decimal value returns float64", func(t *testing.T) {
+		got := coercePostgresString("49.99", "NUMERIC")
+		if got != float64(49.99) {
+			t.Errorf("expected float64(49.99), got %v (%T)", got, got)
+		}
+	})
+
+	t.Run("FLOAT4 returns float64", func(t *testing.T) {
+		got := coercePostgresString("3.14", "FLOAT4")
+		if got != float64(3.14) {
+			t.Errorf("expected float64(3.14), got %v (%T)", got, got)
+		}
+	})
+
+	t.Run("FLOAT8 returns float64", func(t *testing.T) {
+		got := coercePostgresString("2.718281828", "FLOAT8")
+		if got != float64(2.718281828) {
+			t.Errorf("expected float64(2.718281828), got %v (%T)", got, got)
+		}
+	})
+
+	t.Run("negative integer", func(t *testing.T) {
+		got := coercePostgresString("-100", "INT4")
+		if got != int64(-100) {
+			t.Errorf("expected int64(-100), got %v (%T)", got, got)
+		}
+	})
+
+	t.Run("negative numeric", func(t *testing.T) {
+		got := coercePostgresString("-99.5", "NUMERIC")
+		if got != float64(-99.5) {
+			t.Errorf("expected float64(-99.5), got %v (%T)", got, got)
+		}
+	})
+
+	t.Run("unparseable int falls back to string", func(t *testing.T) {
+		got := coercePostgresString("not-a-number", "INT4")
+		if got != "not-a-number" {
+			t.Errorf("expected string fallback, got %v (%T)", got, got)
+		}
+	})
+
+	t.Run("unparseable numeric falls back to string", func(t *testing.T) {
+		got := coercePostgresString("not-a-number", "NUMERIC")
+		if got != "not-a-number" {
+			t.Errorf("expected string fallback, got %v (%T)", got, got)
+		}
+	})
+
+	t.Run("unknown type returns string", func(t *testing.T) {
+		got := coercePostgresString("hello", "TEXT")
+		if got != "hello" {
+			t.Errorf("expected 'hello', got %v (%T)", got, got)
+		}
+	})
+
+	t.Run("empty type name returns string", func(t *testing.T) {
+		got := coercePostgresString("5000", "")
+		if got != "5000" {
+			t.Errorf("expected string '5000', got %v (%T)", got, got)
+		}
+	})
+}
+
 func TestConvertPostgresParams(t *testing.T) {
 	t.Run("nil params returns nil args", func(t *testing.T) {
 		query, args := convertPostgresParams("SELECT 1", nil)
