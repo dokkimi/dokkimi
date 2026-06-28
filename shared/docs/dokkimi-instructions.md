@@ -15,13 +15,13 @@ Key capabilities:
 
 ## Definition Files
 
-You are helping a developer write Dokkimi definition files. These are JSON files in a `.dokkimi/` folder that describe the test environment: services, databases, message brokers, mocks, and automated tests.
+You are helping a developer write Dokkimi definition files. These are JSON or YAML files in a `.dokkimi/` folder that describe the test environment: services, databases, message brokers, mocks, and automated tests.
 
 This document is the complete reference. All valid fields, types, operators, and constraints are documented below.
 
 ## .dokkimi/ Folder
 
-The only requirement is that a `.dokkimi/` folder exists at the repo root. Users can organize files inside however they want — there are no required subfolder conventions. All `**/*.json` files inside `.dokkimi/` are scanned.
+The only requirement is that a `.dokkimi/` folder exists at the repo root. Users can organize files inside however they want — there are no required subfolder conventions. All `**/*.json`, `**/*.yaml`, and `**/*.yml` files inside `.dokkimi/` are scanned.
 
 A common convention (but not required) is:
 
@@ -197,18 +197,20 @@ A containerized application deployed with an interceptor sidecar for traffic cap
 
 **Optional fields:**
 
-| Field         | Type              | Default | Description                                                                 |
-| ------------- | ----------------- | ------- | --------------------------------------------------------------------------- |
-| `description` | string            | —       | Human-readable description (max 500 chars)                                  |
-| `image`       | string            | —       | Docker image URI (e.g., `"my-service:latest"`).                             |
-| `uiPath`      | string            | —       | URL path to service's UI (e.g., `"/"`, `"/app"`) — enables "Open UI" button |
-| `debugPort`   | integer (1-65535) | —       | Remote debugging port (e.g., 9229 for Node.js `--inspect`)                  |
-| `command`     | string[]          | —       | Override Docker image's default CMD (e.g., `["server", "/data"]`)           |
-| `env`         | array             | —       | Environment variables: `[{ "name": "KEY", "value": "VALUE" }, ...]`         |
-| `minCpu`      | number (≥ 0)      | —       | Minimum CPU cores (e.g., 0.25)                                              |
-| `minMemory`   | number (≥ 0)      | —       | Minimum memory in MB                                                        |
-| `maxCpu`      | number (≥ 0)      | —       | Maximum CPU cores                                                           |
-| `maxMemory`   | number (≥ 0)      | —       | Maximum memory in MB                                                        |
+| Field         | Type              | Default | Description                                                                                                                        |
+| ------------- | ----------------- | ------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `description` | string            | —       | Human-readable description (max 500 chars)                                                                                         |
+| `image`       | string            | —       | Docker image URI (e.g., `"my-service:latest"`).                                                                                    |
+| `uiPath`      | string            | —       | URL path to service's UI (e.g., `"/"`, `"/app"`) — enables "Open UI" button                                                        |
+| `debugPort`   | integer (1-65535) | —       | Remote debugging port (e.g., 9229 for Node.js `--inspect`)                                                                         |
+| `command`     | string[]          | —       | Override Docker image's default CMD (e.g., `["server", "/data"]`)                                                                  |
+| `entrypoint`  | string[]          | —       | Override Docker image's ENTRYPOINT (e.g., `["/bin/sh", "-c", "..."]`)                                                              |
+| `mountFiles`  | array             | —       | Files to mount into the container (read-only). Each entry: `{ "source": "../path/to/file", "target": "/absolute/container/path" }` |
+| `env`         | array             | —       | Environment variables: `[{ "name": "KEY", "value": "VALUE" }, ...]`                                                                |
+| `minCpu`      | number (≥ 0)      | —       | Minimum CPU cores (e.g., 0.25)                                                                                                     |
+| `minMemory`   | number (≥ 0)      | —       | Minimum memory in MB                                                                                                               |
+| `maxCpu`      | number (≥ 0)      | —       | Maximum CPU cores                                                                                                                  |
+| `maxMemory`   | number (≥ 0)      | —       | Maximum memory in MB                                                                                                               |
 
 **Full example:**
 
@@ -259,19 +261,20 @@ A managed database instance. Dokkimi provisions the database container, sets up 
 
 **Optional fields:**
 
-| Field           | Type         | Default     | Description                                                                                  |
-| --------------- | ------------ | ----------- | -------------------------------------------------------------------------------------------- |
-| `description`   | string       | —           | Human-readable description (max 500 chars)                                                   |
-| `version`       | string       | per engine  | Database image version tag (e.g. `"16"` for postgres:16). See defaults below.                |
-| `dbName`        | string       | `"dokkimi"` | Database/schema name                                                                         |
-| `dbUser`        | string       | `"dokkimi"` | Database username                                                                            |
-| `dbPassword`    | string       | `"dokkimi"` | Database password                                                                            |
-| `initFilePath`  | string       | —           | Relative path from this file to a single init script                                         |
-| `initFilePaths` | string[]     | —           | Relative paths to multiple init scripts (executed in order). Use one or the other, not both. |
-| `minCpu`        | number (≥ 0) | —           | Minimum CPU cores                                                                            |
-| `minMemory`     | number (≥ 0) | —           | Minimum memory in MB                                                                         |
-| `maxCpu`        | number (≥ 0) | —           | Maximum CPU cores                                                                            |
-| `maxMemory`     | number (≥ 0) | —           | Maximum memory in MB                                                                         |
+| Field           | Type         | Default     | Description                                                                                   |
+| --------------- | ------------ | ----------- | --------------------------------------------------------------------------------------------- |
+| `description`   | string       | —           | Human-readable description (max 500 chars)                                                    |
+| `image`         | string       | —           | Custom Docker image (overrides engine default, e.g. `"getlago/postgres-partman:15.0-alpine"`) |
+| `version`       | string       | per engine  | Database image version tag (e.g. `"16"` for postgres:16). See defaults below.                 |
+| `dbName`        | string       | `"dokkimi"` | Database/schema name                                                                          |
+| `dbUser`        | string       | `"dokkimi"` | Database username                                                                             |
+| `dbPassword`    | string       | `"dokkimi"` | Database password                                                                             |
+| `initFilePath`  | string       | —           | Relative path from this file to a single init script                                          |
+| `initFilePaths` | string[]     | —           | Relative paths to multiple init scripts (executed in order). Use one or the other, not both.  |
+| `minCpu`        | number (≥ 0) | —           | Minimum CPU cores                                                                             |
+| `minMemory`     | number (≥ 0) | —           | Minimum memory in MB                                                                          |
+| `maxCpu`        | number (≥ 0) | —           | Maximum CPU cores                                                                             |
+| `maxMemory`     | number (≥ 0) | —           | Maximum memory in MB                                                                          |
 
 **Database engine details:**
 
@@ -1424,6 +1427,8 @@ Asserts on the step's own outcome:
 #### 2. Match Block (has `match`)
 
 Filters an array from the root context (traffic, console logs, DB logs, etc.) and asserts on the matched entries. This is a generic system — the same syntax works for all log types.
+
+**Important:** `$.traffic`, `$.consoleLogs`, `$.dbLogs`, and `$.messageLogs` are scoped per test — they only include entries captured during the current test's steps. Traffic from one test is not visible in another test within the same definition. If you need to assert on traffic triggered by a previous step, keep the assertion in the same test.
 
 **Match criteria fields:**
 

@@ -31,6 +31,8 @@ import CodeBlock from '../../components/CodeBlock.astro';
       <tr><td><code>uiPath</code></td><td>string</td><td>—</td><td>URL path to service's UI (e.g., <code>/</code>) — enables "Open UI" button</td></tr>
       <tr><td><code>debugPort</code></td><td>integer</td><td>—</td><td>Remote debugging port (e.g., 9229 for Node.js <code>--inspect</code>)</td></tr>
       <tr><td><code>command</code></td><td>string[]</td><td>—</td><td>Override the Docker image's default CMD (e.g., <code>["server", "/data"]</code>)</td></tr>
+      <tr><td><code>entrypoint</code></td><td>string[]</td><td>—</td><td>Override the Docker image's ENTRYPOINT (e.g., <code>["/bin/sh", "-c", "..."]</code>)</td></tr>
+      <tr><td><code>mountFiles</code></td><td>array</td><td>—</td><td>Files to mount into the container (read-only). See below.</td></tr>
       <tr><td><code>env</code></td><td>array</td><td>—</td><td>Environment variables (see below)</td></tr>
       <tr><td><code>minCpu</code></td><td>number</td><td>—</td><td>Minimum CPU cores (e.g., 0.25)</td></tr>
       <tr><td><code>minMemory</code></td><td>number</td><td>—</td><td>Minimum memory in MB</td></tr>
@@ -38,6 +40,25 @@ import CodeBlock from '../../components/CodeBlock.astro';
       <tr><td><code>maxMemory</code></td><td>number</td><td>—</td><td>Maximum memory in MB</td></tr>
     </tbody>
   </table>
+
+  <h2>Mount files</h2>
+  <p>Mount config files, scripts, keys, or any other file into the container at a specific path. This eliminates the need for wrapper Dockerfiles that exist solely to <code>COPY</code> files into the image.</p>
+  <p>Each entry has a <code>source</code> (relative path from the definition file to the file on disk) and a <code>target</code> (absolute path inside the container). Files are mounted read-only.</p>
+  <CodeBlock code={`{
+  "type": "SERVICE",
+  "name": "my-service",
+  "image": "my-service:latest",
+  "port": 3000,
+  "healthCheck": "/health",
+  "entrypoint": ["/app/scripts/entrypoint.sh"],
+  "mountFiles": [
+    { "source": "../configs/app.toml", "target": "/etc/app/config.toml" },
+    { "source": "../scripts/entrypoint.sh", "target": "/app/scripts/entrypoint.sh" }
+  ]
+}`} lang="json" />
+  <div class="callout">
+    <p><strong>Combined with <code>entrypoint</code></strong>, mount files let you inject custom startup scripts, config files, and keys into any off-the-shelf Docker image — no wrapper Dockerfile needed.</p>
+  </div>
 
   <h2>Environment variables</h2>
   <p>Environment variables use an array of objects with <code>name</code> and <code>value</code> fields — not a flat key-value object:</p>

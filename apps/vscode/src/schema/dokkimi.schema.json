@@ -166,6 +166,31 @@
           "description": "Override the Docker image's default CMD (e.g., [\"server\", \"/data\"]).",
           "items": { "type": "string" }
         },
+        "entrypoint": {
+          "type": "array",
+          "description": "Override the Docker image's ENTRYPOINT (e.g., [\"/bin/sh\", \"-c\", \"...\"]).",
+          "items": { "type": "string" }
+        },
+        "mountFiles": {
+          "type": "array",
+          "description": "Files to mount into the container (read-only).",
+          "items": {
+            "type": "object",
+            "required": ["source", "target"],
+            "additionalProperties": false,
+            "properties": {
+              "source": {
+                "type": "string",
+                "description": "Relative path from this file to the source file."
+              },
+              "target": {
+                "type": "string",
+                "description": "Absolute path inside the container.",
+                "pattern": "^/"
+              }
+            }
+          }
+        },
         "env": {
           "type": "array",
           "description": "Environment variables passed to the container.",
@@ -219,6 +244,10 @@
           "type": "string",
           "description": "Database engine type.",
           "enum": ["postgres", "mysql", "mongodb", "redis"]
+        },
+        "image": {
+          "type": "string",
+          "description": "Custom Docker image (overrides engine default, e.g., 'getlago/postgres-partman:15.0-alpine')."
         },
         "version": {
           "type": "string",

@@ -76,7 +76,9 @@ function validatePort(
 function validateServiceItem(
   item: Record<string, unknown>,
   label: string,
+  sourceFile: string,
   r: ValidationResult,
+  fs: FileSystem,
 ): void {
   if (!item.image) {
     warn(r, `${label}: SERVICE should have "image"`);
@@ -101,6 +103,58 @@ function validateServiceItem(
       for (let i = 0; i < item.command.length; i++) {
         if (typeof item.command[i] !== 'string') {
           err(r, `${label}: command[${i}] must be a string`);
+        }
+      }
+    }
+  }
+  if (item.entrypoint !== undefined) {
+    if (!Array.isArray(item.entrypoint)) {
+      err(r, `${label}: "entrypoint" must be an array of strings`);
+    } else {
+      for (let i = 0; i < item.entrypoint.length; i++) {
+        if (typeof item.entrypoint[i] !== 'string') {
+          err(r, `${label}: entrypoint[${i}] must be a string`);
+        }
+      }
+    }
+  }
+  if (item.mountFiles !== undefined) {
+    if (!Array.isArray(item.mountFiles)) {
+      err(r, `${label}: "mountFiles" must be an array`);
+    } else {
+      for (let i = 0; i < item.mountFiles.length; i++) {
+        const mf = item.mountFiles[i] as Record<string, unknown>;
+        if (!mf || typeof mf !== 'object') {
+          err(r, `${label}: mountFiles[${i}] must be an object`);
+          continue;
+        }
+        if (typeof mf.source !== 'string' || mf.source.length === 0) {
+          err(
+            r,
+            `${label}: mountFiles[${i}] requires "source" (relative path to file)`,
+          );
+        } else {
+          const resolved = path.resolve(
+            path.dirname(sourceFile),
+            mf.source as string,
+          );
+          if (!fs.existsSync(resolved)) {
+            err(
+              r,
+              `${label}: mountFiles[${i}].source not found: ${mf.source} (resolved to ${resolved})`,
+            );
+          }
+        }
+        if (typeof mf.target !== 'string' || mf.target.length === 0) {
+          err(
+            r,
+            `${label}: mountFiles[${i}] requires "target" (absolute path in container)`,
+          );
+        } else if (!mf.target.startsWith('/')) {
+          err(
+            r,
+            `${label}: mountFiles[${i}].target must be an absolute path (start with "/")`,
+          );
         }
       }
     }
@@ -137,6 +191,12 @@ function validateDatabaseItem(
       `${label}: DATABASE requires "database" as one of: ${VALID_DATABASES.join(', ')}`,
     );
   }
+  if (item.image !== undefined && item.version !== undefined) {
+    err(
+      r,
+      `${label}: "image" and "version" are mutually exclusive — use one or the other`,
+    );
+  }
   if (item.version !== undefined) {
     if (typeof item.version !== 'string' || item.version.length === 0) {
       err(r, `${label}: "version" must be a non-empty string`);
@@ -145,6 +205,11 @@ function validateDatabaseItem(
         r,
         `${label}: "version" must start with a digit and contain only alphanumeric characters, dots, and hyphens (e.g. "16", "8.0", "7.2-alpine"; got "${item.version}")`,
       );
+    }
+  }
+  if (item.image !== undefined) {
+    if (typeof item.image !== 'string' || item.image.length === 0) {
+      err(r, `${label}: "image" must be a non-empty string`);
     }
   }
   if (item.initFilePath !== undefined) {
@@ -398,7 +463,7 @@ export function validateItem(
 
   switch (type) {
     case 'SERVICE':
-      validateServiceItem(item, label, r);
+      validateServiceItem(item, label, sourceFile, r, fs);
       break;
     case 'DATABASE':
       validateDatabaseItem(item, label, sourceFile, r, fs);

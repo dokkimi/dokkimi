@@ -84,6 +84,8 @@ export interface DefinitionItem {
   localDevPath?: string | null;
   mountPath?: string | null;
   command?: string[] | null;
+  entrypoint?: string[] | null;
+  mountFiles?: DefinitionMountFile[] | null;
 
   // Broker fields
   broker?: string | null;
@@ -120,4 +122,10 @@ export interface DefinitionItem {
 export interface DefinitionInitFile {
   filename: string; // original filename (e.g. "schema.sql", "seed_data.sql")
   content: Buffer; // raw file content, ready to write to disk
+}
+
+export interface DefinitionMountFile {
+  source: string; // original filename
+  target: string; // absolute path inside the container
+  content: Buffer; // raw file content
 }

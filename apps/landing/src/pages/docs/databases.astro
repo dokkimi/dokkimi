@@ -26,7 +26,8 @@ import CodeBlock from '../../components/CodeBlock.astro';
     </thead>
     <tbody>
       <tr><td><code>description</code></td><td>string</td><td>—</td><td>Human-readable description (max 500 chars)</td></tr>
-      <tr><td><code>version</code></td><td>string</td><td>per engine</td><td>Database image version tag (e.g. <code>"16"</code> for postgres:16). See defaults in engine details below.</td></tr>
+      <tr><td><code>image</code></td><td>string</td><td>—</td><td>Custom Docker image, overriding the engine default (e.g. <code>"getlago/postgres-partman:15.0-alpine"</code>). Mutually exclusive with <code>version</code>.</td></tr>
+      <tr><td><code>version</code></td><td>string</td><td>per engine</td><td>Database image version tag (e.g. <code>"16"</code> for postgres:16). Mutually exclusive with <code>image</code>. See defaults in engine details below.</td></tr>
       <tr><td><code>dbName</code></td><td>string</td><td><code>dokkimi</code></td><td>Database/schema name</td></tr>
       <tr><td><code>dbUser</code></td><td>string</td><td><code>dokkimi</code></td><td>Database username</td></tr>
       <tr><td><code>dbPassword</code></td><td>string</td><td><code>dokkimi</code></td><td>Database password</td></tr>
@@ -52,6 +53,14 @@ import CodeBlock from '../../components/CodeBlock.astro';
     </tbody>
   </table>
   <p>Use the <code>version</code> field to pin a specific database version (e.g. <code>"version": "16"</code> produces <code>postgres:16</code>). The version string is used verbatim as the image tag — for Redis, that means <code>"version": "7"</code> produces <code>redis:7</code> (Debian-based); use <code>"7-alpine"</code> for the smaller Alpine variant.</p>
+  <p>Use the <code>image</code> field when you need a custom or extended database image (e.g. Postgres with pg_partman). When <code>image</code> is set, Dokkimi uses it directly instead of constructing the image from the engine and version:</p>
+  <CodeBlock code={`{
+  "type": "DATABASE",
+  "name": "lago-postgres",
+  "database": "postgres",
+  "image": "getlago/postgres-partman:15.0-alpine",
+  "initFilePath": "../init-files/schema.sql"
+}`} lang="json" />
 
   <h2>Examples</h2>
 

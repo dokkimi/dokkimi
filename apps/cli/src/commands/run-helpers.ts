@@ -116,11 +116,26 @@ export function buildSubmitBody(
     initFilesByItem.set(initFile.itemName, bucket);
   }
 
+  const mountFilesByItem = new Map<
+    string,
+    Array<{ source: string; target: string; content: string }>
+  >();
+  for (const mf of def.mountFiles ?? []) {
+    const bucket = mountFilesByItem.get(mf.itemName) ?? [];
+    bucket.push({
+      source: mf.source,
+      target: mf.target,
+      content: mf.content.toString('base64'),
+    });
+    mountFilesByItem.set(mf.itemName, bucket);
+  }
+
   const items = (def.definition.items as Array<Record<string, unknown>>).map(
     (item) => {
-      const { initFilePath, initFilePaths, ...rest } = item;
+      const { initFilePath, initFilePaths, mountFiles, ...rest } = item;
       void initFilePath;
       void initFilePaths;
+      void mountFiles;
 
       if (Array.isArray(rest.env)) {
         const envObj: Record<string, string> = {};
@@ -136,7 +151,14 @@ export function buildSubmitBody(
       }
 
       const initFiles = initFilesByItem.get(rest.name as string);
-      return initFiles ? { ...rest, initFiles } : rest;
+      if (initFiles) {
+        (rest as Record<string, unknown>).initFiles = initFiles;
+      }
+      const mFiles = mountFilesByItem.get(rest.name as string);
+      if (mFiles) {
+        (rest as Record<string, unknown>).mountFiles = mFiles;
+      }
+      return rest;
     },
   );
 
