@@ -7,6 +7,40 @@ import CodeBlock from '../../components/CodeBlock.astro';
   <h1>Release Notes</h1>
   <p class="subtitle">What's new in each release.</p>
 
+  <h2>v0.5.2</h2>
+  <p><time datetime="2026-06-28">June 28, 2026</time></p>
+
+  <h3>Mount files</h3>
+  <p>SERVICE items now support a <code>mountFiles</code> field that mounts local files into the container at a specific path (read-only). This eliminates the need for wrapper Dockerfiles that exist solely to <code>COPY</code> config files, keys, or scripts into an image.</p>
+  <CodeBlock code={`items:
+  - type: SERVICE
+    name: my-service
+    image: my-service:latest
+    port: 3000
+    healthCheck: /health
+    mountFiles:
+      - source: ../configs/app.toml
+        target: /etc/app/config.toml
+      - source: ../scripts/entrypoint.sh
+        target: /app/scripts/entrypoint.sh`} lang="yaml" />
+  <p>Each entry has a <code>source</code> (relative path from the definition file) and a <code>target</code> (absolute path inside the container). See the <a href="/docs/services#mount-files">Services</a> docs for details.</p>
+
+  <h3>Entrypoint override</h3>
+  <p>SERVICE items now support an <code>entrypoint</code> field to override the Docker image's <code>ENTRYPOINT</code>. Combined with <code>mountFiles</code>, this lets you inject custom startup scripts into any off-the-shelf image without a wrapper Dockerfile.</p>
+
+  <h3>Custom database images</h3>
+  <p>DATABASE items now support an <code>image</code> field for using custom or extended database images (e.g. Postgres with pg_partman). This is mutually exclusive with <code>version</code> &mdash; use one or the other.</p>
+  <CodeBlock code={`items:
+  - type: DATABASE
+    name: lago-postgres
+    database: postgres
+    image: getlago/postgres-partman:15.0-alpine`} lang="yaml" />
+
+  <h3>Bug fixes</h3>
+  <ul>
+    <li><strong><code>stopOnFailure: false</code></strong> &mdash; fixed a bug where setting <code>stopOnFailure: false</code> on a step had no effect. Failed assertions now log a warning and continue to the next step instead of stopping the test.</li>
+  </ul>
+
   <h2>v0.5.1</h2>
   <p><time datetime="2026-06-26">June 26, 2026</time></p>
 

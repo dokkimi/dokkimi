@@ -40,6 +40,10 @@ import CodeBlock from '../../components/CodeBlock.astro';
   ]
 }`} lang="json" />
 
+  <div class="callout">
+    <p><strong>Scoped per test.</strong> <code>$.traffic</code>, <code>$.consoleLogs</code>, <code>$.dbLogs</code>, and <code>$.messageLogs</code> only include entries captured during the current test's steps. Traffic from one test is not visible in another test within the same definition. If you need to assert on traffic triggered by a previous step, keep the assertion in the same test.</p>
+  </div>
+
   <h3>Match fields</h3>
   <table>
     <thead>

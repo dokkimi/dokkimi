@@ -120,7 +120,7 @@ export function buildSubmitBody(
     string,
     Array<{ source: string; target: string; content: string }>
   >();
-  for (const mf of def.mountFiles) {
+  for (const mf of def.mountFiles ?? []) {
     const bucket = mountFilesByItem.get(mf.itemName) ?? [];
     bucket.push({
       source: mf.source,

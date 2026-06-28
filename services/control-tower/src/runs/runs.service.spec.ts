@@ -32,6 +32,7 @@ describe('RunsService', () => {
   const mockRunStorage = {
     writeDefinition: jest.fn(),
     writeInitFiles: jest.fn(),
+    writeMountFiles: jest.fn(),
     hasDefinition: jest.fn(),
     readDefinition: jest.fn(),
     deleteInstance: jest.fn(),
