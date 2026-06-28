@@ -1,0 +1,348 @@
+name: hyperswitch-state-machine-violations
+description: |
+  Test payment state machine boundaries: capture before confirm, refund
+  before confirm, double-confirm, cancel after succeed, and confirm with
+  wrong client_secret.
+config:
+  timeoutSeconds: 180
+items:
+  - $ref: ../shared/hs-postgres.yaml
+  - $ref: ../shared/hs-redis.yaml
+  - $ref: ../shared/hs-server.yaml
+
+  - type: MOCK
+    name: mock-stripe-success
+    mockTarget: api.stripe.com
+    mockPath: /v1/payment_intents
+    mockMethod: POST
+    mockResponseStatus: 200
+    mockResponseHeaders:
+      Content-Type: application/json
+    mockResponseBody:
+      id: pi_mock_state_123
+      object: payment_intent
+      amount: 5000
+      currency: usd
+      status: succeeded
+      client_secret: pi_mock_state_123_secret
+      metadata: {}
+      latest_charge:
+        id: ch_mock_state_123
+
+  - type: MOCK
+    name: mock-stripe-customers
+    mockTarget: api.stripe.com
+    mockPath: /v1/customers
+    mockMethod: POST
+    mockResponseStatus: 200
+    mockResponseHeaders:
+      Content-Type: application/json
+    mockResponseBody:
+      id: cus_mock_state_123
+      object: customer
+      email: null
+      name: Test User
+
+  - type: MOCK
+    name: mock-stripe-refunds
+    mockTarget: api.stripe.com
+    mockPath: /v1/refunds
+    mockMethod: POST
+    mockResponseStatus: 200
+    mockResponseHeaders:
+      Content-Type: application/json
+    mockResponseBody:
+      id: re_mock_state_123
+      object: refund
+      amount: 5000
+      currency: usd
+      metadata: {}
+      payment_intent: pi_mock_state_123
+      status: succeeded
+
+variables:
+  adminKey: test_admin
+tests:
+  - name: State machine violation probes
+    steps:
+      - name: Create merchant
+        action:
+          type: httpRequest
+          method: POST
+          url: hs-server/accounts
+          headers:
+            Content-Type: application/json
+            api-key: '{{adminKey}}'
+          body:
+            merchant_id: state-machine-merchant
+            merchant_name: State Machine Merchant
+            merchant_details:
+              primary_contact_person: Test
+              primary_email: test@example.com
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+        extract:
+          merchantId: $.response.body.merchant_id
+
+      - name: Create API key
+        action:
+          type: httpRequest
+          method: POST
+          url: hs-server/api_keys/{{merchantId}}
+          headers:
+            Content-Type: application/json
+            api-key: '{{adminKey}}'
+          body:
+            name: state-key
+            expiration: never
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+        extract:
+          apiKey: $.response.body.api_key
+
+      - name: Configure Stripe connector
+        action:
+          type: httpRequest
+          method: POST
+          url: hs-server/account/{{merchantId}}/connectors
+          headers:
+            Content-Type: application/json
+            api-key: '{{apiKey}}'
+          body:
+            connector_type: payment_processor
+            connector_name: stripe
+            connector_account_details:
+              auth_type: HeaderKey
+              api_key: sk_test_mock_key
+            test_mode: true
+            payment_methods_enabled:
+              - payment_method: card
+                payment_method_types:
+                  - payment_method_type: credit
+                    card_networks:
+                      - Visa
+                    minimum_amount: 1
+                    maximum_amount: 68607706
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+
+      # --- Create unconfirmed payment ---
+      - name: Create payment (unconfirmed)
+        action:
+          type: httpRequest
+          method: POST
+          url: hs-server/payments
+          headers:
+            Content-Type: application/json
+            api-key: '{{apiKey}}'
+          body:
+            amount: 5000
+            currency: USD
+            confirm: false
+            capture_method: manual
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+              - path: $.response.body.status
+                operator: eq
+                value: requires_payment_method
+        extract:
+          paymentId: $.response.body.payment_id
+          clientSecret: $.response.body.client_secret
+
+      # --- Invalid state transitions on unconfirmed payment ---
+      - name: 'PROBE: Capture before confirm'
+        stopOnFailure: false
+        action:
+          type: httpRequest
+          method: POST
+          url: hs-server/payments/{{paymentId}}/capture
+          headers:
+            Content-Type: application/json
+            api-key: '{{apiKey}}'
+          body:
+            amount_to_capture: 5000
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [400, 422]
+
+      - name: 'PROBE: Refund before confirm'
+        stopOnFailure: false
+        action:
+          type: httpRequest
+          method: POST
+          url: hs-server/refunds
+          headers:
+            Content-Type: application/json
+            api-key: '{{apiKey}}'
+          body:
+            payment_id: '{{paymentId}}'
+            amount: 1000
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [400, 422]
+
+      # --- Confirm the payment ---
+      - name: Confirm payment
+        action:
+          type: httpRequest
+          method: POST
+          url: hs-server/payments/{{paymentId}}/confirm
+          headers:
+            Content-Type: application/json
+            api-key: '{{apiKey}}'
+          body:
+            payment_method: card
+            payment_method_type: credit
+            payment_method_data:
+              card:
+                card_number: '4242424242424242'
+                card_exp_month: '12'
+                card_exp_year: '2030'
+                card_holder_name: Test User
+                card_cvc: '123'
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+              - path: $.response.body.status
+                operator: in
+                value: [succeeded, requires_capture]
+
+      # --- Invalid state transitions on succeeded payment ---
+      - name: 'PROBE: Double-confirm a succeeded payment'
+        stopOnFailure: false
+        action:
+          type: httpRequest
+          method: POST
+          url: hs-server/payments/{{paymentId}}/confirm
+          headers:
+            Content-Type: application/json
+            api-key: '{{apiKey}}'
+          body:
+            payment_method: card
+            payment_method_type: credit
+            payment_method_data:
+              card:
+                card_number: '4242424242424242'
+                card_exp_month: '12'
+                card_exp_year: '2030'
+                card_holder_name: Test User
+                card_cvc: '123'
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [400, 409, 422]
+
+      - name: 'PROBE: Cancel a succeeded payment'
+        stopOnFailure: false
+        action:
+          type: httpRequest
+          method: POST
+          url: hs-server/payments/{{paymentId}}/cancel
+          headers:
+            Content-Type: application/json
+            api-key: '{{apiKey}}'
+          body:
+            cancellation_reason: changed_mind
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [400, 409, 422]
+
+      - name: 'PROBE: Capture a succeeded auto-capture payment'
+        stopOnFailure: false
+        action:
+          type: httpRequest
+          method: POST
+          url: hs-server/payments/{{paymentId}}/capture
+          headers:
+            Content-Type: application/json
+            api-key: '{{apiKey}}'
+          body:
+            amount_to_capture: 5000
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [400, 409, 422]
+
+      # --- Cancel then confirm ---
+      - name: Create payment to cancel
+        action:
+          type: httpRequest
+          method: POST
+          url: hs-server/payments
+          headers:
+            Content-Type: application/json
+            api-key: '{{apiKey}}'
+          body:
+            amount: 3000
+            currency: USD
+            confirm: false
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+        extract:
+          paymentId2: $.response.body.payment_id
+
+      - name: Cancel the unconfirmed payment
+        action:
+          type: httpRequest
+          method: POST
+          url: hs-server/payments/{{paymentId2}}/cancel
+          headers:
+            Content-Type: application/json
+            api-key: '{{apiKey}}'
+          body:
+            cancellation_reason: changed_mind
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+
+      - name: 'PROBE: Confirm a cancelled payment'
+        stopOnFailure: false
+        action:
+          type: httpRequest
+          method: POST
+          url: hs-server/payments/{{paymentId2}}/confirm
+          headers:
+            Content-Type: application/json
+            api-key: '{{apiKey}}'
+          body:
+            payment_method: card
+            payment_method_type: credit
+            payment_method_data:
+              card:
+                card_number: '4242424242424242'
+                card_exp_month: '12'
+                card_exp_year: '2030'
+                card_holder_name: Test User
+                card_cvc: '123'
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [400, 409, 422]

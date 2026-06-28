@@ -1,0 +1,217 @@
+name: hyperswitch-multi-tenant-isolation
+description: |
+  Test cross-tenant isolation: can merchant B read or refund merchant A's
+  payments? Also tests API key scope boundaries.
+config:
+  timeoutSeconds: 180
+items:
+  - $ref: ../shared/hs-postgres.yaml
+  - $ref: ../shared/hs-redis.yaml
+  - $ref: ../shared/hs-server.yaml
+variables:
+  adminKey: test_admin
+tests:
+  - name: Cross-tenant isolation
+    steps:
+      # --- Set up Merchant A ---
+      - name: Create merchant A
+        action:
+          type: httpRequest
+          method: POST
+          url: hs-server/accounts
+          headers:
+            Content-Type: application/json
+            api-key: '{{adminKey}}'
+          body:
+            merchant_id: tenant-merchant-a
+            merchant_name: Merchant A
+            merchant_details:
+              primary_contact_person: Alice
+              primary_email: alice@example.com
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+        extract:
+          merchantIdA: $.response.body.merchant_id
+
+      - name: Create API key for merchant A
+        action:
+          type: httpRequest
+          method: POST
+          url: hs-server/api_keys/{{merchantIdA}}
+          headers:
+            Content-Type: application/json
+            api-key: '{{adminKey}}'
+          body:
+            name: key-a
+            expiration: never
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+        extract:
+          apiKeyA: $.response.body.api_key
+
+      # --- Set up Merchant B ---
+      - name: Create merchant B
+        action:
+          type: httpRequest
+          method: POST
+          url: hs-server/accounts
+          headers:
+            Content-Type: application/json
+            api-key: '{{adminKey}}'
+          body:
+            merchant_id: tenant-merchant-b
+            merchant_name: Merchant B
+            merchant_details:
+              primary_contact_person: Bob
+              primary_email: bob@example.com
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+        extract:
+          merchantIdB: $.response.body.merchant_id
+
+      - name: Create API key for merchant B
+        action:
+          type: httpRequest
+          method: POST
+          url: hs-server/api_keys/{{merchantIdB}}
+          headers:
+            Content-Type: application/json
+            api-key: '{{adminKey}}'
+          body:
+            name: key-b
+            expiration: never
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+        extract:
+          apiKeyB: $.response.body.api_key
+
+      # --- Merchant A creates a payment ---
+      - name: Merchant A creates a payment
+        action:
+          type: httpRequest
+          method: POST
+          url: hs-server/payments
+          headers:
+            Content-Type: application/json
+            api-key: '{{apiKeyA}}'
+          body:
+            amount: 7500
+            currency: USD
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+        extract:
+          paymentIdA: $.response.body.payment_id
+          clientSecretA: $.response.body.client_secret
+
+      # --- Cross-tenant probes ---
+      - name: "PROBE: Merchant B tries to GET merchant A's payment"
+        stopOnFailure: false
+        action:
+          type: httpRequest
+          method: GET
+          url: hs-server/payments/{{paymentIdA}}
+          headers:
+            Content-Type: application/json
+            api-key: '{{apiKeyB}}'
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [401, 403, 404]
+
+      - name: "PROBE: Merchant B tries to cancel merchant A's payment"
+        stopOnFailure: false
+        action:
+          type: httpRequest
+          method: POST
+          url: hs-server/payments/{{paymentIdA}}/cancel
+          headers:
+            Content-Type: application/json
+            api-key: '{{apiKeyB}}'
+          body:
+            cancellation_reason: fraud
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [401, 403, 404]
+
+      - name: "PROBE: Merchant B tries to refund merchant A's payment"
+        stopOnFailure: false
+        action:
+          type: httpRequest
+          method: POST
+          url: hs-server/refunds
+          headers:
+            Content-Type: application/json
+            api-key: '{{apiKeyB}}'
+          body:
+            payment_id: '{{paymentIdA}}'
+            amount: 1000
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [401, 403, 404]
+
+      - name: "PROBE: Merchant B tries to GET merchant A's account details"
+        stopOnFailure: false
+        action:
+          type: httpRequest
+          method: GET
+          url: hs-server/accounts/{{merchantIdA}}
+          headers:
+            Content-Type: application/json
+            api-key: '{{apiKeyB}}'
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [401, 403, 404]
+
+      - name: "PROBE: Merchant B tries to list merchant A's API keys"
+        stopOnFailure: false
+        action:
+          type: httpRequest
+          method: GET
+          url: hs-server/api_keys/{{merchantIdA}}/list
+          headers:
+            Content-Type: application/json
+            api-key: '{{apiKeyB}}'
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [401, 403, 404]
+
+      - name: "Verify merchant A's payment is still intact"
+        action:
+          type: httpRequest
+          method: GET
+          url: hs-server/payments/{{paymentIdA}}
+          headers:
+            Content-Type: application/json
+            api-key: '{{apiKeyA}}'
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+              - path: $.response.body.status
+                operator: eq
+                value: requires_payment_method

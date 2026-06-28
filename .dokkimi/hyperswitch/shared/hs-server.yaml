@@ -1,0 +1,19 @@
+type: SERVICE
+name: hs-server
+description: Hyperswitch payment router — handles payment requests, routes to connectors
+image: dokkimi/hyperswitch-router:local
+port: 8080
+healthCheck: /health
+env:
+  - name: RUN_ENV
+    value: development
+  - name: ROUTER__LOG__CONSOLE__ENABLED
+    value: 'true'
+  - name: ROUTER__LOG__CONSOLE__LEVEL
+    value: DEBUG
+  - name: ROUTER__LOG__CONSOLE__LOG_FORMAT
+    value: Default
+  - name: ROUTER__LOG__TELEMETRY__TRACES_ENABLED
+    value: 'false'
+  - name: ROUTER__LOG__TELEMETRY__METRICS_ENABLED
+    value: 'false'

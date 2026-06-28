@@ -1,0 +1,417 @@
+name: hyperswitch-refund-probes
+description: |
+  Probe refund edge cases: over-refund, refund on processing payment,
+  double refund, and connector failures during refund flow.
+config:
+  timeoutSeconds: 180
+items:
+  - $ref: ../shared/hs-postgres.yaml
+  - $ref: ../shared/hs-redis.yaml
+  - $ref: ../shared/hs-server.yaml
+
+  # Successful payment mock
+  - type: MOCK
+    name: mock-stripe-success
+    mockTarget: api.stripe.com
+    mockPath: /v1/payment_intents
+    mockMethod: POST
+    mockResponseStatus: 200
+    mockResponseHeaders:
+      Content-Type: application/json
+    mockResponseBody:
+      id: pi_mock_refund_123
+      object: payment_intent
+      amount: 5000
+      currency: usd
+      status: succeeded
+      client_secret: pi_mock_refund_123_secret
+      metadata: {}
+      latest_charge:
+        id: ch_mock_refund_123
+
+  - type: MOCK
+    name: mock-stripe-customers
+    mockTarget: api.stripe.com
+    mockPath: /v1/customers
+    mockMethod: POST
+    mockResponseStatus: 200
+    mockResponseHeaders:
+      Content-Type: application/json
+    mockResponseBody:
+      id: cus_mock_refund_123
+      object: customer
+      email: null
+      name: Test User
+
+  # Refund 502 from CDN — match on amount=777 in form-encoded body
+  - type: MOCK
+    name: mock-stripe-refund-502
+    mockTarget: api.stripe.com
+    mockPath: /v1/refunds
+    mockMethod: POST
+    mockRequestBodyContains: 'amount=777'
+    mockResponseStatus: 502
+    mockResponseHeaders:
+      Content-Type: text/html
+    mockResponseBody: '<html><body><h1>502 Bad Gateway</h1></body></html>'
+
+  # Refund 500 from Stripe — match on amount=888 in form-encoded body
+  - type: MOCK
+    name: mock-stripe-refund-500
+    mockTarget: api.stripe.com
+    mockPath: /v1/refunds
+    mockMethod: POST
+    mockRequestBodyContains: 'amount=888'
+    mockResponseStatus: 500
+    mockResponseHeaders:
+      Content-Type: application/json
+    mockResponseBody:
+      error:
+        code: internal_error
+        type: api_error
+        message: Something went wrong on Stripe's end
+
+  # Catch-all successful refund mock (no body filter — matches everything else)
+  - type: MOCK
+    name: mock-stripe-refund-success
+    mockTarget: api.stripe.com
+    mockPath: /v1/refunds
+    mockMethod: POST
+    mockResponseStatus: 200
+    mockResponseHeaders:
+      Content-Type: application/json
+    mockResponseBody:
+      id: re_mock_success_123
+      object: refund
+      amount: 1000
+      currency: usd
+      metadata: {}
+      payment_intent: pi_mock_refund_123
+      status: succeeded
+
+  # HTML 502 for payment intents (needed for processing-state test)
+  - type: MOCK
+    name: mock-stripe-html-error
+    mockTarget: api.stripe.com
+    mockPath: /v1/payment_intents
+    mockMethod: POST
+    mockRequestBodyContains: 'pay_zombie'
+    mockResponseStatus: 502
+    mockResponseHeaders:
+      Content-Type: text/html
+    mockResponseBody: '<html><body><h1>502 Bad Gateway</h1></body></html>'
+
+variables:
+  adminKey: test_admin
+tests:
+  - name: Refund edge cases
+    steps:
+      - name: Create merchant
+        action:
+          type: httpRequest
+          method: POST
+          url: hs-server/accounts
+          headers:
+            Content-Type: application/json
+            api-key: '{{adminKey}}'
+          body:
+            merchant_id: refund-probe-merchant
+            merchant_name: Refund Probe Merchant
+            merchant_details:
+              primary_contact_person: Test
+              primary_email: test@example.com
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+        extract:
+          merchantId: $.response.body.merchant_id
+
+      - name: Create API key
+        action:
+          type: httpRequest
+          method: POST
+          url: hs-server/api_keys/{{merchantId}}
+          headers:
+            Content-Type: application/json
+            api-key: '{{adminKey}}'
+          body:
+            name: refund-key
+            expiration: never
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+        extract:
+          apiKey: $.response.body.api_key
+
+      - name: Configure Stripe connector
+        action:
+          type: httpRequest
+          method: POST
+          url: hs-server/account/{{merchantId}}/connectors
+          headers:
+            Content-Type: application/json
+            api-key: '{{apiKey}}'
+          body:
+            connector_type: payment_processor
+            connector_name: stripe
+            connector_account_details:
+              auth_type: HeaderKey
+              api_key: sk_test_mock_key
+            test_mode: true
+            payment_methods_enabled:
+              - payment_method: card
+                payment_method_types:
+                  - payment_method_type: credit
+                    card_networks:
+                      - Visa
+                    minimum_amount: 1
+                    maximum_amount: 68607706
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+
+      # --- Create a successful payment ---
+      - name: Create and confirm payment
+        action:
+          type: httpRequest
+          method: POST
+          url: hs-server/payments
+          headers:
+            Content-Type: application/json
+            api-key: '{{apiKey}}'
+          body:
+            amount: 5000
+            currency: USD
+            confirm: true
+            description: pay_success
+            payment_method: card
+            payment_method_type: credit
+            payment_method_data:
+              card:
+                card_number: '4242424242424242'
+                card_exp_month: '12'
+                card_exp_year: '2030'
+                card_holder_name: Test User
+                card_cvc: '123'
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+              - path: $.response.body.status
+                operator: eq
+                value: succeeded
+        extract:
+          paymentId: $.response.body.payment_id
+
+      # --- Refund validation probes (don't reach Stripe) ---
+      - name: 'PROBE: Over-refund (refund more than payment amount)'
+        stopOnFailure: false
+        action:
+          type: httpRequest
+          method: POST
+          url: hs-server/refunds
+          headers:
+            Content-Type: application/json
+            api-key: '{{apiKey}}'
+          body:
+            payment_id: '{{paymentId}}'
+            amount: 99999
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [400, 422]
+
+      - name: 'PROBE: Zero-amount refund'
+        stopOnFailure: false
+        action:
+          type: httpRequest
+          method: POST
+          url: hs-server/refunds
+          headers:
+            Content-Type: application/json
+            api-key: '{{apiKey}}'
+          body:
+            payment_id: '{{paymentId}}'
+            amount: 0
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [400, 422]
+
+      - name: 'PROBE: Negative-amount refund'
+        stopOnFailure: false
+        action:
+          type: httpRequest
+          method: POST
+          url: hs-server/refunds
+          headers:
+            Content-Type: application/json
+            api-key: '{{apiKey}}'
+          body:
+            payment_id: '{{paymentId}}'
+            amount: -100
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [400, 422]
+
+      - name: 'Successful partial refund (baseline)'
+        action:
+          type: httpRequest
+          method: POST
+          url: hs-server/refunds
+          headers:
+            Content-Type: application/json
+            api-key: '{{apiKey}}'
+          body:
+            payment_id: '{{paymentId}}'
+            amount: 1000
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+              - path: $.response.body.status
+                operator: eq
+                value: succeeded
+
+      - name: 'PROBE: Over-refund after partial (remaining + 1 cent)'
+        stopOnFailure: false
+        action:
+          type: httpRequest
+          method: POST
+          url: hs-server/refunds
+          headers:
+            Content-Type: application/json
+            api-key: '{{apiKey}}'
+          body:
+            payment_id: '{{paymentId}}'
+            amount: 4001
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [400, 422]
+
+      # --- Connector failure during refund (amount-routed mocks) ---
+      - name: 'FINDING: Refund with connector 502 returns 200 with status=pending'
+        stopOnFailure: false
+        action:
+          type: httpRequest
+          method: POST
+          url: hs-server/refunds
+          headers:
+            Content-Type: application/json
+            api-key: '{{apiKey}}'
+          body:
+            payment_id: '{{paymentId}}'
+            amount: 777
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+              - path: $.response.body.status
+                operator: eq
+                value: pending
+
+      - name: 'FINDING: Refund with connector 500 returns 200 with status=pending'
+        stopOnFailure: false
+        action:
+          type: httpRequest
+          method: POST
+          url: hs-server/refunds
+          headers:
+            Content-Type: application/json
+            api-key: '{{apiKey}}'
+          body:
+            payment_id: '{{paymentId}}'
+            amount: 888
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+              - path: $.response.body.status
+                operator: eq
+                value: pending
+
+      # --- Refund on a zombie "processing" payment ---
+      - name: Create zombie processing payment
+        action:
+          type: httpRequest
+          method: POST
+          url: hs-server/payments
+          headers:
+            Content-Type: application/json
+            api-key: '{{apiKey}}'
+          body:
+            amount: 3000
+            currency: USD
+            confirm: true
+            description: pay_zombie
+            payment_method: card
+            payment_method_type: credit
+            payment_method_data:
+              card:
+                card_number: '4242424242424242'
+                card_exp_month: '12'
+                card_exp_year: '2030'
+                card_holder_name: Test User
+                card_cvc: '123'
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+              - path: $.response.body.status
+                operator: eq
+                value: processing
+        extract:
+          zombiePaymentId: $.response.body.payment_id
+
+      - name: 'PROBE: Refund a zombie processing payment'
+        stopOnFailure: false
+        action:
+          type: httpRequest
+          method: POST
+          url: hs-server/refunds
+          headers:
+            Content-Type: application/json
+            api-key: '{{apiKey}}'
+          body:
+            payment_id: '{{zombiePaymentId}}'
+            amount: 1000
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [200, 400, 422, 500]
+
+      - name: 'PROBE: Refund on nonexistent payment ID'
+        stopOnFailure: false
+        action:
+          type: httpRequest
+          method: POST
+          url: hs-server/refunds
+          headers:
+            Content-Type: application/json
+            api-key: '{{apiKey}}'
+          body:
+            payment_id: pay_does_not_exist_at_all_1234
+            amount: 1000
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [400, 404, 422]

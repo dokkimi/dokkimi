@@ -1,0 +1,161 @@
+name: hyperswitch-payment-flow
+description: |
+  End-to-end payment lifecycle: create a merchant account, generate an API key,
+  create a payment intent, and verify the payment status. Exercises the core
+  Hyperswitch API and verifies inter-service traffic between the router and
+  its data stores.
+config:
+  timeoutSeconds: 180
+items:
+  - $ref: ../shared/hs-postgres.yaml
+  - $ref: ../shared/hs-redis.yaml
+  - $ref: ../shared/hs-server.yaml
+variables:
+  adminKey: test_admin
+  merchantName: dokkimi-test-merchant
+tests:
+  - name: Create merchant and process payment
+    steps:
+      - name: Create a merchant account
+        action:
+          type: httpRequest
+          method: POST
+          url: hs-server/accounts
+          headers:
+            api-key: '{{adminKey}}'
+            Content-Type: application/json
+          body:
+            merchant_id: dokkimi-merchant-01
+            merchant_name: '{{merchantName}}'
+            locker_id: m0010
+            merchant_details:
+              primary_contact_person: Dokkimi Test
+              primary_email: test@dokkimi.dev
+              website: https://dokkimi.dev
+        extract:
+          merchantId: $.response.body.merchant_id
+          publishableKey: $.response.body.publishable_key
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+              - path: $.response.body.merchant_id
+                operator: eq
+                value: dokkimi-merchant-01
+              - path: $.response.body.publishable_key
+                operator: exists
+
+      - name: Create an API key for the merchant
+        action:
+          type: httpRequest
+          method: POST
+          url: hs-server/api_keys/{{merchantId}}
+          headers:
+            api-key: '{{adminKey}}'
+            Content-Type: application/json
+          body:
+            name: dokkimi-test-key
+            description: API key for Dokkimi e2e tests
+            expiration: never
+        extract:
+          apiKey: $.response.body.api_key
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+              - path: $.response.body.api_key
+                operator: exists
+
+      - name: Create a payment intent
+        action:
+          type: httpRequest
+          method: POST
+          url: hs-server/payments
+          headers:
+            api-key: '{{apiKey}}'
+            Content-Type: application/json
+          body:
+            amount: 6540
+            currency: USD
+            description: Dokkimi test payment
+            confirm: false
+        extract:
+          paymentId: $.response.body.payment_id
+          clientSecret: $.response.body.client_secret
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+              - path: $.response.body.payment_id
+                operator: exists
+              - path: $.response.body.status
+                operator: eq
+                value: requires_payment_method
+              - path: $.response.body.amount
+                operator: eq
+                value: 6540
+
+      - name: Retrieve payment and verify status
+        action:
+          type: httpRequest
+          method: GET
+          url: hs-server/payments/{{paymentId}}
+          headers:
+            api-key: '{{apiKey}}'
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+              - path: $.response.body.payment_id
+                operator: eq
+                value: '{{paymentId}}'
+              - path: $.response.body.amount
+                operator: eq
+                value: 6540
+              - path: $.response.body.currency
+                operator: eq
+                value: USD
+              - path: $.response.body.status
+                operator: eq
+                value: requires_payment_method
+
+      - name: Verify DB has the payment record
+        action:
+          type: dbQuery
+          database: hs-postgres
+          query: SELECT payment_id, currency, status, amount::text as amount_text FROM payment_intent WHERE payment_id = $1
+          params:
+            '1': '{{paymentId}}'
+        assertions:
+          - assertions:
+              - path: $.response.success
+                operator: eq
+                value: true
+              - path: $.response.data[0].payment_id
+                operator: eq
+                value: '{{paymentId}}'
+              - path: $.response.data[0].amount_text
+                operator: eq
+                value: '6540'
+
+  - name: No errors logged during payment flow
+    steps:
+      - name: Wait for logs to settle
+        action:
+          type: wait
+          durationMs: 2000
+        assertions:
+          - match:
+              path: $.consoleLogs
+              where:
+                - path: $$.service
+                  operator: eq
+                  value: hs-server
+                - path: $$.level
+                  operator: eq
+                  value: ERROR
+              count: 0

@@ -1,0 +1,283 @@
+name: hyperswitch-input-validation
+description: |
+  Probe input validation: SQL injection in merchant_id, XSS in description,
+  extremely long strings, special characters, and type confusion attacks.
+config:
+  timeoutSeconds: 180
+items:
+  - $ref: ../shared/hs-postgres.yaml
+  - $ref: ../shared/hs-redis.yaml
+  - $ref: ../shared/hs-server.yaml
+variables:
+  adminKey: test_admin
+tests:
+  - name: Input validation probes
+    steps:
+      # --- SQL injection in merchant_id ---
+      - name: 'PROBE: SQL injection in merchant_id'
+        stopOnFailure: false
+        action:
+          type: httpRequest
+          method: POST
+          url: hs-server/accounts
+          headers:
+            Content-Type: application/json
+            api-key: '{{adminKey}}'
+          body:
+            merchant_id: "'; DROP TABLE merchant_account; --"
+            merchant_name: SQL Injection Test
+            merchant_details:
+              primary_contact_person: Test
+              primary_email: test@example.com
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [200, 400, 422]
+
+      # --- SQL injection in merchant_name ---
+      - name: 'PROBE: SQL injection in merchant_name'
+        stopOnFailure: false
+        action:
+          type: httpRequest
+          method: POST
+          url: hs-server/accounts
+          headers:
+            Content-Type: application/json
+            api-key: '{{adminKey}}'
+          body:
+            merchant_id: sqli-name-test
+            merchant_name: "Robert'); DROP TABLE payment_attempt;--"
+            merchant_details:
+              primary_contact_person: Test
+              primary_email: test@example.com
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [200, 400, 422]
+
+      # --- Verify tables still exist after injection attempts ---
+      - name: 'Verify merchant_account table survived injection'
+        action:
+          type: dbQuery
+          database: hs-postgres
+          query: SELECT COUNT(*)::text as cnt FROM merchant_account
+        assertions:
+          - assertions:
+              - path: $.response.data[0].cnt
+                operator: gte
+                value: '0'
+
+      - name: 'Verify payment_attempt table survived injection'
+        action:
+          type: dbQuery
+          database: hs-postgres
+          query: SELECT COUNT(*)::text as cnt FROM payment_attempt
+        assertions:
+          - assertions:
+              - path: $.response.data[0].cnt
+                operator: gte
+                value: '0'
+
+      - name: Create legitimate merchant for remaining tests
+        action:
+          type: httpRequest
+          method: POST
+          url: hs-server/accounts
+          headers:
+            Content-Type: application/json
+            api-key: '{{adminKey}}'
+          body:
+            merchant_id: input-val-merchant
+            merchant_name: Input Validation Merchant
+            merchant_details:
+              primary_contact_person: Test
+              primary_email: test@example.com
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+        extract:
+          merchantId: $.response.body.merchant_id
+
+      - name: Create API key
+        action:
+          type: httpRequest
+          method: POST
+          url: hs-server/api_keys/{{merchantId}}
+          headers:
+            Content-Type: application/json
+            api-key: '{{adminKey}}'
+          body:
+            name: input-val-key
+            expiration: never
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+        extract:
+          apiKey: $.response.body.api_key
+
+      # --- XSS in payment description ---
+      - name: 'PROBE: XSS payload in payment description'
+        stopOnFailure: false
+        action:
+          type: httpRequest
+          method: POST
+          url: hs-server/payments
+          headers:
+            Content-Type: application/json
+            api-key: '{{apiKey}}'
+          body:
+            amount: 1000
+            currency: USD
+            description: "<script>alert('xss')</script>"
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [200, 400, 422]
+
+      # --- Extremely long string ---
+      - name: 'PROBE: 5,000 character merchant name'
+        stopOnFailure: false
+        action:
+          type: httpRequest
+          method: POST
+          url: hs-server/accounts
+          headers:
+            Content-Type: application/json
+            api-key: '{{adminKey}}'
+          body:
+            merchant_id: long-name-merchant
+            merchant_name: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'
+            merchant_details:
+              primary_contact_person: Test
+              primary_email: test@example.com
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [200, 400, 413, 422]
+
+      # --- Type confusion: string instead of integer for amount ---
+      - name: 'PROBE: String amount'
+        stopOnFailure: false
+        action:
+          type: httpRequest
+          method: POST
+          url: hs-server/payments
+          headers:
+            Content-Type: application/json
+            api-key: '{{apiKey}}'
+          body:
+            amount: 'not_a_number'
+            currency: USD
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [400, 422]
+
+      # --- Unicode/emoji in fields ---
+      - name: 'PROBE: Emoji in merchant name'
+        stopOnFailure: false
+        action:
+          type: httpRequest
+          method: POST
+          url: hs-server/accounts
+          headers:
+            Content-Type: application/json
+            api-key: '{{adminKey}}'
+          body:
+            merchant_id: emoji-merchant-test
+            merchant_name: 'Test Store with emojis'
+            merchant_details:
+              primary_contact_person: 'Test User'
+              primary_email: test@example.com
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [200, 400, 422]
+
+      # --- Empty required fields ---
+      - name: 'PROBE: Empty merchant_id'
+        stopOnFailure: false
+        action:
+          type: httpRequest
+          method: POST
+          url: hs-server/accounts
+          headers:
+            Content-Type: application/json
+            api-key: '{{adminKey}}'
+          body:
+            merchant_id: ''
+            merchant_name: Empty ID Test
+            merchant_details:
+              primary_contact_person: Test
+              primary_email: test@example.com
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [400, 422]
+
+      # --- Path traversal in merchant_id ---
+      - name: 'PROBE: Path traversal in merchant_id'
+        stopOnFailure: false
+        action:
+          type: httpRequest
+          method: POST
+          url: hs-server/accounts
+          headers:
+            Content-Type: application/json
+            api-key: '{{adminKey}}'
+          body:
+            merchant_id: '../../../etc/passwd'
+            merchant_name: Path Traversal Test
+            merchant_details:
+              primary_contact_person: Test
+              primary_email: test@example.com
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [200, 400, 422]
+
+      # --- Invalid email format ---
+      - name: 'PROBE: Invalid email in merchant details'
+        stopOnFailure: false
+        action:
+          type: httpRequest
+          method: POST
+          url: hs-server/accounts
+          headers:
+            Content-Type: application/json
+            api-key: '{{adminKey}}'
+          body:
+            merchant_id: bad-email-merchant
+            merchant_name: Bad Email Test
+            merchant_details:
+              primary_contact_person: Test
+              primary_email: 'not-an-email'
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [200, 400, 422]
+
+      # --- Verify DB integrity after all injection attempts ---
+      - name: 'Final DB integrity check'
+        action:
+          type: dbQuery
+          database: hs-postgres
+          query: SELECT COUNT(*)::text as cnt FROM merchant_account
+        assertions:
+          - assertions:
+              - path: $.response.data[0].cnt
+                operator: gte
+                value: '1'

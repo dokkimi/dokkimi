@@ -1,0 +1,61 @@
+name: hyperswitch-smoke-test
+description: |
+  Minimal viability check: deploy Hyperswitch server with Postgres + Redis
+  and verify the health endpoint responds. Then probe the admin API to confirm
+  the server is fully initialized and accepting requests.
+config:
+  timeoutSeconds: 180
+items:
+  - $ref: ../shared/hs-postgres.yaml
+  - $ref: ../shared/hs-redis.yaml
+  - $ref: ../shared/hs-server.yaml
+tests:
+  - name: Health check responds 200
+    steps:
+      - name: GET /health
+        action:
+          type: httpRequest
+          method: GET
+          url: hs-server/health
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+
+  - name: Admin API is reachable
+    variables:
+      adminKey: test_admin
+    steps:
+      - name: Create a merchant account
+        action:
+          type: httpRequest
+          method: POST
+          url: hs-server/accounts
+          headers:
+            Content-Type: application/json
+            api-key: '{{adminKey}}'
+          body:
+            merchant_id: smoke_test_merchant
+            merchant_name: Smoke Test
+            merchant_details:
+              primary_contact_person: Test User
+              primary_email: test@example.com
+              about_business: Smoke test merchant
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [200, 201]
+        extract:
+          merchantId: $.response.body.merchant_id
+      - name: Verify merchant was created
+        action:
+          type: dbQuery
+          database: hs-postgres
+          query: SELECT merchant_id FROM merchant_account WHERE merchant_id = 'smoke_test_merchant'
+        assertions:
+          - assertions:
+              - path: $.response.data[0].merchant_id
+                operator: eq
+                value: smoke_test_merchant

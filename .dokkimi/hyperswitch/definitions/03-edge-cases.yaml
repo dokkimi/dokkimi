@@ -1,0 +1,173 @@
+name: hyperswitch-edge-cases
+description: |
+  Probe Hyperswitch API boundaries: negative amounts, zero amounts,
+  integer overflow, duplicate merchants, and invalid currencies.
+config:
+  timeoutSeconds: 180
+items:
+  - $ref: ../shared/hs-postgres.yaml
+  - $ref: ../shared/hs-redis.yaml
+  - $ref: ../shared/hs-server.yaml
+variables:
+  adminKey: test_admin
+tests:
+  - name: API edge cases
+    steps:
+      - name: Create merchant account
+        action:
+          type: httpRequest
+          method: POST
+          url: hs-server/accounts
+          headers:
+            Content-Type: application/json
+            api-key: '{{adminKey}}'
+          body:
+            merchant_id: edge-case-merchant
+            merchant_name: Edge Case Merchant
+            merchant_details:
+              primary_contact_person: Test
+              primary_email: test@example.com
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+        extract:
+          merchantId: $.response.body.merchant_id
+
+      - name: Create API key
+        action:
+          type: httpRequest
+          method: POST
+          url: hs-server/api_keys/{{merchantId}}
+          headers:
+            Content-Type: application/json
+            api-key: '{{adminKey}}'
+          body:
+            name: edge-case-key
+            expiration: never
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+        extract:
+          apiKey: $.response.body.api_key
+
+      - name: 'Negative amount is rejected (400)'
+        action:
+          type: httpRequest
+          method: POST
+          url: hs-server/payments
+          headers:
+            Content-Type: application/json
+            api-key: '{{apiKey}}'
+          body:
+            amount: -100
+            currency: USD
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 400
+
+      - name: 'FINDING: Zero amount is accepted (should arguably be 400)'
+        action:
+          type: httpRequest
+          method: POST
+          url: hs-server/payments
+          headers:
+            Content-Type: application/json
+            api-key: '{{apiKey}}'
+          body:
+            amount: 0
+            currency: USD
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+
+      - name: 'Extremely large amount'
+        action:
+          type: httpRequest
+          method: POST
+          url: hs-server/payments
+          headers:
+            Content-Type: application/json
+            api-key: '{{apiKey}}'
+          body:
+            amount: 99999999999999
+            currency: USD
+        extract:
+          hugeStatus: $.response.status
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [200, 400, 422]
+
+      - name: 'Invalid currency code is rejected'
+        action:
+          type: httpRequest
+          method: POST
+          url: hs-server/payments
+          headers:
+            Content-Type: application/json
+            api-key: '{{apiKey}}'
+          body:
+            amount: 1000
+            currency: FAKE
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [400, 422]
+
+      - name: 'Duplicate merchant ID is rejected'
+        action:
+          type: httpRequest
+          method: POST
+          url: hs-server/accounts
+          headers:
+            Content-Type: application/json
+            api-key: '{{adminKey}}'
+          body:
+            merchant_id: edge-case-merchant
+            merchant_name: Duplicate Merchant
+            merchant_details:
+              primary_contact_person: Dup
+              primary_email: dup@example.com
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [400, 409, 422]
+
+      - name: 'Wrong admin API key is rejected'
+        action:
+          type: httpRequest
+          method: POST
+          url: hs-server/accounts
+          headers:
+            Content-Type: application/json
+            api-key: wrong_key_here
+          body:
+            merchant_id: should-not-exist
+            merchant_name: Should Fail
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [401, 403]
+
+      - name: 'Verify rejected merchant was NOT created'
+        action:
+          type: dbQuery
+          database: hs-postgres
+          query: SELECT COUNT(*)::text as cnt FROM merchant_account WHERE merchant_id = 'should-not-exist'
+        assertions:
+          - assertions:
+              - path: $.response.data[0].cnt
+                operator: eq
+                value: '0'

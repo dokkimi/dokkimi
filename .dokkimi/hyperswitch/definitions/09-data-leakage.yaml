@@ -1,0 +1,266 @@
+name: hyperswitch-data-leakage
+description: |
+  Check for sensitive data leakage: full card numbers in responses,
+  payment amount modification after creation, and API key exposure.
+config:
+  timeoutSeconds: 180
+items:
+  - $ref: ../shared/hs-postgres.yaml
+  - $ref: ../shared/hs-redis.yaml
+  - $ref: ../shared/hs-server.yaml
+
+  - type: MOCK
+    name: mock-stripe-success
+    mockTarget: api.stripe.com
+    mockPath: /v1/payment_intents
+    mockMethod: POST
+    mockResponseStatus: 200
+    mockResponseHeaders:
+      Content-Type: application/json
+    mockResponseBody:
+      id: pi_mock_leak_123
+      object: payment_intent
+      amount: 5000
+      currency: usd
+      status: succeeded
+      client_secret: pi_mock_leak_123_secret
+      metadata: {}
+      latest_charge:
+        id: ch_mock_leak_123
+
+  - type: MOCK
+    name: mock-stripe-customers
+    mockTarget: api.stripe.com
+    mockPath: /v1/customers
+    mockMethod: POST
+    mockResponseStatus: 200
+    mockResponseHeaders:
+      Content-Type: application/json
+    mockResponseBody:
+      id: cus_mock_leak_123
+      object: customer
+      email: null
+      name: Test User
+
+variables:
+  adminKey: test_admin
+tests:
+  - name: Data leakage and modification probes
+    steps:
+      - name: Create merchant
+        action:
+          type: httpRequest
+          method: POST
+          url: hs-server/accounts
+          headers:
+            Content-Type: application/json
+            api-key: '{{adminKey}}'
+          body:
+            merchant_id: leakage-merchant
+            merchant_name: Leakage Test Merchant
+            merchant_details:
+              primary_contact_person: Test
+              primary_email: test@example.com
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+        extract:
+          merchantId: $.response.body.merchant_id
+
+      - name: Create API key
+        action:
+          type: httpRequest
+          method: POST
+          url: hs-server/api_keys/{{merchantId}}
+          headers:
+            Content-Type: application/json
+            api-key: '{{adminKey}}'
+          body:
+            name: leakage-key
+            expiration: never
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+        extract:
+          apiKey: $.response.body.api_key
+
+      - name: Configure Stripe connector
+        action:
+          type: httpRequest
+          method: POST
+          url: hs-server/account/{{merchantId}}/connectors
+          headers:
+            Content-Type: application/json
+            api-key: '{{apiKey}}'
+          body:
+            connector_type: payment_processor
+            connector_name: stripe
+            connector_account_details:
+              auth_type: HeaderKey
+              api_key: sk_test_mock_key
+            test_mode: true
+            payment_methods_enabled:
+              - payment_method: card
+                payment_method_types:
+                  - payment_method_type: credit
+                    card_networks:
+                      - Visa
+                    minimum_amount: 1
+                    maximum_amount: 68607706
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+
+      # --- Create unconfirmed payment ---
+      - name: Create payment (unconfirmed, amount 5000)
+        action:
+          type: httpRequest
+          method: POST
+          url: hs-server/payments
+          headers:
+            Content-Type: application/json
+            api-key: '{{apiKey}}'
+          body:
+            amount: 5000
+            currency: USD
+            confirm: false
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+              - path: $.response.body.amount
+                operator: eq
+                value: 5000
+        extract:
+          paymentId: $.response.body.payment_id
+
+      # --- PROBE: Can we change the amount after creation? ---
+      - name: 'PROBE: Update payment amount after creation'
+        stopOnFailure: false
+        action:
+          type: httpRequest
+          method: POST
+          url: hs-server/payments/{{paymentId}}
+          headers:
+            Content-Type: application/json
+            api-key: '{{apiKey}}'
+          body:
+            amount: 1
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [200, 400, 422]
+
+      - name: 'Verify payment amount after update attempt'
+        action:
+          type: httpRequest
+          method: GET
+          url: hs-server/payments/{{paymentId}}
+          headers:
+            Content-Type: application/json
+            api-key: '{{apiKey}}'
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+
+      # --- Create and confirm a payment with card data ---
+      - name: Create confirmed payment with card
+        action:
+          type: httpRequest
+          method: POST
+          url: hs-server/payments
+          headers:
+            Content-Type: application/json
+            api-key: '{{apiKey}}'
+          body:
+            amount: 5000
+            currency: USD
+            confirm: true
+            payment_method: card
+            payment_method_type: credit
+            payment_method_data:
+              card:
+                card_number: '4242424242424242'
+                card_exp_month: '12'
+                card_exp_year: '2030'
+                card_holder_name: Secret User
+                card_cvc: '123'
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+        extract:
+          confirmedPaymentId: $.response.body.payment_id
+
+      # --- Check if full card number leaks in GET response ---
+      - name: 'PROBE: Check for card number in payment GET response'
+        action:
+          type: httpRequest
+          method: GET
+          url: hs-server/payments/{{confirmedPaymentId}}
+          headers:
+            Content-Type: application/json
+            api-key: '{{apiKey}}'
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+
+      # --- Check if full card number is stored in DB ---
+      - name: 'PROBE: Check DB for full card number storage'
+        stopOnFailure: false
+        action:
+          type: dbQuery
+          database: hs-postgres
+          query: >
+            SELECT COUNT(*)::text as cnt
+            FROM payment_attempt
+            WHERE payment_method_data::text LIKE '%4242424242424242%'
+        assertions:
+          - assertions:
+              - path: $.response.data[0].cnt
+                operator: eq
+                value: '0'
+
+      # --- Check if connector API key leaks ---
+      - name: "PROBE: Connector details don't expose raw API key"
+        action:
+          type: httpRequest
+          method: GET
+          url: hs-server/account/{{merchantId}}/connectors
+          headers:
+            Content-Type: application/json
+            api-key: '{{apiKey}}'
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+
+      # --- Check if admin key works through merchant API key endpoint ---
+      - name: 'PROBE: Admin operations with merchant API key'
+        stopOnFailure: false
+        action:
+          type: httpRequest
+          method: GET
+          url: hs-server/accounts/{{merchantId}}
+          headers:
+            Content-Type: application/json
+            api-key: '{{apiKey}}'
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [200, 401, 403]

@@ -1,0 +1,9 @@
+type: DATABASE
+name: hs-postgres
+description: PostgreSQL for Hyperswitch — merchants, payments, refunds, configs
+database: postgres
+version: '15'
+dbName: hyperswitch_db
+dbUser: db_user
+dbPassword: db_pass
+initFilePath: ../init-files/schema-raw.sql
