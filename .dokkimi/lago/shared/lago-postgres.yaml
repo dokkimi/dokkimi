@@ -1,0 +1,7 @@
+type: DATABASE
+name: lago-postgres
+database: postgres
+version: '15-partman'
+dbName: lago
+dbUser: lago
+dbPassword: changeme

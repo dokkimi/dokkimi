@@ -1,0 +1,5 @@
+type: SERVICE
+name: lago-pdf
+image: gotenberg/gotenberg:8
+port: 3000
+healthCheck: /health

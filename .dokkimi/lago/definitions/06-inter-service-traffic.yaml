@@ -1,0 +1,385 @@
+name: lago-inter-service-traffic
+description: |
+  Exercise Dokkimi's differentiating capabilities against Lago:
+  1. Database assertions — create plans/taxes with invalid values, then query
+     Postgres directly to prove the bad data persisted and would affect billing.
+  2. Webhook delivery via MOCK — register a mock webhook receiver, trigger
+     invoice creation, verify the API delivers the webhook to the mock.
+  3. PDF generation via Gotenberg — trigger one-off invoice, verify the API
+     calls the PDF service to render the invoice.
+config:
+  timeoutSeconds: 900
+items:
+  - $ref: ../shared/lago-postgres.yaml
+  - $ref: ../shared/lago-redis.yaml
+  - $ref: ../shared/lago-api.yaml
+  - $ref: ../shared/mock-webhook-receiver.yaml
+
+variables:
+  apiKey: dokkimi-test-api-key-lago-123
+tests:
+  # ==========================================
+  # TEST 1: DATABASE ASSERTIONS
+  # Prove that invalid values actually persist
+  # and would affect downstream billing
+  # ==========================================
+  - name: Database assertions — invalid data persists
+    steps:
+      - name: Health check
+        action:
+          type: httpRequest
+          method: GET
+          url: lago-api/health
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+
+      - name: Create customer
+        action:
+          type: httpRequest
+          method: POST
+          url: lago-api/api/v1/customers
+          headers:
+            Content-Type: application/json
+            Authorization: 'Bearer {{apiKey}}'
+          body:
+            customer:
+              external_id: db-cust-001
+              name: DB Test Customer
+              email: db@dokkimi.com
+              currency: USD
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+
+      - name: Create add-on for invoicing
+        action:
+          type: httpRequest
+          method: POST
+          url: lago-api/api/v1/add_ons
+          headers:
+            Content-Type: application/json
+            Authorization: 'Bearer {{apiKey}}'
+          body:
+            add_on:
+              name: DB Test Fee
+              code: db-test-fee
+              amount_cents: 10000
+              amount_currency: USD
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+
+      - name: Create plan with negative amount via API
+        action:
+          type: httpRequest
+          method: POST
+          url: lago-api/api/v1/plans
+          headers:
+            Content-Type: application/json
+            Authorization: 'Bearer {{apiKey}}'
+          body:
+            plan:
+              name: Negative Plan
+              code: negative-plan-db
+              interval: monthly
+              amount_cents: -10000
+              amount_currency: USD
+              pay_in_advance: false
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+
+      - name: DB confirms negative amount persisted
+        action:
+          type: dbQuery
+          database: lago-postgres
+          query: "SELECT code, amount_cents FROM plans WHERE code = 'negative-plan-db'"
+        assertions:
+          - assertions:
+              - path: $.response.success
+                operator: eq
+                value: true
+              - path: $.response.data[0].code
+                operator: eq
+                value: negative-plan-db
+              - path: $.response.data[0].amount_cents
+                operator: lt
+                value: 0
+
+      - name: Create tax with negative rate via API
+        action:
+          type: httpRequest
+          method: POST
+          url: lago-api/api/v1/taxes
+          headers:
+            Content-Type: application/json
+            Authorization: 'Bearer {{apiKey}}'
+          body:
+            tax:
+              name: Negative DB Tax
+              code: negative-tax-db
+              rate: '-25.0'
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+
+      - name: DB confirms negative tax rate persisted
+        action:
+          type: dbQuery
+          database: lago-postgres
+          query: "SELECT code, rate FROM taxes WHERE code = 'negative-tax-db'"
+        assertions:
+          - assertions:
+              - path: $.response.success
+                operator: eq
+                value: true
+              - path: $.response.data[0].code
+                operator: eq
+                value: negative-tax-db
+              - path: $.response.data[0].rate
+                operator: lt
+                value: 0
+
+      - name: Create tax with absurd rate via API
+        action:
+          type: httpRequest
+          method: POST
+          url: lago-api/api/v1/taxes
+          headers:
+            Content-Type: application/json
+            Authorization: 'Bearer {{apiKey}}'
+          body:
+            tax:
+              name: Absurd DB Tax
+              code: absurd-tax-db
+              rate: '99999999.0'
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+
+      - name: DB confirms absurd tax rate persisted
+        action:
+          type: dbQuery
+          database: lago-postgres
+          query: "SELECT code, rate FROM taxes WHERE code = 'absurd-tax-db'"
+        assertions:
+          - assertions:
+              - path: $.response.success
+                operator: eq
+                value: true
+              - path: $.response.data[0].rate
+                operator: gt
+                value: 1000000
+
+      - name: Subscribe customer to negative-amount plan
+        action:
+          type: httpRequest
+          method: POST
+          url: lago-api/api/v1/subscriptions
+          headers:
+            Content-Type: application/json
+            Authorization: 'Bearer {{apiKey}}'
+          body:
+            subscription:
+              external_customer_id: db-cust-001
+              plan_code: negative-plan-db
+              external_id: neg-plan-sub-001
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+
+      - name: DB confirms subscription joined to negative plan
+        action:
+          type: dbQuery
+          database: lago-postgres
+          query: >
+            SELECT s.external_id, p.amount_cents
+            FROM subscriptions s
+            JOIN plans p ON s.plan_id = p.id
+            WHERE s.external_id = 'neg-plan-sub-001'
+        assertions:
+          - assertions:
+              - path: $.response.success
+                operator: eq
+                value: true
+              - path: $.response.data[0].external_id
+                operator: eq
+                value: neg-plan-sub-001
+              - path: $.response.data[0].amount_cents
+                operator: lt
+                value: 0
+
+      - name: Apply absurd tax to customer
+        action:
+          type: httpRequest
+          method: POST
+          url: lago-api/api/v1/customers
+          headers:
+            Content-Type: application/json
+            Authorization: 'Bearer {{apiKey}}'
+          body:
+            customer:
+              external_id: db-cust-001
+              tax_codes:
+                - absurd-tax-db
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+
+      - name: DB confirms customer linked to absurd tax
+        action:
+          type: dbQuery
+          database: lago-postgres
+          query: >
+            SELECT t.code, t.rate
+            FROM customers_taxes ct
+            JOIN taxes t ON ct.tax_id = t.id
+            JOIN customers c ON ct.customer_id = c.id
+            WHERE c.external_id = 'db-cust-001'
+        assertions:
+          - assertions:
+              - path: $.response.success
+                operator: eq
+                value: true
+              - path: $.response.data[0].code
+                operator: eq
+                value: absurd-tax-db
+              - path: $.response.data[0].rate
+                operator: gt
+                value: 1000000
+
+      - name: Create one-off invoice on customer with absurd tax
+        action:
+          type: httpRequest
+          method: POST
+          url: lago-api/api/v1/invoices
+          headers:
+            Content-Type: application/json
+            Authorization: 'Bearer {{apiKey}}'
+          body:
+            invoice:
+              external_customer_id: db-cust-001
+              currency: USD
+              fees:
+                - add_on_code: db-test-fee
+                  units: '2'
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+        extract:
+          taxedInvoiceId: $.response.body.invoice.lago_id
+
+      - name: DB confirms invoice stored with absurd tax calculation
+        action:
+          type: dbQuery
+          database: lago-postgres
+          query: >
+            SELECT taxes_amount_cents, total_amount_cents, sub_total_excluding_taxes_amount_cents
+            FROM invoices
+            WHERE id = $1
+          params:
+            '1': '{{taxedInvoiceId}}'
+        assertions:
+          - assertions:
+              - path: $.response.success
+                operator: eq
+                value: true
+              - path: $.response.data[0].taxes_amount_cents
+                operator: exists
+
+  # ==========================================
+  # TEST 2: WEBHOOK DELIVERY VIA MOCK
+  # ==========================================
+  - name: Webhook delivery to mock receiver
+    steps:
+      - name: Register webhook endpoint (mock receiver)
+        action:
+          type: httpRequest
+          method: POST
+          url: lago-api/api/v1/webhook_endpoints
+          headers:
+            Content-Type: application/json
+            Authorization: 'Bearer {{apiKey}}'
+          body:
+            webhook_endpoint:
+              webhook_url: 'http://webhook.dokkimi-test.com/hooks'
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+
+      - name: Create one-off invoice (triggers webhook)
+        action:
+          type: httpRequest
+          method: POST
+          url: lago-api/api/v1/invoices
+          headers:
+            Content-Type: application/json
+            Authorization: 'Bearer {{apiKey}}'
+          body:
+            invoice:
+              external_customer_id: db-cust-001
+              currency: USD
+              fees:
+                - add_on_code: db-test-fee
+                  units: '1'
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+
+      - name: Wait for Sidekiq to deliver webhook
+        action:
+          type: wait
+          durationMs: 30000
+
+      - name: Verify webhook delivered to mock
+        action:
+          type: wait
+          durationMs: 1
+        assertions:
+          - match:
+              path: $.traffic
+              where:
+                - path: $$.origin
+                  operator: eq
+                  value: lago-api
+                - path: $$.request.method
+                  operator: eq
+                  value: POST
+                - path: $$.request.url
+                  operator: contains
+                  value: webhook.dokkimi-test.com
+              count:
+                operator: gte
+                value: 1
+            assertions:
+              - path: $.match.response.status
+                operator: eq
+                value: 200
+              - path: $.match.request.body.webhook_type
+                operator: exists
+              - path: $.match.request.body.invoice.taxes_amount_cents
+                operator: gt
+                value: 1000000

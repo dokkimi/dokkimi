@@ -1,0 +1,281 @@
+name: lago-wallets-and-credits
+description: |
+  Probe Lago's wallet/prepaid credits system: creation, top-ups,
+  priority bounds, negative credits, multiple wallets, and expiration.
+config:
+  timeoutSeconds: 600
+items:
+  - $ref: ../shared/lago-postgres.yaml
+  - $ref: ../shared/lago-redis.yaml
+  - $ref: ../shared/lago-api.yaml
+
+variables:
+  apiKey: dokkimi-test-api-key-lago-123
+tests:
+  - name: Wallet probes
+    steps:
+      - name: Health check
+        action:
+          type: httpRequest
+          method: GET
+          url: lago-api/health
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+
+      # --- Setup: customer ---
+      - name: Create customer
+        action:
+          type: httpRequest
+          method: POST
+          url: lago-api/api/v1/customers
+          headers:
+            Content-Type: application/json
+            Authorization: 'Bearer {{apiKey}}'
+          body:
+            customer:
+              external_id: wallet-cust-001
+              name: Wallet Test Customer
+              email: wallet@dokkimi.com
+              currency: USD
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+
+      # --- Create valid wallet ---
+      - name: Create wallet with granted credits
+        action:
+          type: httpRequest
+          method: POST
+          url: lago-api/api/v1/wallets
+          headers:
+            Content-Type: application/json
+            Authorization: 'Bearer {{apiKey}}'
+          body:
+            wallet:
+              external_customer_id: wallet-cust-001
+              name: Main Wallet
+              rate_amount: '1.0'
+              currency: USD
+              granted_credits: '100.0'
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+        extract:
+          walletId: $.response.body.wallet.lago_id
+
+      # --- PROBE: Wallet with negative granted credits ---
+      - name: 'PROBE: Wallet with negative granted credits'
+        stopOnFailure: false
+        action:
+          type: httpRequest
+          method: POST
+          url: lago-api/api/v1/wallets
+          headers:
+            Content-Type: application/json
+            Authorization: 'Bearer {{apiKey}}'
+          body:
+            wallet:
+              external_customer_id: wallet-cust-001
+              name: Negative Wallet
+              rate_amount: '1.0'
+              currency: USD
+              granted_credits: '-50.0'
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [200, 400, 422]
+
+      # --- PROBE: Wallet with negative rate_amount ---
+      - name: 'PROBE: Wallet with negative rate_amount'
+        stopOnFailure: false
+        action:
+          type: httpRequest
+          method: POST
+          url: lago-api/api/v1/wallets
+          headers:
+            Content-Type: application/json
+            Authorization: 'Bearer {{apiKey}}'
+          body:
+            wallet:
+              external_customer_id: wallet-cust-001
+              name: Neg Rate Wallet
+              rate_amount: '-1.0'
+              currency: USD
+              granted_credits: '10.0'
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [200, 400, 422]
+
+      # --- PROBE: Wallet with zero rate_amount ---
+      - name: 'PROBE: Wallet with zero rate_amount'
+        stopOnFailure: false
+        action:
+          type: httpRequest
+          method: POST
+          url: lago-api/api/v1/wallets
+          headers:
+            Content-Type: application/json
+            Authorization: 'Bearer {{apiKey}}'
+          body:
+            wallet:
+              external_customer_id: wallet-cust-001
+              name: Zero Rate Wallet
+              rate_amount: '0.0'
+              currency: USD
+              granted_credits: '10.0'
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [200, 400, 422]
+
+      # --- PROBE: Wallet with priority below range (0) ---
+      - name: 'PROBE: Wallet with priority 0 (below min of 1)'
+        stopOnFailure: false
+        action:
+          type: httpRequest
+          method: POST
+          url: lago-api/api/v1/wallets
+          headers:
+            Content-Type: application/json
+            Authorization: 'Bearer {{apiKey}}'
+          body:
+            wallet:
+              external_customer_id: wallet-cust-001
+              name: Priority Zero Wallet
+              rate_amount: '1.0'
+              currency: USD
+              granted_credits: '10.0'
+              priority: 0
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [200, 400, 422]
+
+      # --- PROBE: Wallet with priority above range (51) ---
+      - name: 'PROBE: Wallet with priority 51 (above max of 50)'
+        stopOnFailure: false
+        action:
+          type: httpRequest
+          method: POST
+          url: lago-api/api/v1/wallets
+          headers:
+            Content-Type: application/json
+            Authorization: 'Bearer {{apiKey}}'
+          body:
+            wallet:
+              external_customer_id: wallet-cust-001
+              name: Priority 51 Wallet
+              rate_amount: '1.0'
+              currency: USD
+              granted_credits: '10.0'
+              priority: 51
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [200, 400, 422]
+
+      # --- PROBE: Wallet with huge credits ---
+      - name: 'PROBE: Wallet with enormous credit balance'
+        stopOnFailure: false
+        action:
+          type: httpRequest
+          method: POST
+          url: lago-api/api/v1/wallets
+          headers:
+            Content-Type: application/json
+            Authorization: 'Bearer {{apiKey}}'
+          body:
+            wallet:
+              external_customer_id: wallet-cust-001
+              name: Huge Wallet
+              rate_amount: '1.0'
+              currency: USD
+              granted_credits: '99999999999999.0'
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [200, 400, 422]
+
+      # --- PROBE: Wallet with already-expired expiration ---
+      - name: 'PROBE: Wallet with past expiration_at'
+        stopOnFailure: false
+        action:
+          type: httpRequest
+          method: POST
+          url: lago-api/api/v1/wallets
+          headers:
+            Content-Type: application/json
+            Authorization: 'Bearer {{apiKey}}'
+          body:
+            wallet:
+              external_customer_id: wallet-cust-001
+              name: Already Expired Wallet
+              rate_amount: '1.0'
+              currency: USD
+              granted_credits: '10.0'
+              expiration_at: '2020-01-01T00:00:00Z'
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [200, 400, 422]
+
+      # --- PROBE: Wallet for nonexistent customer ---
+      - name: 'PROBE: Wallet for nonexistent customer'
+        stopOnFailure: false
+        action:
+          type: httpRequest
+          method: POST
+          url: lago-api/api/v1/wallets
+          headers:
+            Content-Type: application/json
+            Authorization: 'Bearer {{apiKey}}'
+          body:
+            wallet:
+              external_customer_id: ghost-wallet-customer
+              name: Ghost Wallet
+              rate_amount: '1.0'
+              currency: USD
+              granted_credits: '10.0'
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [200, 404, 422]
+
+      # --- PROBE: Wallet with currency mismatch (customer is USD) ---
+      - name: 'PROBE: Wallet with currency mismatch (EUR on USD customer)'
+        stopOnFailure: false
+        action:
+          type: httpRequest
+          method: POST
+          url: lago-api/api/v1/wallets
+          headers:
+            Content-Type: application/json
+            Authorization: 'Bearer {{apiKey}}'
+          body:
+            wallet:
+              external_customer_id: wallet-cust-001
+              name: EUR Wallet on USD Customer
+              rate_amount: '1.0'
+              currency: EUR
+              granted_credits: '10.0'
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [200, 400, 422]

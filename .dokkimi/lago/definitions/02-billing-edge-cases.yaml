@@ -1,0 +1,444 @@
+name: lago-billing-edge-cases
+description: |
+  Deeper probes into Lago billing edge cases: extreme amounts, currency
+  mismatches, plan manipulation, and subscription lifecycle issues.
+config:
+  timeoutSeconds: 600
+items:
+  - $ref: ../shared/lago-postgres.yaml
+  - $ref: ../shared/lago-redis.yaml
+  - $ref: ../shared/lago-api.yaml
+
+variables:
+  apiKey: dokkimi-test-api-key-lago-123
+tests:
+  - name: Billing edge cases
+    steps:
+      - name: Health check
+        action:
+          type: httpRequest
+          method: GET
+          url: lago-api/health
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+
+      # --- Setup ---
+      - name: Create customer
+        action:
+          type: httpRequest
+          method: POST
+          url: lago-api/api/v1/customers
+          headers:
+            Content-Type: application/json
+            Authorization: 'Bearer {{apiKey}}'
+          body:
+            customer:
+              external_id: edge-cust-001
+              name: Edge Case Customer
+              email: edge@dokkimi.com
+              currency: USD
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+
+      - name: Create billable metric
+        action:
+          type: httpRequest
+          method: POST
+          url: lago-api/api/v1/billable_metrics
+          headers:
+            Content-Type: application/json
+            Authorization: 'Bearer {{apiKey}}'
+          body:
+            billable_metric:
+              name: Edge Metric
+              code: edge_metric
+              aggregation_type: count_agg
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+
+      # --- PROBE: Integer overflow amount ---
+      - name: 'PROBE: Huge amount plan (overflow?)'
+        stopOnFailure: false
+        action:
+          type: httpRequest
+          method: POST
+          url: lago-api/api/v1/plans
+          headers:
+            Content-Type: application/json
+            Authorization: 'Bearer {{apiKey}}'
+          body:
+            plan:
+              name: Overflow Plan
+              code: overflow-plan
+              interval: monthly
+              amount_cents: 99999999999999
+              amount_currency: USD
+              pay_in_advance: false
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [200, 400, 422]
+
+      # --- PROBE: Plan with empty name ---
+      - name: 'PROBE: Plan with empty name'
+        stopOnFailure: false
+        action:
+          type: httpRequest
+          method: POST
+          url: lago-api/api/v1/plans
+          headers:
+            Content-Type: application/json
+            Authorization: 'Bearer {{apiKey}}'
+          body:
+            plan:
+              name: ''
+              code: empty-name-plan
+              interval: monthly
+              amount_cents: 100
+              amount_currency: USD
+              pay_in_advance: false
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [200, 400, 422]
+
+      # --- PROBE: Plan with empty code ---
+      - name: 'PROBE: Plan with empty code'
+        stopOnFailure: false
+        action:
+          type: httpRequest
+          method: POST
+          url: lago-api/api/v1/plans
+          headers:
+            Content-Type: application/json
+            Authorization: 'Bearer {{apiKey}}'
+          body:
+            plan:
+              name: No Code Plan
+              code: ''
+              interval: monthly
+              amount_cents: 100
+              amount_currency: USD
+              pay_in_advance: false
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [200, 400, 422]
+
+      # --- PROBE: Plan with invalid interval ---
+      - name: 'PROBE: Plan with bogus interval'
+        stopOnFailure: false
+        action:
+          type: httpRequest
+          method: POST
+          url: lago-api/api/v1/plans
+          headers:
+            Content-Type: application/json
+            Authorization: 'Bearer {{apiKey}}'
+          body:
+            plan:
+              name: Bad Interval
+              code: bad-interval
+              interval: bicentennial
+              amount_cents: 100
+              amount_currency: USD
+              pay_in_advance: false
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [200, 400, 422]
+
+      # --- PROBE: Customer with XSS in name ---
+      - name: 'PROBE: XSS in customer name'
+        stopOnFailure: false
+        action:
+          type: httpRequest
+          method: POST
+          url: lago-api/api/v1/customers
+          headers:
+            Content-Type: application/json
+            Authorization: 'Bearer {{apiKey}}'
+          body:
+            customer:
+              external_id: xss-cust
+              name: '<script>alert("xss")</script>'
+              email: xss@test.com
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [200, 400, 422]
+
+      # --- PROBE: SQL injection in external_id ---
+      - name: 'PROBE: SQL injection in customer external_id'
+        stopOnFailure: false
+        action:
+          type: httpRequest
+          method: POST
+          url: lago-api/api/v1/customers
+          headers:
+            Content-Type: application/json
+            Authorization: 'Bearer {{apiKey}}'
+          body:
+            customer:
+              external_id: "'; DROP TABLE customers; --"
+              name: Bobby Tables
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [200, 400, 422, 500]
+
+      # --- PROBE: Create plan, subscribe, then delete the plan ---
+      - name: Create deletable plan
+        action:
+          type: httpRequest
+          method: POST
+          url: lago-api/api/v1/plans
+          headers:
+            Content-Type: application/json
+            Authorization: 'Bearer {{apiKey}}'
+          body:
+            plan:
+              name: Deletable Plan
+              code: deletable-plan
+              interval: monthly
+              amount_cents: 500
+              amount_currency: USD
+              pay_in_advance: false
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+
+      - name: Subscribe to deletable plan
+        action:
+          type: httpRequest
+          method: POST
+          url: lago-api/api/v1/subscriptions
+          headers:
+            Content-Type: application/json
+            Authorization: 'Bearer {{apiKey}}'
+          body:
+            subscription:
+              external_customer_id: edge-cust-001
+              plan_code: deletable-plan
+              external_id: sub-deletable-001
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+
+      - name: 'PROBE: Delete plan while subscription active'
+        stopOnFailure: false
+        action:
+          type: httpRequest
+          method: DELETE
+          url: lago-api/api/v1/plans/deletable-plan
+          headers:
+            Authorization: 'Bearer {{apiKey}}'
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [200, 204, 404, 409, 422]
+
+      - name: 'PROBE: Verify subscription after plan delete'
+        stopOnFailure: false
+        action:
+          type: httpRequest
+          method: GET
+          url: lago-api/api/v1/subscriptions/sub-deletable-001
+          headers:
+            Authorization: 'Bearer {{apiKey}}'
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [200, 404]
+
+      # --- PROBE: Multiple subscriptions same customer same plan ---
+      - name: Create base plan for multi-sub test
+        stopOnFailure: false
+        action:
+          type: httpRequest
+          method: POST
+          url: lago-api/api/v1/plans
+          headers:
+            Content-Type: application/json
+            Authorization: 'Bearer {{apiKey}}'
+          body:
+            plan:
+              name: Multi Sub Plan
+              code: multi-sub-plan
+              interval: monthly
+              amount_cents: 1000
+              amount_currency: USD
+              pay_in_advance: false
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [200, 422]
+
+      - name: First subscription to multi-sub plan
+        stopOnFailure: false
+        action:
+          type: httpRequest
+          method: POST
+          url: lago-api/api/v1/subscriptions
+          headers:
+            Content-Type: application/json
+            Authorization: 'Bearer {{apiKey}}'
+          body:
+            subscription:
+              external_customer_id: edge-cust-001
+              plan_code: multi-sub-plan
+              external_id: multi-sub-001
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [200, 422]
+
+      - name: 'PROBE: Second subscription same plan same customer'
+        stopOnFailure: false
+        action:
+          type: httpRequest
+          method: POST
+          url: lago-api/api/v1/subscriptions
+          headers:
+            Content-Type: application/json
+            Authorization: 'Bearer {{apiKey}}'
+          body:
+            subscription:
+              external_customer_id: edge-cust-001
+              plan_code: multi-sub-plan
+              external_id: multi-sub-002
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [200, 409, 422]
+
+      # --- PROBE: Event with massive properties object ---
+      - name: Create subscription for event tests
+        stopOnFailure: false
+        action:
+          type: httpRequest
+          method: POST
+          url: lago-api/api/v1/plans
+          headers:
+            Content-Type: application/json
+            Authorization: 'Bearer {{apiKey}}'
+          body:
+            plan:
+              name: Event Test Plan
+              code: event-test-plan
+              interval: monthly
+              amount_cents: 100
+              amount_currency: USD
+              pay_in_advance: false
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [200, 422]
+
+      - name: Subscribe for event tests
+        stopOnFailure: false
+        action:
+          type: httpRequest
+          method: POST
+          url: lago-api/api/v1/subscriptions
+          headers:
+            Content-Type: application/json
+            Authorization: 'Bearer {{apiKey}}'
+          body:
+            subscription:
+              external_customer_id: edge-cust-001
+              plan_code: event-test-plan
+              external_id: sub-event-test
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [200, 422]
+
+      - name: 'PROBE: Event with negative timestamp'
+        stopOnFailure: false
+        action:
+          type: httpRequest
+          method: POST
+          url: lago-api/api/v1/events
+          headers:
+            Content-Type: application/json
+            Authorization: 'Bearer {{apiKey}}'
+          body:
+            event:
+              transaction_id: txn-neg-ts
+              external_subscription_id: sub-event-test
+              code: edge_metric
+              timestamp: -1
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [200, 400, 422]
+
+      - name: 'PROBE: Event with far-future timestamp'
+        stopOnFailure: false
+        action:
+          type: httpRequest
+          method: POST
+          url: lago-api/api/v1/events
+          headers:
+            Content-Type: application/json
+            Authorization: 'Bearer {{apiKey}}'
+          body:
+            event:
+              transaction_id: txn-future-ts
+              external_subscription_id: sub-event-test
+              code: edge_metric
+              timestamp: 32503680000
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [200, 400, 422]
+
+      - name: 'PROBE: Event with zero timestamp (epoch)'
+        stopOnFailure: false
+        action:
+          type: httpRequest
+          method: POST
+          url: lago-api/api/v1/events
+          headers:
+            Content-Type: application/json
+            Authorization: 'Bearer {{apiKey}}'
+          body:
+            event:
+              transaction_id: txn-epoch-ts
+              external_subscription_id: sub-event-test
+              code: edge_metric
+              timestamp: 0
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [200, 400, 422]

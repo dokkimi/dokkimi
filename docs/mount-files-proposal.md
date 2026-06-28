@@ -4,7 +4,10 @@
 
 Services often need config files, TLS certs, or other artifacts mounted into the container. Today the only workaround is building a wrapper Docker image that COPYs the file in — adding friction for every third-party service that needs configuration.
 
-Example: Hyperswitch requires a 146KB TOML config file. We had to create a Dockerfile, entrypoint script, and build a local image just to get the config inside the container.
+This has come up in every third-party service we've tested:
+
+- **Hyperswitch** required a 146KB TOML config file. We built a wrapper Dockerfile that COPYs the config and an entrypoint script that waits for Postgres/Redis before launching the router.
+- **Lago** required an RSA private key file, a patched rake file (dev-only gem crashes in production), and a custom entrypoint that waits for Postgres/Redis, runs Rails migrations, seeds the org via `rails runner`, and starts the server. The wrapper Dockerfile installs `postgresql-client` just for the seed step. Five layers of workarounds for what's fundamentally "mount a key file and override the entrypoint."
 
 ## Proposed API
 
@@ -45,4 +48,4 @@ Copy the path-traversal validation from DATABASE init files — source paths mus
 
 ## Impact
 
-Eliminates the need for wrapper Docker images in most cases. The Hyperswitch demo's `docker/` folder (Dockerfile, entrypoint.sh, baked config) would reduce to a single `mountFiles` entry on the SERVICE item.
+Eliminates the need for wrapper Docker images in most cases. The Hyperswitch demo's `docker/` folder (Dockerfile, entrypoint.sh, baked config) would reduce to a single `mountFiles` entry on the SERVICE item. The Lago demo's wrapper (RSA key, patched rake file, entrypoint) would reduce to two or three `mountFiles` entries plus an `entrypoint` override.

@@ -1,0 +1,44 @@
+type: SERVICE
+name: lago-api
+image: dokkimi/lago-api:local
+port: 3000
+healthCheck: /health
+env:
+  - name: DATABASE_URL
+    value: postgresql://lago:changeme@lago-postgres:5432/lago
+  - name: REDIS_URL
+    value: redis://:changeme@lago-redis:6379
+  - name: REDIS_PASSWORD
+    value: changeme
+  - name: SECRET_KEY_BASE
+    value: a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2
+  - name: RAILS_ENV
+    value: production
+  - name: RAILS_LOG_TO_STDOUT
+    value: 'true'
+  - name: LAGO_PDF_URL
+    value: http://lago-pdf:3000
+  - name: LAGO_REDIS_CACHE_URL
+    value: redis://:changeme@lago-redis:6379
+  - name: LAGO_REDIS_CACHE_PASSWORD
+    value: changeme
+  - name: LAGO_ENCRYPTION_PRIMARY_KEY
+    value: dokkimi-test-encryption-primary-key-1234
+  - name: LAGO_ENCRYPTION_DETERMINISTIC_KEY
+    value: dokkimi-test-encryption-determ-key-1234
+  - name: LAGO_ENCRYPTION_KEY_DERIVATION_SALT
+    value: dokkimi-test-encryption-salt-1234567890
+  - name: LAGO_DISABLE_SEGMENT
+    value: 'true'
+  - name: LAGO_DISABLE_WALLET_REFRESH
+    value: 'true'
+  - name: LAGO_CREATE_ORG
+    value: 'true'
+  - name: LAGO_ORG_USER_EMAIL
+    value: test@dokkimi.com
+  - name: LAGO_ORG_USER_PASSWORD
+    value: P@ssword123!
+  - name: LAGO_ORG_NAME
+    value: Dokkimi Test Org
+  - name: LAGO_ORG_API_KEY
+    value: dokkimi-test-api-key-lago-123

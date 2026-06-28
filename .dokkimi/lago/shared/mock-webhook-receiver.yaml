@@ -1,0 +1,10 @@
+type: MOCK
+name: mock-webhook-receiver
+mockTarget: webhook.dokkimi-test.com
+mockPath: /*
+mockMethod: POST
+mockResponseStatus: 200
+mockResponseHeaders:
+  Content-Type: application/json
+mockResponseBody:
+  status: received

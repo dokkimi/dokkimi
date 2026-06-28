@@ -1,0 +1,429 @@
+name: lago-basic-lifecycle
+description: |
+  Test Lago billing API basics: customer creation, plan creation,
+  subscription assignment, usage event ingestion, and edge cases.
+config:
+  timeoutSeconds: 600
+items:
+  - $ref: ../shared/lago-postgres.yaml
+  - $ref: ../shared/lago-redis.yaml
+  - $ref: ../shared/lago-api.yaml
+
+variables:
+  apiKey: dokkimi-test-api-key-lago-123
+tests:
+  - name: Billing lifecycle
+    steps:
+      # --- Verify API is healthy ---
+      - name: Health check
+        action:
+          type: httpRequest
+          method: GET
+          url: lago-api/health
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+
+      # --- Create a customer ---
+      - name: Create customer
+        action:
+          type: httpRequest
+          method: POST
+          url: lago-api/api/v1/customers
+          headers:
+            Content-Type: application/json
+            Authorization: 'Bearer {{apiKey}}'
+          body:
+            customer:
+              external_id: cust-dokkimi-001
+              name: Dokkimi Test Customer
+              email: customer@dokkimi.com
+              currency: USD
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+        extract:
+          customerId: $.response.body.customer.external_id
+
+      # --- Create a billable metric ---
+      - name: Create billable metric (API calls)
+        action:
+          type: httpRequest
+          method: POST
+          url: lago-api/api/v1/billable_metrics
+          headers:
+            Content-Type: application/json
+            Authorization: 'Bearer {{apiKey}}'
+          body:
+            billable_metric:
+              name: API Calls
+              code: api_calls
+              aggregation_type: count_agg
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+
+      # --- Create a plan (no charges — add them after) ---
+      - name: Create plan
+        action:
+          type: httpRequest
+          method: POST
+          url: lago-api/api/v1/plans
+          headers:
+            Content-Type: application/json
+            Authorization: 'Bearer {{apiKey}}'
+          body:
+            plan:
+              name: Startup Plan
+              code: startup-plan
+              interval: monthly
+              amount_cents: 10000
+              amount_currency: USD
+              pay_in_advance: true
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+
+      # --- Assign subscription ---
+      - name: Create subscription
+        action:
+          type: httpRequest
+          method: POST
+          url: lago-api/api/v1/subscriptions
+          headers:
+            Content-Type: application/json
+            Authorization: 'Bearer {{apiKey}}'
+          body:
+            subscription:
+              external_customer_id: cust-dokkimi-001
+              plan_code: startup-plan
+              external_id: sub-dokkimi-001
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+              - path: $.response.body.subscription.status
+                operator: eq
+                value: active
+        extract:
+          subscriptionId: $.response.body.subscription.external_id
+
+      # --- Push usage events ---
+      - name: Push usage event 1
+        action:
+          type: httpRequest
+          method: POST
+          url: lago-api/api/v1/events
+          headers:
+            Content-Type: application/json
+            Authorization: 'Bearer {{apiKey}}'
+          body:
+            event:
+              transaction_id: txn-001
+              external_subscription_id: sub-dokkimi-001
+              code: api_calls
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+
+      - name: Push usage event 2
+        action:
+          type: httpRequest
+          method: POST
+          url: lago-api/api/v1/events
+          headers:
+            Content-Type: application/json
+            Authorization: 'Bearer {{apiKey}}'
+          body:
+            event:
+              transaction_id: txn-002
+              external_subscription_id: sub-dokkimi-001
+              code: api_calls
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+
+      # --- Verify customer exists ---
+      - name: Get customer
+        action:
+          type: httpRequest
+          method: GET
+          url: lago-api/api/v1/customers/cust-dokkimi-001
+          headers:
+            Authorization: 'Bearer {{apiKey}}'
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+              - path: $.response.body.customer.name
+                operator: eq
+                value: Dokkimi Test Customer
+
+      # --- Verify subscription is active ---
+      - name: Get subscription
+        action:
+          type: httpRequest
+          method: GET
+          url: lago-api/api/v1/subscriptions/sub-dokkimi-001
+          headers:
+            Authorization: 'Bearer {{apiKey}}'
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+              - path: $.response.body.subscription.status
+                operator: eq
+                value: active
+
+      # --- Edge case probes ---
+      - name: 'PROBE: Duplicate customer (same external_id)'
+        stopOnFailure: false
+        action:
+          type: httpRequest
+          method: POST
+          url: lago-api/api/v1/customers
+          headers:
+            Content-Type: application/json
+            Authorization: 'Bearer {{apiKey}}'
+          body:
+            customer:
+              external_id: cust-dokkimi-001
+              name: Duplicate Customer
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [200, 409, 422]
+
+      - name: 'PROBE: Duplicate plan code'
+        stopOnFailure: false
+        action:
+          type: httpRequest
+          method: POST
+          url: lago-api/api/v1/plans
+          headers:
+            Content-Type: application/json
+            Authorization: 'Bearer {{apiKey}}'
+          body:
+            plan:
+              name: Duplicate Plan
+              code: startup-plan
+              interval: monthly
+              amount_cents: 5000
+              amount_currency: USD
+              pay_in_advance: false
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [200, 409, 422]
+
+      - name: 'PROBE: Subscription to nonexistent plan'
+        stopOnFailure: false
+        action:
+          type: httpRequest
+          method: POST
+          url: lago-api/api/v1/subscriptions
+          headers:
+            Content-Type: application/json
+            Authorization: 'Bearer {{apiKey}}'
+          body:
+            subscription:
+              external_customer_id: cust-dokkimi-001
+              plan_code: nonexistent-plan
+              external_id: sub-fail-001
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [404, 422]
+
+      - name: 'PROBE: Subscription for nonexistent customer'
+        stopOnFailure: false
+        action:
+          type: httpRequest
+          method: POST
+          url: lago-api/api/v1/subscriptions
+          headers:
+            Content-Type: application/json
+            Authorization: 'Bearer {{apiKey}}'
+          body:
+            subscription:
+              external_customer_id: customer-does-not-exist
+              plan_code: startup-plan
+              external_id: sub-fail-002
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [200, 404, 422]
+
+      - name: 'PROBE: Duplicate usage event (same transaction_id)'
+        stopOnFailure: false
+        action:
+          type: httpRequest
+          method: POST
+          url: lago-api/api/v1/events
+          headers:
+            Content-Type: application/json
+            Authorization: 'Bearer {{apiKey}}'
+          body:
+            event:
+              transaction_id: txn-001
+              external_subscription_id: sub-dokkimi-001
+              code: api_calls
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [200, 409, 422]
+
+      - name: 'PROBE: Event for nonexistent subscription'
+        stopOnFailure: false
+        action:
+          type: httpRequest
+          method: POST
+          url: lago-api/api/v1/events
+          headers:
+            Content-Type: application/json
+            Authorization: 'Bearer {{apiKey}}'
+          body:
+            event:
+              transaction_id: txn-orphan-001
+              external_subscription_id: sub-does-not-exist
+              code: api_calls
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [200, 400, 404, 422]
+
+      - name: 'PROBE: Event for nonexistent metric code'
+        stopOnFailure: false
+        action:
+          type: httpRequest
+          method: POST
+          url: lago-api/api/v1/events
+          headers:
+            Content-Type: application/json
+            Authorization: 'Bearer {{apiKey}}'
+          body:
+            event:
+              transaction_id: txn-bad-metric-001
+              external_subscription_id: sub-dokkimi-001
+              code: totally_fake_metric
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [200, 400, 404, 422]
+
+      - name: 'PROBE: No auth header'
+        stopOnFailure: false
+        action:
+          type: httpRequest
+          method: GET
+          url: lago-api/api/v1/customers/cust-dokkimi-001
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 401
+
+      - name: 'PROBE: Wrong API key'
+        stopOnFailure: false
+        action:
+          type: httpRequest
+          method: GET
+          url: lago-api/api/v1/customers/cust-dokkimi-001
+          headers:
+            Authorization: 'Bearer totally-wrong-api-key'
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 401
+
+      - name: 'PROBE: Negative amount plan'
+        stopOnFailure: false
+        action:
+          type: httpRequest
+          method: POST
+          url: lago-api/api/v1/plans
+          headers:
+            Content-Type: application/json
+            Authorization: 'Bearer {{apiKey}}'
+          body:
+            plan:
+              name: Negative Plan
+              code: negative-plan
+              interval: monthly
+              amount_cents: -100
+              amount_currency: USD
+              pay_in_advance: false
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [200, 400, 422]
+
+      - name: 'PROBE: Zero amount plan (free tier)'
+        stopOnFailure: false
+        action:
+          type: httpRequest
+          method: POST
+          url: lago-api/api/v1/plans
+          headers:
+            Content-Type: application/json
+            Authorization: 'Bearer {{apiKey}}'
+          body:
+            plan:
+              name: Free Tier
+              code: free-tier
+              interval: monthly
+              amount_cents: 0
+              amount_currency: USD
+              pay_in_advance: false
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [200, 400, 422]
+
+      - name: 'PROBE: Invalid currency'
+        stopOnFailure: false
+        action:
+          type: httpRequest
+          method: POST
+          url: lago-api/api/v1/plans
+          headers:
+            Content-Type: application/json
+            Authorization: 'Bearer {{apiKey}}'
+          body:
+            plan:
+              name: Bad Currency Plan
+              code: bad-currency-plan
+              interval: monthly
+              amount_cents: 1000
+              amount_currency: FAKECOIN
+              pay_in_advance: false
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [400, 422]

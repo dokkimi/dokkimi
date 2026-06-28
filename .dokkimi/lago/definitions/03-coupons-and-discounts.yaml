@@ -1,0 +1,374 @@
+name: lago-coupons-and-discounts
+description: |
+  Probe Lago's coupon system: fixed-amount and percentage coupons,
+  application rules, stacking, boundary values, and expiration handling.
+config:
+  timeoutSeconds: 600
+items:
+  - $ref: ../shared/lago-postgres.yaml
+  - $ref: ../shared/lago-redis.yaml
+  - $ref: ../shared/lago-api.yaml
+
+variables:
+  apiKey: dokkimi-test-api-key-lago-123
+tests:
+  - name: Coupon probes
+    steps:
+      - name: Health check
+        action:
+          type: httpRequest
+          method: GET
+          url: lago-api/health
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+
+      # --- Setup: customer + plan + subscription ---
+      - name: Create customer
+        action:
+          type: httpRequest
+          method: POST
+          url: lago-api/api/v1/customers
+          headers:
+            Content-Type: application/json
+            Authorization: 'Bearer {{apiKey}}'
+          body:
+            customer:
+              external_id: coupon-cust-001
+              name: Coupon Test Customer
+              email: coupon@dokkimi.com
+              currency: USD
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+
+      - name: Create plan
+        action:
+          type: httpRequest
+          method: POST
+          url: lago-api/api/v1/plans
+          headers:
+            Content-Type: application/json
+            Authorization: 'Bearer {{apiKey}}'
+          body:
+            plan:
+              name: Coupon Test Plan
+              code: coupon-test-plan
+              interval: monthly
+              amount_cents: 10000
+              amount_currency: USD
+              pay_in_advance: false
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+
+      - name: Create subscription
+        action:
+          type: httpRequest
+          method: POST
+          url: lago-api/api/v1/subscriptions
+          headers:
+            Content-Type: application/json
+            Authorization: 'Bearer {{apiKey}}'
+          body:
+            subscription:
+              external_customer_id: coupon-cust-001
+              plan_code: coupon-test-plan
+              external_id: coupon-sub-001
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+
+      # --- Create valid coupons ---
+      - name: Create fixed-amount coupon ($50)
+        action:
+          type: httpRequest
+          method: POST
+          url: lago-api/api/v1/coupons
+          headers:
+            Content-Type: application/json
+            Authorization: 'Bearer {{apiKey}}'
+          body:
+            coupon:
+              name: Fifty Dollar Off
+              code: fifty-off
+              coupon_type: fixed_amount
+              amount_cents: 5000
+              amount_currency: USD
+              frequency: once
+              expiration: no_expiration
+              reusable: true
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+
+      - name: Create percentage coupon (25%)
+        action:
+          type: httpRequest
+          method: POST
+          url: lago-api/api/v1/coupons
+          headers:
+            Content-Type: application/json
+            Authorization: 'Bearer {{apiKey}}'
+          body:
+            coupon:
+              name: Quarter Off
+              code: quarter-off
+              coupon_type: percentage
+              percentage_rate: '25.0'
+              frequency: once
+              expiration: no_expiration
+              reusable: true
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+
+      # --- Apply coupon ---
+      - name: Apply fixed coupon to customer
+        action:
+          type: httpRequest
+          method: POST
+          url: lago-api/api/v1/applied_coupons
+          headers:
+            Content-Type: application/json
+            Authorization: 'Bearer {{apiKey}}'
+          body:
+            applied_coupon:
+              external_customer_id: coupon-cust-001
+              coupon_code: fifty-off
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+
+      # --- PROBE: Apply same coupon again (reusable=true) ---
+      - name: 'PROBE: Apply same reusable coupon twice'
+        stopOnFailure: false
+        action:
+          type: httpRequest
+          method: POST
+          url: lago-api/api/v1/applied_coupons
+          headers:
+            Content-Type: application/json
+            Authorization: 'Bearer {{apiKey}}'
+          body:
+            applied_coupon:
+              external_customer_id: coupon-cust-001
+              coupon_code: fifty-off
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [200, 409, 422]
+
+      # --- PROBE: Coupon with negative amount ---
+      - name: 'PROBE: Coupon with negative amount_cents'
+        stopOnFailure: false
+        action:
+          type: httpRequest
+          method: POST
+          url: lago-api/api/v1/coupons
+          headers:
+            Content-Type: application/json
+            Authorization: 'Bearer {{apiKey}}'
+          body:
+            coupon:
+              name: Negative Coupon
+              code: negative-coupon
+              coupon_type: fixed_amount
+              amount_cents: -5000
+              amount_currency: USD
+              frequency: once
+              expiration: no_expiration
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [200, 400, 422]
+
+      # --- PROBE: Coupon exceeding plan amount ---
+      - name: 'PROBE: Coupon larger than plan ($200 coupon on $100 plan)'
+        stopOnFailure: false
+        action:
+          type: httpRequest
+          method: POST
+          url: lago-api/api/v1/coupons
+          headers:
+            Content-Type: application/json
+            Authorization: 'Bearer {{apiKey}}'
+          body:
+            coupon:
+              name: Oversized Coupon
+              code: oversized-coupon
+              coupon_type: fixed_amount
+              amount_cents: 20000
+              amount_currency: USD
+              frequency: once
+              expiration: no_expiration
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [200, 400, 422]
+
+      - name: 'PROBE: Apply oversized coupon'
+        stopOnFailure: false
+        action:
+          type: httpRequest
+          method: POST
+          url: lago-api/api/v1/applied_coupons
+          headers:
+            Content-Type: application/json
+            Authorization: 'Bearer {{apiKey}}'
+          body:
+            applied_coupon:
+              external_customer_id: coupon-cust-001
+              coupon_code: oversized-coupon
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [200, 400, 422]
+
+      # --- PROBE: Percentage > 100% ---
+      - name: 'PROBE: Percentage coupon > 100%'
+        stopOnFailure: false
+        action:
+          type: httpRequest
+          method: POST
+          url: lago-api/api/v1/coupons
+          headers:
+            Content-Type: application/json
+            Authorization: 'Bearer {{apiKey}}'
+          body:
+            coupon:
+              name: Over 100 Percent
+              code: over-100-pct
+              coupon_type: percentage
+              percentage_rate: '150.0'
+              frequency: once
+              expiration: no_expiration
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [200, 400, 422]
+
+      # --- PROBE: Percentage of 0% ---
+      - name: 'PROBE: Percentage coupon at 0%'
+        stopOnFailure: false
+        action:
+          type: httpRequest
+          method: POST
+          url: lago-api/api/v1/coupons
+          headers:
+            Content-Type: application/json
+            Authorization: 'Bearer {{apiKey}}'
+          body:
+            coupon:
+              name: Zero Percent
+              code: zero-pct
+              coupon_type: percentage
+              percentage_rate: '0.0'
+              frequency: once
+              expiration: no_expiration
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [200, 400, 422]
+
+      # --- PROBE: Apply coupon to nonexistent customer ---
+      - name: 'PROBE: Apply coupon to nonexistent customer'
+        stopOnFailure: false
+        action:
+          type: httpRequest
+          method: POST
+          url: lago-api/api/v1/applied_coupons
+          headers:
+            Content-Type: application/json
+            Authorization: 'Bearer {{apiKey}}'
+          body:
+            applied_coupon:
+              external_customer_id: ghost-customer-9999
+              coupon_code: fifty-off
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [200, 404, 422]
+
+      # --- PROBE: Apply nonexistent coupon ---
+      - name: 'PROBE: Apply nonexistent coupon code'
+        stopOnFailure: false
+        action:
+          type: httpRequest
+          method: POST
+          url: lago-api/api/v1/applied_coupons
+          headers:
+            Content-Type: application/json
+            Authorization: 'Bearer {{apiKey}}'
+          body:
+            applied_coupon:
+              external_customer_id: coupon-cust-001
+              coupon_code: totally-fake-coupon
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [404, 422]
+
+      # --- PROBE: Override coupon amount at application to negative ---
+      - name: 'PROBE: Apply coupon with negative amount override'
+        stopOnFailure: false
+        action:
+          type: httpRequest
+          method: POST
+          url: lago-api/api/v1/applied_coupons
+          headers:
+            Content-Type: application/json
+            Authorization: 'Bearer {{apiKey}}'
+          body:
+            applied_coupon:
+              external_customer_id: coupon-cust-001
+              coupon_code: quarter-off
+              percentage_rate: '-50.0'
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [200, 400, 422]
+
+      # --- PROBE: Apply coupon with override > 100% ---
+      - name: 'PROBE: Apply coupon with 200% override'
+        stopOnFailure: false
+        action:
+          type: httpRequest
+          method: POST
+          url: lago-api/api/v1/applied_coupons
+          headers:
+            Content-Type: application/json
+            Authorization: 'Bearer {{apiKey}}'
+          body:
+            applied_coupon:
+              external_customer_id: coupon-cust-001
+              coupon_code: quarter-off
+              percentage_rate: '200.0'
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [200, 400, 422]

@@ -1,0 +1,495 @@
+name: lago-taxes-addons-invoices
+description: |
+  Probe Lago's tax, add-on, one-off invoice, and subscription lifecycle:
+  negative rates, boundary amounts, termination edge cases, and webhook config.
+config:
+  timeoutSeconds: 600
+items:
+  - $ref: ../shared/lago-postgres.yaml
+  - $ref: ../shared/lago-redis.yaml
+  - $ref: ../shared/lago-api.yaml
+
+variables:
+  apiKey: dokkimi-test-api-key-lago-123
+tests:
+  - name: Tax, add-on, invoice, and lifecycle probes
+    steps:
+      - name: Health check
+        action:
+          type: httpRequest
+          method: GET
+          url: lago-api/health
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+
+      # --- Setup ---
+      - name: Create customer
+        action:
+          type: httpRequest
+          method: POST
+          url: lago-api/api/v1/customers
+          headers:
+            Content-Type: application/json
+            Authorization: 'Bearer {{apiKey}}'
+          body:
+            customer:
+              external_id: tax-cust-001
+              name: Tax Test Customer
+              email: tax@dokkimi.com
+              currency: USD
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+
+      # ==========================================
+      # TAX PROBES
+      # ==========================================
+
+      - name: Create valid tax (20% VAT)
+        action:
+          type: httpRequest
+          method: POST
+          url: lago-api/api/v1/taxes
+          headers:
+            Content-Type: application/json
+            Authorization: 'Bearer {{apiKey}}'
+          body:
+            tax:
+              name: Standard VAT
+              code: standard-vat
+              rate: '20.0'
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+
+      - name: 'PROBE: Tax with negative rate'
+        stopOnFailure: false
+        action:
+          type: httpRequest
+          method: POST
+          url: lago-api/api/v1/taxes
+          headers:
+            Content-Type: application/json
+            Authorization: 'Bearer {{apiKey}}'
+          body:
+            tax:
+              name: Negative Tax
+              code: negative-tax
+              rate: '-10.0'
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [200, 400, 422]
+
+      - name: 'PROBE: Tax with rate > 100%'
+        stopOnFailure: false
+        action:
+          type: httpRequest
+          method: POST
+          url: lago-api/api/v1/taxes
+          headers:
+            Content-Type: application/json
+            Authorization: 'Bearer {{apiKey}}'
+          body:
+            tax:
+              name: Extreme Tax
+              code: extreme-tax
+              rate: '250.0'
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [200, 400, 422]
+
+      - name: 'PROBE: Tax with zero rate'
+        stopOnFailure: false
+        action:
+          type: httpRequest
+          method: POST
+          url: lago-api/api/v1/taxes
+          headers:
+            Content-Type: application/json
+            Authorization: 'Bearer {{apiKey}}'
+          body:
+            tax:
+              name: Zero Tax
+              code: zero-tax
+              rate: '0.0'
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [200, 400, 422]
+
+      - name: 'PROBE: Tax with absurdly large rate'
+        stopOnFailure: false
+        action:
+          type: httpRequest
+          method: POST
+          url: lago-api/api/v1/taxes
+          headers:
+            Content-Type: application/json
+            Authorization: 'Bearer {{apiKey}}'
+          body:
+            tax:
+              name: Absurd Tax
+              code: absurd-tax
+              rate: '99999999.0'
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [200, 400, 422]
+
+      # ==========================================
+      # ADD-ON PROBES
+      # ==========================================
+
+      - name: Create valid add-on
+        action:
+          type: httpRequest
+          method: POST
+          url: lago-api/api/v1/add_ons
+          headers:
+            Content-Type: application/json
+            Authorization: 'Bearer {{apiKey}}'
+          body:
+            add_on:
+              name: Setup Fee
+              code: setup-fee
+              amount_cents: 5000
+              amount_currency: USD
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+
+      - name: 'PROBE: Add-on with negative amount'
+        stopOnFailure: false
+        action:
+          type: httpRequest
+          method: POST
+          url: lago-api/api/v1/add_ons
+          headers:
+            Content-Type: application/json
+            Authorization: 'Bearer {{apiKey}}'
+          body:
+            add_on:
+              name: Negative Add-on
+              code: negative-addon
+              amount_cents: -5000
+              amount_currency: USD
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [200, 400, 422]
+
+      - name: 'PROBE: Add-on with zero amount'
+        stopOnFailure: false
+        action:
+          type: httpRequest
+          method: POST
+          url: lago-api/api/v1/add_ons
+          headers:
+            Content-Type: application/json
+            Authorization: 'Bearer {{apiKey}}'
+          body:
+            add_on:
+              name: Free Add-on
+              code: free-addon
+              amount_cents: 0
+              amount_currency: USD
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [200, 400, 422]
+
+      - name: 'PROBE: Add-on with huge amount'
+        stopOnFailure: false
+        action:
+          type: httpRequest
+          method: POST
+          url: lago-api/api/v1/add_ons
+          headers:
+            Content-Type: application/json
+            Authorization: 'Bearer {{apiKey}}'
+          body:
+            add_on:
+              name: Huge Add-on
+              code: huge-addon
+              amount_cents: 99999999999999
+              amount_currency: USD
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [200, 400, 422]
+
+      # ==========================================
+      # ONE-OFF INVOICE PROBES
+      # ==========================================
+
+      - name: Create one-off invoice (valid)
+        action:
+          type: httpRequest
+          method: POST
+          url: lago-api/api/v1/invoices
+          headers:
+            Content-Type: application/json
+            Authorization: 'Bearer {{apiKey}}'
+          body:
+            invoice:
+              external_customer_id: tax-cust-001
+              currency: USD
+              fees:
+                - add_on_code: setup-fee
+                  units: '1'
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+
+      - name: 'PROBE: Invoice with negative unit_amount_cents override'
+        stopOnFailure: false
+        action:
+          type: httpRequest
+          method: POST
+          url: lago-api/api/v1/invoices
+          headers:
+            Content-Type: application/json
+            Authorization: 'Bearer {{apiKey}}'
+          body:
+            invoice:
+              external_customer_id: tax-cust-001
+              currency: USD
+              fees:
+                - add_on_code: setup-fee
+                  units: '1'
+                  unit_amount_cents: -5000
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [200, 400, 422]
+
+      - name: 'PROBE: Invoice with zero units'
+        stopOnFailure: false
+        action:
+          type: httpRequest
+          method: POST
+          url: lago-api/api/v1/invoices
+          headers:
+            Content-Type: application/json
+            Authorization: 'Bearer {{apiKey}}'
+          body:
+            invoice:
+              external_customer_id: tax-cust-001
+              currency: USD
+              fees:
+                - add_on_code: setup-fee
+                  units: '0'
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [200, 400, 422]
+
+      - name: 'PROBE: Invoice with nonexistent add-on code'
+        stopOnFailure: false
+        action:
+          type: httpRequest
+          method: POST
+          url: lago-api/api/v1/invoices
+          headers:
+            Content-Type: application/json
+            Authorization: 'Bearer {{apiKey}}'
+          body:
+            invoice:
+              external_customer_id: tax-cust-001
+              currency: USD
+              fees:
+                - add_on_code: totally-fake-addon
+                  units: '1'
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [404, 422]
+
+      - name: 'PROBE: Invoice for nonexistent customer'
+        stopOnFailure: false
+        action:
+          type: httpRequest
+          method: POST
+          url: lago-api/api/v1/invoices
+          headers:
+            Content-Type: application/json
+            Authorization: 'Bearer {{apiKey}}'
+          body:
+            invoice:
+              external_customer_id: ghost-invoice-customer
+              currency: USD
+              fees:
+                - add_on_code: setup-fee
+                  units: '1'
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [200, 404, 422]
+
+      # ==========================================
+      # SUBSCRIPTION LIFECYCLE PROBES
+      # ==========================================
+
+      - name: Create plan for lifecycle tests
+        action:
+          type: httpRequest
+          method: POST
+          url: lago-api/api/v1/plans
+          headers:
+            Content-Type: application/json
+            Authorization: 'Bearer {{apiKey}}'
+          body:
+            plan:
+              name: Lifecycle Plan
+              code: lifecycle-plan
+              interval: monthly
+              amount_cents: 5000
+              amount_currency: USD
+              pay_in_advance: false
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+
+      - name: Create subscription for lifecycle tests
+        action:
+          type: httpRequest
+          method: POST
+          url: lago-api/api/v1/subscriptions
+          headers:
+            Content-Type: application/json
+            Authorization: 'Bearer {{apiKey}}'
+          body:
+            subscription:
+              external_customer_id: tax-cust-001
+              plan_code: lifecycle-plan
+              external_id: lifecycle-sub-001
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+
+      - name: Terminate subscription
+        action:
+          type: httpRequest
+          method: DELETE
+          url: lago-api/api/v1/subscriptions/lifecycle-sub-001
+          headers:
+            Authorization: 'Bearer {{apiKey}}'
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+
+      - name: 'PROBE: Terminate already-terminated subscription'
+        stopOnFailure: false
+        action:
+          type: httpRequest
+          method: DELETE
+          url: lago-api/api/v1/subscriptions/lifecycle-sub-001
+          headers:
+            Authorization: 'Bearer {{apiKey}}'
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [200, 404, 409, 422]
+
+      - name: 'PROBE: Terminate nonexistent subscription'
+        stopOnFailure: false
+        action:
+          type: httpRequest
+          method: DELETE
+          url: lago-api/api/v1/subscriptions/totally-fake-sub
+          headers:
+            Authorization: 'Bearer {{apiKey}}'
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [404, 422]
+
+      # ==========================================
+      # WEBHOOK ENDPOINT PROBES
+      # ==========================================
+
+      - name: 'PROBE: Webhook with invalid URL'
+        stopOnFailure: false
+        action:
+          type: httpRequest
+          method: POST
+          url: lago-api/api/v1/webhook_endpoints
+          headers:
+            Content-Type: application/json
+            Authorization: 'Bearer {{apiKey}}'
+          body:
+            webhook_endpoint:
+              webhook_url: not-a-url
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [200, 400, 422]
+
+      - name: 'PROBE: Webhook with javascript: URL'
+        stopOnFailure: false
+        action:
+          type: httpRequest
+          method: POST
+          url: lago-api/api/v1/webhook_endpoints
+          headers:
+            Content-Type: application/json
+            Authorization: 'Bearer {{apiKey}}'
+          body:
+            webhook_endpoint:
+              webhook_url: 'javascript:alert(1)'
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [200, 400, 422]
+
+      - name: 'PROBE: Webhook with internal/SSRF URL'
+        stopOnFailure: false
+        action:
+          type: httpRequest
+          method: POST
+          url: lago-api/api/v1/webhook_endpoints
+          headers:
+            Content-Type: application/json
+            Authorization: 'Bearer {{apiKey}}'
+          body:
+            webhook_endpoint:
+              webhook_url: 'http://169.254.169.254/latest/meta-data/'
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [200, 400, 422]

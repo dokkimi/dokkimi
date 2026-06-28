@@ -1,0 +1,4 @@
+type: DATABASE
+name: lago-redis
+database: redis
+dbPassword: changeme
