@@ -1,0 +1,17 @@
+type: SERVICE
+name: traffic-tester
+image: ghcr.io/dokkimi/traffic-tester:0.1.0
+port: 4000
+healthCheck: /health
+stage: 1
+env:
+  - name: DB_HOST
+    value: postgres-db
+  - name: DB_PORT
+    value: '5432'
+  - name: DB_NAME
+    value: '{{dbName}}'
+  - name: DB_USER
+    value: '{{dbUser}}'
+  - name: DB_PASSWORD
+    value: '{{dbPassword}}'

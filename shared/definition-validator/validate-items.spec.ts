@@ -103,6 +103,131 @@ describe('validateItem', () => {
     });
   });
 
+  describe('stage', () => {
+    it('accepts stage on SERVICE', () => {
+      const r = makeResult();
+      validateItem(
+        {
+          type: 'SERVICE',
+          name: 'svc',
+          port: 3000,
+          healthCheck: '/h',
+          stage: 1,
+        },
+        0,
+        '/f.json',
+        r,
+        fs,
+      );
+      expect(r.errors).toHaveLength(0);
+    });
+
+    it('accepts stage on DATABASE', () => {
+      const r = makeResult();
+      validateItem(
+        { type: 'DATABASE', name: 'db', database: 'postgres', stage: 0 },
+        0,
+        '/f.json',
+        r,
+        fs,
+      );
+      expect(r.errors).toHaveLength(0);
+    });
+
+    it('accepts stage on BROKER', () => {
+      const r = makeResult();
+      validateItem(
+        { type: 'BROKER', name: 'mq', broker: 'amqp', stage: 2 },
+        0,
+        '/f.json',
+        r,
+        fs,
+      );
+      expect(r.errors).toHaveLength(0);
+    });
+
+    it('warns on stage on MOCK (unknown property)', () => {
+      const r = makeResult();
+      validateItem(
+        {
+          type: 'MOCK',
+          name: 'mock',
+          mockTarget: 'api.example.com',
+          mockPath: '/foo',
+          mockResponseStatus: 200,
+          stage: 1,
+        },
+        0,
+        '/f.json',
+        r,
+        fs,
+      );
+      expect(
+        r.warnings.some((w) => w.includes('unknown property "stage"')),
+      ).toBe(true);
+    });
+
+    it('errors on negative stage', () => {
+      const r = makeResult();
+      validateItem(
+        {
+          type: 'SERVICE',
+          name: 'svc',
+          port: 3000,
+          healthCheck: '/h',
+          stage: -1,
+        },
+        0,
+        '/f.json',
+        r,
+        fs,
+      );
+      expect(r.errors.some((e) => e.includes('non-negative integer'))).toBe(
+        true,
+      );
+    });
+
+    it('errors on non-integer stage', () => {
+      const r = makeResult();
+      validateItem(
+        {
+          type: 'SERVICE',
+          name: 'svc',
+          port: 3000,
+          healthCheck: '/h',
+          stage: 1.5,
+        },
+        0,
+        '/f.json',
+        r,
+        fs,
+      );
+      expect(r.errors.some((e) => e.includes('non-negative integer'))).toBe(
+        true,
+      );
+    });
+
+    it('errors on string stage', () => {
+      const r = makeResult();
+      validateItem(
+        {
+          type: 'SERVICE',
+          name: 'svc',
+          port: 3000,
+          healthCheck: '/h',
+          stage: 'first',
+        },
+        0,
+        '/f.json',
+        r,
+        fs,
+      );
+      expect(r.errors.some((e) => e.includes('non-negative integer'))).toBe(
+        true,
+      );
+    });
+  });
+
   describe('SERVICE', () => {
     it('validates a valid service', () => {
       const r = makeResult();

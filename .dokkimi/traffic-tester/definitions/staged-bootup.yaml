@@ -1,0 +1,42 @@
+name: staged-bootup
+description: |
+  Validates staged bootup: postgres deploys at stage 0 and becomes healthy
+  before the traffic-tester service deploys at stage 1. The service connects
+  to postgres on startup — without staging it would crash.
+config:
+  timeoutSeconds: 120
+items:
+  - $ref: ../shared/postgres-staged.yaml
+  - $ref: ../shared/service-staged.yaml
+
+variables:
+  dbName: testdb
+  dbUser: postgres
+  dbPassword: postgres
+tests:
+  - name: Staged services are healthy and connected
+    steps:
+      - name: Service is healthy (implies postgres was up first)
+        action:
+          type: httpRequest
+          method: GET
+          url: traffic-tester/health
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+
+      - name: Query postgres through service
+        action:
+          type: dbQuery
+          database: postgres-db
+          query: SELECT 1 AS result
+        assertions:
+          - assertions:
+              - path: $.response.success
+                operator: eq
+                value: true
+              - path: $.response.data[0].result
+                operator: eq
+                value: 1

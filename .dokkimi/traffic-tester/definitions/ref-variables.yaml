@@ -1,0 +1,43 @@
+name: ref-variables
+description: |
+  Validates that {{VAR}} references in $ref'd shared fragments resolve
+  correctly from definition-level variables. The postgres fragment uses
+  {{dbUser}} and {{dbPassword}}, and the service fragment uses {{dbName}},
+  {{dbUser}}, and {{dbPassword}} in its env vars.
+config:
+  timeoutSeconds: 120
+items:
+  - $ref: ../shared/postgres-staged.yaml
+  - $ref: ../shared/service-staged.yaml
+
+variables:
+  dbName: ref-var-test
+  dbUser: testuser
+  dbPassword: testpass123
+tests:
+  - name: Variables resolved into fragments
+    steps:
+      - name: Service is healthy (env vars from variables resolved)
+        action:
+          type: httpRequest
+          method: GET
+          url: traffic-tester/health
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+
+      - name: Postgres accepts connection with variable-sourced credentials
+        action:
+          type: dbQuery
+          database: postgres-db
+          query: SELECT current_user
+        assertions:
+          - assertions:
+              - path: $.response.success
+                operator: eq
+                value: true
+              - path: $.response.data[0].current_user
+                operator: eq
+                value: testuser
