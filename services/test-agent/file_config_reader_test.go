@@ -13,10 +13,10 @@ func TestFileConfigReader_ReadConfigData(t *testing.T) {
 		configPath := filepath.Join(dir, "config.json")
 
 		data := map[string]string{
-			"expectedNamespaceItemIds": `["item-1","item-2"]`,
-			"testConfig":               `{"testRunId":"run-1","timeoutSeconds":60,"executionMode":"auto","tests":[]}`,
-			"urlMap":                   `{"api-gateway":{"scheme":"http","url":"http://api-gateway","name":"api-gateway","instanceItemId":"item-1"}}`,
-			"databaseMap":              `{"postgres-db":{"type":"postgresql","user":"dokkimi","password":"dokkimi","database":"dokkimi","instanceItemId":"item-2"}}`,
+			"expectedItemStages": `[["item-1","item-2"]]`,
+			"testConfig":         `{"testRunId":"run-1","timeoutSeconds":60,"executionMode":"auto","tests":[]}`,
+			"urlMap":             `{"api-gateway":{"scheme":"http","url":"http://api-gateway","name":"api-gateway","instanceItemId":"item-1"}}`,
+			"databaseMap":        `{"postgres-db":{"type":"postgresql","user":"dokkimi","password":"dokkimi","database":"dokkimi","instanceItemId":"item-2"}}`,
 		}
 		raw, _ := json.Marshal(data)
 		os.WriteFile(configPath, raw, 0644)
@@ -27,8 +27,8 @@ func TestFileConfigReader_ReadConfigData(t *testing.T) {
 			t.Fatalf("unexpected error: %v", err)
 		}
 
-		if len(result.ExpectedNamespaceItemIds) != 2 {
-			t.Errorf("expected 2 namespace item IDs, got %d", len(result.ExpectedNamespaceItemIds))
+		if len(result.ExpectedItemStages) != 1 || len(result.ExpectedItemStages[0]) != 2 {
+			t.Errorf("expected 1 stage with 2 items, got %d stages", len(result.ExpectedItemStages))
 		}
 		if result.TestConfig == nil {
 			t.Fatal("expected testConfig to be set")

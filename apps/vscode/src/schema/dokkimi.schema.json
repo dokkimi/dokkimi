@@ -55,7 +55,7 @@
         },
         "items": {
           "type": "array",
-          "description": "Items to deploy: services, databases, and mocks.",
+          "description": "Items to deploy: services, databases, brokers, and mocks.",
           "items": { "$ref": "#/definitions/AnyItem" }
         },
         "variables": {
@@ -136,6 +136,11 @@
         "description": {
           "type": "string",
           "description": "Human-readable description."
+        },
+        "stage": {
+          "type": "integer",
+          "description": "Bootup stage (0-based). Stage N+1 waits until all stage N items are healthy. Defaults to 0.",
+          "minimum": 0
         },
         "image": {
           "type": "string",
@@ -240,6 +245,11 @@
           "type": "string",
           "description": "Human-readable description."
         },
+        "stage": {
+          "type": "integer",
+          "description": "Bootup stage (0-based). Stage N+1 waits until all stage N items are healthy. Defaults to 0.",
+          "minimum": 0
+        },
         "database": {
           "type": "string",
           "description": "Database engine type.",
@@ -314,6 +324,11 @@
         "description": {
           "type": "string",
           "description": "Human-readable description."
+        },
+        "stage": {
+          "type": "integer",
+          "description": "Bootup stage (0-based). Stage N+1 waits until all stage N items are healthy. Defaults to 0.",
+          "minimum": 0
         },
         "broker": {
           "type": "string",

@@ -456,6 +456,16 @@ export function validateItem(
     );
   }
 
+  if (item.stage !== undefined) {
+    if (
+      typeof item.stage !== 'number' ||
+      !Number.isInteger(item.stage) ||
+      item.stage < 0
+    ) {
+      err(r, `${label}: "stage" must be a non-negative integer`);
+    }
+  }
+
   const validKeys = VALID_ITEM_KEYS[type];
   if (validKeys) {
     checkUnknownKeys(item, validKeys, label, r);

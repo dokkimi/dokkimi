@@ -53,7 +53,7 @@ export class DockerConfigService {
       tests: Record<string, unknown>[];
       variables?: Record<string, unknown>;
     },
-    expectedNamespaceItemIds?: string[],
+    expectedItemStages?: string[][],
   ): void {
     const configMap = this.configMapBuilder.buildInterceptorConfigMap(
       `dokkimi-run-${instanceId}`,
@@ -61,7 +61,7 @@ export class DockerConfigService {
       mocks,
       instanceId,
       testConfig,
-      expectedNamespaceItemIds,
+      expectedItemStages,
     );
 
     const configData = configMap.data || {};

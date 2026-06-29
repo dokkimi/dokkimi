@@ -533,11 +533,11 @@ describe('ConfigMapBuilderService', () => {
     });
   });
 
-  describe('buildInterceptorConfigMap - expectedNamespaceItemIds', () => {
+  describe('buildInterceptorConfigMap - expectedItemStages', () => {
     const namespace = 'dokkimi-test-namespace';
 
-    it('should include expectedNamespaceItemIds when provided with values', () => {
-      const ids = ['item-1', 'item-2', 'item-3'];
+    it('should include expectedItemStages when provided with values', () => {
+      const stages = [['item-1', 'item-2'], ['item-3']];
 
       const configMap = service.buildInterceptorConfigMap(
         namespace,
@@ -545,16 +545,14 @@ describe('ConfigMapBuilderService', () => {
         [],
         undefined,
         undefined,
-        ids,
+        stages,
       );
 
-      const parsed = JSON.parse(
-        configMap.data?.expectedNamespaceItemIds || '[]',
-      );
-      expect(parsed).toEqual(ids);
+      const parsed = JSON.parse(configMap.data?.expectedItemStages || '[]');
+      expect(parsed).toEqual(stages);
     });
 
-    it('should not include expectedNamespaceItemIds when array is empty', () => {
+    it('should not include expectedItemStages when array is empty', () => {
       const configMap = service.buildInterceptorConfigMap(
         namespace,
         [],
@@ -564,13 +562,13 @@ describe('ConfigMapBuilderService', () => {
         [],
       );
 
-      expect(configMap.data?.expectedNamespaceItemIds).toBeUndefined();
+      expect(configMap.data?.expectedItemStages).toBeUndefined();
     });
 
-    it('should not include expectedNamespaceItemIds when not provided', () => {
+    it('should not include expectedItemStages when not provided', () => {
       const configMap = service.buildInterceptorConfigMap(namespace, [], []);
 
-      expect(configMap.data?.expectedNamespaceItemIds).toBeUndefined();
+      expect(configMap.data?.expectedItemStages).toBeUndefined();
     });
   });
 

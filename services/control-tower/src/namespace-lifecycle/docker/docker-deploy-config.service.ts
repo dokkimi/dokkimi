@@ -5,7 +5,10 @@ import {
   InstanceConfigPaths,
 } from './docker-config.service';
 import { sanitizeContainerName } from '../../utils/name.utils';
-import { DeploymentContext } from '../deployment-context.types';
+import {
+  DeploymentContext,
+  groupItemsByStage,
+} from '../deployment-context.types';
 import { hasUiSteps } from '../ui-step-detection';
 
 @Injectable()
@@ -68,7 +71,7 @@ export class DockerDeployConfigService {
           variables?: Record<string, unknown>;
         }
       | undefined;
-    let expectedNamespaceItemIds: string[] | undefined;
+    let expectedItemStages: string[][] | undefined;
 
     if (ctx.definition.tests?.length) {
       testConfig = {
@@ -79,14 +82,20 @@ export class DockerDeployConfigService {
         variables: ctx.definition.variables,
       };
 
-      expectedNamespaceItemIds = items
-        .filter((item) => item.type !== 'MOCK')
-        .map((item) => ctx.instanceItemIds.get(item.name))
-        .filter((id): id is string => id !== undefined);
+      const itemStages = groupItemsByStage(items);
+      expectedItemStages = itemStages.map((stage) =>
+        stage
+          .map((item) => ctx.instanceItemIds.get(item.name))
+          .filter((id): id is string => !!id),
+      );
 
+      // Chromium added to final stage — keep in sync with docker-deployer.service.ts (deployStageItems)
       const chromiumItemId = ctx.instanceItemIds.get('chromium');
       if (hasUiSteps(ctx.definition) && chromiumItemId) {
-        expectedNamespaceItemIds.push(chromiumItemId);
+        if (expectedItemStages.length === 0) {
+          expectedItemStages.push([]);
+        }
+        expectedItemStages[expectedItemStages.length - 1].push(chromiumItemId);
       }
     }
 
@@ -96,7 +105,7 @@ export class DockerDeployConfigService {
       mocks,
       ctx.instanceId,
       testConfig,
-      expectedNamespaceItemIds,
+      expectedItemStages,
     );
   }
 

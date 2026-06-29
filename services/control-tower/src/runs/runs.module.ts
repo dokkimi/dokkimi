@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { RunsController } from './runs.controller';
 import { TestCompletionController } from './test-completion.controller';
+import { InstanceStageController } from './instance-stage.controller';
 import { RunsService } from './runs.service';
 import { RunCleanupService } from './run-cleanup.service';
 import { DeploymentSchedulerService } from './deployment-scheduler.service';
@@ -9,7 +10,11 @@ import { StorageModule } from '../storage/storage.module';
 import { PrismaModule } from '../prisma/prisma.module';
 @Module({
   imports: [NamespaceLifecycleModule, StorageModule, PrismaModule],
-  controllers: [RunsController, TestCompletionController],
+  controllers: [
+    RunsController,
+    TestCompletionController,
+    InstanceStageController,
+  ],
   providers: [RunsService, RunCleanupService, DeploymentSchedulerService],
   exports: [RunsService],
 })

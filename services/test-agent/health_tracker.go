@@ -28,13 +28,35 @@ func NewHealthTracker(expectedItemIds []string, testExecutionLogger *TestExecuti
 		healthMap[id] = false // Initially not ready
 	}
 
-	return &HealthTracker{
+	ht := &HealthTracker{
 		expectedItemIds:     expectedMap,
 		healthStatus:        healthMap,
 		itemIdToName:        itemIdToName,
 		allReadyChan:        make(chan struct{}),
 		testExecutionLogger: testExecutionLogger,
 	}
+	ht.checkAndSignalAllReady()
+	return ht
+}
+
+// Reset swaps in a new set of expected items and creates a fresh allReadyChan.
+// Used for staged bootup: after stage N is healthy, Reset is called with stage N+1's item IDs.
+// Health updates for items not in the new expected set are harmlessly dropped.
+func (h *HealthTracker) Reset(expectedItemIds []string) {
+	h.mutex.Lock()
+	defer h.mutex.Unlock()
+
+	h.expectedItemIds = make(map[string]bool)
+	h.healthStatus = make(map[string]bool)
+	for _, id := range expectedItemIds {
+		h.expectedItemIds[id] = true
+		h.healthStatus[id] = false
+	}
+	h.allReadyChan = make(chan struct{})
+	h.allReadyOnce = sync.Once{}
+
+	log.Printf("Health tracker reset: now tracking %d items", len(expectedItemIds))
+	h.checkAndSignalAllReady()
 }
 
 // resolveName returns the human-readable name for an item ID, falling back to the ID itself
@@ -68,7 +90,11 @@ func (h *HealthTracker) UpdateHealth(itemId string, ready bool) {
 		}
 	}
 
-	// Check if all items are now ready
+	h.checkAndSignalAllReady()
+}
+
+// checkAndSignalAllReady closes allReadyChan if all expected items are ready (caller must hold the lock or guarantee exclusive access)
+func (h *HealthTracker) checkAndSignalAllReady() {
 	if h.allReady() {
 		h.allReadyOnce.Do(func() {
 			close(h.allReadyChan)

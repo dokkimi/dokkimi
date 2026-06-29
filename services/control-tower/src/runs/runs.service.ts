@@ -197,11 +197,10 @@ export class RunsService implements OnApplicationBootstrap {
     );
 
     const def = definition as unknown as Record<string, unknown>;
-    const defItems = (def.items as any[]) || [];
     const defTests = (def.tests as any[]) || [];
 
     const itemTypes = { service: 0, database: 0, broker: 0, mock: 0 };
-    for (const item of defItems) {
+    for (const item of definition.items as any[]) {
       const type = (item.type || '').toUpperCase();
       if (type === 'SERVICE') {
         itemTypes.service++;
@@ -235,7 +234,7 @@ export class RunsService implements OnApplicationBootstrap {
       has_tests: defTests.length > 0,
       test_count: defTests.length,
       total_step_count: totalStepCount,
-      has_init_files: defItems.some((i: any) => i.initFiles),
+      has_init_files: (definition.items as any[]).some((i: any) => i.initFiles),
       has_extract: hasExtract,
     });
 
