@@ -1,4 +1,4 @@
 type: DATABASE
 name: lago-redis
 database: redis
-dbPassword: changeme
+dbPassword: '{{dbPassword}}'

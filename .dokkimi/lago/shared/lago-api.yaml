@@ -1,5 +1,6 @@
 type: SERVICE
 name: lago-api
+stage: 1
 image: getlago/api:v1.48.1
 port: 3000
 healthCheck: /health
@@ -9,11 +10,11 @@ mountFiles:
     target: /app/scripts/dokkimi-entrypoint.sh
 env:
   - name: DATABASE_URL
-    value: postgresql://lago:changeme@lago-postgres:5432/lago
+    value: postgresql://lago:{{dbPassword}}@lago-postgres:5432/lago
   - name: REDIS_URL
-    value: redis://:changeme@lago-redis:6379
+    value: redis://:{{dbPassword}}@lago-redis:6379
   - name: REDIS_PASSWORD
-    value: changeme
+    value: '{{dbPassword}}'
   - name: SECRET_KEY_BASE
     value: a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2
   - name: RAILS_ENV
@@ -23,9 +24,9 @@ env:
   - name: LAGO_PDF_URL
     value: http://lago-pdf:3000
   - name: LAGO_REDIS_CACHE_URL
-    value: redis://:changeme@lago-redis:6379
+    value: redis://:{{dbPassword}}@lago-redis:6379
   - name: LAGO_REDIS_CACHE_PASSWORD
-    value: changeme
+    value: '{{dbPassword}}'
   - name: LAGO_ENCRYPTION_PRIMARY_KEY
     value: dokkimi-test-encryption-primary-key-1234
   - name: LAGO_ENCRYPTION_DETERMINISTIC_KEY

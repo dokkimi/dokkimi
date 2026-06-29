@@ -4,4 +4,4 @@ database: postgres
 image: getlago/postgres-partman:15.0-alpine
 dbName: lago
 dbUser: lago
-dbPassword: changeme
+dbPassword: '{{dbPassword}}'

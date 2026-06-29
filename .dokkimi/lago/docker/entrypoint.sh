@@ -7,18 +7,6 @@ ruby -e "require 'openssl'; File.write('/app/config/keys/private.pem', OpenSSL::
 echo "Patching dev-only gem..."
 sed -i 's/require "annotate_rb"/require "annotate_rb" rescue nil/' /app/lib/tasks/annotate_rb.rake 2>/dev/null || true
 
-echo "Waiting for PostgreSQL..."
-until pg_isready -h lago-postgres -p 5432 -q 2>/dev/null; do
-  sleep 2
-done
-echo "PostgreSQL is ready."
-
-echo "Waiting for Redis..."
-until bash -c "echo > /dev/tcp/lago-redis/6379" 2>/dev/null; do
-  sleep 2
-done
-echo "Redis is ready."
-
 echo "Running migrations..."
 bundle exec rails db:migrate 2>&1
 

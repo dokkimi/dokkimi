@@ -16,6 +16,7 @@ items:
   - $ref: ../shared/mock-webhook-receiver.yaml
 
 variables:
+  dbPassword: changeme
   apiKey: dokkimi-test-api-key-lago-123
 tests:
   # ==========================================

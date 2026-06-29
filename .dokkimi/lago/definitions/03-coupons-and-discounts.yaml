@@ -10,6 +10,7 @@ items:
   - $ref: ../shared/lago-api.yaml
 
 variables:
+  dbPassword: changeme
   apiKey: dokkimi-test-api-key-lago-123
 tests:
   - name: Coupon probes
