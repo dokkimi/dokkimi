@@ -92,7 +92,7 @@ env:
   <p>After resolution, the image becomes <code>ghcr.io/dokkimi/my-service:v1.2.3</code>.</p>
 
   <div class="callout">
-    <p><strong>$&#123;&#123;VAR&#125;&#125; vs &#123;&#123;VAR&#125;&#125;</strong> — These are different systems. <code>$&#123;&#123;VAR&#125;&#125;</code> is resolved at build time from the config file. <code>&#123;&#123;VAR&#125;&#125;</code> is resolved at runtime from test <a href="/docs/variables">variables</a>. If a <code>$&#123;&#123;VAR&#125;&#125;</code> reference doesn't match any key in <code>env</code>, the resolver errors.</p>
+    <p><strong>$&#123;&#123;VAR&#125;&#125; vs &#123;&#123;VAR&#125;&#125;</strong> — <code>$&#123;&#123;VAR&#125;&#125;</code> always resolves from <code>config.yaml</code> <code>env</code> only. <code>&#123;&#123;VAR&#125;&#125;</code> resolves at build time in <strong>item fields</strong> (from a map seeded with config.yaml env, then definition-level <a href="/docs/variables">variables</a> merged on top) and at runtime in <strong>test steps</strong> (from test variables, loops, and extraction). For keys not overridden by a definition variable, <code>&#123;&#123;FOO&#125;&#125;</code> and <code>$&#123;&#123;FOO&#125;&#125;</code> resolve to the same value. If a <code>$&#123;&#123;VAR&#125;&#125;</code> reference doesn't match any key in <code>env</code>, the resolver errors. Unresolved <code>&#123;&#123;VAR&#125;&#125;</code> in items is also an error.</p>
   </div>
 
   <h2>Isolation model</h2>

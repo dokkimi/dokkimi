@@ -125,18 +125,23 @@ Works in any string field — env values, URLs, mock bodies, etc.:
 
 ### `${{VAR}}` vs `{{VAR}}`
 
-These are different systems:
+These are related but distinct systems:
 
-| Syntax     | Resolved   | By                  | Purpose                                                    |
-| ---------- | ---------- | ------------------- | ---------------------------------------------------------- |
-| `${{VAR}}` | Build time | Definition resolver | Config values from `config.yaml` `env`                     |
-| `{{VAR}}`  | Runtime    | Test agent          | Variables from `variables` / `extract` in test definitions |
+| Syntax     | Resolved   | By                  | Scope                                                                        |
+| ---------- | ---------- | ------------------- | ---------------------------------------------------------------------------- |
+| `${{VAR}}` | Build time | Definition resolver | Config values from `config.yaml` `env` only                                  |
+| `{{VAR}}`  | Build time | Definition resolver | Item fields — merged map of `config.yaml` env + definition-level `variables` |
+| `{{VAR}}`  | Runtime    | Test agent          | Test steps — `variables` / `extract` / loop variables                        |
 
-If a `${{VAR}}` reference does not match any key in `env`, the resolver **errors**. Build-time references are intentional — an unresolved one is a mistake.
+In **item fields** (env values, images, passwords, etc.), `{{VAR}}` resolves at build time against a merged variables map: config.yaml `env` entries are loaded first, then definition-level `variables` are merged on top (overwriting collisions). Unresolved `{{VAR}}` in items is an error — items are fully resolved before they reach Control Tower.
+
+In **test steps** (action URLs, headers, body, queries, assertion values), `{{VAR}}` resolves at runtime by the test agent. Definition-level and test-level variables, loop variables, and extracted variables all resolve at runtime.
+
+`${{VAR}}` always and only resolves from `config.yaml` `env`. If a `${{VAR}}` reference does not match any key in `env`, the resolver **errors**.
 
 ### Combining both
 
-You can use `${{}}` inside a `variables` value to compose runtime variables from config:
+You can use `${{}}` inside a `variables` value to compose variables from config:
 
 ```json
 {
@@ -146,7 +151,35 @@ You can use `${{}}` inside a `variables` value to compose runtime variables from
 }
 ```
 
-This resolves `${{API_HOST}}` at build time, and the resulting string becomes a runtime variable accessible via `{{baseUrl}}` in test steps.
+This resolves `${{API_HOST}}` at build time. The resulting string becomes available as `{{baseUrl}}` — in item fields (resolved at build time) and in test steps (resolved at runtime).
+
+### Build-time `{{VAR}}` in items
+
+Definition-level `variables` can be used in item fields to share values across items:
+
+```yaml
+name: my-tests
+variables:
+  REDIS_PASSWORD: changeme
+items:
+  - type: DATABASE
+    name: my-redis
+    database: redis
+    dbPassword: '{{REDIS_PASSWORD}}'
+  - type: SERVICE
+    name: my-server
+    port: 3000
+    healthCheck: /health
+    env:
+      - name: REDIS_URL
+        value: 'redis://:{{REDIS_PASSWORD}}@my-redis:6379'
+```
+
+The password is defined once. Shared fragments referenced via `$ref` also pick up definition-level variables — fragments stay generic and reusable across definitions.
+
+Config.yaml `env` values are available as `{{VAR}}` in items too — they seed the merged map. For keys not overridden by a definition variable, `{{FOO}}` and `${{FOO}}` resolve to the same value. Definition-level variables override config.yaml keys with the same name.
+
+Variable values are not recursively resolved — if a variable's value contains `{{OTHER}}`, that inner reference stays literal. However, two-pass interaction with `${{}}` works: if `{{VAR}}` resolves to a string containing `${{KEY}}`, the subsequent `${{}}` pass resolves it from config.yaml.
 
 ---
 
@@ -1062,7 +1095,11 @@ Then have the SPA call `/api/...` (relative). The browser sees one origin; no pr
 
 ### Variable Interpolation
 
-Use `{{variableName}}` in action fields and assertion values. Variables come from three sources (in order of increasing precedence):
+`{{variableName}}` works in two contexts:
+
+**In item fields** (build time): `{{VAR}}` resolves against a merged map of config.yaml `env` + definition-level `variables`. Unresolved references are errors. See the "Build-time `{{VAR}}` in items" section above for details.
+
+**In test steps** (runtime): `{{variableName}}` resolves at runtime by the test agent. Variables come from three sources (in order of increasing precedence):
 
 1. **Definition-level `variables`** — shared across all tests in the definition
 2. **Test-level `variables`** — per-test overrides (overwrites definition-level values with the same key)

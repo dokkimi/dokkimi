@@ -62,9 +62,10 @@ User runs: dokkimi run [target]
        ▼
 ┌─ CLI ─────────────────────────────────────┐
 │ 1. Resolve definitions from .dokkimi/     │
-│ 2. Interpolate ${{VAR}} from config.yaml  │
-│ 3. Ensure background services running     │
-│ 4. POST /runs to Control Tower            │
+│ 2. Interpolate {{VAR}} in items           │
+│ 3. Interpolate ${{VAR}} from config.yaml  │
+│ 4. Ensure background services running     │
+│ 5. POST /runs to Control Tower            │
 └───────────────┬───────────────────────────┘
                 │
                 ▼
@@ -273,9 +274,10 @@ Before any run, the CLI resolves `.dokkimi/` definition files:
 1. **Scan** — find all `.json`, `.yaml`, `.yml` files in `.dokkimi/`
 2. **Parse** — YAML or JSON
 3. **Resolve `$ref`** — inline shared fragments from `shared/` directory
-4. **Interpolate `${{VAR}}`** — replace build-time variables from `config.yaml` env map
-5. **Validate** — check required fields, types, constraints
-6. **Submit** — send resolved definitions to Control Tower
+4. **Interpolate `{{VAR}}` in items** — replace build-time variables from merged map (config.yaml env + definition-level `variables`)
+5. **Interpolate `${{VAR}}`** — replace config references from `config.yaml` env map
+6. **Validate** — check required fields, types, constraints
+7. **Submit** — send resolved definitions to Control Tower
 
 ---
 
