@@ -7,6 +7,43 @@ import CodeBlock from '../../components/CodeBlock.astro';
   <h1>Release Notes</h1>
   <p class="subtitle">What's new in each release.</p>
 
+  <h2>v0.5.3</h2>
+  <p><time datetime="2026-06-29">June 29, 2026</time></p>
+
+  <h3>Staged bootup order</h3>
+  <p>Items now accept an optional <code>stage</code> property (non-negative integer, defaults to 0) that controls deployment order. Stage N+1 containers don't start until all stage N items are healthy &mdash; no more custom entrypoint scripts with wait loops.</p>
+  <CodeBlock code={`items:
+  - $ref: ../shared/postgres.yaml
+    stage: 0
+  - $ref: ../shared/redis.yaml
+    stage: 0
+  - $ref: ../shared/lago-api.yaml
+    stage: 1`} lang="yaml" />
+  <p>Stage 0 boots and becomes healthy, then stage 1 deploys. Works on SERVICE, DATABASE, and BROKER items. Existing definitions are unaffected &mdash; items without <code>stage</code> default to stage 0 (all parallel, same as before). Stage numbers are sort keys, not indices &mdash; gaps are fine. See the <a href="/docs/project-structure#staged-bootup-order">Staged bootup order</a> docs for details.</p>
+
+  <h3>Build-time <code>&#123;&#123;VAR&#125;&#125;</code> in item fields</h3>
+  <p><code>&#123;&#123;VAR&#125;&#125;</code> references now resolve at build time in item fields (env values, images, passwords, etc.), not just at runtime in test steps. The resolver builds a merged variable map: config.yaml <code>env</code> entries as baseline, then definition-level <code>variables</code> merged on top.</p>
+  <CodeBlock code={`variables:
+  REDIS_PASSWORD: changeme
+items:
+  - type: DATABASE
+    name: my-redis
+    database: redis
+    dbPassword: '{{REDIS_PASSWORD}}'
+  - type: SERVICE
+    name: my-server
+    port: 3000
+    healthCheck: /health
+    env:
+      - name: REDIS_URL
+        value: 'redis://:{{REDIS_PASSWORD}}@my-redis:6379'`} lang="yaml" />
+  <p>Shared fragments referenced via <code>$ref</code> also pick up definition-level variables &mdash; fragments stay generic and reusable across definitions. Unresolved <code>&#123;&#123;VAR&#125;&#125;</code> in items is an error. See <a href="/docs/variables#build-time-vs-runtime-variables">Build-time vs runtime variables</a> for the full resolution rules.</p>
+
+  <h3>Other</h3>
+  <ul>
+    <li>Broker items now included in test-agent's item ID &rarr; name mapping for health log readability</li>
+  </ul>
+
   <h2>v0.5.2</h2>
   <p><time datetime="2026-06-28">June 28, 2026</time></p>
 
