@@ -1,7 +1,10 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { DockerClientService } from './docker-client.service';
-import { DockerConfigService } from './docker-config.service';
-import { DockerCaService } from './docker-ca.service';
+import {
+  DockerConfigService,
+  InstanceConfigPaths,
+} from './docker-config.service';
+import { DockerCaService, CaBundlePaths } from './docker-ca.service';
 import { DockerLogCollectorService } from './docker-log-collector.service';
 import { DockerServiceGroupService } from './docker-service-group.service';
 import { DockerDatabaseGroupService } from './docker-database-group.service';
@@ -9,16 +12,34 @@ import { DockerBrokerGroupService } from './docker-broker-group.service';
 import { DockerDeployConfigService } from './docker-deploy-config.service';
 import { DockerImagePullerService } from './docker-image-puller.service';
 import { sanitizeContainerName } from '../../utils/name.utils';
-import { DeploymentContext } from '../deployment-context.types';
+import {
+  DeploymentContext,
+  DefinitionItem,
+  groupItemsByStage,
+} from '../deployment-context.types';
 import { InstanceItemService } from '../../namespace/instance-item.service';
 import { NamespaceInstanceService } from '../../namespace/namespace-instance.service';
 import { hasUiSteps } from '../ui-step-detection';
 import { InstanceStatus, ItemStatus } from '@prisma/client';
 
+interface DeploymentSession {
+  ctx: DeploymentContext;
+  networkName: string;
+  testAgentIP: string;
+  dockerDnsIP: string;
+  configPaths: InstanceConfigPaths;
+  caBundlePaths: CaBundlePaths;
+  directDnsNames: string[];
+  attachChromium: boolean;
+  itemStages: DefinitionItem[][];
+  onCrash?: (instanceId: string) => void;
+}
+
 @Injectable()
 export class DockerDeployerService {
   private readonly logger = new Logger(DockerDeployerService.name);
   private readonly crashMonitors = new Map<string, NodeJS.Timeout>();
+  private readonly deploymentSessions = new Map<string, DeploymentSession>();
 
   constructor(
     private readonly dockerClient: DockerClientService,
@@ -53,6 +74,7 @@ export class DockerDeployerService {
 
       await this.markMockItems(ctx);
 
+      // Pull all images across all stages upfront
       await this.imagePuller.pullAllImages(ctx, attachChromium);
 
       const networkName = await this.dockerClient.createNetwork(instanceId);
@@ -62,6 +84,7 @@ export class DockerDeployerService {
       const caBundlePaths =
         this.caService.prepareCaBundleForInstance(instanceId);
 
+      // DNS names for all databases/brokers across all stages
       const directDnsNames = ctx.definition.items
         .filter((i) => i.type === 'DATABASE' || i.type === 'BROKER')
         .map((i) => sanitizeContainerName(i.name));
@@ -85,7 +108,7 @@ export class DockerDeployerService {
       ]);
       this.throwOnSettledErrors(phase1Results);
 
-      // Resolve test-agent IP for GELF log driver (runs at daemon level, can't use network aliases)
+      // Resolve test-agent IP for GELF log driver
       const testAgentInfo = await this.dockerClient.inspectContainer(
         `test-agent-${instanceId}`,
       );
@@ -94,9 +117,140 @@ export class DockerDeployerService {
         throw new Error('Failed to get test-agent IP for GELF log driver');
       }
 
-      // Phase 2: All databases in parallel
-      const dbItems = ctx.definition.items.filter((i) => i.type === 'DATABASE');
-      const phase2Results = await Promise.allSettled(
+      // Group items by stage prop for staged deployment
+      const itemStages = groupItemsByStage(ctx.definition.items);
+
+      // Store deployment session for subsequent stage deployments
+      const session: DeploymentSession = {
+        ctx,
+        networkName,
+        testAgentIP,
+        dockerDnsIP,
+        configPaths,
+        caBundlePaths,
+        directDnsNames,
+        attachChromium,
+        itemStages,
+        onCrash,
+      };
+      this.deploymentSessions.set(instanceId, session);
+
+      // Deploy stage 0 items
+      const isFinalStage = itemStages.length <= 1;
+      await this.deployStageItems(session, 0);
+
+      if (isFinalStage) {
+        await this.instanceService.updateInstanceStatus(
+          instanceId,
+          InstanceStatus.RUNNING,
+        );
+      }
+
+      this.monitorForCrashedContainers(instanceId, onCrash);
+
+      this.logger.log(
+        `Docker deployment complete for instance ${instanceId} (stage 0/${itemStages.length - 1})`,
+      );
+    } catch (err) {
+      this.logger.error(`Deployment failed for instance ${instanceId}:`, err);
+      try {
+        await this.teardown(instanceId);
+      } catch (cleanupErr) {
+        this.logger.warn(`Teardown after failed deploy:`, cleanupErr);
+      }
+      await this.instanceService.updateInstanceStatus(
+        instanceId,
+        InstanceStatus.FAILED,
+      );
+      throw err;
+    }
+  }
+
+  async deployStage(instanceId: string, stage: number): Promise<void> {
+    const session = this.deploymentSessions.get(instanceId);
+    if (!session) {
+      throw new BadRequestException(
+        `No deployment session for instance ${instanceId}`,
+      );
+    }
+
+    const { ctx, itemStages } = session;
+    if (stage < 0 || stage >= itemStages.length) {
+      throw new BadRequestException(
+        `Invalid stage ${stage} — definition has ${itemStages.length} stages`,
+      );
+    }
+
+    // Idempotent: check if items in this stage are already deployed
+    const stageItems = itemStages[stage];
+    const stageItemIds = new Set(
+      stageItems.map((i) => ctx.instanceItemIds.get(i.name)).filter(Boolean),
+    );
+    if (stageItemIds.size > 0) {
+      const allInstanceItems =
+        await this.instanceItemService.findInstanceItems(instanceId);
+      const alreadyDeployed = allInstanceItems
+        .filter((ii) => stageItemIds.has(ii.id))
+        .every((ii) => ii.status !== 'PENDING');
+      if (alreadyDeployed) {
+        this.logger.log(
+          `Stage ${stage} already deployed for instance ${instanceId}`,
+        );
+        return;
+      }
+    }
+
+    try {
+      await this.deployStageItems(session, stage);
+
+      // Set RUNNING on final stage
+      if (stage === itemStages.length - 1) {
+        await this.instanceService.updateInstanceStatus(
+          instanceId,
+          InstanceStatus.RUNNING,
+        );
+      }
+
+      this.logger.log(`Stage ${stage} deployed for instance ${instanceId}`);
+    } catch (err) {
+      this.logger.error(
+        `Stage ${stage} deployment failed for instance ${instanceId}:`,
+        err,
+      );
+      try {
+        await this.teardown(instanceId);
+      } catch (cleanupErr) {
+        this.logger.warn(`Teardown after failed stage deploy:`, cleanupErr);
+      }
+      await this.instanceService.updateInstanceStatus(
+        instanceId,
+        InstanceStatus.FAILED,
+      );
+      throw err;
+    }
+  }
+
+  private async deployStageItems(
+    session: DeploymentSession,
+    stageIndex: number,
+  ): Promise<void> {
+    const {
+      ctx,
+      networkName,
+      testAgentIP,
+      dockerDnsIP,
+      configPaths,
+      caBundlePaths,
+      directDnsNames,
+      attachChromium,
+    } = session;
+    const instanceId = ctx.instanceId;
+    const stageItems = session.itemStages[stageIndex] || [];
+
+    // Phase: databases first (within this stage)
+    const dbItems = stageItems.filter((i) => i.type === 'DATABASE');
+    if (dbItems.length > 0) {
+      const dbResults = await Promise.allSettled(
         dbItems.map(async (item) => {
           const containerName = sanitizeContainerName(item.name);
           const instanceItemId = ctx.instanceItemIds.get(item.name);
@@ -129,13 +283,13 @@ export class DockerDeployerService {
           );
         }),
       );
-      this.throwOnSettledErrors(phase2Results);
+      this.throwOnSettledErrors(dbResults);
+    }
 
-      // Phase 2b: All brokers in parallel
-      const brokerItems = ctx.definition.items.filter(
-        (i) => i.type === 'BROKER',
-      );
-      const phase2bResults = await Promise.allSettled(
+    // Phase: brokers second
+    const brokerItems = stageItems.filter((i) => i.type === 'BROKER');
+    if (brokerItems.length > 0) {
+      const brokerResults = await Promise.allSettled(
         brokerItems.map(async (item) => {
           const containerName = sanitizeContainerName(item.name);
           const instanceItemId = ctx.instanceItemIds.get(item.name);
@@ -168,41 +322,45 @@ export class DockerDeployerService {
           );
         }),
       );
-      this.throwOnSettledErrors(phase2bResults);
+      this.throwOnSettledErrors(brokerResults);
+    }
 
-      // Phase 3: All services + chromium in parallel
-      const svcItems = ctx.definition.items.filter((i) => i.type === 'SERVICE');
-      const servicePromises = svcItems.map(async (item) => {
-        const containerName = sanitizeContainerName(item.name);
-        const instanceItemId = ctx.instanceItemIds.get(item.name);
+    // Phase: services third
+    const svcItems = stageItems.filter((i) => i.type === 'SERVICE');
+    const servicePromises = svcItems.map(async (item) => {
+      const containerName = sanitizeContainerName(item.name);
+      const instanceItemId = ctx.instanceItemIds.get(item.name);
 
-        if (instanceItemId) {
-          await this.instanceItemService.updateInstanceItemContainerName(
-            instanceItemId,
-            containerName,
-          );
-          await this.instanceItemService.updateInstanceItemStatus(
-            instanceItemId,
-            ItemStatus.STARTING,
-          );
-        }
-
-        await this.serviceGroup.createServiceGroup(
-          networkName,
-          instanceId,
-          item,
-          containerName,
+      if (instanceItemId) {
+        await this.instanceItemService.updateInstanceItemContainerName(
           instanceItemId,
-          dockerDnsIP,
-          configPaths,
-          caBundlePaths,
-          directDnsNames,
-          testAgentIP,
+          containerName,
         );
-      });
+        await this.instanceItemService.updateInstanceItemStatus(
+          instanceItemId,
+          ItemStatus.STARTING,
+        );
+      }
 
-      const chromiumItemId = ctx.instanceItemIds.get('chromium');
-      const chromiumPromise = attachChromium
+      await this.serviceGroup.createServiceGroup(
+        networkName,
+        instanceId,
+        item,
+        containerName,
+        instanceItemId,
+        dockerDnsIP,
+        configPaths,
+        caBundlePaths,
+        directDnsNames,
+        testAgentIP,
+      );
+    });
+
+    // Chromium deploys with the final stage — keep in sync with docker-deploy-config.service.ts (expectedItemStages)
+    const isFinalStage = stageIndex === session.itemStages.length - 1;
+    const chromiumItemId = ctx.instanceItemIds.get('chromium');
+    const chromiumPromise =
+      isFinalStage && attachChromium
         ? this.serviceGroup.createChromiumGroup(
             networkName,
             instanceId,
@@ -215,32 +373,12 @@ export class DockerDeployerService {
           )
         : Promise.resolve();
 
-      const phase3Results = await Promise.allSettled([
+    if (servicePromises.length > 0 || (isFinalStage && attachChromium)) {
+      const svcResults = await Promise.allSettled([
         ...servicePromises,
         chromiumPromise,
       ]);
-      this.throwOnSettledErrors(phase3Results);
-
-      await this.instanceService.updateInstanceStatus(
-        instanceId,
-        InstanceStatus.RUNNING,
-      );
-
-      this.monitorForCrashedContainers(instanceId, onCrash);
-
-      this.logger.log(`Docker deployment complete for instance ${instanceId}`);
-    } catch (err) {
-      this.logger.error(`Deployment failed for instance ${instanceId}:`, err);
-      try {
-        await this.teardown(instanceId);
-      } catch (cleanupErr) {
-        this.logger.warn(`Teardown after failed deploy:`, cleanupErr);
-      }
-      await this.instanceService.updateInstanceStatus(
-        instanceId,
-        InstanceStatus.FAILED,
-      );
-      throw err;
+      this.throwOnSettledErrors(svcResults);
     }
   }
 
@@ -270,7 +408,6 @@ export class DockerDeployerService {
           const errorMsg = `Container(s) crashed: ${names}`;
           this.logger.error(`${errorMsg} (instance ${instanceId})`);
 
-          // Only set FAILED if instance is still in an active state
           const current = await this.instanceService.findInstance(instanceId);
           if (
             current &&
@@ -304,6 +441,7 @@ export class DockerDeployerService {
 
   async teardown(instanceId: string): Promise<void> {
     this.clearCrashMonitor(instanceId);
+    this.deploymentSessions.delete(instanceId);
     this.logCollector.stopCollecting(instanceId);
     await this.dockerClient.removeNetwork(instanceId);
     this.dockerConfig.cleanupConfigDir(instanceId);

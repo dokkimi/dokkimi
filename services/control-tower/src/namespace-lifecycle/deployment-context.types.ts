@@ -68,6 +68,7 @@ export interface DefinitionItem {
   name: string;
   type: 'SERVICE' | 'DATABASE' | 'BROKER' | 'MOCK';
   description?: string | null;
+  stage?: number | null;
 
   // Service fields
   image?: string | null;
@@ -128,4 +129,23 @@ export interface DefinitionMountFile {
   source: string; // original filename
   target: string; // absolute path inside the container
   content: Buffer; // raw file content
+}
+
+// ============================================
+// STAGE GROUPING
+// ============================================
+
+export function groupItemsByStage(items: DefinitionItem[]): DefinitionItem[][] {
+  const stageMap = new Map<number, DefinitionItem[]>();
+  for (const item of items) {
+    if (item.type === 'MOCK') {
+      continue;
+    }
+    const stage = item.stage ?? 0;
+    const bucket = stageMap.get(stage) ?? [];
+    bucket.push(item);
+    stageMap.set(stage, bucket);
+  }
+  const sortedKeys = [...stageMap.keys()].sort((a, b) => a - b);
+  return sortedKeys.map((k) => stageMap.get(k)!);
 }

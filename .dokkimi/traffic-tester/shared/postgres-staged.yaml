@@ -1,0 +1,7 @@
+type: DATABASE
+name: postgres-db
+database: postgres
+stage: 0
+dbName: testdb
+dbUser: '{{dbUser}}'
+dbPassword: '{{dbPassword}}'

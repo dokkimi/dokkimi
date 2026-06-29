@@ -88,7 +88,7 @@ export class ConfigMapBuilderService {
       tests: any[];
       variables?: Record<string, unknown>;
     },
-    expectedNamespaceItemIds?: string[],
+    expectedItemStages?: string[][],
   ): { metadata?: Record<string, unknown>; data?: Record<string, string> } {
     // Build URL map from config items
     const urlMap: UrlMap = {};
@@ -174,13 +174,9 @@ export class ConfigMapBuilderService {
       data.testConfig = JSON.stringify(testConfig, null, 2);
     }
 
-    // Add expected namespace item IDs if provided
-    if (expectedNamespaceItemIds && expectedNamespaceItemIds.length > 0) {
-      data.expectedNamespaceItemIds = JSON.stringify(
-        expectedNamespaceItemIds,
-        null,
-        2,
-      );
+    // Add expected item stages if provided (staged health gating)
+    if (expectedItemStages && expectedItemStages.length > 0) {
+      data.expectedItemStages = JSON.stringify(expectedItemStages, null, 2);
     }
 
     return {

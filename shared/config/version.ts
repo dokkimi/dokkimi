@@ -1,1 +1,1 @@
-export const DOKKIMI_VERSION = '0.5.2';
+export const DOKKIMI_VERSION = '0.5.3';

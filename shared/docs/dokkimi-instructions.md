@@ -125,18 +125,23 @@ Works in any string field — env values, URLs, mock bodies, etc.:
 
 ### `${{VAR}}` vs `{{VAR}}`
 
-These are different systems:
+These are related but distinct systems:
 
-| Syntax     | Resolved   | By                  | Purpose                                                    |
-| ---------- | ---------- | ------------------- | ---------------------------------------------------------- |
-| `${{VAR}}` | Build time | Definition resolver | Config values from `config.yaml` `env`                     |
-| `{{VAR}}`  | Runtime    | Test agent          | Variables from `variables` / `extract` in test definitions |
+| Syntax     | Resolved   | By                  | Scope                                                                        |
+| ---------- | ---------- | ------------------- | ---------------------------------------------------------------------------- |
+| `${{VAR}}` | Build time | Definition resolver | Config values from `config.yaml` `env` only                                  |
+| `{{VAR}}`  | Build time | Definition resolver | Item fields — merged map of `config.yaml` env + definition-level `variables` |
+| `{{VAR}}`  | Runtime    | Test agent          | Test steps — `variables` / `extract` / loop variables                        |
 
-If a `${{VAR}}` reference does not match any key in `env`, the resolver **errors**. Build-time references are intentional — an unresolved one is a mistake.
+In **item fields** (env values, images, passwords, etc.), `{{VAR}}` resolves at build time against a merged variables map: config.yaml `env` entries are loaded first, then definition-level `variables` are merged on top (overwriting collisions). Unresolved `{{VAR}}` in items is an error — items are fully resolved before they reach Control Tower.
+
+In **test steps** (action URLs, headers, body, queries, assertion values), `{{VAR}}` resolves at runtime by the test agent. Definition-level and test-level variables, loop variables, and extracted variables all resolve at runtime.
+
+`${{VAR}}` always and only resolves from `config.yaml` `env`. If a `${{VAR}}` reference does not match any key in `env`, the resolver **errors**.
 
 ### Combining both
 
-You can use `${{}}` inside a `variables` value to compose runtime variables from config:
+You can use `${{}}` inside a `variables` value to compose variables from config:
 
 ```json
 {
@@ -146,7 +151,35 @@ You can use `${{}}` inside a `variables` value to compose runtime variables from
 }
 ```
 
-This resolves `${{API_HOST}}` at build time, and the resulting string becomes a runtime variable accessible via `{{baseUrl}}` in test steps.
+This resolves `${{API_HOST}}` at build time. The resulting string becomes available as `{{baseUrl}}` — in item fields (resolved at build time) and in test steps (resolved at runtime).
+
+### Build-time `{{VAR}}` in items
+
+Definition-level `variables` can be used in item fields to share values across items:
+
+```yaml
+name: my-tests
+variables:
+  REDIS_PASSWORD: changeme
+items:
+  - type: DATABASE
+    name: my-redis
+    database: redis
+    dbPassword: '{{REDIS_PASSWORD}}'
+  - type: SERVICE
+    name: my-server
+    port: 3000
+    healthCheck: /health
+    env:
+      - name: REDIS_URL
+        value: 'redis://:{{REDIS_PASSWORD}}@my-redis:6379'
+```
+
+The password is defined once. Shared fragments referenced via `$ref` also pick up definition-level variables — fragments stay generic and reusable across definitions.
+
+Config.yaml `env` values are available as `{{VAR}}` in items too — they seed the merged map. For keys not overridden by a definition variable, `{{FOO}}` and `${{FOO}}` resolve to the same value. Definition-level variables override config.yaml keys with the same name.
+
+Variable values are not recursively resolved — if a variable's value contains `{{OTHER}}`, that inner reference stays literal. However, two-pass interaction with `${{}}` works: if `{{VAR}}` resolves to a string containing `${{KEY}}`, the subsequent `${{}}` pass resolves it from config.yaml.
 
 ---
 
@@ -211,6 +244,7 @@ A containerized application deployed with an interceptor sidecar for traffic cap
 | `minMemory`   | number (≥ 0)      | —       | Minimum memory in MB                                                                                                               |
 | `maxCpu`      | number (≥ 0)      | —       | Maximum CPU cores                                                                                                                  |
 | `maxMemory`   | number (≥ 0)      | —       | Maximum memory in MB                                                                                                               |
+| `stage`       | integer (≥ 0)     | `0`     | Deployment stage. Items deploy in stage order — stage N+1 starts after stage N is healthy. Sort key, not index (gaps are fine).    |
 
 **Full example:**
 
@@ -261,20 +295,21 @@ A managed database instance. Dokkimi provisions the database container, sets up 
 
 **Optional fields:**
 
-| Field           | Type         | Default     | Description                                                                                   |
-| --------------- | ------------ | ----------- | --------------------------------------------------------------------------------------------- |
-| `description`   | string       | —           | Human-readable description (max 500 chars)                                                    |
-| `image`         | string       | —           | Custom Docker image (overrides engine default, e.g. `"getlago/postgres-partman:15.0-alpine"`) |
-| `version`       | string       | per engine  | Database image version tag (e.g. `"16"` for postgres:16). See defaults below.                 |
-| `dbName`        | string       | `"dokkimi"` | Database/schema name                                                                          |
-| `dbUser`        | string       | `"dokkimi"` | Database username                                                                             |
-| `dbPassword`    | string       | `"dokkimi"` | Database password                                                                             |
-| `initFilePath`  | string       | —           | Relative path from this file to a single init script                                          |
-| `initFilePaths` | string[]     | —           | Relative paths to multiple init scripts (executed in order). Use one or the other, not both.  |
-| `minCpu`        | number (≥ 0) | —           | Minimum CPU cores                                                                             |
-| `minMemory`     | number (≥ 0) | —           | Minimum memory in MB                                                                          |
-| `maxCpu`        | number (≥ 0) | —           | Maximum CPU cores                                                                             |
-| `maxMemory`     | number (≥ 0) | —           | Maximum memory in MB                                                                          |
+| Field           | Type          | Default     | Description                                                                                   |
+| --------------- | ------------- | ----------- | --------------------------------------------------------------------------------------------- |
+| `description`   | string        | —           | Human-readable description (max 500 chars)                                                    |
+| `image`         | string        | —           | Custom Docker image (overrides engine default, e.g. `"getlago/postgres-partman:15.0-alpine"`) |
+| `version`       | string        | per engine  | Database image version tag (e.g. `"16"` for postgres:16). See defaults below.                 |
+| `dbName`        | string        | `"dokkimi"` | Database/schema name                                                                          |
+| `dbUser`        | string        | `"dokkimi"` | Database username                                                                             |
+| `dbPassword`    | string        | `"dokkimi"` | Database password                                                                             |
+| `initFilePath`  | string        | —           | Relative path from this file to a single init script                                          |
+| `initFilePaths` | string[]      | —           | Relative paths to multiple init scripts (executed in order). Use one or the other, not both.  |
+| `minCpu`        | number (≥ 0)  | —           | Minimum CPU cores                                                                             |
+| `minMemory`     | number (≥ 0)  | —           | Minimum memory in MB                                                                          |
+| `maxCpu`        | number (≥ 0)  | —           | Maximum CPU cores                                                                             |
+| `maxMemory`     | number (≥ 0)  | —           | Maximum memory in MB                                                                          |
+| `stage`         | integer (≥ 0) | `0`         | Deployment stage. Items deploy in stage order — stage N+1 starts after stage N is healthy.    |
 
 **Database engine details:**
 
@@ -544,18 +579,19 @@ A message broker instance with a transparent proxy sidecar that captures all pub
 
 **Optional fields:**
 
-| Field         | Type              | Default | Description                                                                   |
-| ------------- | ----------------- | ------- | ----------------------------------------------------------------------------- |
-| `description` | string            | —       | Human-readable description (max 500 chars)                                    |
-| `image`       | string            | —       | Custom Docker image (e.g. `"rabbitmq:3.13-management"`, `"apache/kafka:3.9"`) |
-| `port`        | integer (1-65535) | —       | Native broker port (default: 5672 for AMQP, 9092 for Kafka)                   |
-| `healthCheck` | string            | —       | Health check endpoint or `"tcp"`                                              |
-| `env`         | array             | —       | Environment variables: `[{ "name": "KEY", "value": "VALUE" }, ...]`           |
-| `command`     | string[]          | —       | Override Docker image CMD                                                     |
-| `minCpu`      | number (≥ 0)      | —       | Minimum CPU cores                                                             |
-| `minMemory`   | number (≥ 0)      | —       | Minimum memory in MB                                                          |
-| `maxCpu`      | number (≥ 0)      | —       | Maximum CPU cores                                                             |
-| `maxMemory`   | number (≥ 0)      | —       | Maximum memory in MB                                                          |
+| Field         | Type              | Default | Description                                                                                |
+| ------------- | ----------------- | ------- | ------------------------------------------------------------------------------------------ |
+| `description` | string            | —       | Human-readable description (max 500 chars)                                                 |
+| `image`       | string            | —       | Custom Docker image (e.g. `"rabbitmq:3.13-management"`, `"apache/kafka:3.9"`)              |
+| `port`        | integer (1-65535) | —       | Native broker port (default: 5672 for AMQP, 9092 for Kafka)                                |
+| `healthCheck` | string            | —       | Health check endpoint or `"tcp"`                                                           |
+| `env`         | array             | —       | Environment variables: `[{ "name": "KEY", "value": "VALUE" }, ...]`                        |
+| `command`     | string[]          | —       | Override Docker image CMD                                                                  |
+| `minCpu`      | number (≥ 0)      | —       | Minimum CPU cores                                                                          |
+| `minMemory`   | number (≥ 0)      | —       | Minimum memory in MB                                                                       |
+| `maxCpu`      | number (≥ 0)      | —       | Maximum CPU cores                                                                          |
+| `maxMemory`   | number (≥ 0)      | —       | Maximum memory in MB                                                                       |
+| `stage`       | integer (≥ 0)     | `0`     | Deployment stage. Items deploy in stage order — stage N+1 starts after stage N is healthy. |
 
 **Broker engine details:**
 
@@ -1062,7 +1098,11 @@ Then have the SPA call `/api/...` (relative). The browser sees one origin; no pr
 
 ### Variable Interpolation
 
-Use `{{variableName}}` in action fields and assertion values. Variables come from three sources (in order of increasing precedence):
+`{{variableName}}` works in two contexts:
+
+**In item fields** (build time): `{{VAR}}` resolves against a merged map of config.yaml `env` + definition-level `variables`. Unresolved references are errors. See the "Build-time `{{VAR}}` in items" section above for details.
+
+**In test steps** (runtime): `{{variableName}}` resolves at runtime by the test agent. Variables come from three sources (in order of increasing precedence):
 
 1. **Definition-level `variables`** — shared across all tests in the definition
 2. **Test-level `variables`** — per-test overrides (overwrites definition-level values with the same key)

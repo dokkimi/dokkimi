@@ -43,6 +43,10 @@ class DefinitionItemDto {
   @IsString()
   description?: string | null;
 
+  @IsOptional()
+  @IsNumber()
+  stage?: number | null;
+
   // Service fields
   @IsOptional()
   @IsString()

@@ -58,9 +58,16 @@ func main() {
 	// Log STARTED event
 	testExecutionLogger.LogEvent("STARTED", "Preparing test environment...", nil, nil)
 
-	// Create health tracker (pass logger for health event logging)
-	healthTracker := NewHealthTracker(configMapData.ExpectedNamespaceItemIds, testExecutionLogger, itemIdToName)
-	log.Printf("Tracking health for %d expected items", len(configMapData.ExpectedNamespaceItemIds))
+	totalItems := 0
+	for _, stage := range configMapData.ExpectedItemStages {
+		totalItems += len(stage)
+	}
+	var stage0Ids []string
+	if len(configMapData.ExpectedItemStages) > 0 {
+		stage0Ids = configMapData.ExpectedItemStages[0]
+	}
+	healthTracker := NewHealthTracker(stage0Ids, testExecutionLogger, itemIdToName)
+	log.Printf("Tracking health for %d total items across %d stages", totalItems, len(configMapData.ExpectedItemStages))
 	testExecutionLogger.LogEvent("HEALTH_WAIT_STARTED", "Waiting for services to be ready...", nil, nil)
 
 	// Create database query executor
@@ -143,18 +150,33 @@ func main() {
 		timeout := time.Duration(testConfig.TimeoutSeconds) * time.Second
 
 		if !healthChecked {
-			{
+			stages := configMapData.ExpectedItemStages
+			deadline := time.Now().Add(timeout)
+
+			for stageIdx := range stages {
+				if stageIdx > 0 {
+					healthTracker.Reset(stages[stageIdx])
+				}
+
+				remaining := time.Until(deadline)
+				if remaining <= 0 {
+					remaining = time.Millisecond
+				}
+				stageTimer := time.NewTimer(remaining)
+				log.Printf("Waiting for stage %d/%d to be healthy (%d items)", stageIdx, len(stages)-1, len(stages[stageIdx]))
+
 				allReady := false
 				failureMessage := ""
 				select {
 				case <-healthTracker.allReadyChan:
+					stageTimer.Stop()
 					allReady = true
-				case <-time.After(timeout):
+				case <-stageTimer.C:
 					notReady := healthTracker.NotReadyNames()
 					if len(notReady) > 0 {
-						failureMessage = fmt.Sprintf("Startup timeout: %s not ready after %ds", strings.Join(notReady, ", "), testConfig.TimeoutSeconds)
+						failureMessage = fmt.Sprintf("Startup timeout: %s not ready after %ds (stage %d)", strings.Join(notReady, ", "), testConfig.TimeoutSeconds, stageIdx)
 					} else {
-						failureMessage = fmt.Sprintf("Startup timeout after %ds", testConfig.TimeoutSeconds)
+						failureMessage = fmt.Sprintf("Startup timeout after %ds (stage %d)", testConfig.TimeoutSeconds, stageIdx)
 					}
 				}
 
@@ -173,8 +195,28 @@ func main() {
 					return
 				}
 
-				log.Printf("All items reported ready")
+				log.Printf("Stage %d healthy", stageIdx)
+
+				// Call CT to deploy the next stage (unless this is the final stage)
+				if stageIdx < len(stages)-1 {
+					nextStage := stageIdx + 1
+					log.Printf("Requesting CT to deploy stage %d", nextStage)
+					if err := callCTRunStage(cfg.ControlTowerURL, instanceId, nextStage); err != nil {
+						failureMessage := fmt.Sprintf("Failed to deploy stage %d: %v", nextStage, err)
+						log.Printf("%s, aborting test execution", failureMessage)
+						testExecutionLogger.LogEvent("STAGE_DEPLOY_FAILED", failureMessage, nil, nil)
+						completionNotifier.NotifyCompletion(
+							req.TestRunID,
+							"failure",
+							failureMessage,
+							nil,
+						)
+						return
+					}
+				}
 			}
+
+			log.Printf("All stages healthy, all items reported ready")
 			healthChecked = true
 		}
 
@@ -451,7 +493,30 @@ func buildItemIdToNameMap(configMapData *ConfigMapData) map[string]string {
 			m[entry.InstanceItemID] = dbName
 		}
 	}
+	for brokerName, entry := range configMapData.BrokerMap {
+		if entry.InstanceItemID != "" {
+			m[entry.InstanceItemID] = brokerName
+		}
+	}
 	return m
+}
+
+// callCTRunStage tells Control Tower to deploy the next stage of items.
+func callCTRunStage(ctURL string, instanceId string, stage int) error {
+	body := fmt.Sprintf(`{"stage":%d}`, stage)
+	url := fmt.Sprintf("%s/instances/%s/run-stage", ctURL, instanceId)
+
+	client := &http.Client{Timeout: 30 * time.Second}
+	resp, err := client.Post(url, "application/json", strings.NewReader(body))
+	if err != nil {
+		return fmt.Errorf("HTTP request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("CT returned status %d", resp.StatusCode)
+	}
+	return nil
 }
 
 // handleHealthStatus handles health status updates from interceptors/sidecars

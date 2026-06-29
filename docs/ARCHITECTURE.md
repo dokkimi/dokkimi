@@ -30,7 +30,7 @@ CT's internal feature modules:
 | Module                                | Responsibility                                                                                             |
 | ------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
 | `namespace/` + `namespace-lifecycle/` | Docker orchestration (create networks, start/stop containers)                                              |
-| `runs/`                               | Run creation, deployment, status, stop/delete                                                              |
+| `runs/`                               | Run creation, deployment, status, stop/delete, staged deployment (`POST /instances/:id/run-stage`)         |
 | `log-processing/` (formerly LPS)      | Log ingestion (`POST /logs/*`), writes to DB                                                               |
 | `log-query/`                          | Log read path (`GET /logs/*/instance/:id`)                                                                 |
 | `test-validation/` (formerly TVS)     | Receives and stores assertion results from test-agent, updates test status, calls `RunsService` in-process |
@@ -38,12 +38,12 @@ CT's internal feature modules:
 
 ### Go (run inside Docker containers as sidecars)
 
-| Service          | Responsibility                                                                                                                                                                                                                   |
-| ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Interceptor**  | HTTP traffic interception, mock responses, log publishing to Control Tower. Two variants: shared (external traffic) and sidecar (service-to-service)                                                                             |
-| **Test Agent**   | Reads test config from bind-mounted config file, executes test steps (HTTP, DB, UI, wait), validates assertions inline against in-memory logs, reports results to Control Tower, POSTs `/test-complete` when done                |
-| **DB Proxy**     | Wire protocol proxy sidecar for databases. Transparent TCP proxy that parses each database's native wire protocol to extract and log queries without modifying traffic. Variants for PostgreSQL, MySQL, MongoDB, Redis           |
-| **Broker Proxy** | Wire protocol proxy sidecar for message brokers. Transparent TCP proxy that relays all frames unchanged while inspecting publish/deliver operations to log message metadata and bodies. Currently supports AMQP 0-9-1 (RabbitMQ) |
+| Service          | Responsibility                                                                                                                                                                                                                                                                                                                                             |
+| ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Interceptor**  | HTTP traffic interception, mock responses, log publishing to Control Tower. Two variants: shared (external traffic) and sidecar (service-to-service)                                                                                                                                                                                                       |
+| **Test Agent**   | Reads test config from bind-mounted config file, gates on staged health (waits for each stage to be healthy, then calls CT to deploy the next stage via `POST /instances/:id/run-stage`), executes test steps (HTTP, DB, UI, wait), validates assertions inline against in-memory logs, reports results to Control Tower, POSTs `/test-complete` when done |
+| **DB Proxy**     | Wire protocol proxy sidecar for databases. Transparent TCP proxy that parses each database's native wire protocol to extract and log queries without modifying traffic. Variants for PostgreSQL, MySQL, MongoDB, Redis                                                                                                                                     |
+| **Broker Proxy** | Wire protocol proxy sidecar for message brokers. Transparent TCP proxy that relays all frames unchanged while inspecting publish/deliver operations to log message metadata and bodies. Currently supports AMQP 0-9-1 (RabbitMQ)                                                                                                                           |
 
 ### Applications
 
@@ -62,28 +62,34 @@ User runs: dokkimi run [target]
        ▼
 ┌─ CLI ─────────────────────────────────────┐
 │ 1. Resolve definitions from .dokkimi/     │
-│ 2. Interpolate ${{VAR}} from config.yaml  │
-│ 3. Ensure background services running     │
-│ 4. POST /runs to Control Tower            │
+│ 2. Interpolate {{VAR}} in items           │
+│ 3. Interpolate ${{VAR}} from config.yaml  │
+│ 4. Ensure background services running     │
+│ 5. POST /runs to Control Tower            │
 └───────────────┬───────────────────────────┘
                 │
                 ▼
 ┌─ Control Tower ───────────────────────────┐
 │ 1. Create Run record (PENDING → RUNNING)  │
 │ 2. Create Docker network                  │
-│ 3. For each service in definition:        │
-│    - Start containers with sidecars:      │
+│ 3. Group items by stage property          │
+│ 4. Deploy stage 0 containers + sidecars:  │
 │      * Sidecar Interceptor (HTTP logging) │
 │      * DNSMasq (service discovery)        │
 │      * DB Proxy (for databases)           │
 │    - Bind-mount config file (test config) │
-│ 4. Start Test Agent container             │
+│ 5. Start Test Agent container             │
 └───────────────┬───────────────────────────┘
                 │
                 ▼
 ┌─ Inside Docker Network ──────────────────┐
 │                                           │
-│  Services start → health checks pass      │
+│  Test Agent staged health loop:           │
+│    For each stage:                        │
+│      - Wait for stage N items healthy     │
+│      - POST /instances/:id/run-stage to   │
+│        CT to deploy stage N+1             │
+│    All stages healthy → run tests         │
 │                                           │
 │  Test Agent:                              │
 │    1. Reads test steps from config file   │
@@ -229,21 +235,22 @@ Log ingestion is HTTP-only — interceptors, DB Proxy, and Broker Proxy POST to 
 
 ## Communication Patterns
 
-| From            | To                                    | Method               | Purpose                                                                                |
-| --------------- | ------------------------------------- | -------------------- | -------------------------------------------------------------------------------------- |
-| CLI             | Control Tower                         | HTTP REST            | Create runs, submit definitions, poll results                                          |
-| Control Tower   | Docker API                            | dockerode            | Create/delete networks, start/stop containers, stream logs                             |
-| Test Agent      | Interceptor                           | HTTP                 | Test step execution — requests route through the interceptor, enabling traffic capture |
-| Interceptor     | Control Tower `/logs/*`               | HTTP POST            | HTTP traffic logs                                                                      |
-| Docker API      | Control Tower `/logs/console`         | Log streaming        | Console logs (collected via Docker API)                                                |
-| DB Proxy        | Control Tower `/logs/database`        | HTTP POST            | Database logs                                                                          |
-| Sidecars        | Control Tower `/health/status`        | HTTP POST            | Readiness updates                                                                      |
-| Interceptors    | Test Agent `/logs/http`               | HTTP POST            | HTTP traffic logs (test-agent buffers in memory for inline validation)                 |
-| Console logs    | Test Agent (GELF UDP :12201)          | GELF UDP             | Console logs forwarded to test-agent for inline assertion validation                   |
-| Test Agent      | Control Tower `/logs/test-validation` | HTTP POST            | Assertion results (validated inline by test-agent, stored by CT)                       |
-| Test Agent      | Control Tower `/test-complete`        | HTTP POST            | Test completion notification                                                           |
-| CT modules      | DB                                    | Prisma               | Store logs and assertion results                                                       |
-| test-validation | RunsService (in-process)              | direct injected call | Signal validation complete → CT updates run status                                     |
+| From            | To                                       | Method               | Purpose                                                                                |
+| --------------- | ---------------------------------------- | -------------------- | -------------------------------------------------------------------------------------- |
+| CLI             | Control Tower                            | HTTP REST            | Create runs, submit definitions, poll results                                          |
+| Control Tower   | Docker API                               | dockerode            | Create/delete networks, start/stop containers, stream logs                             |
+| Test Agent      | Interceptor                              | HTTP                 | Test step execution — requests route through the interceptor, enabling traffic capture |
+| Interceptor     | Control Tower `/logs/*`                  | HTTP POST            | HTTP traffic logs                                                                      |
+| Docker API      | Control Tower `/logs/console`            | Log streaming        | Console logs (collected via Docker API)                                                |
+| DB Proxy        | Control Tower `/logs/database`           | HTTP POST            | Database logs                                                                          |
+| Sidecars        | Control Tower `/health/status`           | HTTP POST            | Readiness updates                                                                      |
+| Interceptors    | Test Agent `/logs/http`                  | HTTP POST            | HTTP traffic logs (test-agent buffers in memory for inline validation)                 |
+| Console logs    | Test Agent (GELF UDP :12201)             | GELF UDP             | Console logs forwarded to test-agent for inline assertion validation                   |
+| Test Agent      | Control Tower `/instances/:id/run-stage` | HTTP POST            | Deploy next stage (staged bootup coordination)                                         |
+| Test Agent      | Control Tower `/logs/test-validation`    | HTTP POST            | Assertion results (validated inline by test-agent, stored by CT)                       |
+| Test Agent      | Control Tower `/test-complete`           | HTTP POST            | Test completion notification                                                           |
+| CT modules      | DB                                       | Prisma               | Store logs and assertion results                                                       |
+| test-validation | RunsService (in-process)                 | direct injected call | Signal validation complete → CT updates run status                                     |
 
 ---
 
@@ -273,9 +280,10 @@ Before any run, the CLI resolves `.dokkimi/` definition files:
 1. **Scan** — find all `.json`, `.yaml`, `.yml` files in `.dokkimi/`
 2. **Parse** — YAML or JSON
 3. **Resolve `$ref`** — inline shared fragments from `shared/` directory
-4. **Interpolate `${{VAR}}`** — replace build-time variables from `config.yaml` env map
-5. **Validate** — check required fields, types, constraints
-6. **Submit** — send resolved definitions to Control Tower
+4. **Interpolate `{{VAR}}` in items** — replace build-time variables from merged map (config.yaml env + definition-level `variables`)
+5. **Interpolate `${{VAR}}`** — replace config references from `config.yaml` env map
+6. **Validate** — check required fields, types, constraints
+7. **Submit** — send resolved definitions to Control Tower
 
 ---
 

@@ -16,7 +16,11 @@ import {
   loadDokkimiConfig,
   type DokkimiConfig,
 } from './config-loader';
-import { interpolateEnv } from './env-substitution';
+import {
+  interpolateEnv,
+  interpolateVars,
+  findLeftoverVarRefs,
+} from './env-substitution';
 import {
   scanDefinitionFiles,
   loadDokignore,
@@ -438,6 +442,53 @@ export function resolveDefinitions(target?: string): ResolverResult {
     }
 
     if (mountFileError) {
+      continue;
+    }
+
+    // Interpolate {{VAR}} in items from merged variables (config.yaml baseline + definition overrides)
+    const buildVars: Record<string, string> = { ...config.env };
+    if (
+      obj.variables &&
+      typeof obj.variables === 'object' &&
+      !Array.isArray(obj.variables)
+    ) {
+      for (const [k, v] of Object.entries(
+        obj.variables as Record<string, unknown>,
+      )) {
+        if (typeof v === 'string') {
+          buildVars[k] = v;
+        }
+      }
+    }
+
+    const unresolvedVars = new Set<string>();
+    resolvedDef.items = interpolateVars(
+      resolvedDef.items as unknown[],
+      buildVars,
+      unresolvedVars,
+    );
+    if (unresolvedVars.size > 0) {
+      const keys = [...unresolvedVars].map((k) => '{{' + k + '}}').join(', ');
+      errors.push({
+        file: filePath,
+        errors: [
+          `Unresolved variables in items: ${keys}. Define these in the definition's variables or config.yaml env.`,
+        ],
+        warnings: [],
+      });
+      continue;
+    }
+
+    const leftoverRefs = findLeftoverVarRefs(resolvedDef.items);
+    if (leftoverRefs.length > 0) {
+      const unique = [...new Set(leftoverRefs)].join(', ');
+      errors.push({
+        file: filePath,
+        errors: [
+          `Invalid variable references in items: ${unique}. Only simple {{key}} references are supported in item fields.`,
+        ],
+        warnings: [],
+      });
       continue;
     }
 

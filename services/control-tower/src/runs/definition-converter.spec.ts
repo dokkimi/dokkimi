@@ -160,6 +160,24 @@ describe('definition-converter', () => {
       expect(result.items[0].initFiles).toHaveLength(1);
       expect(result.items[1].initFiles).toBeUndefined();
     });
+
+    it('preserves stage property on items', () => {
+      const definition = {
+        name: 'staged',
+        items: [
+          { name: 'db', type: 'DATABASE', database: 'postgres', stage: 0 },
+          { name: 'svc', type: 'SERVICE', image: 'x:1', port: 80, stage: 1 },
+        ],
+      };
+
+      const result = toDeployableDefinition(definition as any);
+
+      expect(result.items).toHaveLength(2);
+      expect(result.items[0].name).toBe('db');
+      expect(result.items[0].stage).toBe(0);
+      expect(result.items[1].name).toBe('svc');
+      expect(result.items[1].stage).toBe(1);
+    });
   });
 
   describe('rawDefinitionToDeployable', () => {
@@ -232,6 +250,24 @@ describe('definition-converter', () => {
       const result = rawDefinitionToDeployable(raw);
 
       expect(result.description).toBeUndefined();
+    });
+
+    it('preserves stage property from raw items', () => {
+      const raw = {
+        name: 'staged',
+        items: [
+          { name: 'db', type: 'DATABASE', stage: 0 },
+          { name: 'svc', type: 'SERVICE', stage: 1 },
+        ],
+      };
+
+      const result = rawDefinitionToDeployable(raw);
+
+      expect(result.items).toHaveLength(2);
+      expect(result.items[0].name).toBe('db');
+      expect(result.items[0].stage).toBe(0);
+      expect(result.items[1].name).toBe('svc');
+      expect(result.items[1].stage).toBe(1);
     });
   });
 });

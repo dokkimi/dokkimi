@@ -92,8 +92,26 @@ env:
   <p>After resolution, the image becomes <code>ghcr.io/dokkimi/my-service:v1.2.3</code>.</p>
 
   <div class="callout">
-    <p><strong>$&#123;&#123;VAR&#125;&#125; vs &#123;&#123;VAR&#125;&#125;</strong> — These are different systems. <code>$&#123;&#123;VAR&#125;&#125;</code> is resolved at build time from the config file. <code>&#123;&#123;VAR&#125;&#125;</code> is resolved at runtime from test <a href="/docs/variables">variables</a>. If a <code>$&#123;&#123;VAR&#125;&#125;</code> reference doesn't match any key in <code>env</code>, the resolver errors.</p>
+    <p><strong>$&#123;&#123;VAR&#125;&#125; vs &#123;&#123;VAR&#125;&#125;</strong> — <code>$&#123;&#123;VAR&#125;&#125;</code> always resolves from <code>config.yaml</code> <code>env</code> only. <code>&#123;&#123;VAR&#125;&#125;</code> resolves at build time in <strong>item fields</strong> (from a map seeded with config.yaml env, then definition-level <a href="/docs/variables">variables</a> merged on top) and at runtime in <strong>test steps</strong> (from test variables, loops, and extraction). For keys not overridden by a definition variable, <code>&#123;&#123;FOO&#125;&#125;</code> and <code>$&#123;&#123;FOO&#125;&#125;</code> resolve to the same value. If a <code>$&#123;&#123;VAR&#125;&#125;</code> reference doesn't match any key in <code>env</code>, the resolver errors. Unresolved <code>&#123;&#123;VAR&#125;&#125;</code> in items is also an error.</p>
   </div>
+
+  <h2>Staged bootup order</h2>
+  <p>By default, all items boot in parallel. If a service expects its dependencies to be running at startup (e.g., a database with no reconnection logic), use the <code>stage</code> property to control deployment order.</p>
+  <p>Each item accepts an optional <code>stage</code> field (non-negative integer, defaults to 0). Items deploy in stage order — stage N+1 containers don't start until all stage N items are healthy.</p>
+  <CodeBlock code={`items:
+  - $ref: ../shared/postgres.yaml
+    stage: 0
+  - $ref: ../shared/redis.yaml
+    stage: 0
+  - $ref: ../shared/lago-api.yaml
+    stage: 1`} lang="yaml" />
+  <p>Stage 0 (Postgres + Redis) boots and becomes healthy. Only then does stage 1 (lago-api) deploy.</p>
+  <ul>
+    <li>Items without <code>stage</code> default to stage 0 — no changes needed for existing definitions.</li>
+    <li>Stage numbers are sort keys, not indices — <code>0, 2, 5</code> is three stages deployed in order. Gaps are fine.</li>
+    <li>A single run-level timeout covers all stages.</li>
+    <li>The <code>stage</code> property works on SERVICE, DATABASE, and BROKER items. MOCKs don't create containers and do not accept <code>stage</code>.</li>
+  </ul>
 
   <h2>Isolation model</h2>
   <p>Each runnable definition file creates its own isolated Docker namespace — a dedicated network with its own services, databases, browser, and DNS. No state is shared between definitions. When a run finishes, the entire namespace is destroyed.</p>

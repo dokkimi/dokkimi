@@ -30,20 +30,22 @@ import CodeBlock from '../../components/CodeBlock.astro';
 }`} lang="json" />
 
   <h2>Interpolation: &#123;&#123;variableName&#125;&#125;</h2>
-  <p>Reference variables with <code>&#123;&#123;variableName&#125;&#125;</code> anywhere in actions and assertions:</p>
+  <p>Reference variables with <code>&#123;&#123;variableName&#125;&#125;</code> in item fields, actions, and assertions:</p>
 
   <table>
     <thead>
-      <tr><th>Where</th><th>Example</th></tr>
+      <tr><th>Where</th><th>Resolved</th><th>Example</th></tr>
     </thead>
     <tbody>
-      <tr><td>Action URLs</td><td><code>"url": "api-gateway/api/users/&#123;&#123;userId&#125;&#125;"</code></td></tr>
-      <tr><td>Action headers</td><td><code>"Authorization": "Bearer &#123;&#123;token&#125;&#125;"</code></td></tr>
-      <tr><td>Action body (string values)</td><td><code>"email": "&#123;&#123;email&#125;&#125;"</code></td></tr>
-      <tr><td>Database queries</td><td><code>"query": "SELECT * FROM users WHERE id = &#123;&#123;userId&#125;&#125;"</code></td></tr>
-      <tr><td>Assertion values</td><td><code>"value": "&#123;&#123;email&#125;&#125;"</code></td></tr>
-      <tr><td>Match where values</td><td><code>"value": "user-service/&#123;&#123;path&#125;&#125;"</code></td></tr>
-      <tr><td>Console log messages</td><td><code>"value": "User &#123;&#123;userId&#125;&#125; created"</code></td></tr>
+      <tr><td>Item env values</td><td>Build time</td><td><code>"value": "redis://:&#123;&#123;REDIS_PASSWORD&#125;&#125;@my-redis:6379"</code></td></tr>
+      <tr><td>Item images</td><td>Build time</td><td><code>"image": "&#123;&#123;REGISTRY&#125;&#125;/my-service:latest"</code></td></tr>
+      <tr><td>Action URLs</td><td>Runtime</td><td><code>"url": "api-gateway/api/users/&#123;&#123;userId&#125;&#125;"</code></td></tr>
+      <tr><td>Action headers</td><td>Runtime</td><td><code>"Authorization": "Bearer &#123;&#123;token&#125;&#125;"</code></td></tr>
+      <tr><td>Action body (string values)</td><td>Runtime</td><td><code>"email": "&#123;&#123;email&#125;&#125;"</code></td></tr>
+      <tr><td>Database queries</td><td>Runtime</td><td><code>"query": "SELECT * FROM users WHERE id = &#123;&#123;userId&#125;&#125;"</code></td></tr>
+      <tr><td>Assertion values</td><td>Runtime</td><td><code>"value": "&#123;&#123;email&#125;&#125;"</code></td></tr>
+      <tr><td>Match where values</td><td>Runtime</td><td><code>"value": "user-service/&#123;&#123;path&#125;&#125;"</code></td></tr>
+      <tr><td>Console log messages</td><td>Runtime</td><td><code>"value": "User &#123;&#123;userId&#125;&#125; created"</code></td></tr>
     </tbody>
   </table>
 
@@ -148,12 +150,13 @@ import CodeBlock from '../../components/CodeBlock.astro';
 }`} lang="json" />
 
   <h2>Precedence</h2>
-  <p>Variables come from three sources, in order of increasing precedence:</p>
+  <p>In <strong>test steps</strong> (runtime), variables come from three sources in order of increasing precedence:</p>
   <ol>
     <li><strong>Definition-level <code>variables</code></strong> — shared across all tests</li>
     <li><strong>Test-level <code>variables</code></strong> — per-test overrides</li>
     <li><strong><code>extract</code> on steps</strong> — runtime extraction (overwrites all hardcoded values)</li>
   </ol>
+  <p>In <strong>item fields</strong> (build time), the resolver assembles one flat map seeded with <a href="/docs/project-structure">config.yaml</a> <code>env</code> entries, then definition-level <code>variables</code> are merged on top. All <code>&#123;&#123;VAR&#125;&#125;</code> in items resolve against this merged map. For keys not overridden by a definition variable, <code>&#123;&#123;FOO&#125;&#125;</code> and <code>$&#123;&#123;FOO&#125;&#125;</code> resolve to the same value. Unresolved references are errors.</p>
 
   <h2>Scoping rules</h2>
   <ul>
@@ -167,14 +170,39 @@ import CodeBlock from '../../components/CodeBlock.astro';
   <h2>Build-time vs runtime variables</h2>
   <table>
     <thead>
-      <tr><th>Syntax</th><th>Resolved</th><th>By</th><th>Purpose</th></tr>
+      <tr><th>Syntax</th><th>Resolved</th><th>Scope</th><th>Purpose</th></tr>
     </thead>
     <tbody>
-      <tr><td><code>$&#123;&#123;VAR&#125;&#125;</code></td><td>Build time</td><td>Definition resolver</td><td>Config values from <a href="/docs/project-structure">config.yaml</a> <code>env</code></td></tr>
-      <tr><td><code>&#123;&#123;VAR&#125;&#125;</code></td><td>Runtime</td><td>Test agent</td><td>Variables from <code>variables</code> / <code>extract</code></td></tr>
+      <tr><td><code>$&#123;&#123;VAR&#125;&#125;</code></td><td>Build time</td><td>Entire definition</td><td>Config values from <a href="/docs/project-structure">config.yaml</a> <code>env</code> only</td></tr>
+      <tr><td><code>&#123;&#123;VAR&#125;&#125;</code></td><td>Build time</td><td>Item fields</td><td>Merged map of config.yaml <code>env</code> + definition-level <code>variables</code></td></tr>
+      <tr><td><code>&#123;&#123;VAR&#125;&#125;</code></td><td>Runtime</td><td>Test steps</td><td>Variables from <code>variables</code> / <code>extract</code> / loops</td></tr>
     </tbody>
   </table>
-  <p>You can combine both — use <code>$&#123;&#123;&#125;&#125;</code> inside a <code>variables</code> value to compose runtime variables from config:</p>
+  <p>This means definition-level <code>variables</code> can share values across items — passwords, hostnames, image tags — without duplication:</p>
+  <CodeBlock code={`{
+  "name": "my-tests",
+  "variables": {
+    "REDIS_PASSWORD": "changeme"
+  },
+  "items": [
+    {
+      "type": "DATABASE",
+      "name": "my-redis",
+      "database": "redis",
+      "dbPassword": "{{REDIS_PASSWORD}}"
+    },
+    {
+      "type": "SERVICE",
+      "name": "my-server",
+      "port": 3000,
+      "healthCheck": "/health",
+      "env": [
+        { "name": "REDIS_URL", "value": "redis://:{{REDIS_PASSWORD}}@my-redis:6379" }
+      ]
+    }
+  ]
+}`} lang="json" />
+  <p>You can also combine <code>$&#123;&#123;&#125;&#125;</code> and <code>&#123;&#123;&#125;&#125;</code> — use <code>$&#123;&#123;&#125;&#125;</code> inside a <code>variables</code> value to compose variables from config:</p>
   <CodeBlock code={`{
   "variables": {
     "baseUrl": "\${{API_HOST}}/v1"

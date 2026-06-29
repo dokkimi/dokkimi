@@ -154,7 +154,7 @@ env:
     value: http://user-service:3000
 ```
 
-Image tags and other values can be centralized in `.dokkimi/config.yaml` using `${{VAR}}` syntax — change once, apply everywhere.
+Image tags and other values can be centralized in `.dokkimi/config.yaml` using `${{VAR}}` syntax — change once, apply everywhere. Definition-level `variables` can also be used in item fields with `{{VAR}}` syntax, letting you share passwords, hostnames, and other values across items without duplication.
 
 ## Commands
 

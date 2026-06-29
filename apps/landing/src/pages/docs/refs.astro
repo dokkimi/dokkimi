@@ -135,6 +135,21 @@ env:
   <p>At resolution time, Dokkimi walks the chain: <code>base-service.yaml</code> is loaded first, then <code>api-gateway.yaml</code> overrides on top, then any inline overrides in the test file win last. Each level is a shallow merge, same as single-level <code>$ref</code>.</p>
   <p>This also works for action refs, UI sub-step refs, and variable refs. Circular references are detected and reported as validation errors. Chains are limited to 10 levels deep.</p>
 
+  <h2>Fragments with &#123;&#123;VAR&#125;&#125; placeholders</h2>
+  <p>Shared item fragments can use <code>&#123;&#123;VAR&#125;&#125;</code> placeholders that resolve from definition-level <a href="/docs/variables">variables</a> at build time. This lets the same fragment work across definitions with different values:</p>
+  <CodeBlock code={`# shared/redis.yaml
+type: DATABASE
+name: my-redis
+database: redis
+dbPassword: "{{REDIS_PASSWORD}}"`} lang="yaml" />
+  <CodeBlock code={`# definition.yaml
+name: my-tests
+variables:
+  REDIS_PASSWORD: changeme
+items:
+  - $ref: ./shared/redis.yaml`} lang="yaml" />
+  <p>The fragment stays generic — each definition supplies its own <code>REDIS_PASSWORD</code>. Both <code>&#123;&#123;&#125;&#125;</code> and <code>$&#123;&#123;&#125;&#125;</code> work in fragments. The <code>&#123;&#123;&#125;&#125;</code> map starts with all <a href="/docs/project-structure">config.yaml</a> <code>env</code> entries (the same values <code>$&#123;&#123;&#125;&#125;</code> reads), then definition-level <code>variables</code> are merged on top. If a key isn't overridden by a definition variable, <code>&#123;&#123;FOO&#125;&#125;</code> and <code>$&#123;&#123;FOO&#125;&#125;</code> resolve to the same value. Use <code>&#123;&#123;&#125;&#125;</code> when a value might vary per definition; use <code>$&#123;&#123;&#125;&#125;</code> when it should always come from config. See <a href="/docs/variables#build-time-vs-runtime-variables">Build-time vs runtime variables</a> for the full resolution rules.</p>
+
   <h2>Rules</h2>
   <ul>
     <li>Paths are relative to the file containing the <code>$ref</code></li>

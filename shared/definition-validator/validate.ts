@@ -37,6 +37,7 @@ export function validateDefinition(
     err(r, '"items" must be an array');
     return;
   }
+
   if (parsed.items.length === 0) {
     warn(r, '"items" is empty — definition has no services or databases');
   }

@@ -16,6 +16,10 @@ export class NamespaceLifecycleService {
     private readonly instanceItemService: InstanceItemService,
   ) {}
 
+  async deployStage(instanceId: string, stage: number): Promise<void> {
+    await this.dockerDeployer.deployStage(instanceId, stage);
+  }
+
   async stopInstance(instanceId: string): Promise<void> {
     this.logger.log(`Stopping instance ${instanceId}`);
 

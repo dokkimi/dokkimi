@@ -30,13 +30,17 @@ func (r *FileConfigReader) ReadConfigData() (*ConfigMapData, error) {
 
 	data := &ConfigMapData{}
 
-	if idsJSON, ok := fileData["expectedNamespaceItemIds"]; ok {
-		if err := json.Unmarshal([]byte(idsJSON), &data.ExpectedNamespaceItemIds); err != nil {
-			return nil, fmt.Errorf("failed to parse expectedNamespaceItemIds: %w", err)
+	if stagesJSON, ok := fileData["expectedItemStages"]; ok {
+		if err := json.Unmarshal([]byte(stagesJSON), &data.ExpectedItemStages); err != nil {
+			return nil, fmt.Errorf("failed to parse expectedItemStages: %w", err)
 		}
-		log.Printf("Read %d expected namespace item IDs from config file", len(data.ExpectedNamespaceItemIds))
+		totalItems := 0
+		for _, stage := range data.ExpectedItemStages {
+			totalItems += len(stage)
+		}
+		log.Printf("Read %d expected items across %d stages from config file", totalItems, len(data.ExpectedItemStages))
 	} else {
-		log.Printf("Warning: expectedNamespaceItemIds not found in config file")
+		log.Printf("Warning: expectedItemStages not found in config file")
 	}
 
 	if testConfigJSON, ok := fileData["testConfig"]; ok {
@@ -68,6 +72,13 @@ func (r *FileConfigReader) ReadConfigData() (*ConfigMapData, error) {
 	} else {
 		log.Printf("Warning: databaseMap not found in config file")
 		data.DatabaseMap = make(map[string]DatabaseInfo)
+	}
+
+	if brokerMapJSON, ok := fileData["brokerMap"]; ok {
+		if err := json.Unmarshal([]byte(brokerMapJSON), &data.BrokerMap); err != nil {
+			return nil, fmt.Errorf("failed to parse brokerMap: %w", err)
+		}
+		log.Printf("Read broker map with %d entries", len(data.BrokerMap))
 	}
 
 	return data, nil

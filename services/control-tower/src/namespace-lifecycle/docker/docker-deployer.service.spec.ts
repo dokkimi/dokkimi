@@ -161,6 +161,26 @@ const mockRunStorage = {
 function buildCtx(
   overrides: Partial<DeploymentContext> = {},
 ): DeploymentContext {
+  const defaultItems = [
+    {
+      name: 'api-gateway',
+      type: 'SERVICE' as const,
+      image: 'myapp/api-gateway:latest',
+      port: 3000,
+      healthCheck: '/health',
+    },
+    {
+      name: 'user-service',
+      type: 'SERVICE' as const,
+      image: 'myapp/user-service:latest',
+      port: 3000,
+    },
+    {
+      name: 'postgres-db',
+      type: 'DATABASE' as const,
+      database: 'postgres',
+    },
+  ];
   return {
     runId: 'run-1',
     instanceId: 'test-instance',
@@ -171,26 +191,7 @@ function buildCtx(
     ]),
     definition: {
       name: 'test-def',
-      items: [
-        {
-          name: 'api-gateway',
-          type: 'SERVICE',
-          image: 'myapp/api-gateway:latest',
-          port: 3000,
-          healthCheck: '/health',
-        },
-        {
-          name: 'user-service',
-          type: 'SERVICE',
-          image: 'myapp/user-service:latest',
-          port: 3000,
-        },
-        {
-          name: 'postgres-db',
-          type: 'DATABASE',
-          database: 'postgres',
-        },
-      ],
+      items: defaultItems,
       tests: [],
     },
     ...overrides,
@@ -413,19 +414,20 @@ describe('DockerDeployerService', () => {
     });
 
     it('should skip items with type MOCK', async () => {
+      const mockItems = [
+        {
+          name: 'mock-stripe',
+          type: 'MOCK' as const,
+          mockTarget: 'api.stripe.com',
+          mockPath: '/v1/charges',
+          mockResponseStatus: 200,
+          mockResponseBody: '{"id":"ch_test"}',
+        },
+      ];
       const ctx = buildCtx({
         definition: {
           name: 'test',
-          items: [
-            {
-              name: 'mock-stripe',
-              type: 'MOCK',
-              mockTarget: 'api.stripe.com',
-              mockPath: '/v1/charges',
-              mockResponseStatus: 200,
-              mockResponseBody: '{"id":"ch_test"}',
-            },
-          ],
+          items: mockItems,
         },
       });
       ctx.instanceItemIds = new Map([['mock-stripe', 'item-mock']]);
@@ -454,17 +456,18 @@ describe('DockerDeployerService', () => {
     });
 
     it('should create chromium group when UI steps exist', async () => {
+      const uiItems = [
+        {
+          name: 'web-app',
+          type: 'SERVICE' as const,
+          image: 'myapp/web:latest',
+          port: 3000,
+        },
+      ];
       const ctx = buildCtx({
         definition: {
           name: 'ui-test',
-          items: [
-            {
-              name: 'web-app',
-              type: 'SERVICE',
-              image: 'myapp/web:latest',
-              port: 3000,
-            },
-          ],
+          items: uiItems,
           tests: [
             {
               name: 'ui test',

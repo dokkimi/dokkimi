@@ -294,10 +294,18 @@ type TestCompletionNotification struct {
 
 // ConfigMapData represents the data structure in the ConfigMap
 type ConfigMapData struct {
-	ExpectedNamespaceItemIds []string                `json:"expectedNamespaceItemIds"`
-	TestConfig               *TestConfig             `json:"testConfig"`
-	URLMap                   map[string]URLMapEntry  `json:"urlMap"`
-	DatabaseMap              map[string]DatabaseInfo `json:"databaseMap,omitempty"`
+	ExpectedItemStages [][]string              `json:"expectedItemStages"`
+	TestConfig         *TestConfig             `json:"testConfig"`
+	URLMap             map[string]URLMapEntry  `json:"urlMap"`
+	DatabaseMap        map[string]DatabaseInfo `json:"databaseMap,omitempty"`
+	BrokerMap          map[string]BrokerInfo   `json:"brokerMap,omitempty"`
+}
+
+// BrokerInfo represents a broker entry in the config map
+type BrokerInfo struct {
+	Type           string `json:"type"`
+	Port           int    `json:"port"`
+	InstanceItemID string `json:"instanceItemId"`
 }
 
 // URLMapEntry represents an entry in the URL map
