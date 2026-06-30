@@ -1,0 +1,446 @@
+name: appwrite-permission-escalation
+description: >
+  Test Appwrite's permission enforcement. Create two users with separate sessions,
+  then verify that user B cannot read/update/delete user A's private documents.
+config:
+  timeoutSeconds: 600
+items:
+  - $ref: ../shared/appwrite-mariadb.yaml
+  - $ref: ../shared/appwrite-redis.yaml
+  - $ref: ../shared/appwrite-api.yaml
+variables:
+  adminEmail: admin@dokkimi.test
+  adminPassword: TestPass123!
+  projectId: perm-test
+  userAEmail: usera@dokkimi.test
+  userAPassword: UserAPass123!
+  userBEmail: userb@dokkimi.test
+  userBPassword: UserBPass123!
+tests:
+  - name: Permission boundary enforcement
+    steps:
+      - name: Register admin
+        action:
+          type: httpRequest
+          method: POST
+          url: appwrite/v1/account
+          headers:
+            Content-Type: application/json
+            X-Appwrite-Project: console
+          body:
+            userId: 'unique()'
+            email: '{{adminEmail}}'
+            password: '{{adminPassword}}'
+            name: Admin
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 201
+
+      - name: Admin session
+        action:
+          type: httpRequest
+          method: POST
+          url: appwrite/v1/account/sessions/email
+          headers:
+            Content-Type: application/json
+            X-Appwrite-Project: console
+          body:
+            email: '{{adminEmail}}'
+            password: '{{adminPassword}}'
+        extract:
+          fallbackCookies: $.response.headers.x-fallback-cookies
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 201
+
+      - name: Create team
+        action:
+          type: httpRequest
+          method: POST
+          url: appwrite/v1/teams
+          headers:
+            Content-Type: application/json
+            X-Appwrite-Project: console
+            X-Fallback-Cookies: '{{fallbackCookies}}'
+          body:
+            teamId: 'unique()'
+            name: Perm Test Org
+        extract:
+          teamId: $.response.body.$id
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 201
+
+      - name: Create project
+        action:
+          type: httpRequest
+          method: POST
+          url: appwrite/v1/projects
+          headers:
+            Content-Type: application/json
+            X-Appwrite-Project: console
+            X-Fallback-Cookies: '{{fallbackCookies}}'
+          body:
+            projectId: '{{projectId}}'
+            name: Permission Test
+            teamId: '{{teamId}}'
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 201
+
+      - name: Create API key
+        action:
+          type: httpRequest
+          method: POST
+          url: appwrite/v1/projects/{{projectId}}/keys
+          headers:
+            Content-Type: application/json
+            X-Appwrite-Project: console
+            X-Fallback-Cookies: '{{fallbackCookies}}'
+          body:
+            name: Server Key
+            scopes:
+              - users.read
+              - users.write
+              - databases.read
+              - databases.write
+              - collections.read
+              - collections.write
+              - documents.read
+              - documents.write
+        extract:
+          apiKey: $.response.body.secret
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 201
+
+      - name: Register User A (may 500 due to queue bug, user still created)
+        action:
+          type: httpRequest
+          method: POST
+          url: appwrite/v1/account
+          headers:
+            Content-Type: application/json
+            X-Appwrite-Project: '{{projectId}}'
+          body:
+            userId: 'unique()'
+            email: '{{userAEmail}}'
+            password: '{{userAPassword}}'
+            name: User A
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [201, 500]
+
+      - name: Register User B (may 500 due to queue bug, user still created)
+        action:
+          type: httpRequest
+          method: POST
+          url: appwrite/v1/account
+          headers:
+            Content-Type: application/json
+            X-Appwrite-Project: '{{projectId}}'
+          body:
+            userId: 'unique()'
+            email: '{{userBEmail}}'
+            password: '{{userBPassword}}'
+            name: User B
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [201, 500]
+
+      - name: User A login
+        action:
+          type: httpRequest
+          method: POST
+          url: appwrite/v1/account/sessions/email
+          headers:
+            Content-Type: application/json
+            X-Appwrite-Project: '{{projectId}}'
+          body:
+            email: '{{userAEmail}}'
+            password: '{{userAPassword}}'
+        extract:
+          userACookies: $.response.headers.x-fallback-cookies
+          userAId: $.response.body.userId
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 201
+
+      - name: User B login
+        action:
+          type: httpRequest
+          method: POST
+          url: appwrite/v1/account/sessions/email
+          headers:
+            Content-Type: application/json
+            X-Appwrite-Project: '{{projectId}}'
+          body:
+            email: '{{userBEmail}}'
+            password: '{{userBPassword}}'
+        extract:
+          userBCookies: $.response.headers.x-fallback-cookies
+          userBId: $.response.body.userId
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 201
+
+      - name: Create database
+        action:
+          type: httpRequest
+          method: POST
+          url: appwrite/v1/databases
+          headers:
+            Content-Type: application/json
+            X-Appwrite-Project: '{{projectId}}'
+            X-Appwrite-Key: '{{apiKey}}'
+          body:
+            databaseId: perm-db
+            name: Permission Test DB
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 201
+
+      - name: Create private-notes collection
+        action:
+          type: httpRequest
+          method: POST
+          url: appwrite/v1/databases/perm-db/collections
+          headers:
+            Content-Type: application/json
+            X-Appwrite-Project: '{{projectId}}'
+            X-Appwrite-Key: '{{apiKey}}'
+          body:
+            collectionId: private-notes
+            name: Private Notes
+            documentSecurity: true
+            permissions:
+              - 'create("users")'
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 201
+
+      - name: Create note attribute via API
+        action:
+          type: httpRequest
+          method: POST
+          url: appwrite/v1/databases/perm-db/collections/private-notes/attributes/string
+          headers:
+            Content-Type: application/json
+            X-Appwrite-Project: '{{projectId}}'
+            X-Appwrite-Key: '{{apiKey}}'
+          body:
+            key: note
+            size: 512
+            required: false
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [201, 202]
+
+      - name: Add note column directly in MariaDB
+        action:
+          type: dbQuery
+          database: appwrite-mariadb
+          query: 'ALTER TABLE `_1_database_1_collection_1` ADD COLUMN `note` VARCHAR(1536) DEFAULT NULL'
+        assertions:
+          - assertions:
+              - path: $.response.success
+                operator: eq
+                value: true
+
+      - name: Update attribute metadata to available
+        action:
+          type: dbQuery
+          database: appwrite-mariadb
+          query: "UPDATE `_1__metadata` SET attributes = ? WHERE _uid = 'database_1_collection_1'"
+          params:
+            '1': '[{"$id":"note","key":"note","type":"string","status":"available","error":"","required":false,"array":false,"size":512,"default":null,"signed":true,"filters":[]}]'
+        assertions:
+          - assertions:
+              - path: $.response.success
+                operator: eq
+                value: true
+
+      - name: Wait for cache refresh
+        action:
+          type: wait
+          durationMs: 2000
+
+      - name: User A creates private document
+        action:
+          type: httpRequest
+          method: POST
+          url: appwrite/v1/databases/perm-db/collections/private-notes/documents
+          headers:
+            Content-Type: application/json
+            X-Appwrite-Project: '{{projectId}}'
+            X-Fallback-Cookies: '{{userACookies}}'
+          body:
+            documentId: 'unique()'
+            data:
+              note: My secret note
+            permissions:
+              - 'read("user:{{userAId}}")'
+              - 'update("user:{{userAId}}")'
+              - 'delete("user:{{userAId}}")'
+        extract:
+          privateDocId: $.response.body.$id
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 201
+
+      - name: User A can read own document
+        action:
+          type: httpRequest
+          method: GET
+          url: appwrite/v1/databases/perm-db/collections/private-notes/documents/{{privateDocId}}
+          headers:
+            X-Appwrite-Project: '{{projectId}}'
+            X-Fallback-Cookies: '{{userACookies}}'
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+              - path: $.response.body.note
+                operator: eq
+                value: My secret note
+
+      - name: User B cannot read User A private document
+        action:
+          type: httpRequest
+          method: GET
+          url: appwrite/v1/databases/perm-db/collections/private-notes/documents/{{privateDocId}}
+          headers:
+            X-Appwrite-Project: '{{projectId}}'
+            X-Fallback-Cookies: '{{userBCookies}}'
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 404
+
+      - name: User B cannot update User A private document
+        action:
+          type: httpRequest
+          method: PATCH
+          url: appwrite/v1/databases/perm-db/collections/private-notes/documents/{{privateDocId}}
+          headers:
+            Content-Type: application/json
+            X-Appwrite-Project: '{{projectId}}'
+            X-Fallback-Cookies: '{{userBCookies}}'
+          body:
+            data:
+              note: Hacked by B
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [401, 404]
+
+      - name: User B cannot delete User A private document
+        action:
+          type: httpRequest
+          method: DELETE
+          url: appwrite/v1/databases/perm-db/collections/private-notes/documents/{{privateDocId}}
+          headers:
+            X-Appwrite-Project: '{{projectId}}'
+            X-Fallback-Cookies: '{{userBCookies}}'
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [401, 404]
+
+      - name: Unauthenticated cannot read private document
+        action:
+          type: httpRequest
+          method: GET
+          url: appwrite/v1/databases/perm-db/collections/private-notes/documents/{{privateDocId}}
+          headers:
+            X-Appwrite-Project: '{{projectId}}'
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [401, 404]
+
+      - name: User A creates public document
+        action:
+          type: httpRequest
+          method: POST
+          url: appwrite/v1/databases/perm-db/collections/private-notes/documents
+          headers:
+            Content-Type: application/json
+            X-Appwrite-Project: '{{projectId}}'
+            X-Fallback-Cookies: '{{userACookies}}'
+          body:
+            documentId: 'unique()'
+            data:
+              note: Public note
+            permissions:
+              - 'read("any")'
+              - 'update("any")'
+        extract:
+          publicDocId: $.response.body.$id
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 201
+
+      - name: User B can read public document
+        action:
+          type: httpRequest
+          method: GET
+          url: appwrite/v1/databases/perm-db/collections/private-notes/documents/{{publicDocId}}
+          headers:
+            X-Appwrite-Project: '{{projectId}}'
+            X-Fallback-Cookies: '{{userBCookies}}'
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+
+      - name: User A private document unchanged after escalation attempts
+        action:
+          type: httpRequest
+          method: GET
+          url: appwrite/v1/databases/perm-db/collections/private-notes/documents/{{privateDocId}}
+          headers:
+            X-Appwrite-Project: '{{projectId}}'
+            X-Fallback-Cookies: '{{userACookies}}'
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+              - path: $.response.body.note
+                operator: eq
+                value: My secret note

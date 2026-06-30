@@ -1,0 +1,5 @@
+type: DATABASE
+name: appwrite-mariadb
+database: mysql
+image: mariadb:10.11
+dbName: appwrite

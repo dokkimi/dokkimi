@@ -1,0 +1,321 @@
+name: appwrite-smoke-test
+description: >
+  Deploy Appwrite with MariaDB + Redis. Bootstrap admin account,
+  create a project and API key, then verify database CRUD and user management.
+  Uses direct MariaDB queries to bypass Appwrite's async attribute worker.
+config:
+  timeoutSeconds: 600
+items:
+  - $ref: ../shared/appwrite-mariadb.yaml
+  - $ref: ../shared/appwrite-redis.yaml
+  - $ref: ../shared/appwrite-api.yaml
+variables:
+  adminEmail: admin@dokkimi.test
+  adminPassword: TestPass123!
+  projectId: dokkimi-test
+tests:
+  - name: Bootstrap and verify CRUD
+    steps:
+      - name: Register admin account
+        action:
+          type: httpRequest
+          method: POST
+          url: appwrite/v1/account
+          headers:
+            Content-Type: application/json
+            X-Appwrite-Project: console
+          body:
+            userId: 'unique()'
+            email: '{{adminEmail}}'
+            password: '{{adminPassword}}'
+            name: Admin
+        extract:
+          adminId: $.response.body.$id
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 201
+
+      - name: Create admin session
+        action:
+          type: httpRequest
+          method: POST
+          url: appwrite/v1/account/sessions/email
+          headers:
+            Content-Type: application/json
+            X-Appwrite-Project: console
+          body:
+            email: '{{adminEmail}}'
+            password: '{{adminPassword}}'
+        extract:
+          fallbackCookies: $.response.headers.x-fallback-cookies
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 201
+
+      - name: Create team
+        action:
+          type: httpRequest
+          method: POST
+          url: appwrite/v1/teams
+          headers:
+            Content-Type: application/json
+            X-Appwrite-Project: console
+            X-Fallback-Cookies: '{{fallbackCookies}}'
+          body:
+            teamId: 'unique()'
+            name: Dokkimi Org
+        extract:
+          teamId: $.response.body.$id
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 201
+
+      - name: Create project
+        action:
+          type: httpRequest
+          method: POST
+          url: appwrite/v1/projects
+          headers:
+            Content-Type: application/json
+            X-Appwrite-Project: console
+            X-Fallback-Cookies: '{{fallbackCookies}}'
+          body:
+            projectId: '{{projectId}}'
+            name: Dokkimi Test Project
+            teamId: '{{teamId}}'
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 201
+
+      - name: Create API key
+        action:
+          type: httpRequest
+          method: POST
+          url: appwrite/v1/projects/{{projectId}}/keys
+          headers:
+            Content-Type: application/json
+            X-Appwrite-Project: console
+            X-Fallback-Cookies: '{{fallbackCookies}}'
+          body:
+            name: Test Key
+            scopes:
+              - users.read
+              - users.write
+              - databases.read
+              - databases.write
+              - collections.read
+              - collections.write
+              - documents.read
+              - documents.write
+              - health.read
+        extract:
+          apiKey: $.response.body.secret
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 201
+
+      - name: Verify health endpoint
+        action:
+          type: httpRequest
+          method: GET
+          url: appwrite/v1/health
+          headers:
+            X-Appwrite-Project: '{{projectId}}'
+            X-Appwrite-Key: '{{apiKey}}'
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+
+      - name: Create database
+        action:
+          type: httpRequest
+          method: POST
+          url: appwrite/v1/databases
+          headers:
+            Content-Type: application/json
+            X-Appwrite-Project: '{{projectId}}'
+            X-Appwrite-Key: '{{apiKey}}'
+          body:
+            databaseId: test-db
+            name: Test Database
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 201
+
+      - name: Create collection
+        action:
+          type: httpRequest
+          method: POST
+          url: appwrite/v1/databases/test-db/collections
+          headers:
+            Content-Type: application/json
+            X-Appwrite-Project: '{{projectId}}'
+            X-Appwrite-Key: '{{apiKey}}'
+          body:
+            collectionId: items
+            name: Items
+            documentSecurity: true
+            permissions:
+              - 'read("any")'
+              - 'create("users")'
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 201
+
+      - name: Create attribute via API (async)
+        action:
+          type: httpRequest
+          method: POST
+          url: appwrite/v1/databases/test-db/collections/items/attributes/string
+          headers:
+            Content-Type: application/json
+            X-Appwrite-Project: '{{projectId}}'
+            X-Appwrite-Key: '{{apiKey}}'
+          body:
+            key: title
+            size: 256
+            required: false
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [201, 202]
+
+      - name: Add title column directly in MariaDB
+        action:
+          type: dbQuery
+          database: appwrite-mariadb
+          query: 'ALTER TABLE `_1_database_1_collection_1` ADD COLUMN `title` VARCHAR(768) DEFAULT NULL'
+        assertions:
+          - assertions:
+              - path: $.response.success
+                operator: eq
+                value: true
+
+      - name: Update attribute metadata to available
+        action:
+          type: dbQuery
+          database: appwrite-mariadb
+          query: "UPDATE `_1__metadata` SET attributes = ? WHERE _uid = 'database_1_collection_1'"
+          params:
+            '1': '[{"$id":"title","key":"title","type":"string","status":"available","error":"","required":false,"array":false,"size":256,"default":null,"signed":true,"filters":[]}]'
+        assertions:
+          - assertions:
+              - path: $.response.success
+                operator: eq
+                value: true
+
+      - name: Wait for Appwrite cache to refresh
+        action:
+          type: wait
+          durationMs: 2000
+
+      - name: Create document
+        action:
+          type: httpRequest
+          method: POST
+          url: appwrite/v1/databases/test-db/collections/items/documents
+          headers:
+            Content-Type: application/json
+            X-Appwrite-Project: '{{projectId}}'
+            X-Appwrite-Key: '{{apiKey}}'
+          body:
+            documentId: 'unique()'
+            data:
+              title: Test Document
+            permissions:
+              - 'read("any")'
+              - 'update("any")'
+              - 'delete("any")'
+        extract:
+          docId: $.response.body.$id
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 201
+              - path: $.response.body.title
+                operator: eq
+                value: Test Document
+
+      - name: Read document back
+        action:
+          type: httpRequest
+          method: GET
+          url: appwrite/v1/databases/test-db/collections/items/documents/{{docId}}
+          headers:
+            X-Appwrite-Project: '{{projectId}}'
+            X-Appwrite-Key: '{{apiKey}}'
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+              - path: $.response.body.title
+                operator: eq
+                value: Test Document
+
+      - name: Update document
+        action:
+          type: httpRequest
+          method: PATCH
+          url: appwrite/v1/databases/test-db/collections/items/documents/{{docId}}
+          headers:
+            Content-Type: application/json
+            X-Appwrite-Project: '{{projectId}}'
+            X-Appwrite-Key: '{{apiKey}}'
+          body:
+            data:
+              title: Updated Title
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+              - path: $.response.body.title
+                operator: eq
+                value: Updated Title
+
+      - name: Delete document
+        action:
+          type: httpRequest
+          method: DELETE
+          url: appwrite/v1/databases/test-db/collections/items/documents/{{docId}}
+          headers:
+            X-Appwrite-Project: '{{projectId}}'
+            X-Appwrite-Key: '{{apiKey}}'
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 204
+
+      - name: Verify document deleted
+        action:
+          type: httpRequest
+          method: GET
+          url: appwrite/v1/databases/test-db/collections/items/documents/{{docId}}
+          headers:
+            X-Appwrite-Project: '{{projectId}}'
+            X-Appwrite-Key: '{{apiKey}}'
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 404
