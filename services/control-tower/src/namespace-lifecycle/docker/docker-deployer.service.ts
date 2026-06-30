@@ -86,7 +86,10 @@ export class DockerDeployerService {
 
       // DNS names for all databases/brokers across all stages
       const directDnsNames = ctx.definition.items
-        .filter((i) => i.type === 'DATABASE' || i.type === 'BROKER')
+        .filter(
+          (i) =>
+            i.type === 'DATABASE' || i.type === 'BROKER' || i.type === 'WORKER',
+        )
         .map((i) => sanitizeContainerName(i.name));
 
       await this.deployConfig.writeConfig(ctx, configPaths);
