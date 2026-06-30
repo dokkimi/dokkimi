@@ -913,13 +913,42 @@ Tests are defined in the top-level `tests` array. Each test is independent and c
 }
 ```
 
-| Field     | Type            | Required | Description                                                              |
-| --------- | --------------- | -------- | ------------------------------------------------------------------------ |
-| `type`    | `"httpRequest"` | Yes      | Action type                                                              |
-| `method`  | enum            | Yes      | `"GET"`, `"POST"`, `"PUT"`, `"DELETE"`, `"PATCH"`, `"HEAD"`, `"OPTIONS"` |
-| `url`     | string          | Yes      | `"service-name/path"` format — service name resolves to internal DNS     |
-| `headers` | object          | No       | Request headers (values support `{{variables}}`)                         |
-| `body`    | any JSON        | No       | Request body (string values support `{{variables}}`)                     |
+| Field      | Type            | Required | Description                                                              |
+| ---------- | --------------- | -------- | ------------------------------------------------------------------------ |
+| `type`     | `"httpRequest"` | Yes      | Action type                                                              |
+| `method`   | enum            | Yes      | `"GET"`, `"POST"`, `"PUT"`, `"DELETE"`, `"PATCH"`, `"HEAD"`, `"OPTIONS"` |
+| `url`      | string          | Yes      | `"service-name/path"` format — service name resolves to internal DNS     |
+| `headers`  | object          | No       | Request headers (values support `{{variables}}`)                         |
+| `body`     | any JSON        | No       | Request body (string values support `{{variables}}`)                     |
+| `formData` | object          | No       | Multipart/form-data fields. Cannot be combined with `body`. See below.   |
+
+**formData (multipart/form-data uploads):**
+
+Use `formData` instead of `body` when the target API expects `multipart/form-data` (e.g., file uploads). The Content-Type header is set automatically — do not set it manually.
+
+Field values are encoded by type:
+
+- **String / number / boolean** → plain form field
+- **Array of strings** → repeated `key[]` fields (e.g., `permissions[]`)
+- **Object with `filename` + `content`** → file upload part (optional `contentType`, defaults to `application/octet-stream`)
+
+```yaml
+action:
+  type: httpRequest
+  method: POST
+  url: my-service/v1/storage/buckets/{{bucketId}}/files
+  headers:
+    Authorization: 'Bearer {{token}}'
+  formData:
+    fileId: 'unique()'
+    file:
+      filename: report.txt
+      content: 'Hello world'
+      contentType: text/plain
+    permissions:
+      - 'read("any")'
+      - 'write("user:{{userId}}")'
+```
 
 #### Database Query (`dbQuery`)
 

@@ -3,6 +3,8 @@ package main
 import (
 	"errors"
 	"fmt"
+	"io"
+	"strings"
 	"testing"
 )
 
@@ -168,6 +170,103 @@ func TestStripScheme(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestBuildFormDataBody(t *testing.T) {
+	t.Run("plain string field", func(t *testing.T) {
+		formData := map[string]interface{}{
+			"name": "Alice",
+		}
+		reader, ct, err := buildFormDataBody(formData)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if !strings.HasPrefix(ct, "multipart/form-data; boundary=") {
+			t.Errorf("expected multipart content type, got %q", ct)
+		}
+		body, _ := io.ReadAll(reader)
+		if !strings.Contains(string(body), "Alice") {
+			t.Error("expected body to contain field value")
+		}
+	})
+
+	t.Run("file upload part", func(t *testing.T) {
+		formData := map[string]interface{}{
+			"file": map[string]interface{}{
+				"filename":    "test.txt",
+				"content":     "hello world",
+				"contentType": "text/plain",
+			},
+		}
+		reader, ct, err := buildFormDataBody(formData)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		body, _ := io.ReadAll(reader)
+		bodyStr := string(body)
+		if !strings.Contains(bodyStr, `filename="test.txt"`) {
+			t.Error("expected filename in Content-Disposition")
+		}
+		if !strings.Contains(bodyStr, "hello world") {
+			t.Error("expected file content in body")
+		}
+		if !strings.Contains(bodyStr, "Content-Type: text/plain") {
+			t.Error("expected Content-Type header on file part")
+		}
+		_ = ct
+	})
+
+	t.Run("file upload defaults contentType to octet-stream", func(t *testing.T) {
+		formData := map[string]interface{}{
+			"file": map[string]interface{}{
+				"filename": "data.bin",
+				"content":  "binary",
+			},
+		}
+		reader, _, err := buildFormDataBody(formData)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		body, _ := io.ReadAll(reader)
+		if !strings.Contains(string(body), "Content-Type: application/octet-stream") {
+			t.Error("expected default octet-stream content type")
+		}
+	})
+
+	t.Run("array values sent as repeated key[] fields", func(t *testing.T) {
+		formData := map[string]interface{}{
+			"tags": []interface{}{"alpha", "beta"},
+		}
+		reader, _, err := buildFormDataBody(formData)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		body, _ := io.ReadAll(reader)
+		bodyStr := string(body)
+		if !strings.Contains(bodyStr, `name="tags[]"`) {
+			t.Error("expected tags[] field name")
+		}
+		if !strings.Contains(bodyStr, "alpha") || !strings.Contains(bodyStr, "beta") {
+			t.Error("expected both array values in body")
+		}
+	})
+
+	t.Run("object without filename/content is JSON-serialized", func(t *testing.T) {
+		formData := map[string]interface{}{
+			"meta": map[string]interface{}{
+				"key": "value",
+			},
+		}
+		reader, _, err := buildFormDataBody(formData)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		body, _ := io.ReadAll(reader)
+		bodyStr := string(body)
+		if !strings.Contains(bodyStr, `"key":"value"`) && !strings.Contains(bodyStr, `"key": "value"`) {
+			t.Error("expected JSON-serialized object in body")
+		}
+	})
 }
 
 func TestRootCause(t *testing.T) {

@@ -34,6 +34,7 @@ import CodeBlock from '../../components/CodeBlock.astro';
       <tr><td><code>url</code></td><td>string</td><td>Yes</td><td><code>service-name/path</code> format — service name resolves to internal DNS</td></tr>
       <tr><td><code>headers</code></td><td>object</td><td>No</td><td>Request headers (values support <code>&#123;&#123;variables&#125;&#125;</code>)</td></tr>
       <tr><td><code>body</code></td><td>any JSON</td><td>No</td><td>Request body (string values support <code>&#123;&#123;variables&#125;&#125;</code>)</td></tr>
+      <tr><td><code>formData</code></td><td>object</td><td>No</td><td>Multipart/form-data fields for file uploads. Cannot be combined with <code>body</code>.</td></tr>
     </tbody>
   </table>
 
@@ -47,6 +48,32 @@ import CodeBlock from '../../components/CodeBlock.astro';
 
 // Wrong — don't include ports or protocols
 "url": "http://api-gateway:3000/api/users"`} lang="javascript" />
+
+  <h3>Form data (file uploads)</h3>
+  <p>Use <code>formData</code> instead of <code>body</code> when the API expects <code>multipart/form-data</code> (e.g., file uploads). The <code>Content-Type</code> header is set automatically.</p>
+
+  <CodeBlock code={`action:
+  type: httpRequest
+  method: POST
+  url: my-service/v1/storage/buckets/{{bucketId}}/files
+  headers:
+    Authorization: 'Bearer {{token}}'
+  formData:
+    fileId: 'unique()'
+    file:
+      filename: report.txt
+      content: 'Hello world'
+      contentType: text/plain
+    permissions:
+      - 'read("any")'
+      - 'write("user:{{userId}}")'`} lang="yaml" />
+
+  <p>Field values are encoded by type:</p>
+  <ul>
+    <li><strong>String / number / boolean</strong> — plain form field</li>
+    <li><strong>Array of strings</strong> — repeated <code>key[]</code> fields (e.g., <code>permissions[]</code>)</li>
+    <li><strong>Object with <code>filename</code> + <code>content</code></strong> — file upload part (optional <code>contentType</code>, defaults to <code>application/octet-stream</code>)</li>
+  </ul>
 
   <h3>Parallel actions</h3>
   <p>Use the <code>parallel</code> action type to execute multiple actions simultaneously within a single step:</p>

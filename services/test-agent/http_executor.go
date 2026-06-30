@@ -8,7 +8,9 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"mime/multipart"
 	"net/http"
+	"net/textproto"
 	"strings"
 	"time"
 )
@@ -125,10 +127,75 @@ func normalizeResponseForUntil(raw map[string]interface{}) map[string]interface{
 	return normalized
 }
 
+// buildFormDataBody builds a multipart/form-data request body from the action's FormData map.
+// String values become plain form fields. Objects with "filename" + "content" become file parts.
+func buildFormDataBody(formData map[string]interface{}) (io.Reader, string, error) {
+	var buf bytes.Buffer
+	writer := multipart.NewWriter(&buf)
+
+	for key, value := range formData {
+		switch v := value.(type) {
+		case map[string]interface{}:
+			filename, hasFilename := v["filename"].(string)
+			content, hasContent := v["content"].(string)
+			if hasFilename && hasContent {
+				contentType, _ := v["contentType"].(string)
+				if contentType == "" {
+					contentType = "application/octet-stream"
+				}
+				h := make(textproto.MIMEHeader)
+				h.Set("Content-Disposition", fmt.Sprintf(`form-data; name="%s"; filename="%s"`, key, filename))
+				h.Set("Content-Type", contentType)
+				part, err := writer.CreatePart(h)
+				if err != nil {
+					return nil, "", fmt.Errorf("failed to create file part %q: %w", key, err)
+				}
+				if _, err := part.Write([]byte(content)); err != nil {
+					return nil, "", fmt.Errorf("failed to write file part %q: %w", key, err)
+				}
+			} else {
+				jsonBytes, err := json.Marshal(v)
+				if err != nil {
+					return nil, "", fmt.Errorf("failed to marshal form field %q: %w", key, err)
+				}
+				if err := writer.WriteField(key, string(jsonBytes)); err != nil {
+					return nil, "", fmt.Errorf("failed to write form field %q: %w", key, err)
+				}
+			}
+		case []interface{}:
+			arrayKey := key + "[]"
+			for _, item := range v {
+				if err := writer.WriteField(arrayKey, fmt.Sprintf("%v", item)); err != nil {
+					return nil, "", fmt.Errorf("failed to write array form field %q: %w", key, err)
+				}
+			}
+		default:
+			strVal := fmt.Sprintf("%v", v)
+			if err := writer.WriteField(key, strVal); err != nil {
+				return nil, "", fmt.Errorf("failed to write form field %q: %w", key, err)
+			}
+		}
+	}
+
+	if err := writer.Close(); err != nil {
+		return nil, "", fmt.Errorf("failed to close multipart writer: %w", err)
+	}
+	return &buf, writer.FormDataContentType(), nil
+}
+
 // doAPIRequest performs a single HTTP request attempt and returns the full response
 func (e *TestExecutor) doAPIRequest(ctx context.Context, action StepAction, fullURL string) (*APIResponse, error) {
 	var bodyReader io.Reader
-	if action.Body != nil {
+	contentType := "application/json"
+
+	if action.FormData != nil {
+		reader, ct, err := buildFormDataBody(action.FormData)
+		if err != nil {
+			return nil, fmt.Errorf("failed to build form data: %w", err)
+		}
+		bodyReader = reader
+		contentType = ct
+	} else if action.Body != nil {
 		bodyBytes, err := json.Marshal(action.Body)
 		if err != nil {
 			return nil, fmt.Errorf("failed to marshal request body: %w", err)
@@ -141,7 +208,7 @@ func (e *TestExecutor) doAPIRequest(ctx context.Context, action StepAction, full
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Content-Type", contentType)
 	for key, value := range action.Headers {
 		req.Header.Set(key, value)
 	}

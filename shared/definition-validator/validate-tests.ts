@@ -239,6 +239,15 @@ export function validateStep(
         `${ctx}.action: url "${action.url}" contains a port — ports are not needed and are likely to cause test failures`,
       );
     }
+    if (action.body !== undefined && action.formData !== undefined) {
+      err(
+        r,
+        `${ctx}.action: httpRequest cannot have both "body" and "formData" — use one or the other`,
+      );
+    }
+    if (action.formData !== undefined && typeof action.formData !== 'object') {
+      err(r, `${ctx}.action: "formData" must be an object`);
+    }
   } else if (action.type === 'dbQuery') {
     checkUnknownKeys(action, VALID_ACTION_KEYS.dbQuery, `${ctx}.action`, r);
     if (typeof action.database !== 'string') {

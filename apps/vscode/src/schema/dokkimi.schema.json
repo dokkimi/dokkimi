@@ -1110,6 +1110,42 @@
               "body": {
                 "description": "Request body (JSON). String values support {{variable}} interpolation."
               },
+              "formData": {
+                "type": "object",
+                "description": "Multipart/form-data fields. String/number values become plain fields. Objects with filename+content become file parts.",
+                "additionalProperties": {
+                  "oneOf": [
+                    { "type": "string" },
+                    { "type": "number" },
+                    { "type": "boolean" },
+                    {
+                      "type": "array",
+                      "description": "Array of values sent as repeated key[] fields (e.g. permissions).",
+                      "items": { "type": "string" }
+                    },
+                    {
+                      "type": "object",
+                      "description": "File upload part.",
+                      "required": ["filename", "content"],
+                      "properties": {
+                        "filename": {
+                          "type": "string",
+                          "description": "File name for the upload."
+                        },
+                        "content": {
+                          "type": "string",
+                          "description": "File content (text)."
+                        },
+                        "contentType": {
+                          "type": "string",
+                          "description": "MIME type (default: application/octet-stream)."
+                        }
+                      },
+                      "additionalProperties": false
+                    }
+                  ]
+                }
+              },
               "timeout": {
                 "type": "integer",
                 "description": "Request timeout in milliseconds."

@@ -620,6 +620,64 @@ describe('validateStep', () => {
       );
       expect(r.errors.some((e) => e.includes('requires "url"'))).toBe(true);
     });
+
+    it('errors when both body and formData are present', () => {
+      const r = makeResult();
+      validateStep(
+        {
+          action: {
+            type: 'httpRequest',
+            method: 'POST',
+            url: 'svc/upload',
+            body: { key: 'value' },
+            formData: { field: 'data' },
+          },
+        },
+        'ctx',
+        r,
+      );
+      expect(
+        r.errors.some((e) =>
+          e.includes('cannot have both "body" and "formData"'),
+        ),
+      ).toBe(true);
+    });
+
+    it('errors when formData is not an object', () => {
+      const r = makeResult();
+      validateStep(
+        {
+          action: {
+            type: 'httpRequest',
+            method: 'POST',
+            url: 'svc/upload',
+            formData: 'not-an-object',
+          },
+        },
+        'ctx',
+        r,
+      );
+      expect(
+        r.errors.some((e) => e.includes('"formData" must be an object')),
+      ).toBe(true);
+    });
+
+    it('accepts formData without body', () => {
+      const r = makeResult();
+      validateStep(
+        {
+          action: {
+            type: 'httpRequest',
+            method: 'POST',
+            url: 'svc/upload',
+            formData: { fileId: 'unique()' },
+          },
+        },
+        'ctx',
+        r,
+      );
+      expect(r.errors).toHaveLength(0);
+    });
   });
 
   describe('dbQuery action', () => {

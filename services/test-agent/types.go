@@ -264,6 +264,7 @@ type StepAction struct {
 	URL        string                 `json:"url,omitempty"`        // httpRequest only
 	Headers    map[string]string      `json:"headers,omitempty"`    // httpRequest only
 	Body       interface{}            `json:"body,omitempty"`       // httpRequest only
+	FormData   map[string]interface{} `json:"formData,omitempty"`   // httpRequest only — multipart/form-data fields
 	Timeout    int                    `json:"timeout,omitempty"`    // httpRequest or dbQuery (ms)
 	DurationMs int                    `json:"durationMs,omitempty"` // wait only
 	Database   string                 `json:"database,omitempty"`   // dbQuery only

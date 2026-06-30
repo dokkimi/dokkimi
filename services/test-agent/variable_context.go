@@ -146,6 +146,17 @@ func (vc *VariableContext) ResolveAction(action StepAction) (StepAction, error) 
 		resolved.Body = resolvedBody
 	}
 
+	// Resolve formData values
+	if action.FormData != nil {
+		resolvedFormData, err := vc.resolveValue(action.FormData)
+		if err != nil {
+			return resolved, fmt.Errorf("resolving formData: %w", err)
+		}
+		if m, ok := resolvedFormData.(map[string]interface{}); ok {
+			resolved.FormData = m
+		}
+	}
+
 	// Resolve database query string
 	if action.Query != "" {
 		query, err := vc.Resolve(action.Query)

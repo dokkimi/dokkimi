@@ -13,6 +13,8 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"mime"
+	"mime/multipart"
 	"net/http"
 	"os"
 	"os/signal"
@@ -254,11 +256,55 @@ func handleRequest(w http.ResponseWriter, r *http.Request, proxy *ProxyService, 
 	if r.Body != nil {
 		bodyBytes, err := io.ReadAll(r.Body)
 		if err == nil && len(bodyBytes) > 0 {
-			// Try to parse as JSON
+			parsed := false
+			// Try JSON first
 			var jsonBody interface{}
 			if err := json.Unmarshal(bodyBytes, &jsonBody); err == nil {
 				requestBody = jsonBody
-			} else {
+				parsed = true
+			}
+			// Try multipart/form-data
+			if !parsed {
+				if ct := r.Header.Get("Content-Type"); strings.HasPrefix(ct, "multipart/form-data") {
+					if _, params, err := mime.ParseMediaType(ct); err == nil {
+						if boundary, ok := params["boundary"]; ok {
+							reader := multipart.NewReader(bytes.NewReader(bodyBytes), boundary)
+							if form, err := reader.ReadForm(10 << 20); err == nil {
+								formMap := make(map[string]interface{}, len(form.Value)+len(form.File))
+								for key, vals := range form.Value {
+									if len(vals) == 1 {
+										formMap[key] = vals[0]
+									} else {
+										formMap[key] = vals
+									}
+								}
+								for key, files := range form.File {
+									if len(files) == 1 {
+										formMap[key] = map[string]interface{}{
+											"filename":    files[0].Filename,
+											"size":        files[0].Size,
+											"contentType": files[0].Header.Get("Content-Type"),
+										}
+									} else {
+										fileList := make([]interface{}, len(files))
+										for i, f := range files {
+											fileList[i] = map[string]interface{}{
+												"filename":    f.Filename,
+												"size":        f.Size,
+												"contentType": f.Header.Get("Content-Type"),
+											}
+										}
+										formMap[key] = fileList
+									}
+								}
+								requestBody = formMap
+								parsed = true
+							}
+						}
+					}
+				}
+			}
+			if !parsed {
 				requestBody = string(bodyBytes)
 			}
 			// Restore body for proxy

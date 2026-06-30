@@ -389,6 +389,68 @@ func TestResolveWhereEntries(t *testing.T) {
 	})
 }
 
+func TestResolveAction_FormData(t *testing.T) {
+	t.Run("resolves variables in formData string values", func(t *testing.T) {
+		vc := NewVariableContext()
+		vc.Set("userId", "user-123")
+		action := StepAction{
+			Type:   "httpRequest",
+			Method: "POST",
+			URL:    "svc/upload",
+			FormData: map[string]interface{}{
+				"fileId": "{{userId}}",
+			},
+		}
+		resolved, err := vc.ResolveAction(action)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if resolved.FormData["fileId"] != "user-123" {
+			t.Errorf("expected user-123, got %v", resolved.FormData["fileId"])
+		}
+	})
+
+	t.Run("resolves variables in nested formData objects", func(t *testing.T) {
+		vc := NewVariableContext()
+		vc.Set("fname", "secret.txt")
+		action := StepAction{
+			Type:   "httpRequest",
+			Method: "POST",
+			URL:    "svc/upload",
+			FormData: map[string]interface{}{
+				"file": map[string]interface{}{
+					"filename": "{{fname}}",
+					"content":  "data",
+				},
+			},
+		}
+		resolved, err := vc.ResolveAction(action)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		fileMap := resolved.FormData["file"].(map[string]interface{})
+		if fileMap["filename"] != "secret.txt" {
+			t.Errorf("expected secret.txt, got %v", fileMap["filename"])
+		}
+	})
+
+	t.Run("nil formData is left nil", func(t *testing.T) {
+		vc := NewVariableContext()
+		action := StepAction{
+			Type:   "httpRequest",
+			Method: "GET",
+			URL:    "svc/path",
+		}
+		resolved, err := vc.ResolveAction(action)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if resolved.FormData != nil {
+			t.Error("expected nil formData")
+		}
+	})
+}
+
 func TestExtractKeyInterpolation(t *testing.T) {
 	vc := NewVariableContext()
 	vc.Set("prefix", "user")
