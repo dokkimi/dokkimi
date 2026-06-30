@@ -8,7 +8,6 @@ export interface ItemDefinitionLike {
   description?: string | null;
   image?: string | null;
   port?: number | null;
-  debugPort?: number | null;
   healthCheck?: string | null;
   uiPath?: string | null;
   domain?: string | null;

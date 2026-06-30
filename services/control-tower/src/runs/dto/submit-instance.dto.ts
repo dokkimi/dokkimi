@@ -57,10 +57,6 @@ class DefinitionItemDto {
   port?: number | null;
 
   @IsOptional()
-  @IsNumber()
-  debugPort?: number | null;
-
-  @IsOptional()
   @IsString()
   healthCheck?: string | null;
 

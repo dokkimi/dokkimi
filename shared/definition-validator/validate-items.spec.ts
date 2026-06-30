@@ -339,24 +339,6 @@ describe('validateItem', () => {
       );
     });
 
-    it('validates optional debugPort', () => {
-      const r = makeResult();
-      validateItem(
-        {
-          type: 'SERVICE',
-          name: 'svc',
-          port: 3000,
-          healthCheck: '/h',
-          debugPort: 'nope',
-        },
-        0,
-        '/f.json',
-        r,
-        fs,
-      );
-      expect(r.errors.some((e) => e.includes('debugPort'))).toBe(true);
-    });
-
     it('errors when env is not an array', () => {
       const r = makeResult();
       validateItem(

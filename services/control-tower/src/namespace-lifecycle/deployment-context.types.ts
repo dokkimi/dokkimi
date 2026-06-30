@@ -73,7 +73,6 @@ export interface DefinitionItem {
   // Service fields
   image?: string | null;
   port?: number | null;
-  debugPort?: number | null;
   healthCheck?: string | null;
   uiPath?: string | null;
   domain?: string | null;

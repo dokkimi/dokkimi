@@ -95,7 +95,6 @@ function validateServiceItem(
     );
   }
   validatePort(item.port, 'port', label, r);
-  validatePort(item.debugPort, 'debugPort', label, r);
   if (item.command !== undefined) {
     if (!Array.isArray(item.command)) {
       err(r, `${label}: "command" must be an array of strings`);

@@ -230,21 +230,20 @@ A containerized application deployed with an interceptor sidecar for traffic cap
 
 **Optional fields:**
 
-| Field         | Type              | Default | Description                                                                                                                        |
-| ------------- | ----------------- | ------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| `description` | string            | —       | Human-readable description (max 500 chars)                                                                                         |
-| `image`       | string            | —       | Docker image URI (e.g., `"my-service:latest"`).                                                                                    |
-| `uiPath`      | string            | —       | URL path to service's UI (e.g., `"/"`, `"/app"`) — enables "Open UI" button                                                        |
-| `debugPort`   | integer (1-65535) | —       | Remote debugging port (e.g., 9229 for Node.js `--inspect`)                                                                         |
-| `command`     | string[]          | —       | Override Docker image's default CMD (e.g., `["server", "/data"]`)                                                                  |
-| `entrypoint`  | string[]          | —       | Override Docker image's ENTRYPOINT (e.g., `["/bin/sh", "-c", "..."]`)                                                              |
-| `mountFiles`  | array             | —       | Files to mount into the container (read-only). Each entry: `{ "source": "../path/to/file", "target": "/absolute/container/path" }` |
-| `env`         | array             | —       | Environment variables: `[{ "name": "KEY", "value": "VALUE" }, ...]`                                                                |
-| `minCpu`      | number (≥ 0)      | —       | Minimum CPU cores (e.g., 0.25)                                                                                                     |
-| `minMemory`   | number (≥ 0)      | —       | Minimum memory in MB                                                                                                               |
-| `maxCpu`      | number (≥ 0)      | —       | Maximum CPU cores                                                                                                                  |
-| `maxMemory`   | number (≥ 0)      | —       | Maximum memory in MB                                                                                                               |
-| `stage`       | integer (≥ 0)     | `0`     | Deployment stage. Items deploy in stage order — stage N+1 starts after stage N is healthy. Sort key, not index (gaps are fine).    |
+| Field         | Type          | Default | Description                                                                                                                        |
+| ------------- | ------------- | ------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `description` | string        | —       | Human-readable description (max 500 chars)                                                                                         |
+| `image`       | string        | —       | Docker image URI (e.g., `"my-service:latest"`).                                                                                    |
+| `uiPath`      | string        | —       | URL path to service's UI (e.g., `"/"`, `"/app"`) — enables "Open UI" button                                                        |
+| `command`     | string[]      | —       | Override Docker image's default CMD (e.g., `["server", "/data"]`)                                                                  |
+| `entrypoint`  | string[]      | —       | Override Docker image's ENTRYPOINT (e.g., `["/bin/sh", "-c", "..."]`)                                                              |
+| `mountFiles`  | array         | —       | Files to mount into the container (read-only). Each entry: `{ "source": "../path/to/file", "target": "/absolute/container/path" }` |
+| `env`         | array         | —       | Environment variables: `[{ "name": "KEY", "value": "VALUE" }, ...]`                                                                |
+| `minCpu`      | number (≥ 0)  | —       | Minimum CPU cores (e.g., 0.25)                                                                                                     |
+| `minMemory`   | number (≥ 0)  | —       | Minimum memory in MB                                                                                                               |
+| `maxCpu`      | number (≥ 0)  | —       | Maximum CPU cores                                                                                                                  |
+| `maxMemory`   | number (≥ 0)  | —       | Maximum memory in MB                                                                                                               |
+| `stage`       | integer (≥ 0) | `0`     | Deployment stage. Items deploy in stage order — stage N+1 starts after stage N is healthy. Sort key, not index (gaps are fine).    |
 
 **Full example:**
 
@@ -256,7 +255,6 @@ A containerized application deployed with an interceptor sidecar for traffic cap
   "port": 3000,
   "healthCheck": "/health",
   "uiPath": "/",
-  "debugPort": 9229,
   "env": [
     {
       "name": "DATABASE_URL",

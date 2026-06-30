@@ -486,8 +486,8 @@ describe('DockerServiceGroupService', () => {
       expect(mockDockerClient.runContainer).not.toHaveBeenCalled();
     });
 
-    it('should expose service port and debug port', async () => {
-      const item = buildServiceItem({ port: 3000, debugPort: 9229 });
+    it('should expose service port', async () => {
+      const item = buildServiceItem({ port: 3000 });
 
       await service.createServiceGroup(
         'dokkimi-run-inst1',
@@ -503,7 +503,6 @@ describe('DockerServiceGroupService', () => {
 
       const userCall = mockDockerClient.runContainer.mock.calls[1][0];
       expect(userCall.exposedPorts).toContain(3000);
-      expect(userCall.exposedPorts).toContain(9229);
     });
 
     it('should mount local dev path when specified', async () => {

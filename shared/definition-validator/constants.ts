@@ -72,7 +72,6 @@ export const VALID_ITEM_KEYS: Record<string, Set<string>> = {
     'port',
     'healthCheck',
     'uiPath',
-    'debugPort',
     'env',
     'minCpu',
     'minMemory',

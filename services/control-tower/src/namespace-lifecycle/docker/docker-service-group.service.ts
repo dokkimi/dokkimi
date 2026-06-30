@@ -238,10 +238,7 @@ export class DockerServiceGroupService {
       networkAliases: [containerName],
       env: userEnv,
       binds: userBinds,
-      exposedPorts: [
-        ...(item.port ? [item.port] : []),
-        ...(item.debugPort ? [item.debugPort] : []),
-      ],
+      exposedPorts: [...(item.port ? [item.port] : [])],
       labels: {
         'io.dokkimi.instance-id': instanceId,
         'io.dokkimi.role': 'service',
