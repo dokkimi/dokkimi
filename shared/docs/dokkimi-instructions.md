@@ -279,6 +279,50 @@ A containerized application deployed with an interceptor sidecar for traffic cap
 
 ---
 
+### WORKER
+
+A background process (queue consumer, event processor, cron daemon) that doesn't serve HTTP. Workers get an interceptor for outbound traffic capture but no health check — they are marked READY immediately on container creation. If the container crashes, the run fails.
+
+**Required fields:**
+
+| Field  | Type       | Description                                                                                               |
+| ------ | ---------- | --------------------------------------------------------------------------------------------------------- |
+| `type` | `"WORKER"` | Item type                                                                                                 |
+| `name` | string     | Unique name (1-63 chars, lowercase alphanumeric + hyphens). Used as DNS hostname for service connections. |
+
+**Optional fields:**
+
+| Field         | Type          | Default | Description                                                                                |
+| ------------- | ------------- | ------- | ------------------------------------------------------------------------------------------ |
+| `description` | string        | —       | Human-readable description (max 500 chars)                                                 |
+| `image`       | string        | —       | Docker image URI                                                                           |
+| `command`     | string[]      | —       | Override the Docker image's CMD                                                            |
+| `entrypoint`  | string[]      | —       | Override the Docker image's ENTRYPOINT                                                     |
+| `env`         | array         | —       | Environment variables (`[{ "name": "KEY", "value": "VALUE" }]`)                            |
+| `mountFiles`  | array         | —       | Files to mount (read-only): `[{ "source": "relative/path", "target": "/absolute/path" }]`  |
+| `minCpu`      | number (≥ 0)  | —       | Minimum CPU cores                                                                          |
+| `minMemory`   | number (≥ 0)  | —       | Minimum memory in MB                                                                       |
+| `maxCpu`      | number (≥ 0)  | —       | Maximum CPU cores                                                                          |
+| `maxMemory`   | number (≥ 0)  | —       | Maximum memory in MB                                                                       |
+| `stage`       | integer (≥ 0) | `0`     | Deployment stage. Items deploy in stage order — stage N+1 starts after stage N is healthy. |
+
+**Example:**
+
+```json
+{
+  "type": "WORKER",
+  "name": "appwrite-worker-db",
+  "image": "appwrite/appwrite:latest",
+  "command": ["php", "app/worker.php", "databases"],
+  "env": [
+    { "name": "_APP_REDIS_HOST", "value": "appwrite-redis" },
+    { "name": "_APP_REDIS_PORT", "value": "6379" }
+  ]
+}
+```
+
+---
+
 ### DATABASE
 
 A managed database instance. Dokkimi provisions the database container, sets up credentials, and runs init scripts automatically.

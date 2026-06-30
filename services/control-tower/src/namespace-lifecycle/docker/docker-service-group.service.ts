@@ -241,7 +241,7 @@ export class DockerServiceGroupService {
       exposedPorts: [...(item.port ? [item.port] : [])],
       labels: {
         'io.dokkimi.instance-id': instanceId,
-        'io.dokkimi.role': 'service',
+        'io.dokkimi.role': item.type.toLowerCase(),
         'io.dokkimi.item-name': item.name,
       },
       ...(item.command ? { cmd: item.command } : {}),

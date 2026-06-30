@@ -456,6 +456,81 @@ describe('validateItem', () => {
     });
   });
 
+  describe('WORKER', () => {
+    it('validates a valid worker', () => {
+      const r = makeResult();
+      validateItem(
+        {
+          type: 'WORKER',
+          name: 'my-worker',
+          image: 'my-image:latest',
+          command: ['node', 'worker.js'],
+        },
+        0,
+        '/f.json',
+        r,
+        fs,
+      );
+      expect(r.errors).toHaveLength(0);
+    });
+
+    it('warns when image is missing', () => {
+      const r = makeResult();
+      validateItem({ type: 'WORKER', name: 'my-worker' }, 0, '/f.json', r, fs);
+      expect(r.warnings.some((w) => w.includes('should have "image"'))).toBe(
+        true,
+      );
+    });
+
+    it('errors on invalid command type', () => {
+      const r = makeResult();
+      validateItem(
+        { type: 'WORKER', name: 'my-worker', image: 'x', command: 'bad' },
+        0,
+        '/f.json',
+        r,
+        fs,
+      );
+      expect(
+        r.errors.some((e) => e.includes('"command" must be an array')),
+      ).toBe(true);
+    });
+
+    it('warns on port field', () => {
+      const r = makeResult();
+      validateItem(
+        {
+          type: 'WORKER',
+          name: 'my-worker',
+          image: 'x',
+          port: 3000,
+        },
+        0,
+        '/f.json',
+        r,
+        fs,
+      );
+      expect(r.warnings.some((w) => w.includes('"port"'))).toBe(true);
+    });
+
+    it('warns on healthCheck field', () => {
+      const r = makeResult();
+      validateItem(
+        {
+          type: 'WORKER',
+          name: 'my-worker',
+          image: 'x',
+          healthCheck: '/health',
+        },
+        0,
+        '/f.json',
+        r,
+        fs,
+      );
+      expect(r.warnings.some((w) => w.includes('"healthCheck"'))).toBe(true);
+    });
+  });
+
   describe('DATABASE', () => {
     it('validates a valid database', () => {
       const r = makeResult();

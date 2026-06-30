@@ -37,7 +37,7 @@ class DefinitionItemDto {
   name!: string;
 
   @IsString()
-  type!: 'SERVICE' | 'DATABASE' | 'BROKER' | 'MOCK';
+  type!: 'SERVICE' | 'WORKER' | 'DATABASE' | 'BROKER' | 'MOCK';
 
   @IsOptional()
   @IsString()

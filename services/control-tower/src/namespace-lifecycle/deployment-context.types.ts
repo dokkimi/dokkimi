@@ -66,7 +66,7 @@ export interface DeployableDefinition {
  */
 export interface DefinitionItem {
   name: string;
-  type: 'SERVICE' | 'DATABASE' | 'BROKER' | 'MOCK';
+  type: 'SERVICE' | 'WORKER' | 'DATABASE' | 'BROKER' | 'MOCK';
   description?: string | null;
   stage?: number | null;
 

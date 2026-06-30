@@ -92,6 +92,7 @@
       "oneOf": [
         { "$ref": "#/definitions/RefItem" },
         { "$ref": "#/definitions/ServiceItem" },
+        { "$ref": "#/definitions/WorkerItem" },
         { "$ref": "#/definitions/DatabaseItem" },
         { "$ref": "#/definitions/BrokerItem" },
         { "$ref": "#/definitions/MockItem" },
@@ -196,6 +197,93 @@
           "items": { "$ref": "#/definitions/EnvVar" }
         },
         "build": { "$ref": "#/definitions/BuildConfig" },
+        "localDevPath": {
+          "type": "string",
+          "description": "Local source path for dev hot-reload."
+        },
+        "mountPath": {
+          "type": "string",
+          "description": "Container mount path for local dev source."
+        },
+        "minCpu": {
+          "type": "number",
+          "description": "Minimum CPU cores requested."
+        },
+        "minMemory": {
+          "type": "number",
+          "description": "Minimum memory in MB requested."
+        },
+        "maxCpu": {
+          "type": "number",
+          "description": "Maximum CPU cores allowed."
+        },
+        "maxMemory": {
+          "type": "number",
+          "description": "Maximum memory in MB allowed."
+        }
+      }
+    },
+
+    "WorkerItem": {
+      "type": "object",
+      "required": ["type", "name"],
+      "additionalProperties": false,
+      "properties": {
+        "type": { "type": "string", "const": "WORKER" },
+        "name": {
+          "type": "string",
+          "description": "Unique name (DNS label). Lowercase alphanumeric with hyphens, 1-63 chars.",
+          "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$",
+          "maxLength": 63
+        },
+        "description": {
+          "type": "string",
+          "description": "Human-readable description."
+        },
+        "stage": {
+          "type": "integer",
+          "description": "Bootup stage (0-based). Stage N+1 waits until all stage N items are healthy. Defaults to 0.",
+          "minimum": 0
+        },
+        "image": {
+          "type": "string",
+          "description": "Docker image URI (e.g., 'myregistry/my-service:latest')."
+        },
+        "command": {
+          "type": "array",
+          "description": "Override the Docker image's default CMD (e.g., [\"php\", \"app/worker.php\", \"databases\"]).",
+          "items": { "type": "string" }
+        },
+        "entrypoint": {
+          "type": "array",
+          "description": "Override the Docker image's ENTRYPOINT.",
+          "items": { "type": "string" }
+        },
+        "mountFiles": {
+          "type": "array",
+          "description": "Files to mount into the container (read-only).",
+          "items": {
+            "type": "object",
+            "required": ["source", "target"],
+            "additionalProperties": false,
+            "properties": {
+              "source": {
+                "type": "string",
+                "description": "Relative path from this file to the source file."
+              },
+              "target": {
+                "type": "string",
+                "description": "Absolute path inside the container.",
+                "pattern": "^/"
+              }
+            }
+          }
+        },
+        "env": {
+          "type": "array",
+          "description": "Environment variables passed to the container.",
+          "items": { "$ref": "#/definitions/EnvVar" }
+        },
         "localDevPath": {
           "type": "string",
           "description": "Local source path for dev hot-reload."
