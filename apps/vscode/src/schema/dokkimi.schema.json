@@ -270,6 +270,10 @@
           "type": "string",
           "description": "Custom database password."
         },
+        "noAuth": {
+          "type": "boolean",
+          "description": "Skip all authentication. Database starts without credentials. Cannot be combined with dbName, dbUser, or dbPassword."
+        },
         "initFilePath": {
           "type": "string",
           "description": "Path to init file relative to .dokkimi/init-files/."

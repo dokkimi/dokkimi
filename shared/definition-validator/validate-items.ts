@@ -211,6 +211,22 @@ function validateDatabaseItem(
       err(r, `${label}: "image" must be a non-empty string`);
     }
   }
+  if (item.noAuth !== undefined) {
+    if (typeof item.noAuth !== 'boolean') {
+      err(r, `${label}: "noAuth" must be a boolean`);
+    } else if (item.noAuth) {
+      if (
+        item.dbPassword !== undefined ||
+        item.dbUser !== undefined ||
+        item.dbName !== undefined
+      ) {
+        err(
+          r,
+          `${label}: "noAuth" cannot be combined with "dbName", "dbUser", or "dbPassword"`,
+        );
+      }
+    }
+  }
   if (item.initFilePath !== undefined) {
     validateInitFile(item.initFilePath as string, label, sourceFile, r, fs);
   }

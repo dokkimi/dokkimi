@@ -96,6 +96,7 @@ export interface DefinitionItem {
   dbName?: string | null;
   dbUser?: string | null;
   dbPassword?: string | null;
+  noAuth?: boolean | null;
   initFiles?: DefinitionInitFile[] | null; // array order = execution order
 
   // Mock fields

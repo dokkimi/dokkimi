@@ -1,5 +1,6 @@
 import { DockerDatabaseGroupService } from './docker-database-group.service';
 import { DefinitionItem } from '../deployment-context.types';
+import { buildDbProxyEnvVars } from '@dokkimi/config';
 
 jest.mock('fs', () => ({
   existsSync: jest.fn().mockReturnValue(true),
@@ -401,6 +402,68 @@ describe('DockerDatabaseGroupService', () => {
       const dbCall = mockDockerClient.runContainer.mock.calls[1][0];
       expect(dbCall.binds).toContain(
         '/home/.dokkimi/storage/init:/docker-entrypoint-initdb.d:ro',
+      );
+    });
+  });
+
+  describe('noAuth flag', () => {
+    it('should pass empty credentials to databaseConfig when noAuth is true', async () => {
+      mockDatabaseConfig.getConfig.mockReturnValue(redisConfig());
+
+      await service.createDatabaseGroup(
+        'dokkimi-run-inst1',
+        'inst1',
+        buildDbItem({ database: 'redis', noAuth: true }),
+        'redis-cache',
+        'item-1',
+      );
+
+      expect(mockDatabaseConfig.getConfig).toHaveBeenCalledWith(
+        'redis',
+        expect.objectContaining({ noAuth: true }),
+        undefined,
+      );
+    });
+
+    it('should pass empty credentials to buildDbProxyEnvVars when noAuth is true', async () => {
+      mockDatabaseConfig.getConfig.mockReturnValue(redisConfig());
+
+      await service.createDatabaseGroup(
+        'dokkimi-run-inst1',
+        'inst1',
+        buildDbItem({ database: 'redis', noAuth: true }),
+        'redis-cache',
+        'item-1',
+      );
+
+      expect(buildDbProxyEnvVars).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          dbUser: '',
+          dbPassword: '',
+          dbName: '',
+        }),
+      );
+    });
+
+    it('should use default credentials when noAuth is not set', async () => {
+      mockDatabaseConfig.getConfig.mockReturnValue(redisConfig());
+
+      await service.createDatabaseGroup(
+        'dokkimi-run-inst1',
+        'inst1',
+        buildDbItem({ database: 'redis' }),
+        'redis-cache',
+        'item-1',
+      );
+
+      expect(buildDbProxyEnvVars).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          dbUser: 'dokkimi',
+          dbPassword: 'dokkimi',
+          dbName: 'dokkimi',
+        }),
       );
     });
   });

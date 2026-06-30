@@ -662,6 +662,111 @@ describe('validateItem', () => {
       expect(r.errors).toHaveLength(1);
       expect(r.errors[0]).toContain('b.sql');
     });
+
+    it('accepts noAuth: true', () => {
+      const r = makeResult();
+      validateItem(
+        { type: 'DATABASE', name: 'redis', database: 'redis', noAuth: true },
+        0,
+        '/f.json',
+        r,
+        fs,
+      );
+      expect(r.errors).toHaveLength(0);
+    });
+
+    it('accepts noAuth: false with credentials', () => {
+      const r = makeResult();
+      validateItem(
+        {
+          type: 'DATABASE',
+          name: 'pg',
+          database: 'postgres',
+          noAuth: false,
+          dbUser: 'admin',
+          dbPassword: 'secret',
+        },
+        0,
+        '/f.json',
+        r,
+        fs,
+      );
+      expect(r.errors).toHaveLength(0);
+    });
+
+    it('errors when noAuth is not a boolean', () => {
+      const r = makeResult();
+      validateItem(
+        { type: 'DATABASE', name: 'redis', database: 'redis', noAuth: 'yes' },
+        0,
+        '/f.json',
+        r,
+        fs,
+      );
+      expect(
+        r.errors.some((e) => e.includes('"noAuth" must be a boolean')),
+      ).toBe(true);
+    });
+
+    it('errors when noAuth: true is combined with dbPassword', () => {
+      const r = makeResult();
+      validateItem(
+        {
+          type: 'DATABASE',
+          name: 'redis',
+          database: 'redis',
+          noAuth: true,
+          dbPassword: 'secret',
+        },
+        0,
+        '/f.json',
+        r,
+        fs,
+      );
+      expect(
+        r.errors.some((e) => e.includes('"noAuth" cannot be combined')),
+      ).toBe(true);
+    });
+
+    it('errors when noAuth: true is combined with dbUser', () => {
+      const r = makeResult();
+      validateItem(
+        {
+          type: 'DATABASE',
+          name: 'pg',
+          database: 'postgres',
+          noAuth: true,
+          dbUser: 'admin',
+        },
+        0,
+        '/f.json',
+        r,
+        fs,
+      );
+      expect(
+        r.errors.some((e) => e.includes('"noAuth" cannot be combined')),
+      ).toBe(true);
+    });
+
+    it('errors when noAuth: true is combined with dbName', () => {
+      const r = makeResult();
+      validateItem(
+        {
+          type: 'DATABASE',
+          name: 'pg',
+          database: 'postgres',
+          noAuth: true,
+          dbName: 'mydb',
+        },
+        0,
+        '/f.json',
+        r,
+        fs,
+      );
+      expect(
+        r.errors.some((e) => e.includes('"noAuth" cannot be combined')),
+      ).toBe(true);
+    });
   });
 
   describe('BROKER', () => {

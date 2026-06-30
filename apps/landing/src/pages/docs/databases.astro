@@ -31,6 +31,7 @@ import CodeBlock from '../../components/CodeBlock.astro';
       <tr><td><code>dbName</code></td><td>string</td><td><code>dokkimi</code></td><td>Database/schema name</td></tr>
       <tr><td><code>dbUser</code></td><td>string</td><td><code>dokkimi</code></td><td>Database username</td></tr>
       <tr><td><code>dbPassword</code></td><td>string</td><td><code>dokkimi</code></td><td>Database password</td></tr>
+      <tr><td><code>noAuth</code></td><td>boolean</td><td><code>false</code></td><td>Skip all authentication. Database starts without credentials. Cannot combine with <code>dbName</code>, <code>dbUser</code>, or <code>dbPassword</code>.</td></tr>
       <tr><td><code>initFilePath</code></td><td>string</td><td>—</td><td>Relative path to a single init script</td></tr>
       <tr><td><code>initFilePaths</code></td><td>string[]</td><td>—</td><td>Relative paths to multiple init scripts (executed in order). Use one or the other, not both.</td></tr>
       <tr><td><code>minCpu</code></td><td>number</td><td>—</td><td>Minimum CPU cores</td></tr>

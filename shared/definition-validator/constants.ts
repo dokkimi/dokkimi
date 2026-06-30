@@ -98,6 +98,7 @@ export const VALID_ITEM_KEYS: Record<string, Set<string>> = {
     'dbName',
     'dbUser',
     'dbPassword',
+    'noAuth',
     'minCpu',
     'minMemory',
     'maxCpu',

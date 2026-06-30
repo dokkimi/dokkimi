@@ -24,6 +24,7 @@ export interface ItemDefinitionLike {
   dbName?: string | null;
   dbUser?: string | null;
   dbPassword?: string | null;
+  noAuth?: boolean | null;
   id?: string;
 }
 
@@ -129,9 +130,16 @@ export class ConfigMapBuilderService {
         const normalizedDbType = this.normalizeDatabaseType(dbType);
 
         const config = getConfig();
-        const dbName = item.dbName ?? config.database.defaultName;
-        const dbUser = item.dbUser ?? config.database.defaultUser;
-        const dbPassword = item.dbPassword ?? config.database.defaultPassword;
+        const noAuth = item.noAuth === true;
+        const dbName = noAuth
+          ? ''
+          : (item.dbName ?? config.database.defaultName);
+        const dbUser = noAuth
+          ? ''
+          : (item.dbUser ?? config.database.defaultUser);
+        const dbPassword = noAuth
+          ? ''
+          : (item.dbPassword ?? config.database.defaultPassword);
 
         databaseMap[item.containerName] = {
           type: normalizedDbType,
@@ -204,16 +212,20 @@ export class ConfigMapBuilderService {
       dbName?: string | null;
       dbUser?: string | null;
       dbPassword?: string | null;
+      noAuth?: boolean | null;
     }>,
   ): { metadata?: Record<string, unknown>; data?: Record<string, string> } {
     const config = getConfig(); // Control Tower has access to YAML config
 
     const credentials: Record<string, object> = {};
     for (const db of databases) {
+      const noAuth = db.noAuth === true;
       credentials[db.containerName] = {
-        dbName: db.dbName || config.database.defaultName,
-        dbUser: db.dbUser || config.database.defaultUser,
-        dbPassword: db.dbPassword || config.database.defaultPassword,
+        dbName: noAuth ? '' : db.dbName || config.database.defaultName,
+        dbUser: noAuth ? '' : db.dbUser || config.database.defaultUser,
+        dbPassword: noAuth
+          ? ''
+          : db.dbPassword || config.database.defaultPassword,
       };
     }
 

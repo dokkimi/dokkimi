@@ -12,6 +12,7 @@ export interface DatabaseCredentials {
   dbName?: string;
   dbUser?: string;
   dbPassword?: string;
+  noAuth?: boolean;
 }
 
 @Injectable()
@@ -24,10 +25,16 @@ export class DatabaseConfigService {
     const config = getConfig();
 
     // Use provided credentials or fall back to config defaults
-    const dbName = credentials?.dbName || config.database.defaultName;
-    const dbUser = credentials?.dbUser || config.database.defaultUser;
-    const dbPassword =
-      credentials?.dbPassword || config.database.defaultPassword;
+    const noAuth = credentials?.noAuth === true;
+    const dbName = noAuth
+      ? ''
+      : credentials?.dbName || config.database.defaultName;
+    const dbUser = noAuth
+      ? ''
+      : credentials?.dbUser || config.database.defaultUser;
+    const dbPassword = noAuth
+      ? ''
+      : credentials?.dbPassword || config.database.defaultPassword;
     const imgs = config.images.databases;
 
     const configs: Record<string, DatabaseConfig> = {

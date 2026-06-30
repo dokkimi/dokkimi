@@ -293,21 +293,22 @@ A managed database instance. Dokkimi provisions the database container, sets up 
 
 **Optional fields:**
 
-| Field           | Type          | Default     | Description                                                                                   |
-| --------------- | ------------- | ----------- | --------------------------------------------------------------------------------------------- |
-| `description`   | string        | —           | Human-readable description (max 500 chars)                                                    |
-| `image`         | string        | —           | Custom Docker image (overrides engine default, e.g. `"getlago/postgres-partman:15.0-alpine"`) |
-| `version`       | string        | per engine  | Database image version tag (e.g. `"16"` for postgres:16). See defaults below.                 |
-| `dbName`        | string        | `"dokkimi"` | Database/schema name                                                                          |
-| `dbUser`        | string        | `"dokkimi"` | Database username                                                                             |
-| `dbPassword`    | string        | `"dokkimi"` | Database password                                                                             |
-| `initFilePath`  | string        | —           | Relative path from this file to a single init script                                          |
-| `initFilePaths` | string[]      | —           | Relative paths to multiple init scripts (executed in order). Use one or the other, not both.  |
-| `minCpu`        | number (≥ 0)  | —           | Minimum CPU cores                                                                             |
-| `minMemory`     | number (≥ 0)  | —           | Minimum memory in MB                                                                          |
-| `maxCpu`        | number (≥ 0)  | —           | Maximum CPU cores                                                                             |
-| `maxMemory`     | number (≥ 0)  | —           | Maximum memory in MB                                                                          |
-| `stage`         | integer (≥ 0) | `0`         | Deployment stage. Items deploy in stage order — stage N+1 starts after stage N is healthy.    |
+| Field           | Type          | Default     | Description                                                                                                 |
+| --------------- | ------------- | ----------- | ----------------------------------------------------------------------------------------------------------- |
+| `description`   | string        | —           | Human-readable description (max 500 chars)                                                                  |
+| `image`         | string        | —           | Custom Docker image (overrides engine default, e.g. `"getlago/postgres-partman:15.0-alpine"`)               |
+| `version`       | string        | per engine  | Database image version tag (e.g. `"16"` for postgres:16). See defaults below.                               |
+| `dbName`        | string        | `"dokkimi"` | Database/schema name                                                                                        |
+| `dbUser`        | string        | `"dokkimi"` | Database username                                                                                           |
+| `dbPassword`    | string        | `"dokkimi"` | Database password                                                                                           |
+| `noAuth`        | boolean       | `false`     | Skip all authentication. Database starts without credentials. Cannot combine with dbName/dbUser/dbPassword. |
+| `initFilePath`  | string        | —           | Relative path from this file to a single init script                                                        |
+| `initFilePaths` | string[]      | —           | Relative paths to multiple init scripts (executed in order). Use one or the other, not both.                |
+| `minCpu`        | number (≥ 0)  | —           | Minimum CPU cores                                                                                           |
+| `minMemory`     | number (≥ 0)  | —           | Minimum memory in MB                                                                                        |
+| `maxCpu`        | number (≥ 0)  | —           | Maximum CPU cores                                                                                           |
+| `maxMemory`     | number (≥ 0)  | —           | Maximum memory in MB                                                                                        |
+| `stage`         | integer (≥ 0) | `0`         | Deployment stage. Items deploy in stage order — stage N+1 starts after stage N is healthy.                  |
 
 **Database engine details:**
 

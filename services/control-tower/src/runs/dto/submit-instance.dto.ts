@@ -139,6 +139,9 @@ class DefinitionItemDto {
   dbPassword?: string | null;
 
   @IsOptional()
+  noAuth?: boolean | null;
+
+  @IsOptional()
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => InitFileDto)

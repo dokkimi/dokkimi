@@ -31,12 +31,14 @@ export class DockerDatabaseGroupService {
     }
 
     const config = getConfig();
+    const noAuth = item.noAuth === true;
     const dbConfig = this.databaseConfig.getConfig(
       item.database,
       {
         dbName: item.dbName ?? undefined,
         dbUser: item.dbUser ?? undefined,
         dbPassword: item.dbPassword ?? undefined,
+        noAuth,
       },
       item.version ?? undefined,
     );
@@ -56,9 +58,11 @@ export class DockerDatabaseGroupService {
       namespace: instanceId,
       namespaceItemId: instanceItemId,
       testAgentUrl: `http://test-agent-service:${config.services.testAgent.port}`,
-      dbUser: item.dbUser ?? config.database.defaultUser,
-      dbPassword: item.dbPassword ?? config.database.defaultPassword,
-      dbName: item.dbName ?? config.database.defaultName,
+      dbUser: noAuth ? '' : (item.dbUser ?? config.database.defaultUser),
+      dbPassword: noAuth
+        ? ''
+        : (item.dbPassword ?? config.database.defaultPassword),
+      dbName: noAuth ? '' : (item.dbName ?? config.database.defaultName),
     });
     const dbProxyEnv = envArrayToRecord(dbProxyEnvEntries);
     dbProxyEnv.QUERY_PORT = String(nativePort);
