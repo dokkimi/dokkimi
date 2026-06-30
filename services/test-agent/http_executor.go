@@ -233,6 +233,14 @@ func (e *TestExecutor) doAPIRequest(ctx context.Context, action StepAction, full
 		fullURL = encoded
 	}
 
+	if len(action.QueryParams) > 0 {
+		encoded, encErr := appendQueryParams(fullURL, action.QueryParams)
+		if encErr != nil {
+			return nil, encErr
+		}
+		fullURL = encoded
+	}
+
 	req, err := http.NewRequestWithContext(ctx, action.Method, fullURL, bodyReader)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)

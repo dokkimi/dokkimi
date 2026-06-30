@@ -172,6 +172,17 @@ func (vc *VariableContext) ResolveAction(action StepAction) (StepAction, error) 
 		}
 	}
 
+	// Resolve queryParams values
+	if action.QueryParams != nil {
+		resolvedQP, err := vc.resolveValue(action.QueryParams)
+		if err != nil {
+			return resolved, fmt.Errorf("resolving queryParams: %w", err)
+		}
+		if m, ok := resolvedQP.(map[string]interface{}); ok {
+			resolved.QueryParams = m
+		}
+	}
+
 	// Resolve database query string
 	if action.Query != "" {
 		query, err := vc.Resolve(action.Query)
