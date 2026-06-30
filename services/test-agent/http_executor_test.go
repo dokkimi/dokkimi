@@ -172,6 +172,70 @@ func TestStripScheme(t *testing.T) {
 	}
 }
 
+func TestBuildRequestBody(t *testing.T) {
+	t.Run("string body sent as-is", func(t *testing.T) {
+		body := "grant_type=client_credentials&client_id=test&scope=openid"
+		reader, err := buildRequestBody(body)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		result, _ := io.ReadAll(reader)
+		if string(result) != body {
+			t.Errorf("expected raw string %q, got %q", body, string(result))
+		}
+	})
+
+	t.Run("string body preserves ampersands", func(t *testing.T) {
+		body := "a=1&b=2&c=3"
+		reader, err := buildRequestBody(body)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		result, _ := io.ReadAll(reader)
+		if strings.Contains(string(result), `\u0026`) {
+			t.Error("ampersands should not be JSON-escaped to \\u0026")
+		}
+		if string(result) != body {
+			t.Errorf("expected %q, got %q", body, string(result))
+		}
+	})
+
+	t.Run("string body has no surrounding quotes", func(t *testing.T) {
+		body := "key=value"
+		reader, err := buildRequestBody(body)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		result, _ := io.ReadAll(reader)
+		if strings.HasPrefix(string(result), `"`) || strings.HasSuffix(string(result), `"`) {
+			t.Error("string body should not be wrapped in JSON quotes")
+		}
+	})
+
+	t.Run("map body is JSON-encoded", func(t *testing.T) {
+		body := map[string]interface{}{"name": "Alice", "age": float64(30)}
+		reader, err := buildRequestBody(body)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		result, _ := io.ReadAll(reader)
+		if !strings.Contains(string(result), `"name"`) {
+			t.Error("expected JSON-encoded map body")
+		}
+	})
+
+	t.Run("nil body returns empty reader", func(t *testing.T) {
+		reader, err := buildRequestBody(nil)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		result, _ := io.ReadAll(reader)
+		if string(result) != "null" {
+			t.Errorf("expected null for nil body, got %q", string(result))
+		}
+	})
+}
+
 func TestBuildFormDataBody(t *testing.T) {
 	t.Run("plain string field", func(t *testing.T) {
 		formData := map[string]interface{}{

@@ -128,6 +128,20 @@ func normalizeResponseForUntil(raw map[string]interface{}) map[string]interface{
 	return normalized
 }
 
+// buildRequestBody converts an action body value into a reader.
+// String values are sent as-is (for application/x-www-form-urlencoded or plain text).
+// All other types are JSON-encoded.
+func buildRequestBody(body interface{}) (io.Reader, error) {
+	if str, ok := body.(string); ok {
+		return strings.NewReader(str), nil
+	}
+	bodyBytes, err := json.Marshal(body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request body: %w", err)
+	}
+	return bytes.NewReader(bodyBytes), nil
+}
+
 // buildFormDataBody builds a multipart/form-data request body from the action's FormData map.
 // String values become plain form fields. Objects with "filename" + "content" become file parts.
 func buildFormDataBody(formData map[string]interface{}) (io.Reader, string, error) {
@@ -197,11 +211,11 @@ func (e *TestExecutor) doAPIRequest(ctx context.Context, action StepAction, full
 		bodyReader = reader
 		contentType = ct
 	} else if action.Body != nil {
-		bodyBytes, err := json.Marshal(action.Body)
+		reader, err := buildRequestBody(action.Body)
 		if err != nil {
-			return nil, fmt.Errorf("failed to marshal request body: %w", err)
+			return nil, err
 		}
-		bodyReader = bytes.NewReader(bodyBytes)
+		bodyReader = reader
 	}
 
 	if len(action.QueryParams) > 0 {
