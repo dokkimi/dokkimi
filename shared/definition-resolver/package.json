@@ -1,6 +1,6 @@
 {
   "name": "@dokkimi/definition-resolver",
-  "version": "0.5.3",
+  "version": "0.5.4",
   "license": "Elastic-2.0",
   "description": "Shared definition discovery, $ref resolution, init file reading, and validation for CLI and Electron",
   "main": "dist/index.js",

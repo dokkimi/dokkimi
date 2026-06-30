@@ -1,6 +1,6 @@
 {
   "name": "@dokkimi/telemetry",
-  "version": "0.5.3",
+  "version": "0.5.4",
   "license": "Elastic-2.0",
   "description": "Shared telemetry module for Dokkimi CLI and services",
   "main": "dist/index.js",
