@@ -245,12 +245,19 @@ export function validateStep(
         `${ctx}.action: httpRequest cannot have both "body" and "formData" — use one or the other`,
       );
     }
-    if (action.formData !== undefined && typeof action.formData !== 'object') {
+    if (
+      action.formData !== undefined &&
+      (!action.formData ||
+        typeof action.formData !== 'object' ||
+        Array.isArray(action.formData))
+    ) {
       err(r, `${ctx}.action: "formData" must be an object`);
     }
     if (
       action.queryParams !== undefined &&
-      typeof action.queryParams !== 'object'
+      (!action.queryParams ||
+        typeof action.queryParams !== 'object' ||
+        Array.isArray(action.queryParams))
     ) {
       err(r, `${ctx}.action: "queryParams" must be an object`);
     }

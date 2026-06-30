@@ -270,6 +270,7 @@ func handleRequest(w http.ResponseWriter, r *http.Request, proxy *ProxyService, 
 						if boundary, ok := params["boundary"]; ok {
 							reader := multipart.NewReader(bytes.NewReader(bodyBytes), boundary)
 							if form, err := reader.ReadForm(10 << 20); err == nil {
+								defer form.RemoveAll()
 								formMap := make(map[string]interface{}, len(form.Value)+len(form.File))
 								for key, vals := range form.Value {
 									if len(vals) == 1 {

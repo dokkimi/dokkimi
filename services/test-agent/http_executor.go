@@ -178,7 +178,10 @@ func buildFormDataBody(formData map[string]interface{}) (io.Reader, string, erro
 				}
 			}
 		case []interface{}:
-			arrayKey := key + "[]"
+			arrayKey := key
+			if !strings.HasSuffix(key, "[]") {
+				arrayKey = key + "[]"
+			}
 			for _, item := range v {
 				if err := writer.WriteField(arrayKey, fmt.Sprintf("%v", item)); err != nil {
 					return nil, "", fmt.Errorf("failed to write array form field %q: %w", key, err)
@@ -233,6 +236,9 @@ func (e *TestExecutor) doAPIRequest(ctx context.Context, action StepAction, full
 
 	req.Header.Set("Content-Type", contentType)
 	for key, value := range action.Headers {
+		if action.FormData != nil && strings.EqualFold(key, "Content-Type") {
+			continue
+		}
 		req.Header.Set(key, value)
 	}
 

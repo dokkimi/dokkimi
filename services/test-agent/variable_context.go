@@ -154,6 +154,8 @@ func (vc *VariableContext) ResolveAction(action StepAction) (StepAction, error) 
 		}
 		if m, ok := resolvedFormData.(map[string]interface{}); ok {
 			resolved.FormData = m
+		} else {
+			return resolved, fmt.Errorf("resolving formData: expected object, got %T", resolvedFormData)
 		}
 	}
 
@@ -165,6 +167,8 @@ func (vc *VariableContext) ResolveAction(action StepAction) (StepAction, error) 
 		}
 		if m, ok := resolvedQP.(map[string]interface{}); ok {
 			resolved.QueryParams = m
+		} else {
+			return resolved, fmt.Errorf("resolving queryParams: expected object, got %T", resolvedQP)
 		}
 	}
 

@@ -131,11 +131,15 @@ export class ConfigMapBuilderService {
 
         const config = getConfig();
         const noAuth = item.noAuth === true;
-        const dbName = noAuth ? '' : item.dbName || config.database.defaultName;
-        const dbUser = noAuth ? '' : item.dbUser || config.database.defaultUser;
+        const dbName = noAuth
+          ? ''
+          : (item.dbName ?? config.database.defaultName);
+        const dbUser = noAuth
+          ? ''
+          : (item.dbUser ?? config.database.defaultUser);
         const dbPassword = noAuth
           ? ''
-          : item.dbPassword || config.database.defaultPassword;
+          : (item.dbPassword ?? config.database.defaultPassword);
 
         databaseMap[item.containerName] = {
           type: normalizedDbType,
@@ -217,11 +221,11 @@ export class ConfigMapBuilderService {
     for (const db of databases) {
       const noAuth = db.noAuth === true;
       credentials[db.containerName] = {
-        dbName: noAuth ? '' : db.dbName || config.database.defaultName,
-        dbUser: noAuth ? '' : db.dbUser || config.database.defaultUser,
+        dbName: noAuth ? '' : (db.dbName ?? config.database.defaultName),
+        dbUser: noAuth ? '' : (db.dbUser ?? config.database.defaultUser),
         dbPassword: noAuth
           ? ''
-          : db.dbPassword || config.database.defaultPassword,
+          : (db.dbPassword ?? config.database.defaultPassword),
       };
     }
 

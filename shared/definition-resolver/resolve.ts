@@ -394,7 +394,10 @@ export function resolveDefinitions(target?: string): ResolverResult {
     let mountFileError = false;
     for (const ri of resolvedItems) {
       const item = ri.item;
-      if (item.type !== 'SERVICE' || !Array.isArray(item.mountFiles)) {
+      if (
+        (item.type !== 'SERVICE' && item.type !== 'WORKER') ||
+        !Array.isArray(item.mountFiles)
+      ) {
         continue;
       }
       const allowedRoot = path.dirname(dokkimiDir);
