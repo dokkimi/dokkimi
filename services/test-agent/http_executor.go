@@ -159,7 +159,9 @@ func buildFormDataBody(formData map[string]interface{}) (io.Reader, string, erro
 					contentType = "application/octet-stream"
 				}
 				h := make(textproto.MIMEHeader)
-				h.Set("Content-Disposition", fmt.Sprintf(`form-data; name="%s"; filename="%s"`, key, filename))
+				escapedKey := strings.NewReplacer("\\", "\\\\", `"`, "\\\"").Replace(key)
+				escapedFilename := strings.NewReplacer("\\", "\\\\", `"`, "\\\"").Replace(filename)
+				h.Set("Content-Disposition", fmt.Sprintf(`form-data; name="%s"; filename="%s"`, escapedKey, escapedFilename))
 				h.Set("Content-Type", contentType)
 				part, err := writer.CreatePart(h)
 				if err != nil {
@@ -234,7 +236,9 @@ func (e *TestExecutor) doAPIRequest(ctx context.Context, action StepAction, full
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	req.Header.Set("Content-Type", contentType)
+	if bodyReader != nil {
+		req.Header.Set("Content-Type", contentType)
+	}
 	for key, value := range action.Headers {
 		if action.FormData != nil && strings.EqualFold(key, "Content-Type") {
 			continue

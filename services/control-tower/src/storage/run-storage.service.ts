@@ -171,7 +171,10 @@ export class RunStorageService {
     }[],
   ): Promise<void> {
     for (const item of items) {
-      if (item.type !== 'SERVICE' || !item.mountFiles?.length) {
+      if (
+        (item.type !== 'SERVICE' && item.type !== 'WORKER') ||
+        !item.mountFiles?.length
+      ) {
         continue;
       }
       const dir = await this.resolveMountFilesDir(instanceId, item.name);

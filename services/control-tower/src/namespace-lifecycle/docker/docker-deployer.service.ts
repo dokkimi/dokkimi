@@ -86,10 +86,7 @@ export class DockerDeployerService {
 
       // DNS names for all databases/brokers across all stages
       const directDnsNames = ctx.definition.items
-        .filter(
-          (i) =>
-            i.type === 'DATABASE' || i.type === 'BROKER' || i.type === 'WORKER',
-        )
+        .filter((i) => i.type === 'DATABASE' || i.type === 'BROKER')
         .map((i) => sanitizeContainerName(i.name));
 
       await this.deployConfig.writeConfig(ctx, configPaths);
@@ -347,20 +344,21 @@ export class DockerDeployerService {
             );
           }
 
-          await this.serviceGroup.createServiceGroup(
-            networkName,
-            instanceId,
-            item,
-            containerName,
-            instanceItemId,
-            dockerDnsIP,
-            configPaths,
-            caBundlePaths,
-            directDnsNames,
-            testAgentIP,
-          );
+          const { userContainerId } =
+            await this.serviceGroup.createServiceGroup(
+              networkName,
+              instanceId,
+              item,
+              containerName,
+              instanceItemId,
+              dockerDnsIP,
+              configPaths,
+              caBundlePaths,
+              directDnsNames,
+              testAgentIP,
+            );
 
-          if (instanceItemId) {
+          if (instanceItemId && userContainerId) {
             await this.instanceItemService.updateInstanceItemStatus(
               instanceItemId,
               ItemStatus.RUNNING,

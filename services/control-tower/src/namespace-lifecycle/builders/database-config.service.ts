@@ -28,13 +28,13 @@ export class DatabaseConfigService {
     const noAuth = credentials?.noAuth === true;
     const dbName = noAuth
       ? ''
-      : credentials?.dbName || config.database.defaultName;
+      : (credentials?.dbName ?? config.database.defaultName);
     const dbUser = noAuth
       ? ''
-      : credentials?.dbUser || config.database.defaultUser;
+      : (credentials?.dbUser ?? config.database.defaultUser);
     const dbPassword = noAuth
       ? ''
-      : credentials?.dbPassword || config.database.defaultPassword;
+      : (credentials?.dbPassword ?? config.database.defaultPassword);
     const imgs = config.images.databases;
 
     const configs: Record<string, DatabaseConfig> = {
@@ -44,6 +44,7 @@ export class DatabaseConfigService {
           POSTGRES_DB: dbName,
           POSTGRES_USER: dbUser,
           POSTGRES_PASSWORD: dbPassword,
+          ...(noAuth ? { POSTGRES_HOST_AUTH_METHOD: 'trust' } : {}),
         },
         ports: [5432],
       },
@@ -53,7 +54,8 @@ export class DatabaseConfigService {
           MYSQL_DATABASE: dbName,
           MYSQL_USER: dbUser,
           MYSQL_PASSWORD: dbPassword,
-          MYSQL_ROOT_PASSWORD: dbPassword, // Same as password for simplicity
+          MYSQL_ROOT_PASSWORD: dbPassword,
+          ...(noAuth ? { MYSQL_ALLOW_EMPTY_PASSWORD: 'yes' } : {}),
         },
         ports: [3306],
         command: [

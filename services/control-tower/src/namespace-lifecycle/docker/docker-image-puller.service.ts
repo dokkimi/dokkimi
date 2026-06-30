@@ -54,7 +54,7 @@ export class DockerImagePullerService {
     }
 
     for (const item of ctx.definition.items) {
-      if (item.type === 'SERVICE' && item.image) {
+      if ((item.type === 'SERVICE' || item.type === 'WORKER') && item.image) {
         const auth = this.registryService.getAuthConfig(ctx.runId, item.image);
         pulls.push(this.dockerClient.pullImage(item.image, auth));
       }
