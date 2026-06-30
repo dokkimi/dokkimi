@@ -206,7 +206,7 @@ func buildFormDataBody(formData map[string]interface{}) (io.Reader, string, erro
 // doAPIRequest performs a single HTTP request attempt and returns the full response
 func (e *TestExecutor) doAPIRequest(ctx context.Context, action StepAction, fullURL string) (*APIResponse, error) {
 	var bodyReader io.Reader
-	contentType := "application/json"
+	var contentType string
 
 	if action.FormData != nil {
 		reader, ct, err := buildFormDataBody(action.FormData)
@@ -221,6 +221,9 @@ func (e *TestExecutor) doAPIRequest(ctx context.Context, action StepAction, full
 			return nil, err
 		}
 		bodyReader = reader
+		if _, isString := action.Body.(string); !isString {
+			contentType = "application/json"
+		}
 	}
 
 	if len(action.QueryParams) > 0 {
@@ -236,7 +239,7 @@ func (e *TestExecutor) doAPIRequest(ctx context.Context, action StepAction, full
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	if bodyReader != nil {
+	if contentType != "" {
 		req.Header.Set("Content-Type", contentType)
 	}
 	for key, value := range action.Headers {

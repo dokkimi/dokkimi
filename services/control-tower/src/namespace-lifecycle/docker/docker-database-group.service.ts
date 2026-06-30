@@ -4,7 +4,10 @@ import { getConfig, buildDbProxyEnvVars } from '@dokkimi/config';
 import { DockerClientService } from './docker-client.service';
 import { DOKKIMI_IMAGES } from '../../constants/image-tags';
 import { DefinitionItem } from '../deployment-context.types';
-import { DatabaseConfigService } from '../builders/database-config.service';
+import {
+  DatabaseConfigService,
+  resolveDbCredentials,
+} from '../builders/database-config.service';
 import { RunStorageService } from '../../storage/run-storage.service';
 import { envArrayToRecord } from './env.utils';
 
@@ -31,14 +34,14 @@ export class DockerDatabaseGroupService {
     }
 
     const config = getConfig();
-    const noAuth = item.noAuth === true;
+    const resolved = resolveDbCredentials(item);
     const dbConfig = this.databaseConfig.getConfig(
       item.database,
       {
         dbName: item.dbName ?? undefined,
         dbUser: item.dbUser ?? undefined,
         dbPassword: item.dbPassword ?? undefined,
-        noAuth,
+        noAuth: item.noAuth ?? undefined,
       },
       item.version ?? undefined,
     );
@@ -58,11 +61,9 @@ export class DockerDatabaseGroupService {
       namespace: instanceId,
       namespaceItemId: instanceItemId,
       testAgentUrl: `http://test-agent-service:${config.services.testAgent.port}`,
-      dbUser: noAuth ? '' : (item.dbUser ?? config.database.defaultUser),
-      dbPassword: noAuth
-        ? ''
-        : (item.dbPassword ?? config.database.defaultPassword),
-      dbName: noAuth ? '' : (item.dbName ?? config.database.defaultName),
+      dbUser: resolved.dbUser,
+      dbPassword: resolved.dbPassword,
+      dbName: resolved.dbName,
     });
     const dbProxyEnv = envArrayToRecord(dbProxyEnvEntries);
     dbProxyEnv.QUERY_PORT = String(nativePort);

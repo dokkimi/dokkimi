@@ -52,6 +52,17 @@ func TestGetEnvOrDefault(t *testing.T) {
 	}
 }
 
+func TestGetEnvOrDefault_EmptyString(t *testing.T) {
+	key := "DOKKIMI_TEST_ENV_EMPTY_12345"
+	os.Setenv(key, "")
+	defer os.Unsetenv(key)
+
+	got := getEnvOrDefault(key, "fallback")
+	if got != "" {
+		t.Errorf("expected empty string (noAuth), got %q", got)
+	}
+}
+
 func TestLoadConfig_MissingRequired(t *testing.T) {
 	// Clear all required env vars
 	for _, key := range []string{"DATABASE_PORT", "INSTANCE_ITEM_NAME", "NAMESPACE", "CONTROL_TOWER_URL", "DATABASE_TYPE", "NAMESPACE_ITEM_ID", "TEST_AGENT_URL", "QUERY_PORT", "DB_CREDENTIALS_PATH", "DB_USER", "DB_PASSWORD", "DB_NAME"} {

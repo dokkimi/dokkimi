@@ -315,6 +315,45 @@ func TestBuildFormDataBody(t *testing.T) {
 		}
 	})
 
+	t.Run("filename with quotes is escaped", func(t *testing.T) {
+		formData := map[string]interface{}{
+			"file": map[string]interface{}{
+				"filename": `my"file.txt`,
+				"content":  "data",
+			},
+		}
+		reader, _, err := buildFormDataBody(formData)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		body, _ := io.ReadAll(reader)
+		bodyStr := string(body)
+		if strings.Contains(bodyStr, `filename="my"file.txt"`) {
+			t.Error("unescaped quote in filename allows header injection")
+		}
+		if !strings.Contains(bodyStr, `filename="my\"file.txt"`) {
+			t.Errorf("expected escaped quote in filename, got:\n%s", bodyStr)
+		}
+	})
+
+	t.Run("array key already ending in [] is not doubled", func(t *testing.T) {
+		formData := map[string]interface{}{
+			"tags[]": []interface{}{"a", "b"},
+		}
+		reader, _, err := buildFormDataBody(formData)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		body, _ := io.ReadAll(reader)
+		bodyStr := string(body)
+		if strings.Contains(bodyStr, `name="tags[][]"`) {
+			t.Error("double [] suffix on array key")
+		}
+		if !strings.Contains(bodyStr, `name="tags[]"`) {
+			t.Errorf("expected tags[] field name, got:\n%s", bodyStr)
+		}
+	})
+
 	t.Run("object without filename/content is JSON-serialized", func(t *testing.T) {
 		formData := map[string]interface{}{
 			"meta": map[string]interface{}{

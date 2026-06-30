@@ -9,10 +9,30 @@ export interface DatabaseConfig {
 }
 
 export interface DatabaseCredentials {
-  dbName?: string;
-  dbUser?: string;
-  dbPassword?: string;
-  noAuth?: boolean;
+  dbName?: string | null;
+  dbUser?: string | null;
+  dbPassword?: string | null;
+  noAuth?: boolean | null;
+}
+
+export interface ResolvedCredentials {
+  dbName: string;
+  dbUser: string;
+  dbPassword: string;
+}
+
+export function resolveDbCredentials(
+  creds: DatabaseCredentials | undefined,
+): ResolvedCredentials {
+  const config = getConfig();
+  const noAuth = creds?.noAuth === true;
+  return {
+    dbName: noAuth ? '' : (creds?.dbName ?? config.database.defaultName),
+    dbUser: noAuth ? '' : (creds?.dbUser ?? config.database.defaultUser),
+    dbPassword: noAuth
+      ? ''
+      : (creds?.dbPassword ?? config.database.defaultPassword),
+  };
 }
 
 @Injectable()
@@ -24,17 +44,8 @@ export class DatabaseConfigService {
   ): DatabaseConfig {
     const config = getConfig();
 
-    // Use provided credentials or fall back to config defaults
+    const { dbName, dbUser, dbPassword } = resolveDbCredentials(credentials);
     const noAuth = credentials?.noAuth === true;
-    const dbName = noAuth
-      ? ''
-      : (credentials?.dbName ?? config.database.defaultName);
-    const dbUser = noAuth
-      ? ''
-      : (credentials?.dbUser ?? config.database.defaultUser);
-    const dbPassword = noAuth
-      ? ''
-      : (credentials?.dbPassword ?? config.database.defaultPassword);
     const imgs = config.images.databases;
 
     const configs: Record<string, DatabaseConfig> = {
