@@ -199,7 +199,13 @@ export class RunsService implements OnApplicationBootstrap {
     const def = definition as unknown as Record<string, unknown>;
     const defTests = (def.tests as any[]) || [];
 
-    const itemTypes = { service: 0, database: 0, broker: 0, mock: 0 };
+    const itemTypes = {
+      service: 0,
+      database: 0,
+      broker: 0,
+      mock: 0,
+      worker: 0,
+    };
     for (const item of definition.items as any[]) {
       const type = (item.type || '').toUpperCase();
       if (type === 'SERVICE') {
@@ -210,6 +216,8 @@ export class RunsService implements OnApplicationBootstrap {
         itemTypes.broker++;
       } else if (type === 'MOCK') {
         itemTypes.mock++;
+      } else if (type === 'WORKER') {
+        itemTypes.worker++;
       }
     }
 

@@ -29,7 +29,6 @@ import CodeBlock from '../../components/CodeBlock.astro';
       <tr><td><code>description</code></td><td>string</td><td>—</td><td>Human-readable description (max 500 chars)</td></tr>
       <tr><td><code>image</code></td><td>string</td><td>—</td><td>Docker image URI (e.g., <code>my-service:latest</code>)</td></tr>
       <tr><td><code>uiPath</code></td><td>string</td><td>—</td><td>URL path to service's UI (e.g., <code>/</code>) — enables "Open UI" button</td></tr>
-      <tr><td><code>debugPort</code></td><td>integer</td><td>—</td><td>Remote debugging port (e.g., 9229 for Node.js <code>--inspect</code>)</td></tr>
       <tr><td><code>command</code></td><td>string[]</td><td>—</td><td>Override the Docker image's default CMD (e.g., <code>["server", "/data"]</code>)</td></tr>
       <tr><td><code>entrypoint</code></td><td>string[]</td><td>—</td><td>Override the Docker image's ENTRYPOINT (e.g., <code>["/bin/sh", "-c", "..."]</code>)</td></tr>
       <tr><td><code>mountFiles</code></td><td>array</td><td>—</td><td>Files to mount into the container (read-only). See below.</td></tr>
@@ -77,7 +76,6 @@ import CodeBlock from '../../components/CodeBlock.astro';
   "port": 3000,
   "healthCheck": "/health",
   "uiPath": "/",
-  "debugPort": 9229,
   "env": [
     { "name": "DATABASE_URL", "value": "postgresql://dokkimi:dokkimi@postgres-db:5432/dokkimi" },
     { "name": "REDIS_URL", "value": "redis://:dokkimi@redis-cache:6379" },
@@ -129,6 +127,29 @@ import CodeBlock from '../../components/CodeBlock.astro';
 
   <h2>DNS and inter-service communication</h2>
   <p>Service names are DNS hostnames within the Docker network. Use the <code>name</code> of another item as the hostname when one service connects to another. For example, if you have a database item named <code>postgres-db</code>, your service connects to it at <code>postgres-db:5432</code>.</p>
+
+  <h2>Workers</h2>
+  <p>The <code>WORKER</code> item type is for background processes that don't serve HTTP — queue consumers, event processors, cron daemons. Workers get an interceptor for outbound traffic capture but no health check. They are marked ready immediately on container creation.</p>
+  <table>
+    <thead>
+      <tr><th>Field</th><th>Type</th><th>Description</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>type</code></td><td><code>"WORKER"</code></td><td>Item type</td></tr>
+      <tr><td><code>name</code></td><td>string</td><td>Unique name (DNS label)</td></tr>
+    </tbody>
+  </table>
+  <p>Workers support the same optional fields as SERVICE (<code>image</code>, <code>command</code>, <code>entrypoint</code>, <code>env</code>, <code>mountFiles</code>, <code>stage</code>, resource limits) but not <code>port</code>, <code>healthCheck</code>, or <code>uiPath</code>.</p>
+  <CodeBlock code={`{
+  "type": "WORKER",
+  "name": "appwrite-worker-db",
+  "image": "appwrite/appwrite:latest",
+  "command": ["php", "app/worker.php", "databases"],
+  "env": [
+    { "name": "_APP_REDIS_HOST", "value": "appwrite-redis" },
+    { "name": "_APP_REDIS_PORT", "value": "6379" }
+  ]
+}`} lang="json" />
 
   <h2>Naming rules</h2>
   <p>Item names must be lowercase, alphanumeric with hyphens, start and end with an alphanumeric character, and be 1-63 characters long. They're used as DNS hostnames in the Docker network.</p>

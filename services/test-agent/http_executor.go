@@ -8,7 +8,10 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"mime/multipart"
 	"net/http"
+	"net/textproto"
+	"net/url"
 	"strings"
 	"time"
 )
@@ -125,15 +128,110 @@ func normalizeResponseForUntil(raw map[string]interface{}) map[string]interface{
 	return normalized
 }
 
+// buildRequestBody converts an action body value into a reader.
+// String values are sent as-is (for application/x-www-form-urlencoded or plain text).
+// All other types are JSON-encoded.
+func buildRequestBody(body interface{}) (io.Reader, error) {
+	if str, ok := body.(string); ok {
+		return strings.NewReader(str), nil
+	}
+	bodyBytes, err := json.Marshal(body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request body: %w", err)
+	}
+	return bytes.NewReader(bodyBytes), nil
+}
+
+// buildFormDataBody builds a multipart/form-data request body from the action's FormData map.
+// String values become plain form fields. Objects with "filename" + "content" become file parts.
+func buildFormDataBody(formData map[string]interface{}) (io.Reader, string, error) {
+	var buf bytes.Buffer
+	writer := multipart.NewWriter(&buf)
+
+	for key, value := range formData {
+		switch v := value.(type) {
+		case map[string]interface{}:
+			filename, hasFilename := v["filename"].(string)
+			content, hasContent := v["content"].(string)
+			if hasFilename && hasContent {
+				contentType, _ := v["contentType"].(string)
+				if contentType == "" {
+					contentType = "application/octet-stream"
+				}
+				h := make(textproto.MIMEHeader)
+				escapedKey := strings.NewReplacer("\\", "\\\\", `"`, "\\\"").Replace(key)
+				escapedFilename := strings.NewReplacer("\\", "\\\\", `"`, "\\\"").Replace(filename)
+				h.Set("Content-Disposition", fmt.Sprintf(`form-data; name="%s"; filename="%s"`, escapedKey, escapedFilename))
+				h.Set("Content-Type", contentType)
+				part, err := writer.CreatePart(h)
+				if err != nil {
+					return nil, "", fmt.Errorf("failed to create file part %q: %w", key, err)
+				}
+				if _, err := part.Write([]byte(content)); err != nil {
+					return nil, "", fmt.Errorf("failed to write file part %q: %w", key, err)
+				}
+			} else {
+				jsonBytes, err := json.Marshal(v)
+				if err != nil {
+					return nil, "", fmt.Errorf("failed to marshal form field %q: %w", key, err)
+				}
+				if err := writer.WriteField(key, string(jsonBytes)); err != nil {
+					return nil, "", fmt.Errorf("failed to write form field %q: %w", key, err)
+				}
+			}
+		case []interface{}:
+			arrayKey := key
+			if !strings.HasSuffix(key, "[]") {
+				arrayKey = key + "[]"
+			}
+			for _, item := range v {
+				if err := writer.WriteField(arrayKey, fmt.Sprintf("%v", item)); err != nil {
+					return nil, "", fmt.Errorf("failed to write array form field %q: %w", key, err)
+				}
+			}
+		default:
+			strVal := fmt.Sprintf("%v", v)
+			if err := writer.WriteField(key, strVal); err != nil {
+				return nil, "", fmt.Errorf("failed to write form field %q: %w", key, err)
+			}
+		}
+	}
+
+	if err := writer.Close(); err != nil {
+		return nil, "", fmt.Errorf("failed to close multipart writer: %w", err)
+	}
+	return &buf, writer.FormDataContentType(), nil
+}
+
 // doAPIRequest performs a single HTTP request attempt and returns the full response
 func (e *TestExecutor) doAPIRequest(ctx context.Context, action StepAction, fullURL string) (*APIResponse, error) {
 	var bodyReader io.Reader
-	if action.Body != nil {
-		bodyBytes, err := json.Marshal(action.Body)
+	var contentType string
+
+	if action.FormData != nil {
+		reader, ct, err := buildFormDataBody(action.FormData)
 		if err != nil {
-			return nil, fmt.Errorf("failed to marshal request body: %w", err)
+			return nil, fmt.Errorf("failed to build form data: %w", err)
 		}
-		bodyReader = bytes.NewReader(bodyBytes)
+		bodyReader = reader
+		contentType = ct
+	} else if action.Body != nil {
+		reader, err := buildRequestBody(action.Body)
+		if err != nil {
+			return nil, err
+		}
+		bodyReader = reader
+		if _, isString := action.Body.(string); !isString {
+			contentType = "application/json"
+		}
+	}
+
+	if len(action.QueryParams) > 0 {
+		encoded, encErr := appendQueryParams(fullURL, action.QueryParams)
+		if encErr != nil {
+			return nil, encErr
+		}
+		fullURL = encoded
 	}
 
 	req, err := http.NewRequestWithContext(ctx, action.Method, fullURL, bodyReader)
@@ -141,8 +239,13 @@ func (e *TestExecutor) doAPIRequest(ctx context.Context, action StepAction, full
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	req.Header.Set("Content-Type", "application/json")
+	if contentType != "" {
+		req.Header.Set("Content-Type", contentType)
+	}
 	for key, value := range action.Headers {
+		if action.FormData != nil && strings.EqualFold(key, "Content-Type") {
+			continue
+		}
 		req.Header.Set(key, value)
 	}
 
@@ -257,6 +360,26 @@ func rootCause(err error) string {
 		cause = unwrapped
 	}
 	return cause.Error()
+}
+
+func appendQueryParams(rawURL string, params map[string]interface{}) (string, error) {
+	parsedURL, err := url.Parse(rawURL)
+	if err != nil {
+		return "", fmt.Errorf("failed to parse URL for queryParams: %w", err)
+	}
+	q := parsedURL.Query()
+	for key, val := range params {
+		switch v := val.(type) {
+		case []interface{}:
+			for _, item := range v {
+				q.Add(key, fmt.Sprintf("%v", item))
+			}
+		default:
+			q.Add(key, fmt.Sprintf("%v", v))
+		}
+	}
+	parsedURL.RawQuery = q.Encode()
+	return parsedURL.String(), nil
 }
 
 // stripScheme removes http:// or https:// prefix from a URL

@@ -95,7 +95,7 @@ func (c *Config) GetDatabaseCredentials() DatabaseCredentials {
 
 // getEnvOrDefault gets an environment variable or returns a default value
 func getEnvOrDefault(key, defaultValue string) string {
-	if value := os.Getenv(key); value != "" {
+	if value, ok := os.LookupEnv(key); ok {
 		return value
 	}
 	return defaultValue

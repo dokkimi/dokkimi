@@ -1,6 +1,6 @@
 {
   "name": "@dokkimi/platform",
-  "version": "0.5.3",
+  "version": "0.5.4",
   "license": "Elastic-2.0",
   "description": "OS-agnostic platform utilities for Dokkimi",
   "main": "dist/index.js",

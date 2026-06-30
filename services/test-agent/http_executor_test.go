@@ -3,6 +3,8 @@ package main
 import (
 	"errors"
 	"fmt"
+	"io"
+	"strings"
 	"testing"
 )
 
@@ -170,6 +172,206 @@ func TestStripScheme(t *testing.T) {
 	}
 }
 
+func TestBuildRequestBody(t *testing.T) {
+	t.Run("string body sent as-is", func(t *testing.T) {
+		body := "grant_type=client_credentials&client_id=test&scope=openid"
+		reader, err := buildRequestBody(body)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		result, _ := io.ReadAll(reader)
+		if string(result) != body {
+			t.Errorf("expected raw string %q, got %q", body, string(result))
+		}
+	})
+
+	t.Run("string body preserves ampersands", func(t *testing.T) {
+		body := "a=1&b=2&c=3"
+		reader, err := buildRequestBody(body)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		result, _ := io.ReadAll(reader)
+		if strings.Contains(string(result), `\u0026`) {
+			t.Error("ampersands should not be JSON-escaped to \\u0026")
+		}
+		if string(result) != body {
+			t.Errorf("expected %q, got %q", body, string(result))
+		}
+	})
+
+	t.Run("string body has no surrounding quotes", func(t *testing.T) {
+		body := "key=value"
+		reader, err := buildRequestBody(body)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		result, _ := io.ReadAll(reader)
+		if strings.HasPrefix(string(result), `"`) || strings.HasSuffix(string(result), `"`) {
+			t.Error("string body should not be wrapped in JSON quotes")
+		}
+	})
+
+	t.Run("map body is JSON-encoded", func(t *testing.T) {
+		body := map[string]interface{}{"name": "Alice", "age": float64(30)}
+		reader, err := buildRequestBody(body)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		result, _ := io.ReadAll(reader)
+		if !strings.Contains(string(result), `"name"`) {
+			t.Error("expected JSON-encoded map body")
+		}
+	})
+
+	t.Run("nil body returns empty reader", func(t *testing.T) {
+		reader, err := buildRequestBody(nil)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		result, _ := io.ReadAll(reader)
+		if string(result) != "null" {
+			t.Errorf("expected null for nil body, got %q", string(result))
+		}
+	})
+}
+
+func TestBuildFormDataBody(t *testing.T) {
+	t.Run("plain string field", func(t *testing.T) {
+		formData := map[string]interface{}{
+			"name": "Alice",
+		}
+		reader, ct, err := buildFormDataBody(formData)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if !strings.HasPrefix(ct, "multipart/form-data; boundary=") {
+			t.Errorf("expected multipart content type, got %q", ct)
+		}
+		body, _ := io.ReadAll(reader)
+		if !strings.Contains(string(body), "Alice") {
+			t.Error("expected body to contain field value")
+		}
+	})
+
+	t.Run("file upload part", func(t *testing.T) {
+		formData := map[string]interface{}{
+			"file": map[string]interface{}{
+				"filename":    "test.txt",
+				"content":     "hello world",
+				"contentType": "text/plain",
+			},
+		}
+		reader, ct, err := buildFormDataBody(formData)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		body, _ := io.ReadAll(reader)
+		bodyStr := string(body)
+		if !strings.Contains(bodyStr, `filename="test.txt"`) {
+			t.Error("expected filename in Content-Disposition")
+		}
+		if !strings.Contains(bodyStr, "hello world") {
+			t.Error("expected file content in body")
+		}
+		if !strings.Contains(bodyStr, "Content-Type: text/plain") {
+			t.Error("expected Content-Type header on file part")
+		}
+		_ = ct
+	})
+
+	t.Run("file upload defaults contentType to octet-stream", func(t *testing.T) {
+		formData := map[string]interface{}{
+			"file": map[string]interface{}{
+				"filename": "data.bin",
+				"content":  "binary",
+			},
+		}
+		reader, _, err := buildFormDataBody(formData)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		body, _ := io.ReadAll(reader)
+		if !strings.Contains(string(body), "Content-Type: application/octet-stream") {
+			t.Error("expected default octet-stream content type")
+		}
+	})
+
+	t.Run("array values sent as repeated key[] fields", func(t *testing.T) {
+		formData := map[string]interface{}{
+			"tags": []interface{}{"alpha", "beta"},
+		}
+		reader, _, err := buildFormDataBody(formData)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		body, _ := io.ReadAll(reader)
+		bodyStr := string(body)
+		if !strings.Contains(bodyStr, `name="tags[]"`) {
+			t.Error("expected tags[] field name")
+		}
+		if !strings.Contains(bodyStr, "alpha") || !strings.Contains(bodyStr, "beta") {
+			t.Error("expected both array values in body")
+		}
+	})
+
+	t.Run("filename with quotes is escaped", func(t *testing.T) {
+		formData := map[string]interface{}{
+			"file": map[string]interface{}{
+				"filename": `my"file.txt`,
+				"content":  "data",
+			},
+		}
+		reader, _, err := buildFormDataBody(formData)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		body, _ := io.ReadAll(reader)
+		bodyStr := string(body)
+		if strings.Contains(bodyStr, `filename="my"file.txt"`) {
+			t.Error("unescaped quote in filename allows header injection")
+		}
+		if !strings.Contains(bodyStr, `filename="my\"file.txt"`) {
+			t.Errorf("expected escaped quote in filename, got:\n%s", bodyStr)
+		}
+	})
+
+	t.Run("array key already ending in [] is not doubled", func(t *testing.T) {
+		formData := map[string]interface{}{
+			"tags[]": []interface{}{"a", "b"},
+		}
+		reader, _, err := buildFormDataBody(formData)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		body, _ := io.ReadAll(reader)
+		bodyStr := string(body)
+		if strings.Contains(bodyStr, `name="tags[][]"`) {
+			t.Error("double [] suffix on array key")
+		}
+		if !strings.Contains(bodyStr, `name="tags[]"`) {
+			t.Errorf("expected tags[] field name, got:\n%s", bodyStr)
+		}
+	})
+
+	t.Run("object without filename/content is JSON-serialized", func(t *testing.T) {
+		formData := map[string]interface{}{
+			"meta": map[string]interface{}{
+				"key": "value",
+			},
+		}
+		reader, _, err := buildFormDataBody(formData)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		body, _ := io.ReadAll(reader)
+		bodyStr := string(body)
+		if !strings.Contains(bodyStr, `"key":"value"`) && !strings.Contains(bodyStr, `"key": "value"`) {
+			t.Error("expected JSON-serialized object in body")
+		}
+	})
+}
+
 func TestRootCause(t *testing.T) {
 	t.Run("nil error", func(t *testing.T) {
 		if rootCause(nil) != "unknown error" {
@@ -190,6 +392,56 @@ func TestRootCause(t *testing.T) {
 		outer := fmt.Errorf("outer layer: %w", mid)
 		if rootCause(outer) != "root cause" {
 			t.Errorf("expected 'root cause', got %q", rootCause(outer))
+		}
+	})
+}
+
+func TestAppendQueryParams(t *testing.T) {
+	t.Run("single string param", func(t *testing.T) {
+		result, err := appendQueryParams("http://example.com/path", map[string]interface{}{
+			"key": "value",
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if result != "http://example.com/path?key=value" {
+			t.Errorf("got %q", result)
+		}
+	})
+
+	t.Run("array param sends repeated keys", func(t *testing.T) {
+		result, err := appendQueryParams("http://example.com/docs", map[string]interface{}{
+			"queries[]": []interface{}{"limit(10)", "offset(0)"},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(result, "queries%5B%5D=limit%2810%29") || !strings.Contains(result, "queries%5B%5D=offset%280%29") {
+			t.Errorf("expected encoded array params, got %q", result)
+		}
+	})
+
+	t.Run("preserves existing query string", func(t *testing.T) {
+		result, err := appendQueryParams("http://example.com/path?existing=yes", map[string]interface{}{
+			"added": "true",
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(result, "existing=yes") || !strings.Contains(result, "added=true") {
+			t.Errorf("expected both params, got %q", result)
+		}
+	})
+
+	t.Run("numeric values converted to string", func(t *testing.T) {
+		result, err := appendQueryParams("http://example.com/path", map[string]interface{}{
+			"limit": 10,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(result, "limit=10") {
+			t.Errorf("expected limit=10, got %q", result)
 		}
 	})
 }

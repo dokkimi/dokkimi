@@ -146,6 +146,32 @@ func (vc *VariableContext) ResolveAction(action StepAction) (StepAction, error) 
 		resolved.Body = resolvedBody
 	}
 
+	// Resolve formData values
+	if action.FormData != nil {
+		resolvedFormData, err := vc.resolveValue(action.FormData)
+		if err != nil {
+			return resolved, fmt.Errorf("resolving formData: %w", err)
+		}
+		if m, ok := resolvedFormData.(map[string]interface{}); ok {
+			resolved.FormData = m
+		} else {
+			return resolved, fmt.Errorf("resolving formData: expected object, got %T", resolvedFormData)
+		}
+	}
+
+	// Resolve queryParams values
+	if action.QueryParams != nil {
+		resolvedQP, err := vc.resolveValue(action.QueryParams)
+		if err != nil {
+			return resolved, fmt.Errorf("resolving queryParams: %w", err)
+		}
+		if m, ok := resolvedQP.(map[string]interface{}); ok {
+			resolved.QueryParams = m
+		} else {
+			return resolved, fmt.Errorf("resolving queryParams: expected object, got %T", resolvedQP)
+		}
+	}
+
 	// Resolve database query string
 	if action.Query != "" {
 		query, err := vc.Resolve(action.Query)

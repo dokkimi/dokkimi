@@ -230,21 +230,20 @@ A containerized application deployed with an interceptor sidecar for traffic cap
 
 **Optional fields:**
 
-| Field         | Type              | Default | Description                                                                                                                        |
-| ------------- | ----------------- | ------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| `description` | string            | —       | Human-readable description (max 500 chars)                                                                                         |
-| `image`       | string            | —       | Docker image URI (e.g., `"my-service:latest"`).                                                                                    |
-| `uiPath`      | string            | —       | URL path to service's UI (e.g., `"/"`, `"/app"`) — enables "Open UI" button                                                        |
-| `debugPort`   | integer (1-65535) | —       | Remote debugging port (e.g., 9229 for Node.js `--inspect`)                                                                         |
-| `command`     | string[]          | —       | Override Docker image's default CMD (e.g., `["server", "/data"]`)                                                                  |
-| `entrypoint`  | string[]          | —       | Override Docker image's ENTRYPOINT (e.g., `["/bin/sh", "-c", "..."]`)                                                              |
-| `mountFiles`  | array             | —       | Files to mount into the container (read-only). Each entry: `{ "source": "../path/to/file", "target": "/absolute/container/path" }` |
-| `env`         | array             | —       | Environment variables: `[{ "name": "KEY", "value": "VALUE" }, ...]`                                                                |
-| `minCpu`      | number (≥ 0)      | —       | Minimum CPU cores (e.g., 0.25)                                                                                                     |
-| `minMemory`   | number (≥ 0)      | —       | Minimum memory in MB                                                                                                               |
-| `maxCpu`      | number (≥ 0)      | —       | Maximum CPU cores                                                                                                                  |
-| `maxMemory`   | number (≥ 0)      | —       | Maximum memory in MB                                                                                                               |
-| `stage`       | integer (≥ 0)     | `0`     | Deployment stage. Items deploy in stage order — stage N+1 starts after stage N is healthy. Sort key, not index (gaps are fine).    |
+| Field         | Type          | Default | Description                                                                                                                        |
+| ------------- | ------------- | ------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `description` | string        | —       | Human-readable description (max 500 chars)                                                                                         |
+| `image`       | string        | —       | Docker image URI (e.g., `"my-service:latest"`).                                                                                    |
+| `uiPath`      | string        | —       | URL path to service's UI (e.g., `"/"`, `"/app"`) — enables "Open UI" button                                                        |
+| `command`     | string[]      | —       | Override Docker image's default CMD (e.g., `["server", "/data"]`)                                                                  |
+| `entrypoint`  | string[]      | —       | Override Docker image's ENTRYPOINT (e.g., `["/bin/sh", "-c", "..."]`)                                                              |
+| `mountFiles`  | array         | —       | Files to mount into the container (read-only). Each entry: `{ "source": "../path/to/file", "target": "/absolute/container/path" }` |
+| `env`         | array         | —       | Environment variables: `[{ "name": "KEY", "value": "VALUE" }, ...]`                                                                |
+| `minCpu`      | number (≥ 0)  | —       | Minimum CPU cores (e.g., 0.25)                                                                                                     |
+| `minMemory`   | number (≥ 0)  | —       | Minimum memory in MB                                                                                                               |
+| `maxCpu`      | number (≥ 0)  | —       | Maximum CPU cores                                                                                                                  |
+| `maxMemory`   | number (≥ 0)  | —       | Maximum memory in MB                                                                                                               |
+| `stage`       | integer (≥ 0) | `0`     | Deployment stage. Items deploy in stage order — stage N+1 starts after stage N is healthy. Sort key, not index (gaps are fine).    |
 
 **Full example:**
 
@@ -256,7 +255,6 @@ A containerized application deployed with an interceptor sidecar for traffic cap
   "port": 3000,
   "healthCheck": "/health",
   "uiPath": "/",
-  "debugPort": 9229,
   "env": [
     {
       "name": "DATABASE_URL",
@@ -281,6 +279,50 @@ A containerized application deployed with an interceptor sidecar for traffic cap
 
 ---
 
+### WORKER
+
+A background process (queue consumer, event processor, cron daemon) that doesn't serve HTTP. Workers get an interceptor for outbound traffic capture but no health check — they are marked READY immediately on container creation. If the container crashes, the run fails.
+
+**Required fields:**
+
+| Field  | Type       | Description                                                                                               |
+| ------ | ---------- | --------------------------------------------------------------------------------------------------------- |
+| `type` | `"WORKER"` | Item type                                                                                                 |
+| `name` | string     | Unique name (1-63 chars, lowercase alphanumeric + hyphens). Used as DNS hostname for service connections. |
+
+**Optional fields:**
+
+| Field         | Type          | Default | Description                                                                                |
+| ------------- | ------------- | ------- | ------------------------------------------------------------------------------------------ |
+| `description` | string        | —       | Human-readable description (max 500 chars)                                                 |
+| `image`       | string        | —       | Docker image URI                                                                           |
+| `command`     | string[]      | —       | Override the Docker image's CMD                                                            |
+| `entrypoint`  | string[]      | —       | Override the Docker image's ENTRYPOINT                                                     |
+| `env`         | array         | —       | Environment variables (`[{ "name": "KEY", "value": "VALUE" }]`)                            |
+| `mountFiles`  | array         | —       | Files to mount (read-only): `[{ "source": "relative/path", "target": "/absolute/path" }]`  |
+| `minCpu`      | number (≥ 0)  | —       | Minimum CPU cores                                                                          |
+| `minMemory`   | number (≥ 0)  | —       | Minimum memory in MB                                                                       |
+| `maxCpu`      | number (≥ 0)  | —       | Maximum CPU cores                                                                          |
+| `maxMemory`   | number (≥ 0)  | —       | Maximum memory in MB                                                                       |
+| `stage`       | integer (≥ 0) | `0`     | Deployment stage. Items deploy in stage order — stage N+1 starts after stage N is healthy. |
+
+**Example:**
+
+```json
+{
+  "type": "WORKER",
+  "name": "appwrite-worker-db",
+  "image": "appwrite/appwrite:latest",
+  "command": ["php", "app/worker.php", "databases"],
+  "env": [
+    { "name": "_APP_REDIS_HOST", "value": "appwrite-redis" },
+    { "name": "_APP_REDIS_PORT", "value": "6379" }
+  ]
+}
+```
+
+---
+
 ### DATABASE
 
 A managed database instance. Dokkimi provisions the database container, sets up credentials, and runs init scripts automatically.
@@ -295,21 +337,22 @@ A managed database instance. Dokkimi provisions the database container, sets up 
 
 **Optional fields:**
 
-| Field           | Type          | Default     | Description                                                                                   |
-| --------------- | ------------- | ----------- | --------------------------------------------------------------------------------------------- |
-| `description`   | string        | —           | Human-readable description (max 500 chars)                                                    |
-| `image`         | string        | —           | Custom Docker image (overrides engine default, e.g. `"getlago/postgres-partman:15.0-alpine"`) |
-| `version`       | string        | per engine  | Database image version tag (e.g. `"16"` for postgres:16). See defaults below.                 |
-| `dbName`        | string        | `"dokkimi"` | Database/schema name                                                                          |
-| `dbUser`        | string        | `"dokkimi"` | Database username                                                                             |
-| `dbPassword`    | string        | `"dokkimi"` | Database password                                                                             |
-| `initFilePath`  | string        | —           | Relative path from this file to a single init script                                          |
-| `initFilePaths` | string[]      | —           | Relative paths to multiple init scripts (executed in order). Use one or the other, not both.  |
-| `minCpu`        | number (≥ 0)  | —           | Minimum CPU cores                                                                             |
-| `minMemory`     | number (≥ 0)  | —           | Minimum memory in MB                                                                          |
-| `maxCpu`        | number (≥ 0)  | —           | Maximum CPU cores                                                                             |
-| `maxMemory`     | number (≥ 0)  | —           | Maximum memory in MB                                                                          |
-| `stage`         | integer (≥ 0) | `0`         | Deployment stage. Items deploy in stage order — stage N+1 starts after stage N is healthy.    |
+| Field           | Type          | Default     | Description                                                                                                 |
+| --------------- | ------------- | ----------- | ----------------------------------------------------------------------------------------------------------- |
+| `description`   | string        | —           | Human-readable description (max 500 chars)                                                                  |
+| `image`         | string        | —           | Custom Docker image (overrides engine default, e.g. `"getlago/postgres-partman:15.0-alpine"`)               |
+| `version`       | string        | per engine  | Database image version tag (e.g. `"16"` for postgres:16). See defaults below.                               |
+| `dbName`        | string        | `"dokkimi"` | Database/schema name                                                                                        |
+| `dbUser`        | string        | `"dokkimi"` | Database username                                                                                           |
+| `dbPassword`    | string        | `"dokkimi"` | Database password                                                                                           |
+| `noAuth`        | boolean       | `false`     | Skip all authentication. Database starts without credentials. Cannot combine with dbName/dbUser/dbPassword. |
+| `initFilePath`  | string        | —           | Relative path from this file to a single init script                                                        |
+| `initFilePaths` | string[]      | —           | Relative paths to multiple init scripts (executed in order). Use one or the other, not both.                |
+| `minCpu`        | number (≥ 0)  | —           | Minimum CPU cores                                                                                           |
+| `minMemory`     | number (≥ 0)  | —           | Minimum memory in MB                                                                                        |
+| `maxCpu`        | number (≥ 0)  | —           | Maximum CPU cores                                                                                           |
+| `maxMemory`     | number (≥ 0)  | —           | Maximum memory in MB                                                                                        |
+| `stage`         | integer (≥ 0) | `0`         | Deployment stage. Items deploy in stage order — stage N+1 starts after stage N is healthy.                  |
 
 **Database engine details:**
 
@@ -870,13 +913,65 @@ Tests are defined in the top-level `tests` array. Each test is independent and c
 }
 ```
 
-| Field     | Type            | Required | Description                                                              |
-| --------- | --------------- | -------- | ------------------------------------------------------------------------ |
-| `type`    | `"httpRequest"` | Yes      | Action type                                                              |
-| `method`  | enum            | Yes      | `"GET"`, `"POST"`, `"PUT"`, `"DELETE"`, `"PATCH"`, `"HEAD"`, `"OPTIONS"` |
-| `url`     | string          | Yes      | `"service-name/path"` format — service name resolves to internal DNS     |
-| `headers` | object          | No       | Request headers (values support `{{variables}}`)                         |
-| `body`    | any JSON        | No       | Request body (string values support `{{variables}}`)                     |
+| Field         | Type            | Required | Description                                                                                                                 |
+| ------------- | --------------- | -------- | --------------------------------------------------------------------------------------------------------------------------- |
+| `type`        | `"httpRequest"` | Yes      | Action type                                                                                                                 |
+| `method`      | enum            | Yes      | `"GET"`, `"POST"`, `"PUT"`, `"DELETE"`, `"PATCH"`, `"HEAD"`, `"OPTIONS"`                                                    |
+| `url`         | string          | Yes      | `"service-name/path"` format — service name resolves to internal DNS                                                        |
+| `headers`     | object          | No       | Request headers (values support `{{variables}}`)                                                                            |
+| `body`        | any JSON        | No       | Request body (string values support `{{variables}}`)                                                                        |
+| `formData`    | object          | No       | Multipart/form-data fields. Cannot be combined with `body`. See below.                                                      |
+| `queryParams` | object          | No       | URL query parameters. String values sent as-is; array values send repeated keys. Values support `{{variables}}`. See below. |
+
+**formData (multipart/form-data uploads):**
+
+Use `formData` instead of `body` when the target API expects `multipart/form-data` (e.g., file uploads). The Content-Type header is set automatically — do not set it manually.
+
+Field values are encoded by type:
+
+- **String / number / boolean** → plain form field
+- **Array of strings** → repeated `key[]` fields (e.g., `permissions[]`)
+- **Object with `filename` + `content`** → file upload part (optional `contentType`, defaults to `application/octet-stream`)
+
+```yaml
+action:
+  type: httpRequest
+  method: POST
+  url: my-service/v1/storage/buckets/{{bucketId}}/files
+  headers:
+    Authorization: 'Bearer {{token}}'
+  formData:
+    fileId: 'unique()'
+    file:
+      filename: report.txt
+      content: 'Hello world'
+      contentType: text/plain
+    permissions:
+      - 'read("any")'
+      - 'write("user:{{userId}}")'
+```
+
+**queryParams (URL query parameters):**
+
+Use `queryParams` to append URL query parameters with proper encoding. This is especially useful for APIs that use array-style params (e.g. `queries[]`).
+
+```yaml
+action:
+  type: httpRequest
+  method: GET
+  url: api/v1/documents
+  queryParams:
+    queries[]:
+      - '{"method":"limit","values":[10]}'
+      - '{"method":"offset","values":[0]}'
+    format: json
+```
+
+- **String / number / boolean** → single `key=value` pair
+- **Array values** → repeated keys (e.g. `queries[]=...&queries[]=...`)
+- Values support `{{variable}}` interpolation
+- Params are URL-encoded automatically
+- Merged with any existing query string in `url`
 
 #### Database Query (`dbQuery`)
 

@@ -95,7 +95,93 @@ function validateServiceItem(
     );
   }
   validatePort(item.port, 'port', label, r);
-  validatePort(item.debugPort, 'debugPort', label, r);
+  if (item.command !== undefined) {
+    if (!Array.isArray(item.command)) {
+      err(r, `${label}: "command" must be an array of strings`);
+    } else {
+      for (let i = 0; i < item.command.length; i++) {
+        if (typeof item.command[i] !== 'string') {
+          err(r, `${label}: command[${i}] must be a string`);
+        }
+      }
+    }
+  }
+  if (item.entrypoint !== undefined) {
+    if (!Array.isArray(item.entrypoint)) {
+      err(r, `${label}: "entrypoint" must be an array of strings`);
+    } else {
+      for (let i = 0; i < item.entrypoint.length; i++) {
+        if (typeof item.entrypoint[i] !== 'string') {
+          err(r, `${label}: entrypoint[${i}] must be a string`);
+        }
+      }
+    }
+  }
+  if (item.mountFiles !== undefined) {
+    if (!Array.isArray(item.mountFiles)) {
+      err(r, `${label}: "mountFiles" must be an array`);
+    } else {
+      for (let i = 0; i < item.mountFiles.length; i++) {
+        const mf = item.mountFiles[i] as Record<string, unknown>;
+        if (!mf || typeof mf !== 'object') {
+          err(r, `${label}: mountFiles[${i}] must be an object`);
+          continue;
+        }
+        if (typeof mf.source !== 'string' || mf.source.length === 0) {
+          err(
+            r,
+            `${label}: mountFiles[${i}] requires "source" (relative path to file)`,
+          );
+        } else {
+          const resolved = path.resolve(
+            path.dirname(sourceFile),
+            mf.source as string,
+          );
+          if (!fs.existsSync(resolved)) {
+            err(
+              r,
+              `${label}: mountFiles[${i}].source not found: ${mf.source} (resolved to ${resolved})`,
+            );
+          }
+        }
+        if (typeof mf.target !== 'string' || mf.target.length === 0) {
+          err(
+            r,
+            `${label}: mountFiles[${i}] requires "target" (absolute path in container)`,
+          );
+        } else if (!mf.target.startsWith('/')) {
+          err(
+            r,
+            `${label}: mountFiles[${i}].target must be an absolute path (start with "/")`,
+          );
+        }
+      }
+    }
+  }
+  if (item.env !== undefined) {
+    if (!Array.isArray(item.env)) {
+      err(r, `${label}: "env" must be an array`);
+    } else {
+      for (let i = 0; i < item.env.length; i++) {
+        const e = item.env[i] as Record<string, unknown>;
+        if (!e || typeof e.name !== 'string' || typeof e.value !== 'string') {
+          err(r, `${label}: env[${i}] must have "name" and "value" strings`);
+        }
+      }
+    }
+  }
+}
+
+function validateWorkerItem(
+  item: Record<string, unknown>,
+  label: string,
+  sourceFile: string,
+  r: ValidationResult,
+  fs: FileSystem,
+): void {
+  if (!item.image) {
+    warn(r, `${label}: WORKER should have "image"`);
+  }
   if (item.command !== undefined) {
     if (!Array.isArray(item.command)) {
       err(r, `${label}: "command" must be an array of strings`);
@@ -210,6 +296,22 @@ function validateDatabaseItem(
   if (item.image !== undefined) {
     if (typeof item.image !== 'string' || item.image.length === 0) {
       err(r, `${label}: "image" must be a non-empty string`);
+    }
+  }
+  if (item.noAuth !== undefined) {
+    if (typeof item.noAuth !== 'boolean') {
+      err(r, `${label}: "noAuth" must be a boolean`);
+    } else if (item.noAuth) {
+      if (
+        item.dbPassword !== undefined ||
+        item.dbUser !== undefined ||
+        item.dbName !== undefined
+      ) {
+        err(
+          r,
+          `${label}: "noAuth" cannot be combined with "dbName", "dbUser", or "dbPassword"`,
+        );
+      }
     }
   }
   if (item.initFilePath !== undefined) {
@@ -474,6 +576,9 @@ export function validateItem(
   switch (type) {
     case 'SERVICE':
       validateServiceItem(item, label, sourceFile, r, fs);
+      break;
+    case 'WORKER':
+      validateWorkerItem(item, label, sourceFile, r, fs);
       break;
     case 'DATABASE':
       validateDatabaseItem(item, label, sourceFile, r, fs);

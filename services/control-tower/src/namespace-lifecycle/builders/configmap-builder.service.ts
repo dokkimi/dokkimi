@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { getConfig } from '@dokkimi/config';
+import { resolveDbCredentials } from './database-config.service';
 
 export interface ItemDefinitionLike {
   name: string;
@@ -8,7 +8,6 @@ export interface ItemDefinitionLike {
   description?: string | null;
   image?: string | null;
   port?: number | null;
-  debugPort?: number | null;
   healthCheck?: string | null;
   uiPath?: string | null;
   domain?: string | null;
@@ -25,6 +24,7 @@ export interface ItemDefinitionLike {
   dbName?: string | null;
   dbUser?: string | null;
   dbPassword?: string | null;
+  noAuth?: boolean | null;
   id?: string;
 }
 
@@ -129,10 +129,7 @@ export class ConfigMapBuilderService {
         const dbType = item.database || 'postgres';
         const normalizedDbType = this.normalizeDatabaseType(dbType);
 
-        const config = getConfig();
-        const dbName = item.dbName ?? config.database.defaultName;
-        const dbUser = item.dbUser ?? config.database.defaultUser;
-        const dbPassword = item.dbPassword ?? config.database.defaultPassword;
+        const { dbName, dbUser, dbPassword } = resolveDbCredentials(item);
 
         databaseMap[item.containerName] = {
           type: normalizedDbType,
@@ -205,17 +202,12 @@ export class ConfigMapBuilderService {
       dbName?: string | null;
       dbUser?: string | null;
       dbPassword?: string | null;
+      noAuth?: boolean | null;
     }>,
   ): { metadata?: Record<string, unknown>; data?: Record<string, string> } {
-    const config = getConfig(); // Control Tower has access to YAML config
-
     const credentials: Record<string, object> = {};
     for (const db of databases) {
-      credentials[db.containerName] = {
-        dbName: db.dbName || config.database.defaultName,
-        dbUser: db.dbUser || config.database.defaultUser,
-        dbPassword: db.dbPassword || config.database.defaultPassword,
-      };
+      credentials[db.containerName] = resolveDbCredentials(db);
     }
 
     return {

@@ -4,6 +4,7 @@ import {
   IsArray,
   IsObject,
   IsNumber,
+  IsBoolean,
   IsBase64,
   MaxLength,
   ValidateNested,
@@ -37,7 +38,7 @@ class DefinitionItemDto {
   name!: string;
 
   @IsString()
-  type!: 'SERVICE' | 'DATABASE' | 'BROKER' | 'MOCK';
+  type!: 'SERVICE' | 'WORKER' | 'DATABASE' | 'BROKER' | 'MOCK';
 
   @IsOptional()
   @IsString()
@@ -55,10 +56,6 @@ class DefinitionItemDto {
   @IsOptional()
   @IsNumber()
   port?: number | null;
-
-  @IsOptional()
-  @IsNumber()
-  debugPort?: number | null;
 
   @IsOptional()
   @IsString()
@@ -141,6 +138,10 @@ class DefinitionItemDto {
   @IsOptional()
   @IsString()
   dbPassword?: string | null;
+
+  @IsOptional()
+  @IsBoolean()
+  noAuth?: boolean | null;
 
   @IsOptional()
   @IsArray()

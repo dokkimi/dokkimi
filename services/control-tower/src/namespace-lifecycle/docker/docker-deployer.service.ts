@@ -325,7 +325,55 @@ export class DockerDeployerService {
       this.throwOnSettledErrors(brokerResults);
     }
 
-    // Phase: services third
+    // Phase: workers third (deploy with interceptor, mark READY immediately)
+    const workerItems = stageItems.filter((i) => i.type === 'WORKER');
+    if (workerItems.length > 0) {
+      const workerResults = await Promise.allSettled(
+        workerItems.map(async (item) => {
+          const containerName = sanitizeContainerName(item.name);
+          const instanceItemId = ctx.instanceItemIds.get(item.name);
+
+          if (instanceItemId) {
+            await this.instanceItemService.updateInstanceItemContainerName(
+              instanceItemId,
+              containerName,
+            );
+            await this.instanceItemService.updateInstanceItemStatus(
+              instanceItemId,
+              ItemStatus.STARTING,
+            );
+          }
+
+          const { userContainerId } =
+            await this.serviceGroup.createServiceGroup(
+              networkName,
+              instanceId,
+              item,
+              containerName,
+              instanceItemId,
+              dockerDnsIP,
+              configPaths,
+              caBundlePaths,
+              directDnsNames,
+              testAgentIP,
+            );
+
+          if (instanceItemId && userContainerId) {
+            await this.instanceItemService.updateInstanceItemStatus(
+              instanceItemId,
+              ItemStatus.RUNNING,
+            );
+            await this.instanceItemService.updateInstanceItemReadiness(
+              instanceItemId,
+              'READY',
+            );
+          }
+        }),
+      );
+      this.throwOnSettledErrors(workerResults);
+    }
+
+    // Phase: services fourth
     const svcItems = stageItems.filter((i) => i.type === 'SERVICE');
     const servicePromises = svcItems.map(async (item) => {
       const containerName = sanitizeContainerName(item.name);
@@ -400,7 +448,10 @@ export class DockerDeployerService {
 
         const exited = await this.dockerClient.getExitedContainers(instanceId);
         const crashedServices = exited.filter(
-          (c) => c.role === 'service' || c.role === 'database',
+          (c) =>
+            c.role === 'service' ||
+            c.role === 'worker' ||
+            c.role === 'database',
         );
         if (crashedServices.length > 0) {
           this.clearCrashMonitor(instanceId);

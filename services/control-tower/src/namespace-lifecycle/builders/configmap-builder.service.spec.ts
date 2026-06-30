@@ -258,6 +258,36 @@ describe('ConfigMapBuilderService', () => {
       expect(configMap.data?.databaseMap).toBeUndefined();
     });
 
+    it('should use empty credentials in databaseMap when noAuth is true', () => {
+      const items = [
+        {
+          id: 'item-1',
+          type: 'DATABASE' as const,
+          containerName: 'redis-cache',
+          name: 'Redis',
+          database: 'redis',
+          noAuth: true,
+          port: null,
+          domain: null,
+        },
+      ];
+
+      const configMap = service.buildInterceptorConfigMap(namespace, items, []);
+
+      const databaseMap = JSON.parse(
+        configMap.data?.databaseMap || '{}',
+      ) as Record<string, any>;
+
+      expect(databaseMap['redis-cache']).toEqual({
+        type: 'redis',
+        user: '',
+        password: '',
+        database: '',
+        port: 6379,
+        instanceItemId: 'item-1',
+      });
+    });
+
     it('should exclude databases without containerName or id', () => {
       const items = [
         {
@@ -861,6 +891,54 @@ describe('ConfigMapBuilderService', () => {
       expect(credentials['db-three'].dbName).toBe('dokkimi');
       expect(credentials['db-three'].dbUser).toBe('custom_user');
       expect(credentials['db-three'].dbPassword).toBe('custom_pass');
+    });
+
+    it('should use empty credentials when noAuth is true', () => {
+      const databases = [
+        {
+          name: 'Redis',
+          containerName: 'redis-cache',
+          noAuth: true,
+        },
+      ];
+
+      const configMap = service.buildDbCredentialsConfigMap(
+        namespace,
+        databases,
+      );
+
+      const credentials = JSON.parse(
+        configMap.data?.['credentials.json'] || '{}',
+      ) as Record<string, any>;
+      expect(credentials['redis-cache']).toEqual({
+        dbName: '',
+        dbUser: '',
+        dbPassword: '',
+      });
+    });
+
+    it('should use defaults when noAuth is false', () => {
+      const databases = [
+        {
+          name: 'PG',
+          containerName: 'pg-db',
+          noAuth: false,
+        },
+      ];
+
+      const configMap = service.buildDbCredentialsConfigMap(
+        namespace,
+        databases,
+      );
+
+      const credentials = JSON.parse(
+        configMap.data?.['credentials.json'] || '{}',
+      ) as Record<string, any>;
+      expect(credentials['pg-db']).toEqual({
+        dbName: 'dokkimi',
+        dbUser: 'dokkimi',
+        dbPassword: 'dokkimi',
+      });
     });
   });
 });

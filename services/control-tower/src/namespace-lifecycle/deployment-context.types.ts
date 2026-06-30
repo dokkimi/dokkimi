@@ -66,14 +66,13 @@ export interface DeployableDefinition {
  */
 export interface DefinitionItem {
   name: string;
-  type: 'SERVICE' | 'DATABASE' | 'BROKER' | 'MOCK';
+  type: 'SERVICE' | 'WORKER' | 'DATABASE' | 'BROKER' | 'MOCK';
   description?: string | null;
   stage?: number | null;
 
   // Service fields
   image?: string | null;
   port?: number | null;
-  debugPort?: number | null;
   healthCheck?: string | null;
   uiPath?: string | null;
   domain?: string | null;
@@ -97,6 +96,7 @@ export interface DefinitionItem {
   dbName?: string | null;
   dbUser?: string | null;
   dbPassword?: string | null;
+  noAuth?: boolean | null;
   initFiles?: DefinitionInitFile[] | null; // array order = execution order
 
   // Mock fields

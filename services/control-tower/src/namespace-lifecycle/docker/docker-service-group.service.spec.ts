@@ -486,8 +486,8 @@ describe('DockerServiceGroupService', () => {
       expect(mockDockerClient.runContainer).not.toHaveBeenCalled();
     });
 
-    it('should expose service port and debug port', async () => {
-      const item = buildServiceItem({ port: 3000, debugPort: 9229 });
+    it('should expose service port', async () => {
+      const item = buildServiceItem({ port: 3000 });
 
       await service.createServiceGroup(
         'dokkimi-run-inst1',
@@ -503,7 +503,6 @@ describe('DockerServiceGroupService', () => {
 
       const userCall = mockDockerClient.runContainer.mock.calls[1][0];
       expect(userCall.exposedPorts).toContain(3000);
-      expect(userCall.exposedPorts).toContain(9229);
     });
 
     it('should mount local dev path when specified', async () => {
@@ -543,6 +542,45 @@ describe('DockerServiceGroupService', () => {
 
       expect(result.userContainerId).toBe('container-id');
       expect(result.interceptorName).toBe('api-gateway-interceptor-inst1');
+    });
+
+    it('should set user container role label to service for SERVICE items', async () => {
+      await service.createServiceGroup(
+        'dokkimi-run-inst1',
+        'inst1',
+        buildServiceItem(),
+        'api-gateway',
+        'item-1',
+        '127.0.0.11',
+        configPaths,
+        caBundlePaths,
+        [],
+      );
+
+      const userCall = mockDockerClient.runContainer.mock.calls[1][0];
+      expect(userCall.labels['io.dokkimi.role']).toBe('service');
+    });
+
+    it('should set user container role label to worker for WORKER items', async () => {
+      const item = buildServiceItem({
+        type: 'WORKER',
+        port: undefined,
+      });
+
+      await service.createServiceGroup(
+        'dokkimi-run-inst1',
+        'inst1',
+        item,
+        'my-worker',
+        'item-1',
+        '127.0.0.11',
+        configPaths,
+        caBundlePaths,
+        [],
+      );
+
+      const userCall = mockDockerClient.runContainer.mock.calls[1][0];
+      expect(userCall.labels['io.dokkimi.role']).toBe('worker');
     });
 
     it('should pass database names to dnsmasq config', async () => {

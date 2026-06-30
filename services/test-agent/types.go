@@ -259,22 +259,24 @@ func (r *ExtractRule) UnmarshalJSON(data []byte) error {
 
 // StepAction represents an HTTP request, database query, wait, UI action, or parallel batch.
 type StepAction struct {
-	Type       string                 `json:"type"`                 // "httpRequest", "dbQuery", "wait", "ui", or "parallel"
-	Method     string                 `json:"method,omitempty"`     // httpRequest only
-	URL        string                 `json:"url,omitempty"`        // httpRequest only
-	Headers    map[string]string      `json:"headers,omitempty"`    // httpRequest only
-	Body       interface{}            `json:"body,omitempty"`       // httpRequest only
-	Timeout    int                    `json:"timeout,omitempty"`    // httpRequest or dbQuery (ms)
-	DurationMs int                    `json:"durationMs,omitempty"` // wait only
-	Database   string                 `json:"database,omitempty"`   // dbQuery only
-	Query      string                 `json:"query,omitempty"`      // dbQuery only
-	Params     map[string]interface{} `json:"params,omitempty"`     // dbQuery only
-	Target     string                 `json:"target,omitempty"`     // ui only (service name)
-	Steps      []UISubStep            `json:"steps,omitempty"`      // ui only
-	Actions    []StepAction           `json:"actions,omitempty"`    // parallel only — sub-actions to run concurrently
-	ForEach    *ForEachLoop           `json:"forEach,omitempty"`
-	For        *ForLoop               `json:"for,omitempty"`
-	Repeat     *RepeatLoop            `json:"repeat,omitempty"`
+	Type        string                 `json:"type"`                  // "httpRequest", "dbQuery", "wait", "ui", or "parallel"
+	Method      string                 `json:"method,omitempty"`      // httpRequest only
+	URL         string                 `json:"url,omitempty"`         // httpRequest only
+	Headers     map[string]string      `json:"headers,omitempty"`     // httpRequest only
+	Body        interface{}            `json:"body,omitempty"`        // httpRequest only
+	FormData    map[string]interface{} `json:"formData,omitempty"`    // httpRequest only — multipart/form-data fields
+	QueryParams map[string]interface{} `json:"queryParams,omitempty"` // httpRequest only — URL query parameters
+	Timeout     int                    `json:"timeout,omitempty"`     // httpRequest or dbQuery (ms)
+	DurationMs  int                    `json:"durationMs,omitempty"`  // wait only
+	Database    string                 `json:"database,omitempty"`    // dbQuery only
+	Query       string                 `json:"query,omitempty"`       // dbQuery only
+	Params      map[string]interface{} `json:"params,omitempty"`      // dbQuery only
+	Target      string                 `json:"target,omitempty"`      // ui only (service name)
+	Steps       []UISubStep            `json:"steps,omitempty"`       // ui only
+	Actions     []StepAction           `json:"actions,omitempty"`     // parallel only — sub-actions to run concurrently
+	ForEach     *ForEachLoop           `json:"forEach,omitempty"`
+	For         *ForLoop               `json:"for,omitempty"`
+	Repeat      *RepeatLoop            `json:"repeat,omitempty"`
 }
 
 // StepExecution represents the execution of a single step with timing information

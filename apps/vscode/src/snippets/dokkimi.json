@@ -104,6 +104,20 @@
     ]
   },
 
+  "Dokkimi: WORKER Item": {
+    "prefix": "dok-worker",
+    "description": "Add a WORKER item (background process, no HTTP port)",
+    "body": [
+      "{",
+      "  \"type\": \"WORKER\",",
+      "  \"name\": \"${1:my-worker}\",",
+      "  \"description\": \"${2:Background worker}\",",
+      "  \"image\": \"${3:my-service:latest}\",",
+      "  \"command\": [\"${4:node}\", \"${5:worker.js}\"]",
+      "}"
+    ]
+  },
+
   "Dokkimi: DATABASE Item (Postgres)": {
     "prefix": "dok-postgres",
     "description": "Add a PostgreSQL DATABASE item",

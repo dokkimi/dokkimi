@@ -789,7 +789,13 @@ describe('RunsService', () => {
         'ct_instance_submitted',
         expect.objectContaining({
           item_count: 3,
-          item_types: { service: 1, database: 1, broker: 0, mock: 1 },
+          item_types: {
+            service: 1,
+            database: 1,
+            broker: 0,
+            mock: 1,
+            worker: 0,
+          },
           has_tests: true,
           test_count: 1,
           total_step_count: 2,

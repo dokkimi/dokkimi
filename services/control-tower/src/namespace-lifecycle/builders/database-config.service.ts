@@ -9,9 +9,30 @@ export interface DatabaseConfig {
 }
 
 export interface DatabaseCredentials {
-  dbName?: string;
-  dbUser?: string;
-  dbPassword?: string;
+  dbName?: string | null;
+  dbUser?: string | null;
+  dbPassword?: string | null;
+  noAuth?: boolean | null;
+}
+
+export interface ResolvedCredentials {
+  dbName: string;
+  dbUser: string;
+  dbPassword: string;
+}
+
+export function resolveDbCredentials(
+  creds: DatabaseCredentials | undefined,
+): ResolvedCredentials {
+  const config = getConfig();
+  const noAuth = creds?.noAuth === true;
+  return {
+    dbName: noAuth ? '' : (creds?.dbName ?? config.database.defaultName),
+    dbUser: noAuth ? '' : (creds?.dbUser ?? config.database.defaultUser),
+    dbPassword: noAuth
+      ? ''
+      : (creds?.dbPassword ?? config.database.defaultPassword),
+  };
 }
 
 @Injectable()
@@ -23,11 +44,8 @@ export class DatabaseConfigService {
   ): DatabaseConfig {
     const config = getConfig();
 
-    // Use provided credentials or fall back to config defaults
-    const dbName = credentials?.dbName || config.database.defaultName;
-    const dbUser = credentials?.dbUser || config.database.defaultUser;
-    const dbPassword =
-      credentials?.dbPassword || config.database.defaultPassword;
+    const { dbName, dbUser, dbPassword } = resolveDbCredentials(credentials);
+    const noAuth = credentials?.noAuth === true;
     const imgs = config.images.databases;
 
     const configs: Record<string, DatabaseConfig> = {
@@ -37,6 +55,7 @@ export class DatabaseConfigService {
           POSTGRES_DB: dbName,
           POSTGRES_USER: dbUser,
           POSTGRES_PASSWORD: dbPassword,
+          ...(noAuth ? { POSTGRES_HOST_AUTH_METHOD: 'trust' } : {}),
         },
         ports: [5432],
       },
@@ -46,7 +65,8 @@ export class DatabaseConfigService {
           MYSQL_DATABASE: dbName,
           MYSQL_USER: dbUser,
           MYSQL_PASSWORD: dbPassword,
-          MYSQL_ROOT_PASSWORD: dbPassword, // Same as password for simplicity
+          MYSQL_ROOT_PASSWORD: dbPassword,
+          ...(noAuth ? { MYSQL_ALLOW_EMPTY_PASSWORD: 'yes' } : {}),
         },
         ports: [3306],
         command: [
