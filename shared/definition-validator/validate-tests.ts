@@ -248,6 +248,12 @@ export function validateStep(
     if (action.formData !== undefined && typeof action.formData !== 'object') {
       err(r, `${ctx}.action: "formData" must be an object`);
     }
+    if (
+      action.queryParams !== undefined &&
+      typeof action.queryParams !== 'object'
+    ) {
+      err(r, `${ctx}.action: "queryParams" must be an object`);
+    }
   } else if (action.type === 'dbQuery') {
     checkUnknownKeys(action, VALID_ACTION_KEYS.dbQuery, `${ctx}.action`, r);
     if (typeof action.database !== 'string') {

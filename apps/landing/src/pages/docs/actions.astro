@@ -35,6 +35,7 @@ import CodeBlock from '../../components/CodeBlock.astro';
       <tr><td><code>headers</code></td><td>object</td><td>No</td><td>Request headers (values support <code>&#123;&#123;variables&#125;&#125;</code>)</td></tr>
       <tr><td><code>body</code></td><td>any JSON</td><td>No</td><td>Request body (string values support <code>&#123;&#123;variables&#125;&#125;</code>)</td></tr>
       <tr><td><code>formData</code></td><td>object</td><td>No</td><td>Multipart/form-data fields for file uploads. Cannot be combined with <code>body</code>.</td></tr>
+      <tr><td><code>queryParams</code></td><td>object</td><td>No</td><td>URL query parameters. String values sent as-is; array values send repeated keys. Values support <code>&#123;&#123;variables&#125;&#125;</code>.</td></tr>
     </tbody>
   </table>
 
@@ -73,6 +74,27 @@ import CodeBlock from '../../components/CodeBlock.astro';
     <li><strong>String / number / boolean</strong> — plain form field</li>
     <li><strong>Array of strings</strong> — repeated <code>key[]</code> fields (e.g., <code>permissions[]</code>)</li>
     <li><strong>Object with <code>filename</code> + <code>content</code></strong> — file upload part (optional <code>contentType</code>, defaults to <code>application/octet-stream</code>)</li>
+  </ul>
+
+  <h3>Query parameters</h3>
+  <p>Use <code>queryParams</code> to append URL query parameters with proper encoding. This is especially useful for APIs that use array-style params (e.g. <code>queries[]</code>).</p>
+
+  <CodeBlock code={`action:
+  type: httpRequest
+  method: GET
+  url: api/v1/documents
+  queryParams:
+    queries[]:
+      - '{"method":"limit","values":[10]}'
+      - '{"method":"offset","values":[0]}'
+    format: json`} lang="yaml" />
+
+  <ul>
+    <li><strong>String / number / boolean</strong> — single <code>key=value</code> pair</li>
+    <li><strong>Array values</strong> — repeated keys (e.g. <code>queries[]=...&amp;queries[]=...</code>)</li>
+    <li>Values support <code>&#123;&#123;variable&#125;&#125;</code> interpolation</li>
+    <li>Params are URL-encoded automatically</li>
+    <li>Merged with any existing query string in <code>url</code></li>
   </ul>
 
   <h3>Parallel actions</h3>

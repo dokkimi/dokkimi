@@ -292,3 +292,53 @@ func TestRootCause(t *testing.T) {
 		}
 	})
 }
+
+func TestAppendQueryParams(t *testing.T) {
+	t.Run("single string param", func(t *testing.T) {
+		result, err := appendQueryParams("http://example.com/path", map[string]interface{}{
+			"key": "value",
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if result != "http://example.com/path?key=value" {
+			t.Errorf("got %q", result)
+		}
+	})
+
+	t.Run("array param sends repeated keys", func(t *testing.T) {
+		result, err := appendQueryParams("http://example.com/docs", map[string]interface{}{
+			"queries[]": []interface{}{"limit(10)", "offset(0)"},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(result, "queries%5B%5D=limit%2810%29") || !strings.Contains(result, "queries%5B%5D=offset%280%29") {
+			t.Errorf("expected encoded array params, got %q", result)
+		}
+	})
+
+	t.Run("preserves existing query string", func(t *testing.T) {
+		result, err := appendQueryParams("http://example.com/path?existing=yes", map[string]interface{}{
+			"added": "true",
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(result, "existing=yes") || !strings.Contains(result, "added=true") {
+			t.Errorf("expected both params, got %q", result)
+		}
+	})
+
+	t.Run("numeric values converted to string", func(t *testing.T) {
+		result, err := appendQueryParams("http://example.com/path", map[string]interface{}{
+			"limit": 10,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(result, "limit=10") {
+			t.Errorf("expected limit=10, got %q", result)
+		}
+	})
+}

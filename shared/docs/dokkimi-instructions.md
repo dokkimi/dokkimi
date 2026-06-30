@@ -913,14 +913,15 @@ Tests are defined in the top-level `tests` array. Each test is independent and c
 }
 ```
 
-| Field      | Type            | Required | Description                                                              |
-| ---------- | --------------- | -------- | ------------------------------------------------------------------------ |
-| `type`     | `"httpRequest"` | Yes      | Action type                                                              |
-| `method`   | enum            | Yes      | `"GET"`, `"POST"`, `"PUT"`, `"DELETE"`, `"PATCH"`, `"HEAD"`, `"OPTIONS"` |
-| `url`      | string          | Yes      | `"service-name/path"` format — service name resolves to internal DNS     |
-| `headers`  | object          | No       | Request headers (values support `{{variables}}`)                         |
-| `body`     | any JSON        | No       | Request body (string values support `{{variables}}`)                     |
-| `formData` | object          | No       | Multipart/form-data fields. Cannot be combined with `body`. See below.   |
+| Field         | Type            | Required | Description                                                                                                                 |
+| ------------- | --------------- | -------- | --------------------------------------------------------------------------------------------------------------------------- |
+| `type`        | `"httpRequest"` | Yes      | Action type                                                                                                                 |
+| `method`      | enum            | Yes      | `"GET"`, `"POST"`, `"PUT"`, `"DELETE"`, `"PATCH"`, `"HEAD"`, `"OPTIONS"`                                                    |
+| `url`         | string          | Yes      | `"service-name/path"` format — service name resolves to internal DNS                                                        |
+| `headers`     | object          | No       | Request headers (values support `{{variables}}`)                                                                            |
+| `body`        | any JSON        | No       | Request body (string values support `{{variables}}`)                                                                        |
+| `formData`    | object          | No       | Multipart/form-data fields. Cannot be combined with `body`. See below.                                                      |
+| `queryParams` | object          | No       | URL query parameters. String values sent as-is; array values send repeated keys. Values support `{{variables}}`. See below. |
 
 **formData (multipart/form-data uploads):**
 
@@ -949,6 +950,28 @@ action:
       - 'read("any")'
       - 'write("user:{{userId}}")'
 ```
+
+**queryParams (URL query parameters):**
+
+Use `queryParams` to append URL query parameters with proper encoding. This is especially useful for APIs that use array-style params (e.g. `queries[]`).
+
+```yaml
+action:
+  type: httpRequest
+  method: GET
+  url: api/v1/documents
+  queryParams:
+    queries[]:
+      - '{"method":"limit","values":[10]}'
+      - '{"method":"offset","values":[0]}'
+    format: json
+```
+
+- **String / number / boolean** → single `key=value` pair
+- **Array values** → repeated keys (e.g. `queries[]=...&queries[]=...`)
+- Values support `{{variable}}` interpolation
+- Params are URL-encoded automatically
+- Merged with any existing query string in `url`
 
 #### Database Query (`dbQuery`)
 

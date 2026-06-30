@@ -11,6 +11,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/textproto"
+	"net/url"
 	"strings"
 	"time"
 )
@@ -203,6 +204,14 @@ func (e *TestExecutor) doAPIRequest(ctx context.Context, action StepAction, full
 		bodyReader = bytes.NewReader(bodyBytes)
 	}
 
+	if len(action.QueryParams) > 0 {
+		encoded, encErr := appendQueryParams(fullURL, action.QueryParams)
+		if encErr != nil {
+			return nil, encErr
+		}
+		fullURL = encoded
+	}
+
 	req, err := http.NewRequestWithContext(ctx, action.Method, fullURL, bodyReader)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
@@ -324,6 +333,26 @@ func rootCause(err error) string {
 		cause = unwrapped
 	}
 	return cause.Error()
+}
+
+func appendQueryParams(rawURL string, params map[string]interface{}) (string, error) {
+	parsedURL, err := url.Parse(rawURL)
+	if err != nil {
+		return "", fmt.Errorf("failed to parse URL for queryParams: %w", err)
+	}
+	q := parsedURL.Query()
+	for key, val := range params {
+		switch v := val.(type) {
+		case []interface{}:
+			for _, item := range v {
+				q.Add(key, fmt.Sprintf("%v", item))
+			}
+		default:
+			q.Add(key, fmt.Sprintf("%v", v))
+		}
+	}
+	parsedURL.RawQuery = q.Encode()
+	return parsedURL.String(), nil
 }
 
 // stripScheme removes http:// or https:// prefix from a URL

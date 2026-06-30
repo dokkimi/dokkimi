@@ -5,6 +5,7 @@
     { "$ref": "#/definitions/DefinitionFile" },
     { "$ref": "#/definitions/RefFragment" },
     { "$ref": "#/definitions/ServiceItem" },
+    { "$ref": "#/definitions/WorkerItem" },
     { "$ref": "#/definitions/DatabaseItem" },
     { "$ref": "#/definitions/BrokerItem" },
     { "$ref": "#/definitions/MockItem" },
@@ -1109,6 +1110,22 @@
               },
               "body": {
                 "description": "Request body (JSON). String values support {{variable}} interpolation."
+              },
+              "queryParams": {
+                "type": "object",
+                "description": "URL query parameters. Keys are parameter names; string values are sent as-is. Array values send repeated keys (e.g. queries[]: ['limit(10)', 'offset(0)']).",
+                "additionalProperties": {
+                  "oneOf": [
+                    { "type": "string" },
+                    { "type": "number" },
+                    { "type": "boolean" },
+                    {
+                      "type": "array",
+                      "description": "Array of values sent as repeated query parameters with the same key.",
+                      "items": { "type": "string" }
+                    }
+                  ]
+                }
               },
               "formData": {
                 "type": "object",

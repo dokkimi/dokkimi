@@ -213,6 +213,7 @@ export const VALID_ACTION_KEYS: Record<string, Set<string>> = {
     'headers',
     'body',
     'formData',
+    'queryParams',
     'timeout',
     'forEach',
     'for',

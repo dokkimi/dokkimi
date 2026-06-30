@@ -451,6 +451,44 @@ func TestResolveAction_FormData(t *testing.T) {
 	})
 }
 
+func TestResolveAction_QueryParams(t *testing.T) {
+	t.Run("resolves variables in queryParams values", func(t *testing.T) {
+		vc := NewVariableContext()
+		vc.Set("pageSize", "10")
+		action := StepAction{
+			Type:   "httpRequest",
+			Method: "GET",
+			URL:    "svc/items",
+			QueryParams: map[string]interface{}{
+				"limit": "{{pageSize}}",
+			},
+		}
+		resolved, err := vc.ResolveAction(action)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if resolved.QueryParams["limit"] != "10" {
+			t.Errorf("expected 10, got %v", resolved.QueryParams["limit"])
+		}
+	})
+
+	t.Run("nil queryParams is left nil", func(t *testing.T) {
+		vc := NewVariableContext()
+		action := StepAction{
+			Type:   "httpRequest",
+			Method: "GET",
+			URL:    "svc/path",
+		}
+		resolved, err := vc.ResolveAction(action)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if resolved.QueryParams != nil {
+			t.Error("expected nil queryParams")
+		}
+	})
+}
+
 func TestExtractKeyInterpolation(t *testing.T) {
 	vc := NewVariableContext()
 	vc.Set("prefix", "user")
