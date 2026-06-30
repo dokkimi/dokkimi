@@ -4,6 +4,7 @@ import {
   IsArray,
   IsObject,
   IsNumber,
+  IsBoolean,
   IsBase64,
   MaxLength,
   ValidateNested,
@@ -139,6 +140,7 @@ class DefinitionItemDto {
   dbPassword?: string | null;
 
   @IsOptional()
+  @IsBoolean()
   noAuth?: boolean | null;
 
   @IsOptional()

@@ -544,6 +544,45 @@ describe('DockerServiceGroupService', () => {
       expect(result.interceptorName).toBe('api-gateway-interceptor-inst1');
     });
 
+    it('should set user container role label to service for SERVICE items', async () => {
+      await service.createServiceGroup(
+        'dokkimi-run-inst1',
+        'inst1',
+        buildServiceItem(),
+        'api-gateway',
+        'item-1',
+        '127.0.0.11',
+        configPaths,
+        caBundlePaths,
+        [],
+      );
+
+      const userCall = mockDockerClient.runContainer.mock.calls[1][0];
+      expect(userCall.labels['io.dokkimi.role']).toBe('service');
+    });
+
+    it('should set user container role label to worker for WORKER items', async () => {
+      const item = buildServiceItem({
+        type: 'WORKER',
+        port: undefined,
+      });
+
+      await service.createServiceGroup(
+        'dokkimi-run-inst1',
+        'inst1',
+        item,
+        'my-worker',
+        'item-1',
+        '127.0.0.11',
+        configPaths,
+        caBundlePaths,
+        [],
+      );
+
+      const userCall = mockDockerClient.runContainer.mock.calls[1][0];
+      expect(userCall.labels['io.dokkimi.role']).toBe('worker');
+    });
+
     it('should pass database names to dnsmasq config', async () => {
       await service.createServiceGroup(
         'dokkimi-run-inst1',
