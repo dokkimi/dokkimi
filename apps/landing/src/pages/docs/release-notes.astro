@@ -7,6 +7,74 @@ import CodeBlock from '../../components/CodeBlock.astro';
   <h1>Release Notes</h1>
   <p class="subtitle">What's new in each release.</p>
 
+  <h2>v0.5.4</h2>
+  <p><time datetime="2026-06-30">June 30, 2026</time></p>
+
+  <h3>WORKER item type</h3>
+  <p>Background containers that run with an interceptor sidecar but skip health checks. Workers are marked READY immediately after deployment &mdash; useful for async consumers, queue workers, and background processors that don't expose HTTP.</p>
+  <CodeBlock code={`items:
+  - type: WORKER
+    name: email-worker
+    image: myapp/email-worker:latest
+    env:
+      - name: QUEUE_URL
+        value: amqp://rabbitmq:5672`} lang="yaml" />
+  <p>Workers support <code>mountFiles</code>, <code>env</code>, <code>entrypoint</code>, <code>image</code>, and registry auth &mdash; same as SERVICE minus <code>port</code> and <code>healthCheck</code>. See the <a href="/docs/services#worker-items">Services</a> docs for details.</p>
+
+  <h3>formData support</h3>
+  <p><code>httpRequest</code> actions can now send <code>multipart/form-data</code> requests. String values become plain form fields, objects with <code>filename</code> + <code>content</code> become file upload parts.</p>
+  <CodeBlock code={`action:
+  type: httpRequest
+  method: POST
+  url: my-service/upload
+  formData:
+    name: "Alice"
+    avatar:
+      filename: photo.png
+      content: "base64data..."
+      contentType: image/png
+    tags:
+      - alpha
+      - beta`} lang="yaml" />
+  <p>Array values are sent as repeated <code>key[]</code> fields. The multipart boundary is set automatically &mdash; user-provided <code>Content-Type</code> headers are ignored when <code>formData</code> is present. See the <a href="/docs/actions#form-data">Actions</a> docs for details.</p>
+
+  <h3>queryParams</h3>
+  <p>Structured query parameters with proper URL encoding, replacing manual string concatenation in URLs.</p>
+  <CodeBlock code={`action:
+  type: httpRequest
+  method: GET
+  url: my-service/search
+  queryParams:
+    q: "hello world"
+    limit: 10
+    tags:
+      - alpha
+      - beta`} lang="yaml" />
+  <p>Array values produce repeated keys (<code>tags=alpha&amp;tags=beta</code>). Params are appended to any existing query string in the URL. See the <a href="/docs/actions#query-parameters">Actions</a> docs for details.</p>
+
+  <h3>noAuth for databases</h3>
+  <p>Databases can now skip authentication entirely with <code>noAuth: true</code>. Sets <code>POSTGRES_HOST_AUTH_METHOD=trust</code> for Postgres, <code>MYSQL_ALLOW_EMPTY_PASSWORD=yes</code> for MySQL, and empty credentials for all types.</p>
+  <CodeBlock code={`items:
+  - type: DATABASE
+    name: my-redis
+    database: redis
+    noAuth: true`} lang="yaml" />
+
+  <h3>Bug fixes</h3>
+  <ul>
+    <li><strong>db-proxy empty credentials</strong> &mdash; empty-string env vars (from <code>noAuth</code>) were treated as unset and fell back to defaults; now respects explicitly empty values</li>
+    <li><strong>String body Content-Type</strong> &mdash; string request bodies no longer get a default <code>Content-Type: application/json</code>; only JSON-marshaled bodies do</li>
+    <li><strong>Credential fallback</strong> &mdash; empty-string <code>dbName</code>/<code>dbUser</code>/<code>dbPassword</code> now correctly bypass defaults across all credential resolution sites</li>
+    <li><strong>WORKER mountFiles</strong> &mdash; resolver and run-storage now process mount files for WORKER items</li>
+    <li><strong>WORKER image pull auth</strong> &mdash; private registry credentials now apply to WORKER images</li>
+    <li><strong>WORKER traffic logging</strong> &mdash; workers removed from the direct-DNS bypass list so caller interceptors log traffic to workers</li>
+    <li><strong>formData Content-Type</strong> &mdash; user <code>Content-Type</code> headers are skipped when <code>formData</code> is present to avoid clobbering the multipart boundary</li>
+    <li><strong>formData array keys</strong> &mdash; array keys already ending in <code>[]</code> no longer get doubled to <code>[][]</code></li>
+    <li><strong>formData filename injection</strong> &mdash; quotes in filenames are now escaped in Content-Disposition headers</li>
+    <li><strong>Interceptor body parsing</strong> &mdash; multipart bodies are now parsed by Content-Type first instead of always trying JSON unmarshal</li>
+    <li><strong>Interceptor temp file leak</strong> &mdash; <code>form.RemoveAll()</code> now called after multipart parsing</li>
+  </ul>
+
   <h2>v0.5.3</h2>
   <p><time datetime="2026-06-29">June 29, 2026</time></p>
 
