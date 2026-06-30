@@ -1,0 +1,153 @@
+name: authentik-console-log-audit
+description: >
+  Audit Authentik's console logs for security. Verify that failed login
+  attempts and permission denials are logged, and that sensitive data
+  (passwords, token keys) never appears in plain text in logs.
+config:
+  timeoutSeconds: 600
+items:
+  - $ref: ../shared/authentik-postgres.yaml
+  - $ref: ../shared/authentik-worker.yaml
+  - $ref: ../shared/authentik-server.yaml
+variables:
+  adminToken: dokkimi-bootstrap-api-token
+  testPassword: SuperSecret123!
+  testTokenKey: ''
+tests:
+  - name: Security-sensitive operations are logged safely
+    steps:
+      - name: Wait for migrations and startup
+        action:
+          type: wait
+          durationMs: 60000
+
+      - name: Wait for API
+        stopOnFailure: false
+        repeat:
+          count: 30
+          as: attempt
+          delayMs: 5000
+          until:
+            - path: $.response.status
+              operator: eq
+              value: 200
+        action:
+          type: httpRequest
+          method: GET
+          url: authentik-server/api/v3/admin/version/
+          headers:
+            Authorization: Bearer {{adminToken}}
+
+      - name: Create test user
+        action:
+          type: httpRequest
+          method: POST
+          url: authentik-server/api/v3/core/users/
+          headers:
+            Authorization: Bearer {{adminToken}}
+            Content-Type: application/json
+          body:
+            username: logaudituser
+            name: Log Audit User
+            email: logaudit@dokkimi.test
+            is_active: true
+            path: users
+        extract:
+          auditUserId: $.response.body.pk
+
+      - name: Set password
+        action:
+          type: httpRequest
+          method: POST
+          url: authentik-server/api/v3/core/users/{{auditUserId}}/set_password/
+          headers:
+            Authorization: Bearer {{adminToken}}
+            Content-Type: application/json
+          body:
+            password: '{{testPassword}}'
+
+      - name: Create and retrieve a token
+        action:
+          type: httpRequest
+          method: POST
+          url: authentik-server/api/v3/core/tokens/
+          headers:
+            Authorization: Bearer {{adminToken}}
+            Content-Type: application/json
+          body:
+            identifier: audit-token
+            intent: api
+            user: '{{auditUserId}}'
+            expiring: false
+
+      - name: Get token key
+        action:
+          type: httpRequest
+          method: GET
+          url: authentik-server/api/v3/core/tokens/audit-token/view_key/
+          headers:
+            Authorization: Bearer {{adminToken}}
+        extract:
+          testTokenKey: $.response.body.key
+
+      - name: Make requests that should be logged
+        action:
+          type: parallel
+          actions:
+            - type: httpRequest
+              method: GET
+              url: authentik-server/api/v3/core/users/me/
+              headers:
+                Authorization: Bearer invalid-token-for-log-test
+            - type: httpRequest
+              method: GET
+              url: authentik-server/api/v3/core/users/
+            - type: httpRequest
+              method: GET
+              url: authentik-server/api/v3/admin/system_tasks/
+              headers:
+                Authorization: Bearer {{testTokenKey}}
+
+      - name: Wait for logs to flush
+        action:
+          type: wait
+          durationMs: 2000
+
+      - name: Password should never appear in console logs
+        action:
+          type: wait
+          durationMs: 1
+        assertions:
+          - match:
+              path: $.consoleLogs
+              where:
+                - path: $$.message
+                  operator: contains
+                  value: SuperSecret123!
+              count: 0
+
+      - name: Token key should never appear in console logs
+        action:
+          type: wait
+          durationMs: 1
+        assertions:
+          - match:
+              path: $.consoleLogs
+              where:
+                - path: $$.message
+                  operator: contains
+                  value: '{{testTokenKey}}'
+              count: 0
+
+      - name: Password should not appear in traffic response bodies
+        action:
+          type: wait
+          durationMs: 1
+        assertions:
+          - match:
+              path: $.traffic
+              where:
+                - path: $$.response.body
+                  operator: contains
+                  value: SuperSecret123!
+              count: 0

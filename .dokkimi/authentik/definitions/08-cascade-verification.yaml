@@ -1,0 +1,214 @@
+name: authentik-cascade-verification
+description: >
+  Verify that deleting entities properly cascades. Delete a user and check
+  their tokens stop working. Delete an OAuth2 provider and verify tokens
+  are invalidated. Query the database directly to verify orphaned records
+  don't remain.
+config:
+  timeoutSeconds: 600
+items:
+  - $ref: ../shared/authentik-postgres.yaml
+  - $ref: ../shared/authentik-worker.yaml
+  - $ref: ../shared/authentik-server.yaml
+variables:
+  adminToken: dokkimi-bootstrap-api-token
+tests:
+  - name: Deleting a user invalidates all their tokens
+    steps:
+      - name: Wait for migrations and startup
+        action:
+          type: wait
+          durationMs: 60000
+
+      - name: Wait for API
+        stopOnFailure: false
+        repeat:
+          count: 30
+          as: attempt
+          delayMs: 5000
+          until:
+            - path: $.response.status
+              operator: eq
+              value: 200
+        action:
+          type: httpRequest
+          method: GET
+          url: authentik-server/api/v3/admin/version/
+          headers:
+            Authorization: Bearer {{adminToken}}
+
+      - name: Create user with multiple tokens
+        action:
+          type: httpRequest
+          method: POST
+          url: authentik-server/api/v3/core/users/
+          headers:
+            Authorization: Bearer {{adminToken}}
+            Content-Type: application/json
+          body:
+            username: cascadeuser
+            name: Cascade User
+            email: cascade@dokkimi.test
+            is_active: true
+            path: users
+        extract:
+          cascadeUserId: $.response.body.pk
+
+      - name: Create token A
+        action:
+          type: httpRequest
+          method: POST
+          url: authentik-server/api/v3/core/tokens/
+          headers:
+            Authorization: Bearer {{adminToken}}
+            Content-Type: application/json
+          body:
+            identifier: cascade-token-a
+            intent: api
+            user: '{{cascadeUserId}}'
+            expiring: false
+
+      - name: Create token B
+        action:
+          type: httpRequest
+          method: POST
+          url: authentik-server/api/v3/core/tokens/
+          headers:
+            Authorization: Bearer {{adminToken}}
+            Content-Type: application/json
+          body:
+            identifier: cascade-token-b
+            intent: api
+            user: '{{cascadeUserId}}'
+            expiring: false
+
+      - name: Get token A key
+        action:
+          type: httpRequest
+          method: GET
+          url: authentik-server/api/v3/core/tokens/cascade-token-a/view_key/
+          headers:
+            Authorization: Bearer {{adminToken}}
+        extract:
+          tokenAKey: $.response.body.key
+
+      - name: Get token B key
+        action:
+          type: httpRequest
+          method: GET
+          url: authentik-server/api/v3/core/tokens/cascade-token-b/view_key/
+          headers:
+            Authorization: Bearer {{adminToken}}
+        extract:
+          tokenBKey: $.response.body.key
+
+      - name: Both tokens work
+        action:
+          type: parallel
+          actions:
+            - type: httpRequest
+              method: GET
+              url: authentik-server/api/v3/core/users/me/
+              headers:
+                Authorization: Bearer {{tokenAKey}}
+            - type: httpRequest
+              method: GET
+              url: authentik-server/api/v3/core/users/me/
+              headers:
+                Authorization: Bearer {{tokenBKey}}
+
+      - name: Add user to a group
+        action:
+          type: httpRequest
+          method: POST
+          url: authentik-server/api/v3/core/groups/
+          headers:
+            Authorization: Bearer {{adminToken}}
+            Content-Type: application/json
+          body:
+            name: Cascade Test Group
+            users:
+              - '{{cascadeUserId}}'
+        extract:
+          cascadeGroupId: $.response.body.pk
+
+      - name: Delete the user
+        action:
+          type: httpRequest
+          method: DELETE
+          url: authentik-server/api/v3/core/users/{{cascadeUserId}}/
+          headers:
+            Authorization: Bearer {{adminToken}}
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 204
+
+      - name: Token A should be invalidated
+        action:
+          type: httpRequest
+          method: GET
+          url: authentik-server/api/v3/core/users/me/
+          headers:
+            Authorization: Bearer {{tokenAKey}}
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [401, 403]
+
+      - name: Token B should be invalidated
+        action:
+          type: httpRequest
+          method: GET
+          url: authentik-server/api/v3/core/users/me/
+          headers:
+            Authorization: Bearer {{tokenBKey}}
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [401, 403]
+
+      - name: Tokens should not exist in API
+        action:
+          type: httpRequest
+          method: GET
+          url: authentik-server/api/v3/core/tokens/cascade-token-a/
+          headers:
+            Authorization: Bearer {{adminToken}}
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 404
+
+      - name: Group should not contain deleted user
+        action:
+          type: httpRequest
+          method: GET
+          url: authentik-server/api/v3/core/groups/{{cascadeGroupId}}/
+          headers:
+            Authorization: Bearer {{adminToken}}
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+              - count: $.response.body.users
+                operator: eq
+                value: 0
+
+      - name: Token B should also not exist in API
+        action:
+          type: httpRequest
+          method: GET
+          url: authentik-server/api/v3/core/tokens/cascade-token-b/
+          headers:
+            Authorization: Bearer {{adminToken}}
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 404

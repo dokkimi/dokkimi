@@ -1,7 +1,8 @@
-name: appwrite-smoke-test
+name: appwrite-console-log-audit
 description: >
-  Deploy Appwrite with MariaDB + Redis + database worker. Bootstrap admin account,
-  create a project and API key, then verify database CRUD and user management.
+  Audit console logs for hidden errors, PHP deprecation warnings, and
+  uncaught exceptions. Catches bugs that return 200 but log errors —
+  something API-only testing cannot detect.
 config:
   timeoutSeconds: 600
 items:
@@ -12,11 +13,12 @@ items:
 variables:
   adminEmail: admin@dokkimi.test
   adminPassword: TestPass123!
-  projectId: dokkimi-test
+  projectId: log-audit
 tests:
-  - name: Bootstrap and verify CRUD
+  - name: Console log audit
     steps:
-      - name: Register admin account
+      # --- Setup ---
+      - name: Register admin
         action:
           type: httpRequest
           method: POST
@@ -29,15 +31,13 @@ tests:
             email: '{{adminEmail}}'
             password: '{{adminPassword}}'
             name: Admin
-        extract:
-          adminId: $.response.body.$id
         assertions:
           - assertions:
               - path: $.response.status
                 operator: eq
                 value: 201
 
-      - name: Create admin session
+      - name: Admin session
         action:
           type: httpRequest
           method: POST
@@ -67,7 +67,7 @@ tests:
             X-Fallback-Cookies: '{{fallbackCookies}}'
           body:
             teamId: 'unique()'
-            name: Dokkimi Org
+            name: Log Audit Org
         extract:
           teamId: $.response.body.$id
         assertions:
@@ -87,7 +87,7 @@ tests:
             X-Fallback-Cookies: '{{fallbackCookies}}'
           body:
             projectId: '{{projectId}}'
-            name: Dokkimi Test Project
+            name: Log Audit Test
             teamId: '{{teamId}}'
         assertions:
           - assertions:
@@ -105,7 +105,7 @@ tests:
             X-Appwrite-Project: console
             X-Fallback-Cookies: '{{fallbackCookies}}'
           body:
-            name: Test Key
+            name: Full Key
             scopes:
               - users.read
               - users.write
@@ -115,7 +115,6 @@ tests:
               - collections.write
               - documents.read
               - documents.write
-              - health.read
         extract:
           apiKey: $.response.body.secret
         assertions:
@@ -124,19 +123,7 @@ tests:
                 operator: eq
                 value: 201
 
-      - name: Verify health endpoint
-        action:
-          type: httpRequest
-          method: GET
-          url: appwrite/v1/health
-          headers:
-            X-Appwrite-Project: '{{projectId}}'
-            X-Appwrite-Key: '{{apiKey}}'
-        assertions:
-          - assertions:
-              - path: $.response.status
-                operator: eq
-                value: 200
+      # --- Exercise typical operations ---
 
       - name: Create database
         action:
@@ -148,8 +135,8 @@ tests:
             X-Appwrite-Project: '{{projectId}}'
             X-Appwrite-Key: '{{apiKey}}'
           body:
-            databaseId: test-db
-            name: Test Database
+            databaseId: audit-db
+            name: Audit DB
         assertions:
           - assertions:
               - path: $.response.status
@@ -160,35 +147,36 @@ tests:
         action:
           type: httpRequest
           method: POST
-          url: appwrite/v1/databases/test-db/collections
+          url: appwrite/v1/databases/audit-db/collections
           headers:
             Content-Type: application/json
             X-Appwrite-Project: '{{projectId}}'
             X-Appwrite-Key: '{{apiKey}}'
           body:
-            collectionId: items
-            name: Items
-            documentSecurity: true
+            collectionId: notes
+            name: Notes
             permissions:
               - 'read("any")'
-              - 'create("users")'
+              - 'create("any")'
+              - 'update("any")'
+              - 'delete("any")'
         assertions:
           - assertions:
               - path: $.response.status
                 operator: eq
                 value: 201
 
-      - name: Create attribute via API
+      - name: Create attribute
         action:
           type: httpRequest
           method: POST
-          url: appwrite/v1/databases/test-db/collections/items/attributes/string
+          url: appwrite/v1/databases/audit-db/collections/notes/attributes/string
           headers:
             Content-Type: application/json
             X-Appwrite-Project: '{{projectId}}'
             X-Appwrite-Key: '{{apiKey}}'
           body:
-            key: title
+            key: content
             size: 256
             required: false
         assertions:
@@ -197,7 +185,7 @@ tests:
                 operator: in
                 value: [201, 202]
 
-      - name: Wait for worker to process attribute
+      - name: Wait for attribute
         repeat:
           count: 15
           as: attempt
@@ -209,7 +197,7 @@ tests:
         action:
           type: httpRequest
           method: GET
-          url: appwrite/v1/databases/test-db/collections/items/attributes/title
+          url: appwrite/v1/databases/audit-db/collections/notes/attributes/content
           headers:
             X-Appwrite-Project: '{{projectId}}'
             X-Appwrite-Key: '{{apiKey}}'
@@ -218,7 +206,7 @@ tests:
         action:
           type: httpRequest
           method: POST
-          url: appwrite/v1/databases/test-db/collections/items/documents
+          url: appwrite/v1/databases/audit-db/collections/notes/documents
           headers:
             Content-Type: application/json
             X-Appwrite-Project: '{{projectId}}'
@@ -226,7 +214,7 @@ tests:
           body:
             documentId: 'unique()'
             data:
-              title: Test Document
+              content: Audit test document
             permissions:
               - 'read("any")'
               - 'update("any")'
@@ -238,53 +226,30 @@ tests:
               - path: $.response.status
                 operator: eq
                 value: 201
-              - path: $.response.body.title
-                operator: eq
-                value: Test Document
-
-      - name: Read document back
-        action:
-          type: httpRequest
-          method: GET
-          url: appwrite/v1/databases/test-db/collections/items/documents/{{docId}}
-          headers:
-            X-Appwrite-Project: '{{projectId}}'
-            X-Appwrite-Key: '{{apiKey}}'
-        assertions:
-          - assertions:
-              - path: $.response.status
-                operator: eq
-                value: 200
-              - path: $.response.body.title
-                operator: eq
-                value: Test Document
 
       - name: Update document
         action:
           type: httpRequest
           method: PATCH
-          url: appwrite/v1/databases/test-db/collections/items/documents/{{docId}}
+          url: appwrite/v1/databases/audit-db/collections/notes/documents/{{docId}}
           headers:
             Content-Type: application/json
             X-Appwrite-Project: '{{projectId}}'
             X-Appwrite-Key: '{{apiKey}}'
           body:
             data:
-              title: Updated Title
+              content: Updated content
         assertions:
           - assertions:
               - path: $.response.status
                 operator: eq
                 value: 200
-              - path: $.response.body.title
-                operator: eq
-                value: Updated Title
 
       - name: Delete document
         action:
           type: httpRequest
           method: DELETE
-          url: appwrite/v1/databases/test-db/collections/items/documents/{{docId}}
+          url: appwrite/v1/databases/audit-db/collections/notes/documents/{{docId}}
           headers:
             X-Appwrite-Project: '{{projectId}}'
             X-Appwrite-Key: '{{apiKey}}'
@@ -294,16 +259,94 @@ tests:
                 operator: eq
                 value: 204
 
-      - name: Verify document deleted
+      - name: Register a user
         action:
           type: httpRequest
-          method: GET
-          url: appwrite/v1/databases/test-db/collections/items/documents/{{docId}}
+          method: POST
+          url: appwrite/v1/account
           headers:
+            Content-Type: application/json
             X-Appwrite-Project: '{{projectId}}'
-            X-Appwrite-Key: '{{apiKey}}'
+          body:
+            userId: 'unique()'
+            email: 'user@dokkimi.test'
+            password: 'TestPass123!'
+            name: Test User
         assertions:
           - assertions:
               - path: $.response.status
                 operator: eq
-                value: 404
+                value: 201
+
+      # --- Let async workers finish processing ---
+
+      - name: Wait for async processing to settle
+        action:
+          type: wait
+          durationMs: 3000
+
+      # --- Audit console logs ---
+
+      - name: Check for PHP fatal errors in API server
+        action:
+          type: wait
+          durationMs: 100
+        assertions:
+          - match:
+              path: $.consoleLogs
+              where:
+                - path: $$.service
+                  operator: eq
+                  value: appwrite
+                - path: $$.message
+                  operator: contains
+                  value: 'Fatal error'
+              count: 0
+
+      - name: Check for uncaught exceptions in API server
+        action:
+          type: wait
+          durationMs: 100
+        assertions:
+          - match:
+              path: $.consoleLogs
+              where:
+                - path: $$.service
+                  operator: eq
+                  value: appwrite
+                - path: $$.message
+                  operator: contains
+                  value: 'Uncaught'
+              count: 0
+
+      - name: Check for PHP deprecation warnings
+        action:
+          type: wait
+          durationMs: 100
+        assertions:
+          - match:
+              path: $.consoleLogs
+              where:
+                - path: $$.service
+                  operator: eq
+                  value: appwrite
+                - path: $$.message
+                  operator: contains
+                  value: 'Deprecated'
+              count: 0
+
+      - name: Check for worker fatal errors
+        action:
+          type: wait
+          durationMs: 100
+        assertions:
+          - match:
+              path: $.consoleLogs
+              where:
+                - path: $$.service
+                  operator: eq
+                  value: appwrite-worker-db
+                - path: $$.message
+                  operator: contains
+                  value: 'Fatal error'
+              count: 0

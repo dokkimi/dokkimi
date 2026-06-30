@@ -1,3 +1,4 @@
 type: DATABASE
 name: appwrite-redis
 database: redis
+noAuth: true

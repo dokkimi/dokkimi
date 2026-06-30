@@ -1,0 +1,227 @@
+name: authentik-race-conditions
+description: >
+  Probe race conditions by firing concurrent requests. Test duplicate user
+  creation, simultaneous group membership changes, and parallel token
+  operations to see if Authentik handles concurrency safely.
+config:
+  timeoutSeconds: 600
+items:
+  - $ref: ../shared/authentik-postgres.yaml
+  - $ref: ../shared/authentik-worker.yaml
+  - $ref: ../shared/authentik-server.yaml
+variables:
+  adminToken: dokkimi-bootstrap-api-token
+tests:
+  - name: Concurrent duplicate user creation
+    steps:
+      - name: Wait for migrations and startup
+        action:
+          type: wait
+          durationMs: 60000
+
+      - name: Wait for API
+        stopOnFailure: false
+        repeat:
+          count: 30
+          as: attempt
+          delayMs: 5000
+          until:
+            - path: $.response.status
+              operator: eq
+              value: 200
+        action:
+          type: httpRequest
+          method: GET
+          url: authentik-server/api/v3/admin/version/
+          headers:
+            Authorization: Bearer {{adminToken}}
+
+      - name: Race - create same username concurrently
+        action:
+          type: parallel
+          actions:
+            - type: httpRequest
+              method: POST
+              url: authentik-server/api/v3/core/users/
+              headers:
+                Authorization: Bearer {{adminToken}}
+                Content-Type: application/json
+              body:
+                username: raceuser
+                name: Race User A
+                email: race-a@dokkimi.test
+                is_active: true
+                path: users
+            - type: httpRequest
+              method: POST
+              url: authentik-server/api/v3/core/users/
+              headers:
+                Authorization: Bearer {{adminToken}}
+                Content-Type: application/json
+              body:
+                username: raceuser
+                name: Race User B
+                email: race-b@dokkimi.test
+                is_active: true
+                path: users
+
+      - name: Exactly one user should exist
+        action:
+          type: httpRequest
+          method: GET
+          url: authentik-server/api/v3/core/users/?search=raceuser
+          headers:
+            Authorization: Bearer {{adminToken}}
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+              - count: $.response.body.results
+                operator: eq
+                value: 1
+
+      - name: No 500 errors from the race
+        action:
+          type: wait
+          durationMs: 1
+        assertions:
+          - match:
+              path: $.traffic
+              where:
+                - path: $$.response.status
+                  operator: gte
+                  value: 500
+              count: 0
+
+  - name: Concurrent group membership modifications
+    steps:
+      - name: Wait for migrations and startup
+        action:
+          type: wait
+          durationMs: 60000
+
+      - name: Wait for API
+        stopOnFailure: false
+        repeat:
+          count: 30
+          as: attempt
+          delayMs: 5000
+          until:
+            - path: $.response.status
+              operator: eq
+              value: 200
+        action:
+          type: httpRequest
+          method: GET
+          url: authentik-server/api/v3/admin/version/
+          headers:
+            Authorization: Bearer {{adminToken}}
+
+      - name: Create test user
+        action:
+          type: httpRequest
+          method: POST
+          url: authentik-server/api/v3/core/users/
+          headers:
+            Authorization: Bearer {{adminToken}}
+            Content-Type: application/json
+          body:
+            username: groupraceuser
+            name: Group Race User
+            email: grouprace@dokkimi.test
+            is_active: true
+            path: users
+        extract:
+          userId: $.response.body.pk
+
+      - name: Create groups A and B
+        action:
+          type: parallel
+          actions:
+            - type: httpRequest
+              method: POST
+              url: authentik-server/api/v3/core/groups/
+              headers:
+                Authorization: Bearer {{adminToken}}
+                Content-Type: application/json
+              body:
+                name: Race Group A
+            - type: httpRequest
+              method: POST
+              url: authentik-server/api/v3/core/groups/
+              headers:
+                Authorization: Bearer {{adminToken}}
+                Content-Type: application/json
+              body:
+                name: Race Group B
+
+      - name: Get group A id
+        action:
+          type: httpRequest
+          method: GET
+          url: authentik-server/api/v3/core/groups/?search=Race%20Group%20A
+          headers:
+            Authorization: Bearer {{adminToken}}
+        extract:
+          groupAId: $.response.body.results[0].pk
+
+      - name: Get group B id
+        action:
+          type: httpRequest
+          method: GET
+          url: authentik-server/api/v3/core/groups/?search=Race%20Group%20B
+          headers:
+            Authorization: Bearer {{adminToken}}
+        extract:
+          groupBId: $.response.body.results[0].pk
+
+      - name: Race - add user to both groups simultaneously
+        action:
+          type: parallel
+          actions:
+            - type: httpRequest
+              method: POST
+              url: authentik-server/api/v3/core/groups/{{groupAId}}/add_user/
+              headers:
+                Authorization: Bearer {{adminToken}}
+                Content-Type: application/json
+              body:
+                pk: '{{userId}}'
+            - type: httpRequest
+              method: POST
+              url: authentik-server/api/v3/core/groups/{{groupBId}}/add_user/
+              headers:
+                Authorization: Bearer {{adminToken}}
+                Content-Type: application/json
+              body:
+                pk: '{{userId}}'
+
+      - name: User should be in both groups
+        action:
+          type: httpRequest
+          method: GET
+          url: authentik-server/api/v3/core/users/{{userId}}/
+          headers:
+            Authorization: Bearer {{adminToken}}
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+              - count: $.response.body.groups_obj
+                operator: eq
+                value: 2
+
+      - name: No 500 errors from group race
+        action:
+          type: wait
+          durationMs: 1
+        assertions:
+          - match:
+              path: $.traffic
+              where:
+                - path: $$.response.status
+                  operator: gte
+                  value: 500
+              count: 0

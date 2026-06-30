@@ -1,0 +1,283 @@
+name: authentik-input-validation
+description: >
+  Test Authentik's input validation on the core API. Submit malformed data,
+  XSS payloads, SQL injection strings, oversized inputs, and boundary values
+  to verify the API rejects them cleanly without errors.
+config:
+  timeoutSeconds: 600
+items:
+  - $ref: ../shared/authentik-postgres.yaml
+  - $ref: ../shared/authentik-worker.yaml
+  - $ref: ../shared/authentik-server.yaml
+variables:
+  adminToken: dokkimi-bootstrap-api-token
+tests:
+  - name: User creation validation
+    steps:
+      - name: Wait for migrations and startup
+        action:
+          type: wait
+          durationMs: 60000
+
+      - name: Wait for API
+        stopOnFailure: false
+        repeat:
+          count: 30
+          as: attempt
+          delayMs: 5000
+          until:
+            - path: $.response.status
+              operator: eq
+              value: 200
+        action:
+          type: httpRequest
+          method: GET
+          url: authentik-server/api/v3/admin/version/
+          headers:
+            Authorization: Bearer {{adminToken}}
+
+      - name: Empty username rejected
+        action:
+          type: httpRequest
+          method: POST
+          url: authentik-server/api/v3/core/users/
+          headers:
+            Authorization: Bearer {{adminToken}}
+            Content-Type: application/json
+          body:
+            username: ''
+            name: No Username
+            email: empty@dokkimi.test
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 400
+
+      - name: Missing username rejected
+        action:
+          type: httpRequest
+          method: POST
+          url: authentik-server/api/v3/core/users/
+          headers:
+            Authorization: Bearer {{adminToken}}
+            Content-Type: application/json
+          body:
+            name: No Username Field
+            email: missing@dokkimi.test
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 400
+
+      - name: XSS in username handled safely
+        action:
+          type: httpRequest
+          method: POST
+          url: authentik-server/api/v3/core/users/
+          headers:
+            Authorization: Bearer {{adminToken}}
+            Content-Type: application/json
+          body:
+            username: <script>alert(1)</script>
+            name: XSS Test
+            email: xss@dokkimi.test
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [201, 400]
+
+      - name: SQL injection in username handled safely
+        action:
+          type: httpRequest
+          method: POST
+          url: authentik-server/api/v3/core/users/
+          headers:
+            Authorization: Bearer {{adminToken}}
+            Content-Type: application/json
+          body:
+            username: "admin'; DROP TABLE authentik_core_user;--"
+            name: SQLi Test
+            email: sqli@dokkimi.test
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [201, 400]
+
+      - name: Verify database still works after SQLi attempt
+        action:
+          type: httpRequest
+          method: GET
+          url: authentik-server/api/v3/core/users/?search=akadmin
+          headers:
+            Authorization: Bearer {{adminToken}}
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+              - path: $.response.body.results[0].username
+                operator: eq
+                value: akadmin
+
+      - name: Duplicate username rejected
+        action:
+          type: httpRequest
+          method: POST
+          url: authentik-server/api/v3/core/users/
+          headers:
+            Authorization: Bearer {{adminToken}}
+            Content-Type: application/json
+          body:
+            username: akadmin
+            name: Duplicate Admin
+            email: dupe@dokkimi.test
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 400
+
+      - name: Invalid email format handled
+        action:
+          type: httpRequest
+          method: POST
+          url: authentik-server/api/v3/core/users/
+          headers:
+            Authorization: Bearer {{adminToken}}
+            Content-Type: application/json
+          body:
+            username: bademail
+            name: Bad Email
+            email: not-an-email
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [201, 400]
+
+      - name: Very long username handled
+        action:
+          type: httpRequest
+          method: POST
+          url: authentik-server/api/v3/core/users/
+          headers:
+            Authorization: Bearer {{adminToken}}
+            Content-Type: application/json
+          body:
+            username: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+            name: Long Username
+            email: long@dokkimi.test
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [201, 400]
+
+  - name: Group creation validation
+    steps:
+      - name: Wait for migrations and startup
+        action:
+          type: wait
+          durationMs: 60000
+
+      - name: Wait for API
+        stopOnFailure: false
+        repeat:
+          count: 30
+          as: attempt
+          delayMs: 5000
+          until:
+            - path: $.response.status
+              operator: eq
+              value: 200
+        action:
+          type: httpRequest
+          method: GET
+          url: authentik-server/api/v3/admin/version/
+          headers:
+            Authorization: Bearer {{adminToken}}
+
+      - name: Empty group name rejected
+        action:
+          type: httpRequest
+          method: POST
+          url: authentik-server/api/v3/core/groups/
+          headers:
+            Authorization: Bearer {{adminToken}}
+            Content-Type: application/json
+          body:
+            name: ''
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 400
+
+      - name: Missing group name rejected
+        action:
+          type: httpRequest
+          method: POST
+          url: authentik-server/api/v3/core/groups/
+          headers:
+            Authorization: Bearer {{adminToken}}
+            Content-Type: application/json
+          body:
+            is_superuser: false
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 400
+
+      - name: XSS in group name handled safely
+        action:
+          type: httpRequest
+          method: POST
+          url: authentik-server/api/v3/core/groups/
+          headers:
+            Authorization: Bearer {{adminToken}}
+            Content-Type: application/json
+          body:
+            name: <img src=x onerror=alert(1)>
+        extract:
+          xssGroupId: $.response.body.pk
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [201, 400]
+
+      - name: Invalid JSON body rejected
+        action:
+          type: httpRequest
+          method: POST
+          url: authentik-server/api/v3/core/groups/
+          headers:
+            Authorization: Bearer {{adminToken}}
+            Content-Type: application/json
+          body: not valid json
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 400
+
+      - name: Wrong content type rejected
+        action:
+          type: httpRequest
+          method: POST
+          url: authentik-server/api/v3/core/groups/
+          headers:
+            Authorization: Bearer {{adminToken}}
+            Content-Type: text/plain
+          body:
+            name: Plain Text Group
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [400, 415]

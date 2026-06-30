@@ -1,0 +1,33 @@
+type: WORKER
+name: appwrite-worker-db
+image: appwrite/appwrite:latest
+command: ['worker-databases']
+env:
+  - name: _APP_ENV
+    value: development
+  - name: _APP_OPENSSL_KEY_V1
+    value: dokkimi-test-openssl-key-v1-1234567890
+  - name: _APP_DB_ADAPTER
+    value: mariadb
+  - name: _APP_DB_HOST
+    value: appwrite-mariadb
+  - name: _APP_DB_PORT
+    value: '3306'
+  - name: _APP_DB_SCHEMA
+    value: appwrite
+  - name: _APP_DB_USER
+    value: dokkimi
+  - name: _APP_DB_PASS
+    value: dokkimi
+  - name: _APP_DB_ROOT_PASS
+    value: dokkimi
+  - name: _APP_REDIS_HOST
+    value: appwrite-redis
+  - name: _APP_REDIS_PORT
+    value: '6379'
+  - name: _APP_CONNECTIONS_QUEUE
+    value: 'redis://appwrite-redis:6379'
+  - name: _APP_CONNECTIONS_CACHE
+    value: 'redis://appwrite-redis:6379'
+  - name: _APP_CONNECTIONS_PUBSUB
+    value: 'redis://appwrite-redis:6379'

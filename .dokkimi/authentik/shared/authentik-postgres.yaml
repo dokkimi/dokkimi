@@ -1,0 +1,7 @@
+type: DATABASE
+name: authentik-postgres
+database: postgres
+version: '16'
+dbName: authentik
+dbUser: authentik
+dbPassword: dokkimi-test-password

@@ -1,0 +1,239 @@
+name: authentik-permission-cache
+description: >
+  Test whether permission changes take effect immediately. Grant admin
+  via superuser group, cache a token, remove from group, verify the
+  cached token loses admin access without re-authentication.
+  Also test that PATCH is_superuser is silently ignored (known Authentik
+  behavior — the API returns 200 but doesn't apply the change).
+config:
+  timeoutSeconds: 600
+items:
+  - $ref: ../shared/authentik-postgres.yaml
+  - $ref: ../shared/authentik-worker.yaml
+  - $ref: ../shared/authentik-server.yaml
+variables:
+  adminToken: dokkimi-bootstrap-api-token
+tests:
+  - name: PATCH is_superuser is silently ignored
+    steps:
+      - name: Wait for migrations and startup
+        action:
+          type: wait
+          durationMs: 60000
+
+      - name: Wait for API
+        stopOnFailure: false
+        repeat:
+          count: 30
+          as: attempt
+          delayMs: 5000
+          until:
+            - path: $.response.status
+              operator: eq
+              value: 200
+        action:
+          type: httpRequest
+          method: GET
+          url: authentik-server/api/v3/admin/version/
+          headers:
+            Authorization: Bearer {{adminToken}}
+
+      - name: Create user
+        action:
+          type: httpRequest
+          method: POST
+          url: authentik-server/api/v3/core/users/
+          headers:
+            Authorization: Bearer {{adminToken}}
+            Content-Type: application/json
+          body:
+            username: patchtest
+            name: Patch Test User
+            email: patchtest@dokkimi.test
+            is_active: true
+            path: users
+        extract:
+          patchUserId: $.response.body.pk
+
+      - name: PATCH is_superuser returns 200
+        action:
+          type: httpRequest
+          method: PATCH
+          url: authentik-server/api/v3/core/users/{{patchUserId}}/
+          headers:
+            Authorization: Bearer {{adminToken}}
+            Content-Type: application/json
+          body:
+            is_superuser: true
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+
+      - name: BUG - is_superuser was silently not applied
+        action:
+          type: httpRequest
+          method: GET
+          url: authentik-server/api/v3/core/users/{{patchUserId}}/
+          headers:
+            Authorization: Bearer {{adminToken}}
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+              - path: $.response.body.is_superuser
+                operator: eq
+                value: false
+
+  - name: Superuser group removal revokes admin immediately
+    steps:
+      - name: Wait for migrations and startup
+        action:
+          type: wait
+          durationMs: 60000
+
+      - name: Wait for API
+        stopOnFailure: false
+        repeat:
+          count: 30
+          as: attempt
+          delayMs: 5000
+          until:
+            - path: $.response.status
+              operator: eq
+              value: 200
+        action:
+          type: httpRequest
+          method: GET
+          url: authentik-server/api/v3/admin/version/
+          headers:
+            Authorization: Bearer {{adminToken}}
+
+      - name: Create superuser group
+        action:
+          type: httpRequest
+          method: POST
+          url: authentik-server/api/v3/core/groups/
+          headers:
+            Authorization: Bearer {{adminToken}}
+            Content-Type: application/json
+          body:
+            name: Temp Admins
+            is_superuser: true
+        extract:
+          suGroupId: $.response.body.pk
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 201
+
+      - name: Create user
+        action:
+          type: httpRequest
+          method: POST
+          url: authentik-server/api/v3/core/users/
+          headers:
+            Authorization: Bearer {{adminToken}}
+            Content-Type: application/json
+          body:
+            username: groupadmin
+            name: Group Admin User
+            email: groupadmin@dokkimi.test
+            is_active: true
+            path: users
+        extract:
+          groupUserId: $.response.body.pk
+
+      - name: Add user to superuser group
+        action:
+          type: httpRequest
+          method: POST
+          url: authentik-server/api/v3/core/groups/{{suGroupId}}/add_user/
+          headers:
+            Authorization: Bearer {{adminToken}}
+            Content-Type: application/json
+          body:
+            pk: '{{groupUserId}}'
+
+      - name: Create token for user
+        action:
+          type: httpRequest
+          method: POST
+          url: authentik-server/api/v3/core/tokens/
+          headers:
+            Authorization: Bearer {{adminToken}}
+            Content-Type: application/json
+          body:
+            identifier: group-admin-token
+            intent: api
+            user: '{{groupUserId}}'
+            expiring: false
+
+      - name: Get token key
+        action:
+          type: httpRequest
+          method: GET
+          url: authentik-server/api/v3/core/tokens/group-admin-token/view_key/
+          headers:
+            Authorization: Bearer {{adminToken}}
+        extract:
+          groupAdminToken: $.response.body.key
+
+      - name: Verify user is superuser via group membership
+        action:
+          type: httpRequest
+          method: GET
+          url: authentik-server/api/v3/core/users/me/
+          headers:
+            Authorization: Bearer {{groupAdminToken}}
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+              - path: $.response.body.user.is_superuser
+                operator: eq
+                value: true
+
+      - name: Verify admin API access via superuser group
+        action:
+          type: httpRequest
+          method: GET
+          url: authentik-server/api/v3/core/users/
+          headers:
+            Authorization: Bearer {{groupAdminToken}}
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+
+      - name: Remove user from superuser group
+        action:
+          type: httpRequest
+          method: POST
+          url: authentik-server/api/v3/core/groups/{{suGroupId}}/remove_user/
+          headers:
+            Authorization: Bearer {{adminToken}}
+            Content-Type: application/json
+          body:
+            pk: '{{groupUserId}}'
+
+      - name: User should no longer be superuser
+        action:
+          type: httpRequest
+          method: GET
+          url: authentik-server/api/v3/core/users/me/
+          headers:
+            Authorization: Bearer {{groupAdminToken}}
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+              - path: $.response.body.user.is_superuser
+                operator: eq
+                value: false

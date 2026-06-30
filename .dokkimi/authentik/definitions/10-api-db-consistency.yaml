@@ -1,0 +1,360 @@
+name: authentik-api-consistency
+description: >
+  Verify API data consistency. Create entities, mutate them through
+  partial updates, and verify that GET responses reflect every change
+  correctly. Test that partial PATCH doesn't clobber unrelated fields,
+  that deleted entities return 404, and that passwords never leak
+  through the API.
+config:
+  timeoutSeconds: 600
+items:
+  - $ref: ../shared/authentik-postgres.yaml
+  - $ref: ../shared/authentik-worker.yaml
+  - $ref: ../shared/authentik-server.yaml
+variables:
+  adminToken: dokkimi-bootstrap-api-token
+tests:
+  - name: Partial PATCH preserves unrelated fields
+    steps:
+      - name: Wait for migrations and startup
+        action:
+          type: wait
+          durationMs: 60000
+
+      - name: Wait for API
+        stopOnFailure: false
+        repeat:
+          count: 30
+          as: attempt
+          delayMs: 5000
+          until:
+            - path: $.response.status
+              operator: eq
+              value: 200
+        action:
+          type: httpRequest
+          method: GET
+          url: authentik-server/api/v3/admin/version/
+          headers:
+            Authorization: Bearer {{adminToken}}
+
+      - name: Create user with all fields
+        action:
+          type: httpRequest
+          method: POST
+          url: authentik-server/api/v3/core/users/
+          headers:
+            Authorization: Bearer {{adminToken}}
+            Content-Type: application/json
+          body:
+            username: consistency-user
+            name: Original Name
+            email: original@dokkimi.test
+            is_active: true
+            path: users
+        extract:
+          userId: $.response.body.pk
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 201
+              - path: $.response.body.username
+                operator: eq
+                value: consistency-user
+              - path: $.response.body.name
+                operator: eq
+                value: Original Name
+              - path: $.response.body.email
+                operator: eq
+                value: original@dokkimi.test
+
+      - name: PATCH only the name field
+        action:
+          type: httpRequest
+          method: PATCH
+          url: authentik-server/api/v3/core/users/{{userId}}/
+          headers:
+            Authorization: Bearer {{adminToken}}
+            Content-Type: application/json
+          body:
+            name: Updated Name
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+
+      - name: Verify name changed but other fields preserved
+        action:
+          type: httpRequest
+          method: GET
+          url: authentik-server/api/v3/core/users/{{userId}}/
+          headers:
+            Authorization: Bearer {{adminToken}}
+        assertions:
+          - assertions:
+              - path: $.response.body.name
+                operator: eq
+                value: Updated Name
+              - path: $.response.body.username
+                operator: eq
+                value: consistency-user
+              - path: $.response.body.email
+                operator: eq
+                value: original@dokkimi.test
+              - path: $.response.body.is_active
+                operator: eq
+                value: true
+
+      - name: PATCH only email
+        action:
+          type: httpRequest
+          method: PATCH
+          url: authentik-server/api/v3/core/users/{{userId}}/
+          headers:
+            Authorization: Bearer {{adminToken}}
+            Content-Type: application/json
+          body:
+            email: updated@dokkimi.test
+
+      - name: Verify email changed, name still updated, username original
+        action:
+          type: httpRequest
+          method: GET
+          url: authentik-server/api/v3/core/users/{{userId}}/
+          headers:
+            Authorization: Bearer {{adminToken}}
+        assertions:
+          - assertions:
+              - path: $.response.body.email
+                operator: eq
+                value: updated@dokkimi.test
+              - path: $.response.body.name
+                operator: eq
+                value: Updated Name
+              - path: $.response.body.username
+                operator: eq
+                value: consistency-user
+
+  - name: Password never leaks through any API response
+    steps:
+      - name: Wait for migrations and startup
+        action:
+          type: wait
+          durationMs: 60000
+
+      - name: Wait for API
+        stopOnFailure: false
+        repeat:
+          count: 30
+          as: attempt
+          delayMs: 5000
+          until:
+            - path: $.response.status
+              operator: eq
+              value: 200
+        action:
+          type: httpRequest
+          method: GET
+          url: authentik-server/api/v3/admin/version/
+          headers:
+            Authorization: Bearer {{adminToken}}
+
+      - name: Create user
+        action:
+          type: httpRequest
+          method: POST
+          url: authentik-server/api/v3/core/users/
+          headers:
+            Authorization: Bearer {{adminToken}}
+            Content-Type: application/json
+          body:
+            username: pwleaktest
+            name: Password Leak Test
+            email: pwleak@dokkimi.test
+            is_active: true
+            path: users
+        extract:
+          pwUserId: $.response.body.pk
+
+      - name: Set password
+        action:
+          type: httpRequest
+          method: POST
+          url: authentik-server/api/v3/core/users/{{pwUserId}}/set_password/
+          headers:
+            Authorization: Bearer {{adminToken}}
+            Content-Type: application/json
+          body:
+            password: LeakTestP@ss99
+
+      - name: GET user should not contain password
+        action:
+          type: httpRequest
+          method: GET
+          url: authentik-server/api/v3/core/users/{{pwUserId}}/
+          headers:
+            Authorization: Bearer {{adminToken}}
+
+      - name: List users should not contain password
+        action:
+          type: httpRequest
+          method: GET
+          url: authentik-server/api/v3/core/users/?search=pwleaktest
+          headers:
+            Authorization: Bearer {{adminToken}}
+
+      - name: No traffic response body should contain the password
+        action:
+          type: wait
+          durationMs: 1
+        assertions:
+          - match:
+              path: $.traffic
+              where:
+                - path: $$.response.body
+                  operator: contains
+                  value: LeakTestP@ss99
+              count: 0
+
+  - name: Deactivation and deletion are immediately consistent
+    steps:
+      - name: Wait for migrations and startup
+        action:
+          type: wait
+          durationMs: 60000
+
+      - name: Wait for API
+        stopOnFailure: false
+        repeat:
+          count: 30
+          as: attempt
+          delayMs: 5000
+          until:
+            - path: $.response.status
+              operator: eq
+              value: 200
+        action:
+          type: httpRequest
+          method: GET
+          url: authentik-server/api/v3/admin/version/
+          headers:
+            Authorization: Bearer {{adminToken}}
+
+      - name: Create user and token
+        action:
+          type: httpRequest
+          method: POST
+          url: authentik-server/api/v3/core/users/
+          headers:
+            Authorization: Bearer {{adminToken}}
+            Content-Type: application/json
+          body:
+            username: lifecycleuser
+            name: Lifecycle User
+            email: lifecycle@dokkimi.test
+            is_active: true
+            path: users
+        extract:
+          lcUserId: $.response.body.pk
+
+      - name: Create token
+        action:
+          type: httpRequest
+          method: POST
+          url: authentik-server/api/v3/core/tokens/
+          headers:
+            Authorization: Bearer {{adminToken}}
+            Content-Type: application/json
+          body:
+            identifier: lifecycle-token
+            intent: api
+            user: '{{lcUserId}}'
+            expiring: false
+
+      - name: Get token key
+        action:
+          type: httpRequest
+          method: GET
+          url: authentik-server/api/v3/core/tokens/lifecycle-token/view_key/
+          headers:
+            Authorization: Bearer {{adminToken}}
+        extract:
+          lcToken: $.response.body.key
+
+      - name: Token works while active
+        action:
+          type: httpRequest
+          method: GET
+          url: authentik-server/api/v3/core/users/me/
+          headers:
+            Authorization: Bearer {{lcToken}}
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+
+      - name: Deactivate user
+        action:
+          type: httpRequest
+          method: PATCH
+          url: authentik-server/api/v3/core/users/{{lcUserId}}/
+          headers:
+            Authorization: Bearer {{adminToken}}
+            Content-Type: application/json
+          body:
+            is_active: false
+
+      - name: GET immediately reflects deactivation
+        action:
+          type: httpRequest
+          method: GET
+          url: authentik-server/api/v3/core/users/{{lcUserId}}/
+          headers:
+            Authorization: Bearer {{adminToken}}
+        assertions:
+          - assertions:
+              - path: $.response.body.is_active
+                operator: eq
+                value: false
+
+      - name: Token should be rejected for deactivated user
+        action:
+          type: httpRequest
+          method: GET
+          url: authentik-server/api/v3/core/users/me/
+          headers:
+            Authorization: Bearer {{lcToken}}
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [401, 403]
+
+      - name: Delete user
+        action:
+          type: httpRequest
+          method: DELETE
+          url: authentik-server/api/v3/core/users/{{lcUserId}}/
+          headers:
+            Authorization: Bearer {{adminToken}}
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 204
+
+      - name: GET immediately returns 404
+        action:
+          type: httpRequest
+          method: GET
+          url: authentik-server/api/v3/core/users/{{lcUserId}}/
+          headers:
+            Authorization: Bearer {{adminToken}}
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 404

@@ -1,7 +1,7 @@
-name: appwrite-permission-escalation
+name: appwrite-multi-tenant
 description: >
-  Test Appwrite's permission enforcement. Create two users with separate sessions,
-  then verify that user B cannot read/update/delete user A's private documents.
+  Test multi-tenant isolation between projects. Create two projects with separate
+  API keys and data, then verify that one project cannot access the other's resources.
 config:
   timeoutSeconds: 600
 items:
@@ -12,14 +12,12 @@ items:
 variables:
   adminEmail: admin@dokkimi.test
   adminPassword: TestPass123!
-  projectId: perm-test
-  userAEmail: usera@dokkimi.test
-  userAPassword: UserAPass123!
-  userBEmail: userb@dokkimi.test
-  userBPassword: UserBPass123!
+  projectA: tenant-a
+  projectB: tenant-b
 tests:
-  - name: Permission boundary enforcement
+  - name: Cross-project isolation
     steps:
+      # --- Setup admin ---
       - name: Register admin
         action:
           type: httpRequest
@@ -69,7 +67,7 @@ tests:
             X-Fallback-Cookies: '{{fallbackCookies}}'
           body:
             teamId: 'unique()'
-            name: Perm Test Org
+            name: Multi-Tenant Org
         extract:
           teamId: $.response.body.$id
         assertions:
@@ -78,7 +76,8 @@ tests:
                 operator: eq
                 value: 201
 
-      - name: Create project
+      # --- Create Project A ---
+      - name: Create Project A
         action:
           type: httpRequest
           method: POST
@@ -88,8 +87,8 @@ tests:
             X-Appwrite-Project: console
             X-Fallback-Cookies: '{{fallbackCookies}}'
           body:
-            projectId: '{{projectId}}'
-            name: Permission Test
+            projectId: '{{projectA}}'
+            name: Tenant A
             teamId: '{{teamId}}'
         assertions:
           - assertions:
@@ -97,17 +96,17 @@ tests:
                 operator: eq
                 value: 201
 
-      - name: Create API key
+      - name: Create Project A API key
         action:
           type: httpRequest
           method: POST
-          url: appwrite/v1/projects/{{projectId}}/keys
+          url: appwrite/v1/projects/{{projectA}}/keys
           headers:
             Content-Type: application/json
             X-Appwrite-Project: console
             X-Fallback-Cookies: '{{fallbackCookies}}'
           body:
-            name: Server Key
+            name: Key A
             scopes:
               - users.read
               - users.write
@@ -118,141 +117,112 @@ tests:
               - documents.read
               - documents.write
         extract:
-          apiKey: $.response.body.secret
+          keyA: $.response.body.secret
         assertions:
           - assertions:
               - path: $.response.status
                 operator: eq
                 value: 201
 
-      - name: Register User A
+      # --- Create Project B ---
+      - name: Create Project B
         action:
           type: httpRequest
           method: POST
-          url: appwrite/v1/account
+          url: appwrite/v1/projects
           headers:
             Content-Type: application/json
-            X-Appwrite-Project: '{{projectId}}'
+            X-Appwrite-Project: console
+            X-Fallback-Cookies: '{{fallbackCookies}}'
           body:
-            userId: 'unique()'
-            email: '{{userAEmail}}'
-            password: '{{userAPassword}}'
-            name: User A
+            projectId: '{{projectB}}'
+            name: Tenant B
+            teamId: '{{teamId}}'
         assertions:
           - assertions:
               - path: $.response.status
                 operator: eq
                 value: 201
 
-      - name: Register User B
+      - name: Create Project B API key
         action:
           type: httpRequest
           method: POST
-          url: appwrite/v1/account
+          url: appwrite/v1/projects/{{projectB}}/keys
           headers:
             Content-Type: application/json
-            X-Appwrite-Project: '{{projectId}}'
+            X-Appwrite-Project: console
+            X-Fallback-Cookies: '{{fallbackCookies}}'
           body:
-            userId: 'unique()'
-            email: '{{userBEmail}}'
-            password: '{{userBPassword}}'
-            name: User B
-        assertions:
-          - assertions:
-              - path: $.response.status
-                operator: eq
-                value: 201
-
-      - name: User A login
-        action:
-          type: httpRequest
-          method: POST
-          url: appwrite/v1/account/sessions/email
-          headers:
-            Content-Type: application/json
-            X-Appwrite-Project: '{{projectId}}'
-          body:
-            email: '{{userAEmail}}'
-            password: '{{userAPassword}}'
+            name: Key B
+            scopes:
+              - users.read
+              - users.write
+              - databases.read
+              - databases.write
+              - collections.read
+              - collections.write
+              - documents.read
+              - documents.write
         extract:
-          userACookies: $.response.headers.x-fallback-cookies
-          userAId: $.response.body.userId
+          keyB: $.response.body.secret
         assertions:
           - assertions:
               - path: $.response.status
                 operator: eq
                 value: 201
 
-      - name: User B login
-        action:
-          type: httpRequest
-          method: POST
-          url: appwrite/v1/account/sessions/email
-          headers:
-            Content-Type: application/json
-            X-Appwrite-Project: '{{projectId}}'
-          body:
-            email: '{{userBEmail}}'
-            password: '{{userBPassword}}'
-        extract:
-          userBCookies: $.response.headers.x-fallback-cookies
-          userBId: $.response.body.userId
-        assertions:
-          - assertions:
-              - path: $.response.status
-                operator: eq
-                value: 201
-
-      - name: Create database
+      # --- Create data in Project A ---
+      - name: Create database in Project A
         action:
           type: httpRequest
           method: POST
           url: appwrite/v1/databases
           headers:
             Content-Type: application/json
-            X-Appwrite-Project: '{{projectId}}'
-            X-Appwrite-Key: '{{apiKey}}'
+            X-Appwrite-Project: '{{projectA}}'
+            X-Appwrite-Key: '{{keyA}}'
           body:
-            databaseId: perm-db
-            name: Permission Test DB
+            databaseId: secrets-db
+            name: Secrets
         assertions:
           - assertions:
               - path: $.response.status
                 operator: eq
                 value: 201
 
-      - name: Create private-notes collection
+      - name: Create collection in Project A
         action:
           type: httpRequest
           method: POST
-          url: appwrite/v1/databases/perm-db/collections
+          url: appwrite/v1/databases/secrets-db/collections
           headers:
             Content-Type: application/json
-            X-Appwrite-Project: '{{projectId}}'
-            X-Appwrite-Key: '{{apiKey}}'
+            X-Appwrite-Project: '{{projectA}}'
+            X-Appwrite-Key: '{{keyA}}'
           body:
-            collectionId: private-notes
-            name: Private Notes
-            documentSecurity: true
+            collectionId: credentials
+            name: Credentials
             permissions:
-              - 'create("users")'
+              - 'read("any")'
+              - 'create("any")'
         assertions:
           - assertions:
               - path: $.response.status
                 operator: eq
                 value: 201
 
-      - name: Create note attribute via API
+      - name: Create attribute in Project A
         action:
           type: httpRequest
           method: POST
-          url: appwrite/v1/databases/perm-db/collections/private-notes/attributes/string
+          url: appwrite/v1/databases/secrets-db/collections/credentials/attributes/string
           headers:
             Content-Type: application/json
-            X-Appwrite-Project: '{{projectId}}'
-            X-Appwrite-Key: '{{apiKey}}'
+            X-Appwrite-Project: '{{projectA}}'
+            X-Appwrite-Key: '{{keyA}}'
           body:
-            key: note
+            key: secret
             size: 512
             required: false
         assertions:
@@ -261,7 +231,7 @@ tests:
                 operator: in
                 value: [201, 202]
 
-      - name: Wait for worker to process attribute
+      - name: Wait for attribute in Project A
         repeat:
           count: 15
           as: attempt
@@ -273,163 +243,201 @@ tests:
         action:
           type: httpRequest
           method: GET
-          url: appwrite/v1/databases/perm-db/collections/private-notes/attributes/note
+          url: appwrite/v1/databases/secrets-db/collections/credentials/attributes/secret
           headers:
-            X-Appwrite-Project: '{{projectId}}'
-            X-Appwrite-Key: '{{apiKey}}'
+            X-Appwrite-Project: '{{projectA}}'
+            X-Appwrite-Key: '{{keyA}}'
 
-      - name: User A creates private document
+      - name: Create secret document in Project A
         action:
           type: httpRequest
           method: POST
-          url: appwrite/v1/databases/perm-db/collections/private-notes/documents
+          url: appwrite/v1/databases/secrets-db/collections/credentials/documents
           headers:
             Content-Type: application/json
-            X-Appwrite-Project: '{{projectId}}'
-            X-Fallback-Cookies: '{{userACookies}}'
+            X-Appwrite-Project: '{{projectA}}'
+            X-Appwrite-Key: '{{keyA}}'
           body:
             documentId: 'unique()'
             data:
-              note: My secret note
+              secret: 'TOP_SECRET_API_KEY_12345'
             permissions:
-              - 'read("user:{{userAId}}")'
-              - 'update("user:{{userAId}}")'
-              - 'delete("user:{{userAId}}")'
+              - 'read("any")'
         extract:
-          privateDocId: $.response.body.$id
+          secretDocId: $.response.body.$id
         assertions:
           - assertions:
               - path: $.response.status
                 operator: eq
                 value: 201
 
-      - name: User A can read own document
+      - name: Create user in Project A
         action:
           type: httpRequest
-          method: GET
-          url: appwrite/v1/databases/perm-db/collections/private-notes/documents/{{privateDocId}}
-          headers:
-            X-Appwrite-Project: '{{projectId}}'
-            X-Fallback-Cookies: '{{userACookies}}'
-        assertions:
-          - assertions:
-              - path: $.response.status
-                operator: eq
-                value: 200
-              - path: $.response.body.note
-                operator: eq
-                value: My secret note
-
-      - name: User B cannot read User A private document
-        action:
-          type: httpRequest
-          method: GET
-          url: appwrite/v1/databases/perm-db/collections/private-notes/documents/{{privateDocId}}
-          headers:
-            X-Appwrite-Project: '{{projectId}}'
-            X-Fallback-Cookies: '{{userBCookies}}'
-        assertions:
-          - assertions:
-              - path: $.response.status
-                operator: eq
-                value: 404
-
-      - name: User B cannot update User A private document
-        action:
-          type: httpRequest
-          method: PATCH
-          url: appwrite/v1/databases/perm-db/collections/private-notes/documents/{{privateDocId}}
+          method: POST
+          url: appwrite/v1/users
           headers:
             Content-Type: application/json
-            X-Appwrite-Project: '{{projectId}}'
-            X-Fallback-Cookies: '{{userBCookies}}'
+            X-Appwrite-Project: '{{projectA}}'
+            X-Appwrite-Key: '{{keyA}}'
           body:
-            data:
-              note: Hacked by B
+            userId: 'unique()'
+            email: secret-user@tenant-a.test
+            password: TenantAPass123!
+            name: Tenant A User
+        extract:
+          userA: $.response.body.$id
         assertions:
           - assertions:
               - path: $.response.status
-                operator: in
-                value: [401, 404]
+                operator: eq
+                value: 201
 
-      - name: User B cannot delete User A private document
+      # --- Cross-project access attempts with Project B key ---
+
+      - name: 'Project B key CANNOT list Project A databases'
+        action:
+          type: httpRequest
+          method: GET
+          url: appwrite/v1/databases
+          headers:
+            X-Appwrite-Project: '{{projectA}}'
+            X-Appwrite-Key: '{{keyB}}'
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 401
+
+      - name: 'Project B key CANNOT read Project A document'
+        action:
+          type: httpRequest
+          method: GET
+          url: appwrite/v1/databases/secrets-db/collections/credentials/documents/{{secretDocId}}
+          headers:
+            X-Appwrite-Project: '{{projectA}}'
+            X-Appwrite-Key: '{{keyB}}'
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 401
+
+      - name: 'Project B key CANNOT list Project A users'
+        action:
+          type: httpRequest
+          method: GET
+          url: appwrite/v1/users
+          headers:
+            X-Appwrite-Project: '{{projectA}}'
+            X-Appwrite-Key: '{{keyB}}'
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 401
+
+      - name: 'Project B key CANNOT delete Project A user'
         action:
           type: httpRequest
           method: DELETE
-          url: appwrite/v1/databases/perm-db/collections/private-notes/documents/{{privateDocId}}
+          url: appwrite/v1/users/{{userA}}
           headers:
-            X-Appwrite-Project: '{{projectId}}'
-            X-Fallback-Cookies: '{{userBCookies}}'
+            X-Appwrite-Project: '{{projectA}}'
+            X-Appwrite-Key: '{{keyB}}'
         assertions:
           - assertions:
               - path: $.response.status
-                operator: in
-                value: [401, 404]
+                operator: eq
+                value: 401
 
-      - name: Unauthenticated cannot read private document
-        action:
-          type: httpRequest
-          method: GET
-          url: appwrite/v1/databases/perm-db/collections/private-notes/documents/{{privateDocId}}
-          headers:
-            X-Appwrite-Project: '{{projectId}}'
-        assertions:
-          - assertions:
-              - path: $.response.status
-                operator: in
-                value: [401, 404]
-
-      - name: User A creates public document
+      - name: 'Project B key CANNOT create data in Project A'
         action:
           type: httpRequest
           method: POST
-          url: appwrite/v1/databases/perm-db/collections/private-notes/documents
+          url: appwrite/v1/databases/secrets-db/collections/credentials/documents
           headers:
             Content-Type: application/json
-            X-Appwrite-Project: '{{projectId}}'
-            X-Fallback-Cookies: '{{userACookies}}'
+            X-Appwrite-Project: '{{projectA}}'
+            X-Appwrite-Key: '{{keyB}}'
           body:
             documentId: 'unique()'
             data:
-              note: Public note
+              secret: 'INJECTED_BY_TENANT_B'
             permissions:
               - 'read("any")'
-              - 'update("any")'
-        extract:
-          publicDocId: $.response.body.$id
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 401
+
+      # --- Same resource IDs in Project B should not collide ---
+
+      - name: 'Project B can create database with same ID as Project A'
+        action:
+          type: httpRequest
+          method: POST
+          url: appwrite/v1/databases
+          headers:
+            Content-Type: application/json
+            X-Appwrite-Project: '{{projectB}}'
+            X-Appwrite-Key: '{{keyB}}'
+          body:
+            databaseId: secrets-db
+            name: B Secrets
         assertions:
           - assertions:
               - path: $.response.status
                 operator: eq
                 value: 201
 
-      - name: User B can read public document
+      - name: 'Project B database is empty (not leaking Project A data)'
         action:
           type: httpRequest
           method: GET
-          url: appwrite/v1/databases/perm-db/collections/private-notes/documents/{{publicDocId}}
+          url: appwrite/v1/databases/secrets-db/collections
           headers:
-            X-Appwrite-Project: '{{projectId}}'
-            X-Fallback-Cookies: '{{userBCookies}}'
+            X-Appwrite-Project: '{{projectB}}'
+            X-Appwrite-Key: '{{keyB}}'
         assertions:
           - assertions:
               - path: $.response.status
                 operator: eq
                 value: 200
+              - path: $.response.body.total
+                operator: eq
+                value: 0
 
-      - name: User A private document unchanged after escalation attempts
+      # --- Verify Project A data is intact ---
+
+      - name: 'Project A secret document unchanged'
         action:
           type: httpRequest
           method: GET
-          url: appwrite/v1/databases/perm-db/collections/private-notes/documents/{{privateDocId}}
+          url: appwrite/v1/databases/secrets-db/collections/credentials/documents/{{secretDocId}}
           headers:
-            X-Appwrite-Project: '{{projectId}}'
-            X-Fallback-Cookies: '{{userACookies}}'
+            X-Appwrite-Project: '{{projectA}}'
+            X-Appwrite-Key: '{{keyA}}'
         assertions:
           - assertions:
               - path: $.response.status
                 operator: eq
                 value: 200
-              - path: $.response.body.note
+              - path: $.response.body.secret
                 operator: eq
-                value: My secret note
+                value: TOP_SECRET_API_KEY_12345
+
+      - name: 'Project A user still exists'
+        action:
+          type: httpRequest
+          method: GET
+          url: appwrite/v1/users/{{userA}}
+          headers:
+            X-Appwrite-Project: '{{projectA}}'
+            X-Appwrite-Key: '{{keyA}}'
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200

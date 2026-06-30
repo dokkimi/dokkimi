@@ -1,7 +1,7 @@
-name: appwrite-permission-escalation
+name: appwrite-file-storage
 description: >
-  Test Appwrite's permission enforcement. Create two users with separate sessions,
-  then verify that user B cannot read/update/delete user A's private documents.
+  Test file storage: upload via formData, download, permission enforcement,
+  and cross-user file access denial.
 config:
   timeoutSeconds: 600
 items:
@@ -12,14 +12,15 @@ items:
 variables:
   adminEmail: admin@dokkimi.test
   adminPassword: TestPass123!
-  projectId: perm-test
-  userAEmail: usera@dokkimi.test
-  userAPassword: UserAPass123!
-  userBEmail: userb@dokkimi.test
-  userBPassword: UserBPass123!
+  projectId: storage-test
+  userAEmail: alice@dokkimi.test
+  userAPassword: AlicePass123!
+  userBEmail: bob@dokkimi.test
+  userBPassword: BobPass123!
 tests:
-  - name: Permission boundary enforcement
+  - name: File storage and permissions
     steps:
+      # --- Setup admin + project ---
       - name: Register admin
         action:
           type: httpRequest
@@ -69,7 +70,7 @@ tests:
             X-Fallback-Cookies: '{{fallbackCookies}}'
           body:
             teamId: 'unique()'
-            name: Perm Test Org
+            name: Storage Test Org
         extract:
           teamId: $.response.body.$id
         assertions:
@@ -89,7 +90,7 @@ tests:
             X-Fallback-Cookies: '{{fallbackCookies}}'
           body:
             projectId: '{{projectId}}'
-            name: Permission Test
+            name: Storage Test
             teamId: '{{teamId}}'
         assertions:
           - assertions:
@@ -107,16 +108,14 @@ tests:
             X-Appwrite-Project: console
             X-Fallback-Cookies: '{{fallbackCookies}}'
           body:
-            name: Server Key
+            name: Full Key
             scopes:
               - users.read
               - users.write
-              - databases.read
-              - databases.write
-              - collections.read
-              - collections.write
-              - documents.read
-              - documents.write
+              - buckets.read
+              - buckets.write
+              - files.read
+              - files.write
         extract:
           apiKey: $.response.body.secret
         assertions:
@@ -125,311 +124,331 @@ tests:
                 operator: eq
                 value: 201
 
-      - name: Register User A
-        action:
-          type: httpRequest
-          method: POST
-          url: appwrite/v1/account
-          headers:
-            Content-Type: application/json
-            X-Appwrite-Project: '{{projectId}}'
-          body:
-            userId: 'unique()'
-            email: '{{userAEmail}}'
-            password: '{{userAPassword}}'
-            name: User A
-        assertions:
-          - assertions:
-              - path: $.response.status
-                operator: eq
-                value: 201
+      # --- Create storage bucket ---
 
-      - name: Register User B
+      - name: Create bucket with file-level security
         action:
           type: httpRequest
           method: POST
-          url: appwrite/v1/account
-          headers:
-            Content-Type: application/json
-            X-Appwrite-Project: '{{projectId}}'
-          body:
-            userId: 'unique()'
-            email: '{{userBEmail}}'
-            password: '{{userBPassword}}'
-            name: User B
-        assertions:
-          - assertions:
-              - path: $.response.status
-                operator: eq
-                value: 201
-
-      - name: User A login
-        action:
-          type: httpRequest
-          method: POST
-          url: appwrite/v1/account/sessions/email
-          headers:
-            Content-Type: application/json
-            X-Appwrite-Project: '{{projectId}}'
-          body:
-            email: '{{userAEmail}}'
-            password: '{{userAPassword}}'
-        extract:
-          userACookies: $.response.headers.x-fallback-cookies
-          userAId: $.response.body.userId
-        assertions:
-          - assertions:
-              - path: $.response.status
-                operator: eq
-                value: 201
-
-      - name: User B login
-        action:
-          type: httpRequest
-          method: POST
-          url: appwrite/v1/account/sessions/email
-          headers:
-            Content-Type: application/json
-            X-Appwrite-Project: '{{projectId}}'
-          body:
-            email: '{{userBEmail}}'
-            password: '{{userBPassword}}'
-        extract:
-          userBCookies: $.response.headers.x-fallback-cookies
-          userBId: $.response.body.userId
-        assertions:
-          - assertions:
-              - path: $.response.status
-                operator: eq
-                value: 201
-
-      - name: Create database
-        action:
-          type: httpRequest
-          method: POST
-          url: appwrite/v1/databases
+          url: appwrite/v1/storage/buckets
           headers:
             Content-Type: application/json
             X-Appwrite-Project: '{{projectId}}'
             X-Appwrite-Key: '{{apiKey}}'
           body:
-            databaseId: perm-db
-            name: Permission Test DB
-        assertions:
-          - assertions:
-              - path: $.response.status
-                operator: eq
-                value: 201
-
-      - name: Create private-notes collection
-        action:
-          type: httpRequest
-          method: POST
-          url: appwrite/v1/databases/perm-db/collections
-          headers:
-            Content-Type: application/json
-            X-Appwrite-Project: '{{projectId}}'
-            X-Appwrite-Key: '{{apiKey}}'
-          body:
-            collectionId: private-notes
-            name: Private Notes
-            documentSecurity: true
+            bucketId: private-files
+            name: Private Files
+            maximumFileSize: 1048576
+            fileSecurity: true
             permissions:
               - 'create("users")'
-        assertions:
-          - assertions:
-              - path: $.response.status
-                operator: eq
-                value: 201
-
-      - name: Create note attribute via API
-        action:
-          type: httpRequest
-          method: POST
-          url: appwrite/v1/databases/perm-db/collections/private-notes/attributes/string
-          headers:
-            Content-Type: application/json
-            X-Appwrite-Project: '{{projectId}}'
-            X-Appwrite-Key: '{{apiKey}}'
-          body:
-            key: note
-            size: 512
-            required: false
-        assertions:
-          - assertions:
-              - path: $.response.status
-                operator: in
-                value: [201, 202]
-
-      - name: Wait for worker to process attribute
-        repeat:
-          count: 15
-          as: attempt
-          delayMs: 2000
-          until:
-            - path: $.response.body.status
-              operator: eq
-              value: available
-        action:
-          type: httpRequest
-          method: GET
-          url: appwrite/v1/databases/perm-db/collections/private-notes/attributes/note
-          headers:
-            X-Appwrite-Project: '{{projectId}}'
-            X-Appwrite-Key: '{{apiKey}}'
-
-      - name: User A creates private document
-        action:
-          type: httpRequest
-          method: POST
-          url: appwrite/v1/databases/perm-db/collections/private-notes/documents
-          headers:
-            Content-Type: application/json
-            X-Appwrite-Project: '{{projectId}}'
-            X-Fallback-Cookies: '{{userACookies}}'
-          body:
-            documentId: 'unique()'
-            data:
-              note: My secret note
-            permissions:
-              - 'read("user:{{userAId}}")'
-              - 'update("user:{{userAId}}")'
-              - 'delete("user:{{userAId}}")'
+            allowedFileExtensions:
+              - txt
+              - json
+              - png
         extract:
-          privateDocId: $.response.body.$id
+          bucketId: $.response.body.$id
         assertions:
           - assertions:
               - path: $.response.status
                 operator: eq
                 value: 201
 
-      - name: User A can read own document
+      # --- Register two users ---
+
+      - name: Register Alice
+        action:
+          type: httpRequest
+          method: POST
+          url: appwrite/v1/account
+          headers:
+            Content-Type: application/json
+            X-Appwrite-Project: '{{projectId}}'
+          body:
+            userId: 'unique()'
+            email: '{{userAEmail}}'
+            password: '{{userAPassword}}'
+            name: Alice
+        extract:
+          aliceId: $.response.body.$id
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 201
+
+      - name: Alice session
+        action:
+          type: httpRequest
+          method: POST
+          url: appwrite/v1/account/sessions/email
+          headers:
+            Content-Type: application/json
+            X-Appwrite-Project: '{{projectId}}'
+          body:
+            email: '{{userAEmail}}'
+            password: '{{userAPassword}}'
+        extract:
+          aliceCookies: $.response.headers.x-fallback-cookies
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 201
+
+      - name: Register Bob
+        action:
+          type: httpRequest
+          method: POST
+          url: appwrite/v1/account
+          headers:
+            Content-Type: application/json
+            X-Appwrite-Project: '{{projectId}}'
+          body:
+            userId: 'unique()'
+            email: '{{userBEmail}}'
+            password: '{{userBPassword}}'
+            name: Bob
+        extract:
+          bobId: $.response.body.$id
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 201
+
+      - name: Bob session
+        action:
+          type: httpRequest
+          method: POST
+          url: appwrite/v1/account/sessions/email
+          headers:
+            Content-Type: application/json
+            X-Appwrite-Project: '{{projectId}}'
+          body:
+            email: '{{userBEmail}}'
+            password: '{{userBPassword}}'
+        extract:
+          bobCookies: $.response.headers.x-fallback-cookies
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 201
+
+      # --- Alice uploads a private file ---
+
+      - name: Alice uploads private file
+        action:
+          type: httpRequest
+          method: POST
+          url: appwrite/v1/storage/buckets/{{bucketId}}/files
+          headers:
+            X-Appwrite-Project: '{{projectId}}'
+            X-Fallback-Cookies: '{{aliceCookies}}'
+          formData:
+            fileId: 'unique()'
+            file:
+              filename: secret.txt
+              content: 'Alice secret data that Bob should not see'
+              contentType: text/plain
+            permissions:
+              - 'read("user:{{aliceId}}")'
+              - 'write("user:{{aliceId}}")'
+        extract:
+          aliceFileId: $.response.body.$id
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 201
+
+      # --- Alice can read her own file ---
+
+      - name: Alice can view file metadata
         action:
           type: httpRequest
           method: GET
-          url: appwrite/v1/databases/perm-db/collections/private-notes/documents/{{privateDocId}}
+          url: appwrite/v1/storage/buckets/{{bucketId}}/files/{{aliceFileId}}
           headers:
             X-Appwrite-Project: '{{projectId}}'
-            X-Fallback-Cookies: '{{userACookies}}'
+            X-Fallback-Cookies: '{{aliceCookies}}'
         assertions:
           - assertions:
               - path: $.response.status
                 operator: eq
                 value: 200
-              - path: $.response.body.note
+              - path: $.response.body.name
                 operator: eq
-                value: My secret note
+                value: secret.txt
 
-      - name: User B cannot read User A private document
+      - name: Alice can download her file
         action:
           type: httpRequest
           method: GET
-          url: appwrite/v1/databases/perm-db/collections/private-notes/documents/{{privateDocId}}
+          url: appwrite/v1/storage/buckets/{{bucketId}}/files/{{aliceFileId}}/download
           headers:
             X-Appwrite-Project: '{{projectId}}'
-            X-Fallback-Cookies: '{{userBCookies}}'
+            X-Fallback-Cookies: '{{aliceCookies}}'
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+
+      # --- Bob CANNOT access Alice's file ---
+
+      - name: Bob CANNOT view Alice file metadata
+        action:
+          type: httpRequest
+          method: GET
+          url: appwrite/v1/storage/buckets/{{bucketId}}/files/{{aliceFileId}}
+          headers:
+            X-Appwrite-Project: '{{projectId}}'
+            X-Fallback-Cookies: '{{bobCookies}}'
         assertions:
           - assertions:
               - path: $.response.status
                 operator: eq
                 value: 404
 
-      - name: User B cannot update User A private document
-        action:
-          type: httpRequest
-          method: PATCH
-          url: appwrite/v1/databases/perm-db/collections/private-notes/documents/{{privateDocId}}
-          headers:
-            Content-Type: application/json
-            X-Appwrite-Project: '{{projectId}}'
-            X-Fallback-Cookies: '{{userBCookies}}'
-          body:
-            data:
-              note: Hacked by B
-        assertions:
-          - assertions:
-              - path: $.response.status
-                operator: in
-                value: [401, 404]
-
-      - name: User B cannot delete User A private document
-        action:
-          type: httpRequest
-          method: DELETE
-          url: appwrite/v1/databases/perm-db/collections/private-notes/documents/{{privateDocId}}
-          headers:
-            X-Appwrite-Project: '{{projectId}}'
-            X-Fallback-Cookies: '{{userBCookies}}'
-        assertions:
-          - assertions:
-              - path: $.response.status
-                operator: in
-                value: [401, 404]
-
-      - name: Unauthenticated cannot read private document
+      - name: Bob CANNOT download Alice file
         action:
           type: httpRequest
           method: GET
-          url: appwrite/v1/databases/perm-db/collections/private-notes/documents/{{privateDocId}}
+          url: appwrite/v1/storage/buckets/{{bucketId}}/files/{{aliceFileId}}/download
+          headers:
+            X-Appwrite-Project: '{{projectId}}'
+            X-Fallback-Cookies: '{{bobCookies}}'
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 404
+
+      - name: Bob CANNOT delete Alice file
+        action:
+          type: httpRequest
+          method: DELETE
+          url: appwrite/v1/storage/buckets/{{bucketId}}/files/{{aliceFileId}}
+          headers:
+            X-Appwrite-Project: '{{projectId}}'
+            X-Fallback-Cookies: '{{bobCookies}}'
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 401
+
+      # --- Unauthenticated access ---
+
+      - name: Unauthenticated CANNOT download Alice file
+        action:
+          type: httpRequest
+          method: GET
+          url: appwrite/v1/storage/buckets/{{bucketId}}/files/{{aliceFileId}}/download
           headers:
             X-Appwrite-Project: '{{projectId}}'
         assertions:
           - assertions:
               - path: $.response.status
-                operator: in
-                value: [401, 404]
+                operator: eq
+                value: 404
 
-      - name: User A creates public document
+      # --- Public file ---
+
+      - name: Alice uploads public file
         action:
           type: httpRequest
           method: POST
-          url: appwrite/v1/databases/perm-db/collections/private-notes/documents
+          url: appwrite/v1/storage/buckets/{{bucketId}}/files
           headers:
-            Content-Type: application/json
             X-Appwrite-Project: '{{projectId}}'
-            X-Fallback-Cookies: '{{userACookies}}'
-          body:
-            documentId: 'unique()'
-            data:
-              note: Public note
+            X-Fallback-Cookies: '{{aliceCookies}}'
+          formData:
+            fileId: 'unique()'
+            file:
+              filename: public.txt
+              content: 'This is public data'
+              contentType: text/plain
             permissions:
               - 'read("any")'
-              - 'update("any")'
+              - 'write("user:{{aliceId}}")'
         extract:
-          publicDocId: $.response.body.$id
+          publicFileId: $.response.body.$id
         assertions:
           - assertions:
               - path: $.response.status
                 operator: eq
                 value: 201
 
-      - name: User B can read public document
+      - name: Bob CAN download public file
         action:
           type: httpRequest
           method: GET
-          url: appwrite/v1/databases/perm-db/collections/private-notes/documents/{{publicDocId}}
+          url: appwrite/v1/storage/buckets/{{bucketId}}/files/{{publicFileId}}/download
           headers:
             X-Appwrite-Project: '{{projectId}}'
-            X-Fallback-Cookies: '{{userBCookies}}'
+            X-Fallback-Cookies: '{{bobCookies}}'
         assertions:
           - assertions:
               - path: $.response.status
                 operator: eq
                 value: 200
 
-      - name: User A private document unchanged after escalation attempts
+      - name: Bob CANNOT delete public file (write restricted to Alice)
+        action:
+          type: httpRequest
+          method: DELETE
+          url: appwrite/v1/storage/buckets/{{bucketId}}/files/{{publicFileId}}
+          headers:
+            X-Appwrite-Project: '{{projectId}}'
+            X-Fallback-Cookies: '{{bobCookies}}'
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 401
+
+      # --- File extension enforcement ---
+
+      - name: Disallowed file extension is rejected
+        action:
+          type: httpRequest
+          method: POST
+          url: appwrite/v1/storage/buckets/{{bucketId}}/files
+          headers:
+            X-Appwrite-Project: '{{projectId}}'
+            X-Fallback-Cookies: '{{aliceCookies}}'
+          formData:
+            fileId: 'unique()'
+            file:
+              filename: malware.exe
+              content: 'pretend this is an executable'
+              contentType: application/octet-stream
+            permissions:
+              - 'read("any")'
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 400
+
+      # --- Verify Alice's private file survived all attacks ---
+
+      - name: Alice private file still exists
         action:
           type: httpRequest
           method: GET
-          url: appwrite/v1/databases/perm-db/collections/private-notes/documents/{{privateDocId}}
+          url: appwrite/v1/storage/buckets/{{bucketId}}/files/{{aliceFileId}}
           headers:
             X-Appwrite-Project: '{{projectId}}'
-            X-Fallback-Cookies: '{{userACookies}}'
+            X-Fallback-Cookies: '{{aliceCookies}}'
         assertions:
           - assertions:
               - path: $.response.status
                 operator: eq
                 value: 200
-              - path: $.response.body.note
+              - path: $.response.body.name
                 operator: eq
-                value: My secret note
+                value: secret.txt

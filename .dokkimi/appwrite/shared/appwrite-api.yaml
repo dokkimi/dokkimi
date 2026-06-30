@@ -41,16 +41,14 @@ env:
     value: appwrite-redis
   - name: _APP_REDIS_PORT
     value: '6379'
-  - name: _APP_REDIS_PASS
-    value: dokkimi
   - name: _APP_CONNECTIONS_CACHE
-    value: 'redis://:dokkimi@appwrite-redis:6379'
+    value: 'redis://appwrite-redis:6379'
   - name: _APP_CONNECTIONS_QUEUE
-    value: 'redis://:dokkimi@appwrite-redis:6379'
+    value: 'redis://appwrite-redis:6379'
   - name: _APP_CONNECTIONS_SESSION
-    value: 'redis://:dokkimi@appwrite-redis:6379'
+    value: 'redis://appwrite-redis:6379'
   - name: _APP_CONNECTIONS_PUBSUB
-    value: 'redis://:dokkimi@appwrite-redis:6379'
+    value: 'redis://appwrite-redis:6379'
   - name: _APP_DOMAIN
     value: appwrite
   - name: _APP_CONSOLE_DOMAIN
@@ -63,3 +61,5 @@ env:
     value: dokkimi-executor-secret
   - name: _APP_EXECUTOR_HOST
     value: ''
+  - name: _APP_STORAGE_LIMIT
+    value: '10000000'

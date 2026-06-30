@@ -1,7 +1,8 @@
-name: appwrite-smoke-test
+name: appwrite-api-db-consistency
 description: >
-  Deploy Appwrite with MariaDB + Redis + database worker. Bootstrap admin account,
-  create a project and API key, then verify database CRUD and user management.
+  Verify API responses match actual MariaDB state. Uses dbQuery to inspect
+  the database directly after CRUD operations — catches API/DB divergence
+  that black-box testing cannot detect.
 config:
   timeoutSeconds: 600
 items:
@@ -12,11 +13,12 @@ items:
 variables:
   adminEmail: admin@dokkimi.test
   adminPassword: TestPass123!
-  projectId: dokkimi-test
+  projectId: db-consistency
 tests:
-  - name: Bootstrap and verify CRUD
+  - name: API vs database state
     steps:
-      - name: Register admin account
+      # --- Setup ---
+      - name: Register admin
         action:
           type: httpRequest
           method: POST
@@ -29,15 +31,13 @@ tests:
             email: '{{adminEmail}}'
             password: '{{adminPassword}}'
             name: Admin
-        extract:
-          adminId: $.response.body.$id
         assertions:
           - assertions:
               - path: $.response.status
                 operator: eq
                 value: 201
 
-      - name: Create admin session
+      - name: Admin session
         action:
           type: httpRequest
           method: POST
@@ -67,7 +67,7 @@ tests:
             X-Fallback-Cookies: '{{fallbackCookies}}'
           body:
             teamId: 'unique()'
-            name: Dokkimi Org
+            name: DB Test Org
         extract:
           teamId: $.response.body.$id
         assertions:
@@ -87,7 +87,7 @@ tests:
             X-Fallback-Cookies: '{{fallbackCookies}}'
           body:
             projectId: '{{projectId}}'
-            name: Dokkimi Test Project
+            name: DB Consistency Test
             teamId: '{{teamId}}'
         assertions:
           - assertions:
@@ -105,7 +105,7 @@ tests:
             X-Appwrite-Project: console
             X-Fallback-Cookies: '{{fallbackCookies}}'
           body:
-            name: Test Key
+            name: Full Key
             scopes:
               - users.read
               - users.write
@@ -115,7 +115,6 @@ tests:
               - collections.write
               - documents.read
               - documents.write
-              - health.read
         extract:
           apiKey: $.response.body.secret
         assertions:
@@ -124,19 +123,7 @@ tests:
                 operator: eq
                 value: 201
 
-      - name: Verify health endpoint
-        action:
-          type: httpRequest
-          method: GET
-          url: appwrite/v1/health
-          headers:
-            X-Appwrite-Project: '{{projectId}}'
-            X-Appwrite-Key: '{{apiKey}}'
-        assertions:
-          - assertions:
-              - path: $.response.status
-                operator: eq
-                value: 200
+      # --- Create database + collection + attribute ---
 
       - name: Create database
         action:
@@ -148,8 +135,8 @@ tests:
             X-Appwrite-Project: '{{projectId}}'
             X-Appwrite-Key: '{{apiKey}}'
           body:
-            databaseId: test-db
-            name: Test Database
+            databaseId: consist-db
+            name: Consistency DB
         assertions:
           - assertions:
               - path: $.response.status
@@ -160,35 +147,36 @@ tests:
         action:
           type: httpRequest
           method: POST
-          url: appwrite/v1/databases/test-db/collections
+          url: appwrite/v1/databases/consist-db/collections
           headers:
             Content-Type: application/json
             X-Appwrite-Project: '{{projectId}}'
             X-Appwrite-Key: '{{apiKey}}'
           body:
-            collectionId: items
-            name: Items
-            documentSecurity: true
+            collectionId: notes
+            name: Notes
             permissions:
               - 'read("any")'
-              - 'create("users")'
+              - 'create("any")'
+              - 'update("any")'
+              - 'delete("any")'
         assertions:
           - assertions:
               - path: $.response.status
                 operator: eq
                 value: 201
 
-      - name: Create attribute via API
+      - name: Create string attribute
         action:
           type: httpRequest
           method: POST
-          url: appwrite/v1/databases/test-db/collections/items/attributes/string
+          url: appwrite/v1/databases/consist-db/collections/notes/attributes/string
           headers:
             Content-Type: application/json
             X-Appwrite-Project: '{{projectId}}'
             X-Appwrite-Key: '{{apiKey}}'
           body:
-            key: title
+            key: content
             size: 256
             required: false
         assertions:
@@ -197,7 +185,7 @@ tests:
                 operator: in
                 value: [201, 202]
 
-      - name: Wait for worker to process attribute
+      - name: Wait for attribute
         repeat:
           count: 15
           as: attempt
@@ -209,16 +197,62 @@ tests:
         action:
           type: httpRequest
           method: GET
-          url: appwrite/v1/databases/test-db/collections/items/attributes/title
+          url: appwrite/v1/databases/consist-db/collections/notes/attributes/content
           headers:
             X-Appwrite-Project: '{{projectId}}'
             X-Appwrite-Key: '{{apiKey}}'
 
-      - name: Create document
+      # --- Verify attribute exists as a real MariaDB column ---
+
+      - name: Verify attribute column in MariaDB
+        action:
+          type: dbQuery
+          database: appwrite-mariadb
+          query: "SELECT COUNT(*) as cnt FROM information_schema.columns WHERE table_schema = 'appwrite' AND column_name = 'content'"
+        assertions:
+          - assertions:
+              - path: $.response.success
+                operator: eq
+                value: true
+              - path: $.response.data[0].cnt
+                operator: gte
+                value: 1
+
+      # --- Create document and verify in MariaDB ---
+
+      - name: Find document table name
+        action:
+          type: dbQuery
+          database: appwrite-mariadb
+          query: "SELECT table_name FROM information_schema.columns WHERE table_schema = 'appwrite' AND column_name = 'content' AND table_name NOT LIKE '_metadata%' LIMIT 1"
+        extract:
+          docTable: $.response.data[0].table_name
+        assertions:
+          - assertions:
+              - path: $.response.success
+                operator: eq
+                value: true
+              - path: $.response.data
+                operator: notEmpty
+
+      - name: Count rows before insert
+        action:
+          type: dbQuery
+          database: appwrite-mariadb
+          query: 'SELECT COUNT(*) as cnt FROM `{{docTable}}`'
+        extract:
+          rowsBefore: $.response.data[0].cnt
+        assertions:
+          - assertions:
+              - path: $.response.success
+                operator: eq
+                value: true
+
+      - name: Create document via API
         action:
           type: httpRequest
           method: POST
-          url: appwrite/v1/databases/test-db/collections/items/documents
+          url: appwrite/v1/databases/consist-db/collections/notes/documents
           headers:
             Content-Type: application/json
             X-Appwrite-Project: '{{projectId}}'
@@ -226,10 +260,9 @@ tests:
           body:
             documentId: 'unique()'
             data:
-              title: Test Document
+              content: 'Hello from Dokkimi'
             permissions:
               - 'read("any")'
-              - 'update("any")'
               - 'delete("any")'
         extract:
           docId: $.response.body.$id
@@ -238,53 +271,44 @@ tests:
               - path: $.response.status
                 operator: eq
                 value: 201
-              - path: $.response.body.title
-                operator: eq
-                value: Test Document
 
-      - name: Read document back
+      - name: Verify row was inserted in MariaDB
         action:
-          type: httpRequest
-          method: GET
-          url: appwrite/v1/databases/test-db/collections/items/documents/{{docId}}
-          headers:
-            X-Appwrite-Project: '{{projectId}}'
-            X-Appwrite-Key: '{{apiKey}}'
+          type: dbQuery
+          database: appwrite-mariadb
+          query: 'SELECT COUNT(*) as cnt FROM `{{docTable}}`'
         assertions:
           - assertions:
-              - path: $.response.status
+              - path: $.response.success
                 operator: eq
-                value: 200
-              - path: $.response.body.title
-                operator: eq
-                value: Test Document
+                value: true
+              - path: $.response.data[0].cnt
+                operator: gt
+                value: '{{rowsBefore}}'
 
-      - name: Update document
+      - name: Verify document content in MariaDB
         action:
-          type: httpRequest
-          method: PATCH
-          url: appwrite/v1/databases/test-db/collections/items/documents/{{docId}}
-          headers:
-            Content-Type: application/json
-            X-Appwrite-Project: '{{projectId}}'
-            X-Appwrite-Key: '{{apiKey}}'
-          body:
-            data:
-              title: Updated Title
+          type: dbQuery
+          database: appwrite-mariadb
+          query: "SELECT content FROM `{{docTable}}` WHERE content = 'Hello from Dokkimi'"
         assertions:
           - assertions:
-              - path: $.response.status
+              - path: $.response.success
                 operator: eq
-                value: 200
-              - path: $.response.body.title
+                value: true
+              - path: $.response.data
+                operator: notEmpty
+              - path: $.response.data[0].content
                 operator: eq
-                value: Updated Title
+                value: Hello from Dokkimi
 
-      - name: Delete document
+      # --- Delete and verify row is gone ---
+
+      - name: Delete document via API
         action:
           type: httpRequest
           method: DELETE
-          url: appwrite/v1/databases/test-db/collections/items/documents/{{docId}}
+          url: appwrite/v1/databases/consist-db/collections/notes/documents/{{docId}}
           headers:
             X-Appwrite-Project: '{{projectId}}'
             X-Appwrite-Key: '{{apiKey}}'
@@ -294,16 +318,60 @@ tests:
                 operator: eq
                 value: 204
 
-      - name: Verify document deleted
+      - name: Verify row is gone from MariaDB (not soft-deleted)
+        action:
+          type: dbQuery
+          database: appwrite-mariadb
+          query: "SELECT COUNT(*) as cnt FROM `{{docTable}}` WHERE content = 'Hello from Dokkimi'"
+        assertions:
+          - assertions:
+              - path: $.response.success
+                operator: eq
+                value: true
+              - path: $.response.data[0].cnt
+                operator: eq
+                value: 0
+
+      # --- Oversized content: what does MariaDB actually store? ---
+
+      - name: Oversized content is rejected (server-side validation)
         action:
           type: httpRequest
-          method: GET
-          url: appwrite/v1/databases/test-db/collections/items/documents/{{docId}}
+          method: POST
+          url: appwrite/v1/databases/consist-db/collections/notes/documents
           headers:
+            Content-Type: application/json
             X-Appwrite-Project: '{{projectId}}'
             X-Appwrite-Key: '{{apiKey}}'
+          body:
+            documentId: 'unique()'
+            data:
+              content: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'
+            permissions:
+              - 'read("any")'
         assertions:
           - assertions:
               - path: $.response.status
                 operator: eq
-                value: 404
+                value: 400
+
+      - name: Max-length content is accepted (exactly 256 chars)
+        action:
+          type: httpRequest
+          method: POST
+          url: appwrite/v1/databases/consist-db/collections/notes/documents
+          headers:
+            Content-Type: application/json
+            X-Appwrite-Project: '{{projectId}}'
+            X-Appwrite-Key: '{{apiKey}}'
+          body:
+            documentId: 'unique()'
+            data:
+              content: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'
+            permissions:
+              - 'read("any")'
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 201

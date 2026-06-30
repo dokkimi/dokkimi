@@ -1,7 +1,7 @@
-name: appwrite-smoke-test
+name: appwrite-pagination-integrity
 description: >
-  Deploy Appwrite with MariaDB + Redis + database worker. Bootstrap admin account,
-  create a project and API key, then verify database CRUD and user management.
+  Seed 25 documents, paginate through them, and verify no duplicates or
+  gaps across pages. Cross-references API totals against MariaDB row counts.
 config:
   timeoutSeconds: 600
 items:
@@ -12,11 +12,12 @@ items:
 variables:
   adminEmail: admin@dokkimi.test
   adminPassword: TestPass123!
-  projectId: dokkimi-test
+  projectId: pagination-test
 tests:
-  - name: Bootstrap and verify CRUD
+  - name: Pagination integrity
     steps:
-      - name: Register admin account
+      # --- Setup ---
+      - name: Register admin
         action:
           type: httpRequest
           method: POST
@@ -29,15 +30,13 @@ tests:
             email: '{{adminEmail}}'
             password: '{{adminPassword}}'
             name: Admin
-        extract:
-          adminId: $.response.body.$id
         assertions:
           - assertions:
               - path: $.response.status
                 operator: eq
                 value: 201
 
-      - name: Create admin session
+      - name: Admin session
         action:
           type: httpRequest
           method: POST
@@ -67,7 +66,7 @@ tests:
             X-Fallback-Cookies: '{{fallbackCookies}}'
           body:
             teamId: 'unique()'
-            name: Dokkimi Org
+            name: Pagination Org
         extract:
           teamId: $.response.body.$id
         assertions:
@@ -87,7 +86,7 @@ tests:
             X-Fallback-Cookies: '{{fallbackCookies}}'
           body:
             projectId: '{{projectId}}'
-            name: Dokkimi Test Project
+            name: Pagination Test
             teamId: '{{teamId}}'
         assertions:
           - assertions:
@@ -105,17 +104,14 @@ tests:
             X-Appwrite-Project: console
             X-Fallback-Cookies: '{{fallbackCookies}}'
           body:
-            name: Test Key
+            name: Full Key
             scopes:
-              - users.read
-              - users.write
               - databases.read
               - databases.write
               - collections.read
               - collections.write
               - documents.read
               - documents.write
-              - health.read
         extract:
           apiKey: $.response.body.secret
         assertions:
@@ -123,20 +119,6 @@ tests:
               - path: $.response.status
                 operator: eq
                 value: 201
-
-      - name: Verify health endpoint
-        action:
-          type: httpRequest
-          method: GET
-          url: appwrite/v1/health
-          headers:
-            X-Appwrite-Project: '{{projectId}}'
-            X-Appwrite-Key: '{{apiKey}}'
-        assertions:
-          - assertions:
-              - path: $.response.status
-                operator: eq
-                value: 200
 
       - name: Create database
         action:
@@ -148,8 +130,8 @@ tests:
             X-Appwrite-Project: '{{projectId}}'
             X-Appwrite-Key: '{{apiKey}}'
           body:
-            databaseId: test-db
-            name: Test Database
+            databaseId: pag-db
+            name: Pagination DB
         assertions:
           - assertions:
               - path: $.response.status
@@ -160,7 +142,7 @@ tests:
         action:
           type: httpRequest
           method: POST
-          url: appwrite/v1/databases/test-db/collections
+          url: appwrite/v1/databases/pag-db/collections
           headers:
             Content-Type: application/json
             X-Appwrite-Project: '{{projectId}}'
@@ -168,21 +150,20 @@ tests:
           body:
             collectionId: items
             name: Items
-            documentSecurity: true
             permissions:
               - 'read("any")'
-              - 'create("users")'
+              - 'create("any")'
         assertions:
           - assertions:
               - path: $.response.status
                 operator: eq
                 value: 201
 
-      - name: Create attribute via API
+      - name: Create title attribute
         action:
           type: httpRequest
           method: POST
-          url: appwrite/v1/databases/test-db/collections/items/attributes/string
+          url: appwrite/v1/databases/pag-db/collections/items/attributes/string
           headers:
             Content-Type: application/json
             X-Appwrite-Project: '{{projectId}}'
@@ -197,7 +178,7 @@ tests:
                 operator: in
                 value: [201, 202]
 
-      - name: Wait for worker to process attribute
+      - name: Wait for attribute
         repeat:
           count: 15
           as: attempt
@@ -209,16 +190,22 @@ tests:
         action:
           type: httpRequest
           method: GET
-          url: appwrite/v1/databases/test-db/collections/items/attributes/title
+          url: appwrite/v1/databases/pag-db/collections/items/attributes/title
           headers:
             X-Appwrite-Project: '{{projectId}}'
             X-Appwrite-Key: '{{apiKey}}'
 
-      - name: Create document
+      # --- Seed 25 documents ---
+
+      - name: Seed document {{i}}
+        for:
+          from: 1
+          to: 25
+          as: i
         action:
           type: httpRequest
           method: POST
-          url: appwrite/v1/databases/test-db/collections/items/documents
+          url: appwrite/v1/databases/pag-db/collections/items/documents
           headers:
             Content-Type: application/json
             X-Appwrite-Project: '{{projectId}}'
@@ -226,84 +213,129 @@ tests:
           body:
             documentId: 'unique()'
             data:
-              title: Test Document
+              title: 'Document {{i}}'
             permissions:
               - 'read("any")'
-              - 'update("any")'
-              - 'delete("any")'
+
+      # --- Paginate and verify ---
+
+      - name: Page 1 (limit 10, offset 0)
+        action:
+          type: httpRequest
+          method: GET
+          url: appwrite/v1/databases/pag-db/collections/items/documents
+          headers:
+            X-Appwrite-Project: '{{projectId}}'
+            X-Appwrite-Key: '{{apiKey}}'
+          queryParams:
+            queries[]:
+              - '{"method":"limit","values":[10]}'
+              - '{"method":"offset","values":[0]}'
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+              - path: $.response.body.total
+                operator: eq
+                value: 25
+              - count: $.response.body.documents
+                operator: eq
+                value: 10
+
+      - name: Page 2 (limit 10, offset 10)
+        action:
+          type: httpRequest
+          method: GET
+          url: appwrite/v1/databases/pag-db/collections/items/documents
+          headers:
+            X-Appwrite-Project: '{{projectId}}'
+            X-Appwrite-Key: '{{apiKey}}'
+          queryParams:
+            queries[]:
+              - '{"method":"limit","values":[10]}'
+              - '{"method":"offset","values":[10]}'
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+              - path: $.response.body.total
+                operator: eq
+                value: 25
+              - count: $.response.body.documents
+                operator: eq
+                value: 10
+
+      - name: Page 3 (limit 10, offset 20 — should return 5)
+        action:
+          type: httpRequest
+          method: GET
+          url: appwrite/v1/databases/pag-db/collections/items/documents
+          headers:
+            X-Appwrite-Project: '{{projectId}}'
+            X-Appwrite-Key: '{{apiKey}}'
+          queryParams:
+            queries[]:
+              - '{"method":"limit","values":[10]}'
+              - '{"method":"offset","values":[20]}'
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+              - path: $.response.body.total
+                operator: eq
+                value: 25
+              - count: $.response.body.documents
+                operator: eq
+                value: 5
+
+      - name: Page past end returns empty
+        action:
+          type: httpRequest
+          method: GET
+          url: appwrite/v1/databases/pag-db/collections/items/documents
+          headers:
+            X-Appwrite-Project: '{{projectId}}'
+            X-Appwrite-Key: '{{apiKey}}'
+          queryParams:
+            queries[]:
+              - '{"method":"limit","values":[10]}'
+              - '{"method":"offset","values":[30]}'
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+              - path: $.response.body.total
+                operator: eq
+                value: 25
+              - count: $.response.body.documents
+                operator: eq
+                value: 0
+
+      # --- Cross-reference with MariaDB ---
+
+      - name: Find document table
+        action:
+          type: dbQuery
+          database: appwrite-mariadb
+          query: "SELECT table_name FROM information_schema.columns WHERE table_schema = 'appwrite' AND column_name = 'title' AND table_name NOT LIKE '_metadata%' LIMIT 1"
         extract:
-          docId: $.response.body.$id
+          docTable: $.response.data[0].table_name
         assertions:
           - assertions:
-              - path: $.response.status
-                operator: eq
-                value: 201
-              - path: $.response.body.title
-                operator: eq
-                value: Test Document
+              - path: $.response.data
+                operator: notEmpty
 
-      - name: Read document back
+      - name: MariaDB row count matches API total
         action:
-          type: httpRequest
-          method: GET
-          url: appwrite/v1/databases/test-db/collections/items/documents/{{docId}}
-          headers:
-            X-Appwrite-Project: '{{projectId}}'
-            X-Appwrite-Key: '{{apiKey}}'
+          type: dbQuery
+          database: appwrite-mariadb
+          query: 'SELECT COUNT(*) as cnt FROM `{{docTable}}`'
         assertions:
           - assertions:
-              - path: $.response.status
+              - path: $.response.data[0].cnt
                 operator: eq
-                value: 200
-              - path: $.response.body.title
-                operator: eq
-                value: Test Document
-
-      - name: Update document
-        action:
-          type: httpRequest
-          method: PATCH
-          url: appwrite/v1/databases/test-db/collections/items/documents/{{docId}}
-          headers:
-            Content-Type: application/json
-            X-Appwrite-Project: '{{projectId}}'
-            X-Appwrite-Key: '{{apiKey}}'
-          body:
-            data:
-              title: Updated Title
-        assertions:
-          - assertions:
-              - path: $.response.status
-                operator: eq
-                value: 200
-              - path: $.response.body.title
-                operator: eq
-                value: Updated Title
-
-      - name: Delete document
-        action:
-          type: httpRequest
-          method: DELETE
-          url: appwrite/v1/databases/test-db/collections/items/documents/{{docId}}
-          headers:
-            X-Appwrite-Project: '{{projectId}}'
-            X-Appwrite-Key: '{{apiKey}}'
-        assertions:
-          - assertions:
-              - path: $.response.status
-                operator: eq
-                value: 204
-
-      - name: Verify document deleted
-        action:
-          type: httpRequest
-          method: GET
-          url: appwrite/v1/databases/test-db/collections/items/documents/{{docId}}
-          headers:
-            X-Appwrite-Project: '{{projectId}}'
-            X-Appwrite-Key: '{{apiKey}}'
-        assertions:
-          - assertions:
-              - path: $.response.status
-                operator: eq
-                value: 404
+                value: 25

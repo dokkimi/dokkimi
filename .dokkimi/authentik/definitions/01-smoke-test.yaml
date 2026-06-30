@@ -1,0 +1,195 @@
+name: authentik-smoke-test
+description: >
+  Deploy Authentik with PostgreSQL. Verify the bootstrap admin user was created,
+  the API is reachable with the bootstrap token, and basic CRUD operations work
+  (create user, list users, delete user).
+config:
+  timeoutSeconds: 600
+items:
+  - $ref: ../shared/authentik-postgres.yaml
+  - $ref: ../shared/authentik-worker.yaml
+  - $ref: ../shared/authentik-server.yaml
+variables:
+  apiToken: dokkimi-bootstrap-api-token
+tests:
+  - name: API health and user CRUD
+    steps:
+      - name: Wait for migrations and startup
+        action:
+          type: wait
+          durationMs: 60000
+
+      - name: Wait for API to be ready
+        stopOnFailure: false
+        repeat:
+          count: 30
+          as: attempt
+          delayMs: 5000
+          until:
+            - path: $.response.status
+              operator: eq
+              value: 200
+        action:
+          type: httpRequest
+          method: GET
+          url: authentik-server/api/v3/admin/version/
+          headers:
+            Authorization: Bearer {{apiToken}}
+
+      - name: Verify admin user exists
+        action:
+          type: httpRequest
+          method: GET
+          url: authentik-server/api/v3/core/users/?search=akadmin
+          headers:
+            Authorization: Bearer {{apiToken}}
+        extract:
+          adminUserId: $.response.body.results[0].pk
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+              - path: $.response.body.results[0].username
+                operator: eq
+                value: akadmin
+              - path: $.response.body.results[0].email
+                operator: eq
+                value: admin@dokkimi.test
+
+      - name: Create test user
+        action:
+          type: httpRequest
+          method: POST
+          url: authentik-server/api/v3/core/users/
+          headers:
+            Authorization: Bearer {{apiToken}}
+            Content-Type: application/json
+          body:
+            username: testuser
+            name: Test User
+            email: testuser@dokkimi.test
+            is_active: true
+            path: users
+        extract:
+          testUserId: $.response.body.pk
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 201
+              - path: $.response.body.username
+                operator: eq
+                value: testuser
+
+      - name: Set password for test user
+        action:
+          type: httpRequest
+          method: POST
+          url: authentik-server/api/v3/core/users/{{testUserId}}/set_password/
+          headers:
+            Authorization: Bearer {{apiToken}}
+            Content-Type: application/json
+          body:
+            password: TestUser123!
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [200, 204]
+
+      - name: List users shows test user
+        action:
+          type: httpRequest
+          method: GET
+          url: authentik-server/api/v3/core/users/?search=testuser
+          headers:
+            Authorization: Bearer {{apiToken}}
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+              - path: $.response.body.results[0].username
+                operator: eq
+                value: testuser
+
+      - name: Create group
+        action:
+          type: httpRequest
+          method: POST
+          url: authentik-server/api/v3/core/groups/
+          headers:
+            Authorization: Bearer {{apiToken}}
+            Content-Type: application/json
+          body:
+            name: Test Group
+            is_superuser: false
+        extract:
+          groupId: $.response.body.pk
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 201
+              - path: $.response.body.name
+                operator: eq
+                value: Test Group
+
+      - name: Add user to group
+        action:
+          type: httpRequest
+          method: POST
+          url: authentik-server/api/v3/core/groups/{{groupId}}/add_user/
+          headers:
+            Authorization: Bearer {{apiToken}}
+            Content-Type: application/json
+          body:
+            pk: '{{testUserId}}'
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [200, 204]
+
+      - name: Verify user in group
+        action:
+          type: httpRequest
+          method: GET
+          url: authentik-server/api/v3/core/users/{{testUserId}}/
+          headers:
+            Authorization: Bearer {{apiToken}}
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+              - path: $.response.body.groups_obj[0].name
+                operator: eq
+                value: Test Group
+
+      - name: Delete test user
+        action:
+          type: httpRequest
+          method: DELETE
+          url: authentik-server/api/v3/core/users/{{testUserId}}/
+          headers:
+            Authorization: Bearer {{apiToken}}
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 204
+
+      - name: Verify user deleted
+        action:
+          type: httpRequest
+          method: GET
+          url: authentik-server/api/v3/core/users/{{testUserId}}/
+          headers:
+            Authorization: Bearer {{apiToken}}
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 404

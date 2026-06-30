@@ -1,0 +1,247 @@
+name: authentik-permission-escalation
+description: >
+  Test Authentik's permission boundaries. Create a non-admin user with their own
+  API token, then verify they cannot access admin endpoints, modify other users,
+  or escalate their own privileges (e.g. set is_superuser=true).
+config:
+  timeoutSeconds: 600
+items:
+  - $ref: ../shared/authentik-postgres.yaml
+  - $ref: ../shared/authentik-worker.yaml
+  - $ref: ../shared/authentik-server.yaml
+variables:
+  adminToken: dokkimi-bootstrap-api-token
+tests:
+  - name: Non-admin cannot access admin endpoints
+    steps:
+      - name: Wait for migrations and startup
+        action:
+          type: wait
+          durationMs: 60000
+
+      - name: Wait for API
+        stopOnFailure: false
+        repeat:
+          count: 30
+          as: attempt
+          delayMs: 5000
+          until:
+            - path: $.response.status
+              operator: eq
+              value: 200
+        action:
+          type: httpRequest
+          method: GET
+          url: authentik-server/api/v3/admin/version/
+          headers:
+            Authorization: Bearer {{adminToken}}
+
+      - name: Create non-admin user
+        action:
+          type: httpRequest
+          method: POST
+          url: authentik-server/api/v3/core/users/
+          headers:
+            Authorization: Bearer {{adminToken}}
+            Content-Type: application/json
+          body:
+            username: lowpriv
+            name: Low Privilege User
+            email: lowpriv@dokkimi.test
+            is_active: true
+            path: users
+        extract:
+          lowPrivUserId: $.response.body.pk
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 201
+
+      - name: Set password for low-priv user
+        action:
+          type: httpRequest
+          method: POST
+          url: authentik-server/api/v3/core/users/{{lowPrivUserId}}/set_password/
+          headers:
+            Authorization: Bearer {{adminToken}}
+            Content-Type: application/json
+          body:
+            password: LowPriv123!
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [200, 204]
+
+      - name: Create API token for low-priv user
+        action:
+          type: httpRequest
+          method: POST
+          url: authentik-server/api/v3/core/tokens/
+          headers:
+            Authorization: Bearer {{adminToken}}
+            Content-Type: application/json
+          body:
+            identifier: lowpriv-token
+            intent: api
+            user: '{{lowPrivUserId}}'
+            expiring: false
+        extract:
+          lowPrivTokenId: $.response.body.identifier
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 201
+
+      - name: Get low-priv token key
+        action:
+          type: httpRequest
+          method: GET
+          url: authentik-server/api/v3/core/tokens/{{lowPrivTokenId}}/view_key/
+          headers:
+            Authorization: Bearer {{adminToken}}
+        extract:
+          lowPrivToken: $.response.body.key
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+              - path: $.response.body.key
+                operator: exists
+
+      - name: Low-priv token works (sanity check)
+        action:
+          type: httpRequest
+          method: GET
+          url: authentik-server/api/v3/core/users/me/
+          headers:
+            Authorization: Bearer {{lowPrivToken}}
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+              - path: $.response.body.user.username
+                operator: eq
+                value: lowpriv
+
+      - name: Low-priv cannot list admin system tasks
+        action:
+          type: httpRequest
+          method: GET
+          url: authentik-server/api/v3/admin/system_tasks/
+          headers:
+            Authorization: Bearer {{lowPrivToken}}
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [403, 404]
+
+      - name: Low-priv cannot create users
+        action:
+          type: httpRequest
+          method: POST
+          url: authentik-server/api/v3/core/users/
+          headers:
+            Authorization: Bearer {{lowPrivToken}}
+            Content-Type: application/json
+          body:
+            username: hacker
+            name: Should Not Exist
+            email: hacker@dokkimi.test
+            is_active: true
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [403, 404]
+
+      - name: Low-priv cannot self-escalate to superuser
+        action:
+          type: httpRequest
+          method: PATCH
+          url: authentik-server/api/v3/core/users/{{lowPrivUserId}}/
+          headers:
+            Authorization: Bearer {{lowPrivToken}}
+            Content-Type: application/json
+          body:
+            is_superuser: true
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [403, 400]
+
+      - name: Verify user was not escalated
+        action:
+          type: httpRequest
+          method: GET
+          url: authentik-server/api/v3/core/users/{{lowPrivUserId}}/
+          headers:
+            Authorization: Bearer {{adminToken}}
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+              - path: $.response.body.is_superuser
+                operator: eq
+                value: false
+
+      - name: Low-priv cannot delete other users
+        action:
+          type: httpRequest
+          method: DELETE
+          url: authentik-server/api/v3/core/users/1/
+          headers:
+            Authorization: Bearer {{lowPrivToken}}
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [403, 404]
+
+      - name: Low-priv cannot create groups
+        action:
+          type: httpRequest
+          method: POST
+          url: authentik-server/api/v3/core/groups/
+          headers:
+            Authorization: Bearer {{lowPrivToken}}
+            Content-Type: application/json
+          body:
+            name: Hacker Group
+            is_superuser: true
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [403, 404]
+
+      - name: Low-priv cannot list flows
+        action:
+          type: httpRequest
+          method: GET
+          url: authentik-server/api/v3/flows/instances/
+          headers:
+            Authorization: Bearer {{lowPrivToken}}
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [403, 404]
+
+      - name: Unauthenticated cannot access API
+        action:
+          type: httpRequest
+          method: GET
+          url: authentik-server/api/v3/core/users/
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [401, 403]

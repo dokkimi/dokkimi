@@ -1,0 +1,270 @@
+name: authentik-oauth2-flows
+description: >
+  Test OAuth2/OIDC provider setup and token flows. Create an OAuth2 provider
+  and application, then test the client_credentials grant, token introspection,
+  and token revocation.
+config:
+  timeoutSeconds: 600
+items:
+  - $ref: ../shared/authentik-postgres.yaml
+  - $ref: ../shared/authentik-worker.yaml
+  - $ref: ../shared/authentik-server.yaml
+variables:
+  adminToken: dokkimi-bootstrap-api-token
+  clientId: dokkimi-test-client
+  clientSecret: dokkimi-test-client-secret-1234567890
+  clientBasicAuth: Basic ZG9ra2ltaS10ZXN0LWNsaWVudDpkb2traW1pLXRlc3QtY2xpZW50LXNlY3JldC0xMjM0NTY3ODkw
+  redirectUri: http://localhost:9999/callback
+tests:
+  - name: OAuth2 provider and token lifecycle
+    steps:
+      - name: Wait for migrations and startup
+        action:
+          type: wait
+          durationMs: 60000
+
+      - name: Wait for API
+        stopOnFailure: false
+        repeat:
+          count: 30
+          as: attempt
+          delayMs: 5000
+          until:
+            - path: $.response.status
+              operator: eq
+              value: 200
+        action:
+          type: httpRequest
+          method: GET
+          url: authentik-server/api/v3/admin/version/
+          headers:
+            Authorization: Bearer {{adminToken}}
+
+      - name: Wait for default blueprints (authorization flow)
+        stopOnFailure: false
+        repeat:
+          count: 20
+          as: flowPoll
+          delayMs: 5000
+          until:
+            - count: $.response.body.results
+              operator: gte
+              value: 1
+        action:
+          type: httpRequest
+          method: GET
+          url: authentik-server/api/v3/flows/instances/?designation=authorization&ordering=slug
+          headers:
+            Authorization: Bearer {{adminToken}}
+
+      - name: Get authorization flow
+        action:
+          type: httpRequest
+          method: GET
+          url: authentik-server/api/v3/flows/instances/?designation=authorization&ordering=slug
+          headers:
+            Authorization: Bearer {{adminToken}}
+        extract:
+          authFlowPk: $.response.body.results[0].pk
+
+      - name: Get invalidation flow
+        action:
+          type: httpRequest
+          method: GET
+          url: authentik-server/api/v3/flows/instances/?designation=invalidation&ordering=slug
+          headers:
+            Authorization: Bearer {{adminToken}}
+        extract:
+          invalidationFlowPk: $.response.body.results[0].pk
+
+      - name: Get signing certificate
+        action:
+          type: httpRequest
+          method: GET
+          url: authentik-server/api/v3/crypto/certificatekeypairs/?has_key=true&ordering=name
+          headers:
+            Authorization: Bearer {{adminToken}}
+        extract:
+          signingKeyPk: $.response.body.results[0].pk
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+              - count: $.response.body.results
+                operator: gte
+                value: 1
+
+      - name: Create OAuth2 provider
+        action:
+          type: httpRequest
+          method: POST
+          url: authentik-server/api/v3/providers/oauth2/
+          headers:
+            Authorization: Bearer {{adminToken}}
+            Content-Type: application/json
+          body:
+            name: Dokkimi Test Provider
+            authorization_flow: '{{authFlowPk}}'
+            invalidation_flow: '{{invalidationFlowPk}}'
+            client_type: confidential
+            client_id: '{{clientId}}'
+            client_secret: '{{clientSecret}}'
+            signing_key: '{{signingKeyPk}}'
+            redirect_uris:
+              - url: '{{redirectUri}}'
+                matching_mode: strict
+            access_code_validity: minutes=10
+            access_token_validity: minutes=30
+            refresh_token_validity: days=30
+            include_claims_in_id_token: true
+            sub_mode: hashed_user_id
+            issuer_mode: per_provider
+            grant_types:
+              - client_credentials
+        extract:
+          providerId: $.response.body.pk
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 201
+              - path: $.response.body.client_id
+                operator: eq
+                value: '{{clientId}}'
+
+      - name: Create application linked to provider
+        action:
+          type: httpRequest
+          method: POST
+          url: authentik-server/api/v3/core/applications/
+          headers:
+            Authorization: Bearer {{adminToken}}
+            Content-Type: application/json
+          body:
+            name: Dokkimi Test App
+            slug: dokkimi-test-app
+            provider: '{{providerId}}'
+        extract:
+          appSlug: $.response.body.slug
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 201
+
+      - name: Verify OIDC discovery endpoint
+        action:
+          type: httpRequest
+          method: GET
+          url: authentik-server/application/o/dokkimi-test-app/.well-known/openid-configuration
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+              - path: $.response.body.token_endpoint
+                operator: exists
+              - path: $.response.body.issuer
+                operator: exists
+
+      - name: Client credentials grant
+        action:
+          type: httpRequest
+          method: POST
+          url: authentik-server/application/o/token/
+          headers:
+            Content-Type: application/x-www-form-urlencoded
+            Authorization: '{{clientBasicAuth}}'
+          body: 'grant_type=client_credentials&scope=openid'
+        extract:
+          accessToken: $.response.body.access_token
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+              - path: $.response.body.access_token
+                operator: exists
+              - path: $.response.body.token_type
+                operator: eqIgnoreCase
+                value: bearer
+
+      - name: Invalid client secret rejected
+        action:
+          type: httpRequest
+          method: POST
+          url: authentik-server/application/o/token/
+          headers:
+            Content-Type: application/x-www-form-urlencoded
+          body: 'grant_type=client_credentials&client_id={{clientId}}&client_secret=wrong-secret&scope=openid'
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [400, 401]
+
+      - name: Invalid client ID rejected
+        action:
+          type: httpRequest
+          method: POST
+          url: authentik-server/application/o/token/
+          headers:
+            Content-Type: application/x-www-form-urlencoded
+          body: 'grant_type=client_credentials&client_id=nonexistent-client&client_secret={{clientSecret}}&scope=openid'
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [400, 401]
+
+      - name: Token introspection (active token)
+        action:
+          type: httpRequest
+          method: POST
+          url: authentik-server/application/o/introspect/
+          headers:
+            Content-Type: application/x-www-form-urlencoded
+            Authorization: '{{clientBasicAuth}}'
+          body: 'token={{accessToken}}'
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+              - path: $.response.body.active
+                operator: eq
+                value: true
+
+      - name: Revoke token
+        action:
+          type: httpRequest
+          method: POST
+          url: authentik-server/application/o/revoke/
+          headers:
+            Content-Type: application/x-www-form-urlencoded
+            Authorization: '{{clientBasicAuth}}'
+          body: 'token={{accessToken}}'
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [200, 204]
+
+      - name: Introspect revoked token (should be inactive)
+        action:
+          type: httpRequest
+          method: POST
+          url: authentik-server/application/o/introspect/
+          headers:
+            Content-Type: application/x-www-form-urlencoded
+            Authorization: '{{clientBasicAuth}}'
+          body: 'token={{accessToken}}'
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+              - path: $.response.body.active
+                operator: eq
+                value: false

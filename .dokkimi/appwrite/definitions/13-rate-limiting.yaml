@@ -1,0 +1,181 @@
+name: appwrite-rate-limiting
+description: >
+  Test Appwrite's abuse protection with rapid repeated requests.
+  Enables _APP_OPTIONS_ABUSE and verifies rate limiting kicks in.
+config:
+  timeoutSeconds: 600
+items:
+  - $ref: ../shared/appwrite-mariadb.yaml
+  - $ref: ../shared/appwrite-redis.yaml
+  - $ref: ../shared/appwrite-worker-db.yaml
+  - $ref: ../shared/appwrite-api.yaml
+    env:
+      - '...$ref.env'
+      - name: _APP_OPTIONS_ABUSE
+        value: enabled
+variables:
+  adminEmail: admin@dokkimi.test
+  adminPassword: TestPass123!
+  projectId: rate-limit-test
+tests:
+  - name: Rate limiting enforcement
+    steps:
+      # --- Setup ---
+      - name: Register admin
+        action:
+          type: httpRequest
+          method: POST
+          url: appwrite/v1/account
+          headers:
+            Content-Type: application/json
+            X-Appwrite-Project: console
+          body:
+            userId: 'unique()'
+            email: '{{adminEmail}}'
+            password: '{{adminPassword}}'
+            name: Admin
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 201
+
+      - name: Admin session
+        action:
+          type: httpRequest
+          method: POST
+          url: appwrite/v1/account/sessions/email
+          headers:
+            Content-Type: application/json
+            X-Appwrite-Project: console
+          body:
+            email: '{{adminEmail}}'
+            password: '{{adminPassword}}'
+        extract:
+          fallbackCookies: $.response.headers.x-fallback-cookies
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 201
+
+      - name: Create team
+        action:
+          type: httpRequest
+          method: POST
+          url: appwrite/v1/teams
+          headers:
+            Content-Type: application/json
+            X-Appwrite-Project: console
+            X-Fallback-Cookies: '{{fallbackCookies}}'
+          body:
+            teamId: 'unique()'
+            name: Rate Limit Org
+        extract:
+          teamId: $.response.body.$id
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 201
+
+      - name: Create project
+        action:
+          type: httpRequest
+          method: POST
+          url: appwrite/v1/projects
+          headers:
+            Content-Type: application/json
+            X-Appwrite-Project: console
+            X-Fallback-Cookies: '{{fallbackCookies}}'
+          body:
+            projectId: '{{projectId}}'
+            name: Rate Limit Test
+            teamId: '{{teamId}}'
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 201
+
+      - name: Create API key
+        action:
+          type: httpRequest
+          method: POST
+          url: appwrite/v1/projects/{{projectId}}/keys
+          headers:
+            Content-Type: application/json
+            X-Appwrite-Project: console
+            X-Fallback-Cookies: '{{fallbackCookies}}'
+          body:
+            name: Full Key
+            scopes:
+              - users.read
+              - users.write
+        extract:
+          apiKey: $.response.body.secret
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 201
+
+      # --- Rapid account creation to trigger rate limit ---
+      # Appwrite limits account creation to ~10/hour per IP when abuse protection is on
+
+      - name: Rapid registration until rate limited
+        repeat:
+          count: 20
+          as: attempt
+          name: rateLoop
+          until:
+            - path: $.response.status
+              operator: eq
+              value: 429
+        action:
+          type: httpRequest
+          method: POST
+          url: appwrite/v1/account
+          headers:
+            Content-Type: application/json
+            X-Appwrite-Project: '{{projectId}}'
+          body:
+            userId: 'unique()'
+            email: 'ratelimit-{{attempt}}@dokkimi.test'
+            password: 'TestPass123!'
+            name: 'Rate Limit User {{attempt}}'
+
+      - name: Confirm rate limit is active
+        action:
+          type: httpRequest
+          method: POST
+          url: appwrite/v1/account
+          headers:
+            Content-Type: application/json
+            X-Appwrite-Project: '{{projectId}}'
+          body:
+            userId: 'unique()'
+            email: 'ratelimit-extra@dokkimi.test'
+            password: 'TestPass123!'
+            name: Still Limited
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 429
+
+      # --- Verify rate limiting is per-route: different endpoint still works ---
+
+      - name: Different endpoint not rate limited
+        action:
+          type: httpRequest
+          method: GET
+          url: appwrite/v1/users
+          headers:
+            X-Appwrite-Project: '{{projectId}}'
+            X-Appwrite-Key: '{{apiKey}}'
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200

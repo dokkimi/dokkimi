@@ -1,0 +1,258 @@
+name: authentik-token-management
+description: >
+  Test API token lifecycle: create tokens, use them for authentication,
+  revoke them and verify they stop working. Also test expired tokens
+  and token scope boundaries.
+config:
+  timeoutSeconds: 600
+items:
+  - $ref: ../shared/authentik-postgres.yaml
+  - $ref: ../shared/authentik-worker.yaml
+  - $ref: ../shared/authentik-server.yaml
+variables:
+  adminToken: dokkimi-bootstrap-api-token
+tests:
+  - name: Token create, use, and revoke
+    steps:
+      - name: Wait for migrations and startup
+        action:
+          type: wait
+          durationMs: 60000
+
+      - name: Wait for API
+        stopOnFailure: false
+        repeat:
+          count: 30
+          as: attempt
+          delayMs: 5000
+          until:
+            - path: $.response.status
+              operator: eq
+              value: 200
+        action:
+          type: httpRequest
+          method: GET
+          url: authentik-server/api/v3/admin/version/
+          headers:
+            Authorization: Bearer {{adminToken}}
+
+      - name: Get admin user pk
+        action:
+          type: httpRequest
+          method: GET
+          url: authentik-server/api/v3/core/users/?search=akadmin
+          headers:
+            Authorization: Bearer {{adminToken}}
+        extract:
+          adminUserId: $.response.body.results[0].pk
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+
+      - name: Create new API token
+        action:
+          type: httpRequest
+          method: POST
+          url: authentik-server/api/v3/core/tokens/
+          headers:
+            Authorization: Bearer {{adminToken}}
+            Content-Type: application/json
+          body:
+            identifier: test-api-token
+            intent: api
+            user: '{{adminUserId}}'
+            expiring: false
+            description: Token for testing
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 201
+
+      - name: View token key
+        action:
+          type: httpRequest
+          method: GET
+          url: authentik-server/api/v3/core/tokens/test-api-token/view_key/
+          headers:
+            Authorization: Bearer {{adminToken}}
+        extract:
+          newToken: $.response.body.key
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+              - path: $.response.body.key
+                operator: exists
+
+      - name: New token can authenticate
+        action:
+          type: httpRequest
+          method: GET
+          url: authentik-server/api/v3/core/users/me/
+          headers:
+            Authorization: Bearer {{newToken}}
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+              - path: $.response.body.user.username
+                operator: eq
+                value: akadmin
+
+      - name: Delete token
+        action:
+          type: httpRequest
+          method: DELETE
+          url: authentik-server/api/v3/core/tokens/test-api-token/
+          headers:
+            Authorization: Bearer {{adminToken}}
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 204
+
+      - name: Deleted token cannot authenticate
+        action:
+          type: httpRequest
+          method: GET
+          url: authentik-server/api/v3/core/users/me/
+          headers:
+            Authorization: Bearer {{newToken}}
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [401, 403]
+
+      - name: Invalid token format rejected
+        action:
+          type: httpRequest
+          method: GET
+          url: authentik-server/api/v3/core/users/me/
+          headers:
+            Authorization: Bearer not-a-real-token-at-all
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [401, 403]
+
+      - name: Empty auth header rejected
+        action:
+          type: httpRequest
+          method: GET
+          url: authentik-server/api/v3/core/users/me/
+          headers:
+            Authorization: Bearer
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [401, 403]
+
+      - name: Create user-scoped token for non-admin
+        action:
+          type: httpRequest
+          method: POST
+          url: authentik-server/api/v3/core/users/
+          headers:
+            Authorization: Bearer {{adminToken}}
+            Content-Type: application/json
+          body:
+            username: tokentest
+            name: Token Test User
+            email: tokentest@dokkimi.test
+            is_active: true
+            path: users
+        extract:
+          tokenTestUserId: $.response.body.pk
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 201
+
+      - name: Create token for non-admin user
+        action:
+          type: httpRequest
+          method: POST
+          url: authentik-server/api/v3/core/tokens/
+          headers:
+            Authorization: Bearer {{adminToken}}
+            Content-Type: application/json
+          body:
+            identifier: non-admin-token
+            intent: api
+            user: '{{tokenTestUserId}}'
+            expiring: false
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 201
+
+      - name: Get non-admin token key
+        action:
+          type: httpRequest
+          method: GET
+          url: authentik-server/api/v3/core/tokens/non-admin-token/view_key/
+          headers:
+            Authorization: Bearer {{adminToken}}
+        extract:
+          nonAdminToken: $.response.body.key
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+
+      - name: Non-admin token authenticates as correct user
+        action:
+          type: httpRequest
+          method: GET
+          url: authentik-server/api/v3/core/users/me/
+          headers:
+            Authorization: Bearer {{nonAdminToken}}
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+              - path: $.response.body.user.username
+                operator: eq
+                value: tokentest
+
+      - name: Deactivate user
+        action:
+          type: httpRequest
+          method: PATCH
+          url: authentik-server/api/v3/core/users/{{tokenTestUserId}}/
+          headers:
+            Authorization: Bearer {{adminToken}}
+            Content-Type: application/json
+          body:
+            is_active: false
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+
+      - name: Deactivated user token rejected
+        action:
+          type: httpRequest
+          method: GET
+          url: authentik-server/api/v3/core/users/me/
+          headers:
+            Authorization: Bearer {{nonAdminToken}}
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [401, 403]

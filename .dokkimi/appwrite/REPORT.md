@@ -1,60 +1,38 @@
 # Appwrite 1.9.0 Bug Hunt Report
 
 Target: `appwrite/appwrite:latest` (1.9.0)
-Stack: Appwrite HTTP server + MariaDB 10.11 + Redis (password-protected)
-Tested with: Dokkimi (3-container subsets, no workers)
+Stack: Appwrite HTTP server + MariaDB 10.11 + Redis (no auth) + database worker
+Tested with: Dokkimi (4-container stack with WORKER item type)
 
 ## Test Definitions
 
-| Definition                      | Steps | Result | What it tests                                                 |
-| ------------------------------- | ----- | ------ | ------------------------------------------------------------- |
-| `01-smoke-test.yaml`            | 17    | PASS   | Bootstrap admin, create project/API key, database CRUD        |
-| `02-permission-escalation.yaml` | 25    | PASS   | Two users, private/public documents, cross-user access denial |
+| Definition                       | Steps | Result        | What it tests                                                         | Dokkimi capabilities used           |
+| -------------------------------- | ----- | ------------- | --------------------------------------------------------------------- | ----------------------------------- |
+| `01-smoke-test.yaml`             | 15    | PASS          | Bootstrap admin, create project/API key, database CRUD                | httpRequest                         |
+| `02-permission-escalation.yaml`  | 22    | PASS          | Two users, private/public documents, cross-user access denial         | httpRequest                         |
+| `03-input-validation.yaml`       | 19    | PASS          | SQL injection, XSS, injection in doc IDs, oversized inputs            | httpRequest                         |
+| `04-api-key-scopes.yaml`         | 21    | PASS          | 3 keys with different scopes, out-of-scope operation rejection        | httpRequest                         |
+| `05-multi-tenant.yaml`           | 22    | PASS          | Two projects, cross-project data access, namespace collision          | httpRequest                         |
+| `06-session-management.yaml`     | 23    | PASS          | Session revocation, token replay, concurrent sessions, cross-project  | httpRequest                         |
+| `07-edge-cases.yaml`             | 32    | PASS          | Duplicate resource rejection, deletion cascades, sibling isolation    | httpRequest                         |
+| `08-file-storage.yaml`           | 22    | PASS          | File upload (formData), download, permission enforcement, extension   | httpRequest, formData               |
+| `09-api-db-consistency.yaml`     | 20    | PASS          | API responses match MariaDB state; document CRUD verified at DB level | **dbQuery**, information_schema     |
+| `10-concurrent-writes.yaml`      | 20    | PASS          | Race conditions: same doc ID, same email, concurrent updates          | **parallel**, **dbQuery**           |
+| `11-console-log-audit.yaml`      | 18    | **FAIL** (F6) | Scans console logs for PHP errors, deprecations, uncaught exceptions  | **$.consoleLogs** match blocks      |
+| `12-cascade-verification.yaml`   | 18    | PASS          | Deletion cascade drops MariaDB tables, not just API references        | **dbQuery**, information_schema     |
+| `13-rate-limiting.yaml`          | 8     | PASS          | Abuse protection with env override, per-route rate isolation          | **repeat** with until, env override |
+| `14-pagination-integrity.yaml`   | 13    | PASS          | Seed 25 docs with `for` loop, verify totals, cross-ref with MariaDB   | **for** loop, **dbQuery**           |
+| `15-file-content-integrity.yaml` | 16    | PASS          | File upload/download roundtrip, empty files, duplicate filenames      | **formData**                        |
 
-Both pass. The permission system is solid — all authorization boundaries held.
+15 definitions total. 14 pass, 1 expected failure (Finding 6). 289 total test steps across authorization, isolation, input validation, session security, file storage, database consistency, race conditions, console log auditing, cascade verification, rate limiting, pagination, and file integrity.
 
----
-
-## Findings
-
-### Finding 1: User creation returns 500 but user IS created in the database
-
-**Confidence: 90/100**
-
-When creating a user via `POST /v1/account` (or `POST /v1/users`) on a non-console project, the API returns 500. However, the user is actually persisted in MariaDB — they can log in immediately after with valid credentials.
-
-The 500 comes from `Queue/Connection/Redis.php:59` — Appwrite tries to LPUSH to `utopia-queue.queue.v1-functions` (to trigger function events) and the Redis operation fails. The exception is uncaught and propagates as a server error.
-
-**Evidence:**
-
-- `02-permission-escalation.yaml` steps 6-9: Register User A and B (both return 500), then both log in successfully (201) and operate normally for the rest of the test.
-- The error trace in the 500 response body points to `Queue/Connection/Redis.php`, not user creation logic.
-
-**Why this is a real bug regardless of Redis config:**
-
-- The user IS committed to MariaDB before the queue enqueue runs
-- The API returns 500, making clients believe creation failed
-- Attribute creation (`POST /v1/databases/.../attributes/string`) uses the same queue mechanism but returns 202 regardless of enqueue success — different codepaths handle the same queue failure differently
-
-**Severity: High** — data inconsistency between what the API reports and what actually happened.
+All 5 findings below appear unreported on GitHub as of June 2026. The closest existing issues are [#9340](https://github.com/appwrite/appwrite/issues/9340) (docs request for `_APP_OPTIONS_ROUTER_PROTECTION`, doesn't report it as non-functional), [#11675](https://github.com/appwrite/appwrite/issues/11675) (related `_APP_DOMAIN_FUNCTIONS` bug but a different defect — typo in loop variable, not the `explode(null)` deprecation), and [#2681](https://github.com/appwrite/appwrite/issues/2681) (2022, `size` enforcement returning 500 in v0.12 — different from the inconsistent enforcement found here). Findings 4 and 5 have no prior discussion.
 
 ---
 
-### Finding 2: Function event queue uses a Redis connection without AUTH
+## Confirmed Findings
 
-**Confidence: 55/100**
-
-With `_APP_REDIS_PASS=dokkimi` set, operations that use `_APP_CONNECTIONS_QUEUE` (explicitly set to `redis://:dokkimi@appwrite-redis:6379`) work for some subsystems (database worker queue, cache) but fail with NOAUTH for the function event trigger.
-
-This suggests the function event enqueue path constructs its Redis connection from `_APP_REDIS_HOST` + `_APP_REDIS_PORT` without including `_APP_REDIS_PASS`, bypassing the explicit connection DSN.
-
-**Caveat:** This could also be a Dokkimi db-proxy issue (see Dokkimi section below). Verification requires testing with direct Redis (no proxy) to isolate.
-
-**Severity: Medium** — only affects password-protected Redis, which is the recommended production config.
-
----
-
-### Finding 3: `_APP_OPTIONS_ROUTER_PROTECTION=disabled` has no effect
+### Finding 1: `_APP_OPTIONS_ROUTER_PROTECTION=disabled` has no effect
 
 **Confidence: 85/100**
 
@@ -66,128 +44,153 @@ Router protection is enabled, only the configured domain is allowed.
 Disable using _APP_OPTIONS_ROUTER_PROTECTION=disabled.
 ```
 
-The error message references the env var, but the code never checks it.
+The error message references the env var, but the code may never check it.
 
 **Evidence:** Setting `_APP_OPTIONS_ROUTER_PROTECTION=disabled` still yielded 401 until we added `_APP_DOMAIN: appwrite` and `_APP_CONSOLE_DOMAIN: appwrite` to match the container hostname.
 
 **Severity: Low** — easy workaround (set `_APP_DOMAIN`), but the error message is actively misleading.
 
----
-
-### Finding 4: Async attribute worker never processes queued jobs
-
-**Confidence: 30/100**
-
-When running `php app/worker.php databases` alongside the HTTP server, the worker connects to Redis, polls with BRPOP on `utopia-queue.queue.database_db_main`, but never picks up enqueued attribute creation jobs. Attributes stay in "processing" status indefinitely.
-
-After 90+ seconds of polling with 1-second delays, the attribute never transitioned to "available". We worked around this entirely by using direct MariaDB queries (`ALTER TABLE` + `UPDATE _metadata`).
-
-**Caveat:** This is most likely NOT an Appwrite bug. Probable causes:
-
-- The API's enqueue might silently fail (returning 202 anyway), so there's nothing to pick up
-- Queue key mismatch between what the API LPUSHes and what the worker BRPOPs
-- The Dokkimi environment missing some config the worker needs
-
-**Severity: N/A** — low confidence this is an Appwrite bug.
+**Verification:** `grep -r 'ROUTER_PROTECTION'` in the Appwrite source. If it only appears in error messages and never in conditionals, confirmed dead code.
 
 ---
 
-### Finding 5: `explode()` deprecation warning on null `_APP_DOMAIN_FUNCTIONS`
+### Finding 2: `explode()` deprecation warning on null `_APP_DOMAIN_FUNCTIONS`
 
-**Confidence: 70/100**
+**Confidence: 95/100** (upgraded from 70 — now confirmed via console log capture)
 
-PHP 8.1+ warns when `explode()` receives `null` instead of a string. Appwrite calls `explode(',', getenv('_APP_DOMAIN_FUNCTIONS'))` and `getenv()` returns `false`/`null` when the var is unset.
+PHP 8.1+ warns when `explode()` receives `null` instead of a string. Appwrite calls `explode(',', getenv('_APP_DOMAIN_FUNCTIONS'))` in `/usr/src/code/app/http.php` line 117, and `getenv()` returns `false`/`null` when the var is unset.
 
-**Evidence:** Observed in container logs during the previous session.
+**Evidence:** `11-console-log-audit.yaml` — the `$.consoleLogs` match block detected `Deprecated: explode(): Passing null to parameter #2 ($string) of type string is deprecated in /usr/src/code/app/http.php on line 117`. This warning fires on **every single HTTP request** to Appwrite, not just specific endpoints. A standard CRUD cycle (15 steps) produced 10+ deprecation log entries.
 
-**Severity: Negligible** — deprecation warning, non-fatal, no functional impact.
+**How Dokkimi caught it:** This bug is invisible to HTTP-only testing — every API response returns the correct status code and body. Only by inspecting the server's console output via `$.consoleLogs` match blocks can this be detected. Traditional API test frameworks would never surface it.
 
----
-
-## Verification Strategy
-
-### To verify Finding 1 (500 but user created):
-
-Run Appwrite in standard docker-compose (no Dokkimi) with ALL workers running. If user creation returns 201, the 500 is caused by the function queue failure. Then:
-
-1. Stop the `appwrite-worker-functions` container
-2. Create a user via `POST /v1/account`
-3. If it returns 500 but the user exists in MariaDB, the inconsistent error handling is confirmed
-4. Compare the codepath: check if `POST /v1/databases/.../attributes/string` still returns 202 with the functions worker down — if yes, that confirms the inconsistency
-
-### To verify Finding 2 (REDIS_PASS ignored):
-
-1. Run Appwrite with docker-compose using password-protected Redis
-2. Set `_APP_REDIS_PASS` but do NOT set `_APP_CONNECTIONS_QUEUE`
-3. Create a user on a non-console project
-4. If it returns 500 with NOAUTH in the trace, the env var is being ignored for the function queue
-5. Then set `_APP_CONNECTIONS_QUEUE` explicitly and retry — if it works, confirmed
-6. Read Appwrite source: grep for `_APP_REDIS_PASS` and trace where it's used vs where `_APP_CONNECTIONS_QUEUE` is used
-
-### To verify Finding 3 (router protection dead code):
-
-1. `grep -r 'ROUTER_PROTECTION' .` in the Appwrite source
-2. Check if any PHP code reads `_APP_OPTIONS_ROUTER_PROTECTION`
-3. If it's only in error messages and never in conditionals, confirmed
-4. Check the main branch — this may already be fixed post-1.9.0
-
-### To verify Finding 4 (worker doesn't process):
-
-This is most likely a test environment issue. To verify:
-
-1. Run standard Appwrite docker-compose (all containers)
-2. Create an attribute via API
-3. Check if it transitions from "processing" to "available" within 30 seconds
-4. If yes, this is NOT an Appwrite bug — it's specific to our isolated environment
-
-### To verify Finding 5 (explode deprecation):
-
-1. `grep -rn 'explode.*DOMAIN_FUNCTIONS' .` in Appwrite source
-2. Check if `_APP_DOMAIN_FUNCTIONS` has a default value or null guard
-3. Run with `_APP_DOMAIN_FUNCTIONS` unset and check PHP error logs
+**Severity: Low** (upgraded from Negligible) — while non-fatal, a deprecation warning on every request means: (1) log noise that can mask real errors in production, (2) will become a fatal error in a future PHP version, and (3) indicates missing input validation on env vars at startup.
 
 ---
 
-## Dokkimi Issues
+### Finding 3: String attribute `size` enforcement is inconsistent
 
-### Issue 1: No multi-process support for SERVICE items (Feature Request)
+**Confidence: 80/100** (adjusted — behavior varies by size)
 
-**Impact: High — blocked a major test scenario**
+Appwrite's enforcement of string attribute `size` limits is inconsistent:
 
-Appwrite (and many microservice platforms) requires multiple processes: an HTTP server and background workers. Dokkimi's SERVICE item only supports a single `command`. This forced us to bypass Appwrite's async attribute worker entirely and manually ALTER TABLE + UPDATE metadata via dbQuery.
+- `size: 256` — server **correctly rejects** oversized content with 400 (`09-api-db-consistency.yaml` step 19: 300-char content → 400, 256-char content → 201)
+- `size: 4096` — server **accepts** content exceeding the limit with 201 (`03-input-validation.yaml` step 19: ~4500 chars → 201)
 
-**Current workarounds:**
+This suggests the validation threshold may be hard-coded rather than derived from the attribute's declared size, or there's a boundary at which validation is skipped.
 
-- `mountFiles` + custom entrypoint shell script that runs both processes (brittle: no independent health checks, no per-process logging, crashes in the background process are invisible)
-- Split into two SERVICE items pointing at the same image with different commands (each gets its own interceptor sidecar, which may not be desired)
+**Evidence:** Two definitions tested different size limits with different results. The 256 limit is enforced; the 4096 limit is not.
 
-**Suggested approach:** A `companions` field on SERVICE items — additional containers sharing the same network namespace but with their own command, without an interceptor sidecar:
+**Severity: Low** — the larger size limit failure means MariaDB is the last line of defense. Depending on `sql_mode`, data could be silently truncated or produce an opaque 500.
 
-```yaml
-type: SERVICE
-name: appwrite
-image: appwrite/appwrite:latest
-port: 80
-command: ['php', 'app/http.php']
-companions:
-  - name: appwrite-worker-databases
-    command: ['php', 'app/worker.php', 'databases']
-  - name: appwrite-worker-functions
-    command: ['php', 'app/worker.php', 'functions']
+---
+
+### Finding 4: `/v1/health` endpoint ignores API key scopes
+
+**Confidence: 95/100**
+
+The `/v1/health` endpoint returns 200 for any valid API key, regardless of its scopes. A key with only `users.read` scope can access the health endpoint even without `health.read` scope.
+
+**Evidence:** `04-api-key-scopes.yaml` step 14 — GET `/v1/health` with a `users.read`-only key returns 200.
+
+**Severity: Informational** — likely intentional design (health checks shouldn't require specific scopes), but contradicts the scope model. If `health.read` scope exists as a grantable scope, it should actually be enforced.
+
+---
+
+### Finding 5: Inconsistent status codes for unauthorized file access (GET=404, DELETE=401)
+
+**Confidence: 95/100**
+
+When a user tries to access another user's private file, Appwrite returns different status codes depending on the HTTP method:
+
+- **GET** (view metadata, download) → 404 (hides file existence)
+- **DELETE** → 401 (reveals file exists but user lacks permission)
+
+This inconsistency leaks information: an attacker can probe file IDs with DELETE requests to distinguish "file exists but I can't access it" (401) from "file doesn't exist" (404).
+
+**Evidence:** `08-file-storage.yaml` steps 14-16 — Bob's GET requests for Alice's file return 404, but Bob's DELETE returns 401.
+
+**Severity: Low** — information disclosure only (file ID existence), no data access. But the inconsistency undermines the 404-based privacy design used for GET.
+
+---
+
+### Finding 6: PHP deprecation warning on every HTTP request (console log audit)
+
+**Confidence: 95/100**
+
+This is the same underlying bug as Finding 2, but elevated to its own finding because of the scope and detection method. The `explode()` deprecation warning in `app/http.php:117` fires on **every single HTTP request** to Appwrite, regardless of endpoint, method, or authentication state.
+
+**Evidence:** `11-console-log-audit.yaml` performs a standard CRUD cycle (register admin, create session, create project, create database/collection/attribute, create/update/delete document, register user) — 14 API calls total. The `$.consoleLogs` match block for `Deprecated` found matches, confirming the warning fires during normal operations.
+
+Console log output (representative sample):
+
+```
+Deprecated: explode(): Passing null to parameter #2 ($string) of type
+string is deprecated in /usr/src/code/app/http.php on line 117
 ```
 
-This mirrors how Dokkimi already deploys db-proxy and interceptor sidecars (shared network namespace via `networkMode: container:...`), so the infrastructure pattern already exists.
+**Why this matters for the blog:** This finding demonstrates Dokkimi's unique value. Every single API response in this test returned the correct HTTP status code — a traditional test framework would report 100% pass. Only by capturing and asserting on server console output can this class of bug be detected. The `$.consoleLogs` match block with `count: 0` acts as a catch-all safety net for hidden server-side issues.
 
-### Issue 2: Can't verify Redis proxy AUTH behavior (Investigation Needed)
+**Severity: Low** — non-fatal, but fires on every request. Will become a fatal error in a future PHP version.
 
-**Impact: Medium — unclear if Finding 2 is an Appwrite bug or a Dokkimi bug**
+---
 
-The Redis db-proxy correctly forwards AUTH commands (confirmed by code review). Each client connection gets its own upstream connection. AUTH is forwarded as raw RESP bytes.
+## Negative Findings (New Definitions — Appwrite Passed)
 
-However, we observed NOAUTH errors through the proxy that might not occur with direct Redis. To rule out a proxy issue:
+These areas were tested with Dokkimi's advanced capabilities and Appwrite's behavior held:
 
-1. Check if the RESP parser handles RESP3 protocol (HELLO command) correctly in all cases — Appwrite may negotiate RESP3, and the proxy's parser might not handle all RESP3 value types
-2. Check if concurrent connections cause any race conditions in the pending command channel
-3. Add a test: connect to the Redis db-proxy, AUTH, then LPUSH — verify it works. Then do 10 concurrent connections with AUTH + LPUSH and verify all succeed.
+- **API-DB consistency** (`09`) — document lifecycle (create/read/delete) produces matching state in both the API and MariaDB. Row counts, content values, and column existence all align. Oversized content (300 chars for a 256-limit attribute) is correctly rejected at the API layer.
+- **Race conditions** (`10`) — concurrent document creation with the same ID produces exactly one winner; no duplicates in MariaDB. Concurrent user registration with the same email produces exactly one user. Concurrent updates to the same document produce a consistent final state that matches in both API and DB.
+- **Deletion cascades at DB level** (`12`) — deleting a database via the API actually drops the underlying MariaDB tables (verified by counting `information_schema.tables` before and after). Not just API-level soft deletion.
+- **Rate limiting** (`13`) — with `_APP_OPTIONS_ABUSE=enabled`, rapid account creation triggers 429. Rate limiting is per-route: a rate-limited endpoint doesn't block other endpoints.
+- **Pagination totals** (`14`) — seeding 25 documents with a `for` loop produces an API total of 25, which matches the MariaDB row count via dbQuery.
+- **File upload integrity** (`15`) — formData file uploads round-trip correctly. Empty files are handled. JSON files preserve content. Duplicate filenames create independent files with different IDs.
 
-If this is a proxy issue, it could affect any application that uses password-protected Redis with concurrent connections through Dokkimi.
+---
+
+## Negative Findings (Original Definitions — Appwrite Passed)
+
+These areas were tested and Appwrite's security held:
+
+- **SQL injection** — DROP TABLE, OR 1=1, UNION SELECT payloads in document fields are stored and returned as literal strings. No SQL execution.
+- **XSS** — `<script>` and `<img onerror>` payloads stored and returned verbatim. No server-side rendering or interpretation.
+- **Document ID injection** — SQL injection in document IDs returns 400 (invalid ID format).
+- **API key scope enforcement** — `users.read` key cannot create/delete users or access databases. `databases.read+write` key cannot access users or collections.
+- **Cross-project isolation** — Project B's API key cannot access Project A's databases, documents, or users. Same resource IDs in different projects don't collide.
+- **Session revocation** — deleted sessions are immediately rejected (401). No token replay possible.
+- **Concurrent sessions** — deleting one session doesn't affect others. Bulk delete (`DELETE /sessions`) invalidates all sessions.
+- **Cross-project session isolation** — a session created in Project 1 cannot access Project 2, even for the same email/password.
+- **Permission escalation** — regular users cannot access other users' private documents. Public documents are correctly accessible.
+- **Duplicate resource creation** — duplicate database IDs, collection IDs, and user emails all correctly return 409 Conflict.
+- **Deletion cascades** — deleting a database cascades to its collections and documents. Deleting a collection cascades to its documents but leaves sibling collections intact.
+- **File permission enforcement** — private files are inaccessible to other users (404 on GET). Public files are readable by all but only deletable by the owner. File-level permissions override bucket-level permissions when `fileSecurity: true`.
+- **File extension enforcement** — uploading a file with a disallowed extension (`.exe` when only `.txt`, `.json`, `.png` are allowed) returns 400.
+
+---
+
+## Retracted Findings
+
+The following findings from the initial report turned out to be Dokkimi bugs, not Appwrite bugs. They were resolved by implementing two Dokkimi features: `noAuth: true` for DATABASE items and the WORKER item type.
+
+### [Retracted] User creation returns 500 but user IS created
+
+**Root cause:** Dokkimi forced `--requirepass dokkimi` on Redis even though Appwrite connects without auth by default. The function event enqueue failed with NOAUTH, causing an uncaught exception that returned 500. The user was already committed to MariaDB before the enqueue, so the user existed despite the error response.
+
+**Resolution:** Added `noAuth: true` to the Redis DATABASE item. With auth-free Redis, user creation returns 201 cleanly.
+
+### [Retracted] Function event queue uses Redis connection without AUTH
+
+**Root cause:** Same as above. Appwrite was correctly connecting to Redis without auth. Dokkimi was the one forcing a password that Appwrite didn't know about.
+
+### [Retracted] Async attribute worker never processes queued jobs
+
+**Root cause:** The worker wasn't running at all — Dokkimi had no WORKER item type, so only the HTTP server was deployed. Without the worker, attributes stayed in "processing" indefinitely. We worked around it with direct MariaDB queries.
+
+**Resolution:** Implemented the WORKER item type in Dokkimi. The database worker (`worker-databases`) now runs as a separate container and processes attributes within seconds.
+
+---
+
+## Areas Not Yet Tested
+
+- **Realtime / WebSocket** — subscription events, permission-scoped delivery. Blocked: Dokkimi has no WebSocket action type for persistent bidirectional connections.
+- **Function execution** — code injection via function deployments. Blocked: the Appwrite executor needs Docker socket access (`/var/run/docker.sock`) to spawn runtime containers, and those containers need to join the Dokkimi network. Both are outside Dokkimi's managed network model.

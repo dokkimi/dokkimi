@@ -1,0 +1,602 @@
+name: appwrite-edge-cases
+description: >
+  Test edge cases: duplicate resource creation, deletion cascades (deleting a
+  database cascades to collections and documents), and concurrent writes.
+config:
+  timeoutSeconds: 600
+items:
+  - $ref: ../shared/appwrite-mariadb.yaml
+  - $ref: ../shared/appwrite-redis.yaml
+  - $ref: ../shared/appwrite-worker-db.yaml
+  - $ref: ../shared/appwrite-api.yaml
+variables:
+  adminEmail: admin@dokkimi.test
+  adminPassword: TestPass123!
+  projectId: edge-test
+tests:
+  - name: Edge cases
+    steps:
+      # --- Setup ---
+      - name: Register admin
+        action:
+          type: httpRequest
+          method: POST
+          url: appwrite/v1/account
+          headers:
+            Content-Type: application/json
+            X-Appwrite-Project: console
+          body:
+            userId: 'unique()'
+            email: '{{adminEmail}}'
+            password: '{{adminPassword}}'
+            name: Admin
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 201
+
+      - name: Admin session
+        action:
+          type: httpRequest
+          method: POST
+          url: appwrite/v1/account/sessions/email
+          headers:
+            Content-Type: application/json
+            X-Appwrite-Project: console
+          body:
+            email: '{{adminEmail}}'
+            password: '{{adminPassword}}'
+        extract:
+          fallbackCookies: $.response.headers.x-fallback-cookies
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 201
+
+      - name: Create team
+        action:
+          type: httpRequest
+          method: POST
+          url: appwrite/v1/teams
+          headers:
+            Content-Type: application/json
+            X-Appwrite-Project: console
+            X-Fallback-Cookies: '{{fallbackCookies}}'
+          body:
+            teamId: 'unique()'
+            name: Edge Test Org
+        extract:
+          teamId: $.response.body.$id
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 201
+
+      - name: Create project
+        action:
+          type: httpRequest
+          method: POST
+          url: appwrite/v1/projects
+          headers:
+            Content-Type: application/json
+            X-Appwrite-Project: console
+            X-Fallback-Cookies: '{{fallbackCookies}}'
+          body:
+            projectId: '{{projectId}}'
+            name: Edge Test
+            teamId: '{{teamId}}'
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 201
+
+      - name: Create API key
+        action:
+          type: httpRequest
+          method: POST
+          url: appwrite/v1/projects/{{projectId}}/keys
+          headers:
+            Content-Type: application/json
+            X-Appwrite-Project: console
+            X-Fallback-Cookies: '{{fallbackCookies}}'
+          body:
+            name: Full Key
+            scopes:
+              - databases.read
+              - databases.write
+              - collections.read
+              - collections.write
+              - documents.read
+              - documents.write
+              - users.read
+              - users.write
+        extract:
+          apiKey: $.response.body.secret
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 201
+
+      # --- Test 1: Duplicate resource creation ---
+
+      - name: Create database
+        action:
+          type: httpRequest
+          method: POST
+          url: appwrite/v1/databases
+          headers:
+            Content-Type: application/json
+            X-Appwrite-Project: '{{projectId}}'
+            X-Appwrite-Key: '{{apiKey}}'
+          body:
+            databaseId: dup-test-db
+            name: Dup Test DB
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 201
+
+      - name: Duplicate database ID is rejected
+        action:
+          type: httpRequest
+          method: POST
+          url: appwrite/v1/databases
+          headers:
+            Content-Type: application/json
+            X-Appwrite-Project: '{{projectId}}'
+            X-Appwrite-Key: '{{apiKey}}'
+          body:
+            databaseId: dup-test-db
+            name: Duplicate
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 409
+
+      - name: Create collection
+        action:
+          type: httpRequest
+          method: POST
+          url: appwrite/v1/databases/dup-test-db/collections
+          headers:
+            Content-Type: application/json
+            X-Appwrite-Project: '{{projectId}}'
+            X-Appwrite-Key: '{{apiKey}}'
+          body:
+            collectionId: dup-coll
+            name: Dup Collection
+            permissions:
+              - 'read("any")'
+              - 'create("any")'
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 201
+
+      - name: Duplicate collection ID is rejected
+        action:
+          type: httpRequest
+          method: POST
+          url: appwrite/v1/databases/dup-test-db/collections
+          headers:
+            Content-Type: application/json
+            X-Appwrite-Project: '{{projectId}}'
+            X-Appwrite-Key: '{{apiKey}}'
+          body:
+            collectionId: dup-coll
+            name: Duplicate Collection
+            permissions:
+              - 'read("any")'
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 409
+
+      - name: Duplicate user email is rejected
+        action:
+          type: httpRequest
+          method: POST
+          url: appwrite/v1/account
+          headers:
+            Content-Type: application/json
+            X-Appwrite-Project: '{{projectId}}'
+          body:
+            userId: 'unique()'
+            email: '{{adminEmail}}'
+            password: '{{adminPassword}}'
+            name: Admin
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 201
+
+      - name: Same email again is rejected
+        action:
+          type: httpRequest
+          method: POST
+          url: appwrite/v1/account
+          headers:
+            Content-Type: application/json
+            X-Appwrite-Project: '{{projectId}}'
+          body:
+            userId: 'unique()'
+            email: '{{adminEmail}}'
+            password: '{{adminPassword}}'
+            name: Admin Dup
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 409
+
+      # --- Test 2: Deletion cascades ---
+
+      - name: Create cascade database
+        action:
+          type: httpRequest
+          method: POST
+          url: appwrite/v1/databases
+          headers:
+            Content-Type: application/json
+            X-Appwrite-Project: '{{projectId}}'
+            X-Appwrite-Key: '{{apiKey}}'
+          body:
+            databaseId: cascade-db
+            name: Cascade DB
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 201
+
+      - name: Create cascade collection
+        action:
+          type: httpRequest
+          method: POST
+          url: appwrite/v1/databases/cascade-db/collections
+          headers:
+            Content-Type: application/json
+            X-Appwrite-Project: '{{projectId}}'
+            X-Appwrite-Key: '{{apiKey}}'
+          body:
+            collectionId: cascade-coll
+            name: Cascade Collection
+            permissions:
+              - 'read("any")'
+              - 'create("any")'
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 201
+
+      - name: Create cascade attribute
+        action:
+          type: httpRequest
+          method: POST
+          url: appwrite/v1/databases/cascade-db/collections/cascade-coll/attributes/string
+          headers:
+            Content-Type: application/json
+            X-Appwrite-Project: '{{projectId}}'
+            X-Appwrite-Key: '{{apiKey}}'
+          body:
+            key: value
+            size: 256
+            required: false
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [201, 202]
+
+      - name: Wait for cascade attribute
+        repeat:
+          count: 15
+          as: attempt
+          delayMs: 2000
+          until:
+            - path: $.response.body.status
+              operator: eq
+              value: available
+        action:
+          type: httpRequest
+          method: GET
+          url: appwrite/v1/databases/cascade-db/collections/cascade-coll/attributes/value
+          headers:
+            X-Appwrite-Project: '{{projectId}}'
+            X-Appwrite-Key: '{{apiKey}}'
+
+      - name: Create document in cascade collection
+        action:
+          type: httpRequest
+          method: POST
+          url: appwrite/v1/databases/cascade-db/collections/cascade-coll/documents
+          headers:
+            Content-Type: application/json
+            X-Appwrite-Project: '{{projectId}}'
+            X-Appwrite-Key: '{{apiKey}}'
+          body:
+            documentId: cascade-doc-1
+            data:
+              value: 'will be cascaded'
+            permissions:
+              - 'read("any")'
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 201
+
+      - name: Verify document exists before cascade
+        action:
+          type: httpRequest
+          method: GET
+          url: appwrite/v1/databases/cascade-db/collections/cascade-coll/documents/cascade-doc-1
+          headers:
+            X-Appwrite-Project: '{{projectId}}'
+            X-Appwrite-Key: '{{apiKey}}'
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+              - path: $.response.body.value
+                operator: eq
+                value: will be cascaded
+
+      - name: Delete the entire database (should cascade)
+        action:
+          type: httpRequest
+          method: DELETE
+          url: appwrite/v1/databases/cascade-db
+          headers:
+            X-Appwrite-Project: '{{projectId}}'
+            X-Appwrite-Key: '{{apiKey}}'
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 204
+
+      - name: Database is gone
+        action:
+          type: httpRequest
+          method: GET
+          url: appwrite/v1/databases/cascade-db
+          headers:
+            X-Appwrite-Project: '{{projectId}}'
+            X-Appwrite-Key: '{{apiKey}}'
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 404
+
+      - name: Collection is gone (cascaded)
+        action:
+          type: httpRequest
+          method: GET
+          url: appwrite/v1/databases/cascade-db/collections/cascade-coll
+          headers:
+            X-Appwrite-Project: '{{projectId}}'
+            X-Appwrite-Key: '{{apiKey}}'
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 404
+
+      - name: Document is gone (cascaded)
+        action:
+          type: httpRequest
+          method: GET
+          url: appwrite/v1/databases/cascade-db/collections/cascade-coll/documents/cascade-doc-1
+          headers:
+            X-Appwrite-Project: '{{projectId}}'
+            X-Appwrite-Key: '{{apiKey}}'
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 404
+
+      # --- Test 3: Delete collection cascades documents ---
+
+      - name: Create collection-cascade database
+        action:
+          type: httpRequest
+          method: POST
+          url: appwrite/v1/databases
+          headers:
+            Content-Type: application/json
+            X-Appwrite-Project: '{{projectId}}'
+            X-Appwrite-Key: '{{apiKey}}'
+          body:
+            databaseId: coll-cascade-db
+            name: Coll Cascade DB
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 201
+
+      - name: Create collection A
+        action:
+          type: httpRequest
+          method: POST
+          url: appwrite/v1/databases/coll-cascade-db/collections
+          headers:
+            Content-Type: application/json
+            X-Appwrite-Project: '{{projectId}}'
+            X-Appwrite-Key: '{{apiKey}}'
+          body:
+            collectionId: coll-a
+            name: Collection A
+            permissions:
+              - 'read("any")'
+              - 'create("any")'
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 201
+
+      - name: Create collection B
+        action:
+          type: httpRequest
+          method: POST
+          url: appwrite/v1/databases/coll-cascade-db/collections
+          headers:
+            Content-Type: application/json
+            X-Appwrite-Project: '{{projectId}}'
+            X-Appwrite-Key: '{{apiKey}}'
+          body:
+            collectionId: coll-b
+            name: Collection B
+            permissions:
+              - 'read("any")'
+              - 'create("any")'
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 201
+
+      - name: Create attribute in collection A
+        action:
+          type: httpRequest
+          method: POST
+          url: appwrite/v1/databases/coll-cascade-db/collections/coll-a/attributes/string
+          headers:
+            Content-Type: application/json
+            X-Appwrite-Project: '{{projectId}}'
+            X-Appwrite-Key: '{{apiKey}}'
+          body:
+            key: data
+            size: 256
+            required: false
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [201, 202]
+
+      - name: Wait for attribute in collection A
+        repeat:
+          count: 15
+          as: attempt
+          delayMs: 2000
+          until:
+            - path: $.response.body.status
+              operator: eq
+              value: available
+        action:
+          type: httpRequest
+          method: GET
+          url: appwrite/v1/databases/coll-cascade-db/collections/coll-a/attributes/data
+          headers:
+            X-Appwrite-Project: '{{projectId}}'
+            X-Appwrite-Key: '{{apiKey}}'
+
+      - name: Create doc in collection A
+        action:
+          type: httpRequest
+          method: POST
+          url: appwrite/v1/databases/coll-cascade-db/collections/coll-a/documents
+          headers:
+            Content-Type: application/json
+            X-Appwrite-Project: '{{projectId}}'
+            X-Appwrite-Key: '{{apiKey}}'
+          body:
+            documentId: doc-in-a
+            data:
+              data: 'belongs to A'
+            permissions:
+              - 'read("any")'
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 201
+
+      - name: Delete collection A only
+        action:
+          type: httpRequest
+          method: DELETE
+          url: appwrite/v1/databases/coll-cascade-db/collections/coll-a
+          headers:
+            X-Appwrite-Project: '{{projectId}}'
+            X-Appwrite-Key: '{{apiKey}}'
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 204
+
+      - name: Collection A doc is gone
+        action:
+          type: httpRequest
+          method: GET
+          url: appwrite/v1/databases/coll-cascade-db/collections/coll-a/documents/doc-in-a
+          headers:
+            X-Appwrite-Project: '{{projectId}}'
+            X-Appwrite-Key: '{{apiKey}}'
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 404
+
+      - name: Collection B still exists (sibling not affected)
+        action:
+          type: httpRequest
+          method: GET
+          url: appwrite/v1/databases/coll-cascade-db/collections/coll-b
+          headers:
+            X-Appwrite-Project: '{{projectId}}'
+            X-Appwrite-Key: '{{apiKey}}'
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+
+      - name: Database still exists after collection delete
+        action:
+          type: httpRequest
+          method: GET
+          url: appwrite/v1/databases/coll-cascade-db
+          headers:
+            X-Appwrite-Project: '{{projectId}}'
+            X-Appwrite-Key: '{{apiKey}}'
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+
+      # --- Test 4: Original database unaffected by cascade tests ---
+
+      - name: Original dup-test-db still exists
+        action:
+          type: httpRequest
+          method: GET
+          url: appwrite/v1/databases/dup-test-db
+          headers:
+            X-Appwrite-Project: '{{projectId}}'
+            X-Appwrite-Key: '{{apiKey}}'
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200

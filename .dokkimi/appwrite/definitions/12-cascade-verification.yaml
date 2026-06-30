@@ -1,7 +1,8 @@
-name: appwrite-smoke-test
+name: appwrite-cascade-verification
 description: >
-  Deploy Appwrite with MariaDB + Redis + database worker. Bootstrap admin account,
-  create a project and API key, then verify database CRUD and user management.
+  Verify that Appwrite's deletion cascades actually drop MariaDB tables
+  and rows, not just API-level references. Uses dbQuery to inspect
+  information_schema before and after cascading deletes.
 config:
   timeoutSeconds: 600
 items:
@@ -12,11 +13,12 @@ items:
 variables:
   adminEmail: admin@dokkimi.test
   adminPassword: TestPass123!
-  projectId: dokkimi-test
+  projectId: cascade-test
 tests:
-  - name: Bootstrap and verify CRUD
+  - name: Deletion cascade verification at DB level
     steps:
-      - name: Register admin account
+      # --- Setup ---
+      - name: Register admin
         action:
           type: httpRequest
           method: POST
@@ -29,15 +31,13 @@ tests:
             email: '{{adminEmail}}'
             password: '{{adminPassword}}'
             name: Admin
-        extract:
-          adminId: $.response.body.$id
         assertions:
           - assertions:
               - path: $.response.status
                 operator: eq
                 value: 201
 
-      - name: Create admin session
+      - name: Admin session
         action:
           type: httpRequest
           method: POST
@@ -67,7 +67,7 @@ tests:
             X-Fallback-Cookies: '{{fallbackCookies}}'
           body:
             teamId: 'unique()'
-            name: Dokkimi Org
+            name: Cascade Org
         extract:
           teamId: $.response.body.$id
         assertions:
@@ -87,7 +87,7 @@ tests:
             X-Fallback-Cookies: '{{fallbackCookies}}'
           body:
             projectId: '{{projectId}}'
-            name: Dokkimi Test Project
+            name: Cascade Test
             teamId: '{{teamId}}'
         assertions:
           - assertions:
@@ -105,17 +105,14 @@ tests:
             X-Appwrite-Project: console
             X-Fallback-Cookies: '{{fallbackCookies}}'
           body:
-            name: Test Key
+            name: Full Key
             scopes:
-              - users.read
-              - users.write
               - databases.read
               - databases.write
               - collections.read
               - collections.write
               - documents.read
               - documents.write
-              - health.read
         extract:
           apiKey: $.response.body.secret
         assertions:
@@ -124,19 +121,22 @@ tests:
                 operator: eq
                 value: 201
 
-      - name: Verify health endpoint
+      # --- Count tables before creating anything ---
+
+      - name: Count tables before
         action:
-          type: httpRequest
-          method: GET
-          url: appwrite/v1/health
-          headers:
-            X-Appwrite-Project: '{{projectId}}'
-            X-Appwrite-Key: '{{apiKey}}'
+          type: dbQuery
+          database: appwrite-mariadb
+          query: "SELECT COUNT(*) as cnt FROM information_schema.tables WHERE table_schema = 'appwrite'"
+        extract:
+          tablesBefore: $.response.data[0].cnt
         assertions:
           - assertions:
-              - path: $.response.status
+              - path: $.response.success
                 operator: eq
-                value: 200
+                value: true
+
+      # --- Create database with 2 collections and documents ---
 
       - name: Create database
         action:
@@ -148,47 +148,67 @@ tests:
             X-Appwrite-Project: '{{projectId}}'
             X-Appwrite-Key: '{{apiKey}}'
           body:
-            databaseId: test-db
-            name: Test Database
+            databaseId: cascade-db
+            name: Cascade DB
         assertions:
           - assertions:
               - path: $.response.status
                 operator: eq
                 value: 201
 
-      - name: Create collection
+      - name: Create collection A
         action:
           type: httpRequest
           method: POST
-          url: appwrite/v1/databases/test-db/collections
+          url: appwrite/v1/databases/cascade-db/collections
           headers:
             Content-Type: application/json
             X-Appwrite-Project: '{{projectId}}'
             X-Appwrite-Key: '{{apiKey}}'
           body:
-            collectionId: items
-            name: Items
-            documentSecurity: true
+            collectionId: col-a
+            name: Collection A
             permissions:
               - 'read("any")'
-              - 'create("users")'
+              - 'create("any")'
         assertions:
           - assertions:
               - path: $.response.status
                 operator: eq
                 value: 201
 
-      - name: Create attribute via API
+      - name: Create collection B
         action:
           type: httpRequest
           method: POST
-          url: appwrite/v1/databases/test-db/collections/items/attributes/string
+          url: appwrite/v1/databases/cascade-db/collections
           headers:
             Content-Type: application/json
             X-Appwrite-Project: '{{projectId}}'
             X-Appwrite-Key: '{{apiKey}}'
           body:
-            key: title
+            collectionId: col-b
+            name: Collection B
+            permissions:
+              - 'read("any")'
+              - 'create("any")'
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 201
+
+      - name: Create attribute in collection A
+        action:
+          type: httpRequest
+          method: POST
+          url: appwrite/v1/databases/cascade-db/collections/col-a/attributes/string
+          headers:
+            Content-Type: application/json
+            X-Appwrite-Project: '{{projectId}}'
+            X-Appwrite-Key: '{{apiKey}}'
+          body:
+            key: name
             size: 256
             required: false
         assertions:
@@ -197,7 +217,7 @@ tests:
                 operator: in
                 value: [201, 202]
 
-      - name: Wait for worker to process attribute
+      - name: Wait for attribute
         repeat:
           count: 15
           as: attempt
@@ -209,16 +229,16 @@ tests:
         action:
           type: httpRequest
           method: GET
-          url: appwrite/v1/databases/test-db/collections/items/attributes/title
+          url: appwrite/v1/databases/cascade-db/collections/col-a/attributes/name
           headers:
             X-Appwrite-Project: '{{projectId}}'
             X-Appwrite-Key: '{{apiKey}}'
 
-      - name: Create document
+      - name: Create document in collection A
         action:
           type: httpRequest
           method: POST
-          url: appwrite/v1/databases/test-db/collections/items/documents
+          url: appwrite/v1/databases/cascade-db/collections/col-a/documents
           headers:
             Content-Type: application/json
             X-Appwrite-Project: '{{projectId}}'
@@ -226,65 +246,37 @@ tests:
           body:
             documentId: 'unique()'
             data:
-              title: Test Document
+              name: 'Should be deleted by cascade'
             permissions:
               - 'read("any")'
-              - 'update("any")'
-              - 'delete("any")'
-        extract:
-          docId: $.response.body.$id
         assertions:
           - assertions:
               - path: $.response.status
                 operator: eq
                 value: 201
-              - path: $.response.body.title
-                operator: eq
-                value: Test Document
 
-      - name: Read document back
+      # --- Verify tables were created ---
+
+      - name: Count tables after creation
         action:
-          type: httpRequest
-          method: GET
-          url: appwrite/v1/databases/test-db/collections/items/documents/{{docId}}
-          headers:
-            X-Appwrite-Project: '{{projectId}}'
-            X-Appwrite-Key: '{{apiKey}}'
+          type: dbQuery
+          database: appwrite-mariadb
+          query: "SELECT COUNT(*) as cnt FROM information_schema.tables WHERE table_schema = 'appwrite'"
+        extract:
+          tablesAfterCreate: $.response.data[0].cnt
         assertions:
           - assertions:
-              - path: $.response.status
-                operator: eq
-                value: 200
-              - path: $.response.body.title
-                operator: eq
-                value: Test Document
+              - path: $.response.data[0].cnt
+                operator: gt
+                value: '{{tablesBefore}}'
 
-      - name: Update document
-        action:
-          type: httpRequest
-          method: PATCH
-          url: appwrite/v1/databases/test-db/collections/items/documents/{{docId}}
-          headers:
-            Content-Type: application/json
-            X-Appwrite-Project: '{{projectId}}'
-            X-Appwrite-Key: '{{apiKey}}'
-          body:
-            data:
-              title: Updated Title
-        assertions:
-          - assertions:
-              - path: $.response.status
-                operator: eq
-                value: 200
-              - path: $.response.body.title
-                operator: eq
-                value: Updated Title
+      # --- Delete the entire database via API ---
 
-      - name: Delete document
+      - name: Delete database (should cascade)
         action:
           type: httpRequest
           method: DELETE
-          url: appwrite/v1/databases/test-db/collections/items/documents/{{docId}}
+          url: appwrite/v1/databases/cascade-db
           headers:
             X-Appwrite-Project: '{{projectId}}'
             X-Appwrite-Key: '{{apiKey}}'
@@ -294,11 +286,18 @@ tests:
                 operator: eq
                 value: 204
 
-      - name: Verify document deleted
+      - name: Wait for cascade to propagate
+        action:
+          type: wait
+          durationMs: 3000
+
+      # --- Verify tables were dropped from MariaDB ---
+
+      - name: API confirms database is gone
         action:
           type: httpRequest
           method: GET
-          url: appwrite/v1/databases/test-db/collections/items/documents/{{docId}}
+          url: appwrite/v1/databases/cascade-db
           headers:
             X-Appwrite-Project: '{{projectId}}'
             X-Appwrite-Key: '{{apiKey}}'
@@ -307,3 +306,28 @@ tests:
               - path: $.response.status
                 operator: eq
                 value: 404
+
+      - name: API confirms collection A is gone
+        action:
+          type: httpRequest
+          method: GET
+          url: appwrite/v1/databases/cascade-db/collections/col-a
+          headers:
+            X-Appwrite-Project: '{{projectId}}'
+            X-Appwrite-Key: '{{apiKey}}'
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [404, 500]
+
+      - name: MariaDB tables decreased after cascade
+        action:
+          type: dbQuery
+          database: appwrite-mariadb
+          query: "SELECT COUNT(*) as cnt FROM information_schema.tables WHERE table_schema = 'appwrite'"
+        assertions:
+          - assertions:
+              - path: $.response.data[0].cnt
+                operator: lt
+                value: '{{tablesAfterCreate}}'

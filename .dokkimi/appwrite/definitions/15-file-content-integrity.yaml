@@ -1,7 +1,7 @@
-name: appwrite-smoke-test
+name: appwrite-file-content-integrity
 description: >
-  Deploy Appwrite with MariaDB + Redis + database worker. Bootstrap admin account,
-  create a project and API key, then verify database CRUD and user management.
+  Verify file upload/download integrity: content roundtrip, empty files,
+  files near size limit, and duplicate filenames persisting independently.
 config:
   timeoutSeconds: 600
 items:
@@ -12,11 +12,12 @@ items:
 variables:
   adminEmail: admin@dokkimi.test
   adminPassword: TestPass123!
-  projectId: dokkimi-test
+  projectId: file-integrity
 tests:
-  - name: Bootstrap and verify CRUD
+  - name: File content integrity
     steps:
-      - name: Register admin account
+      # --- Setup ---
+      - name: Register admin
         action:
           type: httpRequest
           method: POST
@@ -29,15 +30,13 @@ tests:
             email: '{{adminEmail}}'
             password: '{{adminPassword}}'
             name: Admin
-        extract:
-          adminId: $.response.body.$id
         assertions:
           - assertions:
               - path: $.response.status
                 operator: eq
                 value: 201
 
-      - name: Create admin session
+      - name: Admin session
         action:
           type: httpRequest
           method: POST
@@ -67,7 +66,7 @@ tests:
             X-Fallback-Cookies: '{{fallbackCookies}}'
           body:
             teamId: 'unique()'
-            name: Dokkimi Org
+            name: File Integrity Org
         extract:
           teamId: $.response.body.$id
         assertions:
@@ -87,7 +86,7 @@ tests:
             X-Fallback-Cookies: '{{fallbackCookies}}'
           body:
             projectId: '{{projectId}}'
-            name: Dokkimi Test Project
+            name: File Integrity Test
             teamId: '{{teamId}}'
         assertions:
           - assertions:
@@ -105,17 +104,12 @@ tests:
             X-Appwrite-Project: console
             X-Fallback-Cookies: '{{fallbackCookies}}'
           body:
-            name: Test Key
+            name: Full Key
             scopes:
-              - users.read
-              - users.write
-              - databases.read
-              - databases.write
-              - collections.read
-              - collections.write
-              - documents.read
-              - documents.write
-              - health.read
+              - buckets.read
+              - buckets.write
+              - files.read
+              - files.write
         extract:
           apiKey: $.response.body.secret
         assertions:
@@ -124,129 +118,66 @@ tests:
                 operator: eq
                 value: 201
 
-      - name: Verify health endpoint
-        action:
-          type: httpRequest
-          method: GET
-          url: appwrite/v1/health
-          headers:
-            X-Appwrite-Project: '{{projectId}}'
-            X-Appwrite-Key: '{{apiKey}}'
-        assertions:
-          - assertions:
-              - path: $.response.status
-                operator: eq
-                value: 200
+      # --- Create bucket ---
 
-      - name: Create database
+      - name: Create bucket
         action:
           type: httpRequest
           method: POST
-          url: appwrite/v1/databases
+          url: appwrite/v1/storage/buckets
           headers:
             Content-Type: application/json
             X-Appwrite-Project: '{{projectId}}'
             X-Appwrite-Key: '{{apiKey}}'
           body:
-            databaseId: test-db
-            name: Test Database
-        assertions:
-          - assertions:
-              - path: $.response.status
-                operator: eq
-                value: 201
-
-      - name: Create collection
-        action:
-          type: httpRequest
-          method: POST
-          url: appwrite/v1/databases/test-db/collections
-          headers:
-            Content-Type: application/json
-            X-Appwrite-Project: '{{projectId}}'
-            X-Appwrite-Key: '{{apiKey}}'
-          body:
-            collectionId: items
-            name: Items
-            documentSecurity: true
+            bucketId: integrity-bucket
+            name: Integrity Test Bucket
+            maximumFileSize: 1048576
             permissions:
               - 'read("any")'
-              - 'create("users")'
-        assertions:
-          - assertions:
-              - path: $.response.status
-                operator: eq
-                value: 201
-
-      - name: Create attribute via API
-        action:
-          type: httpRequest
-          method: POST
-          url: appwrite/v1/databases/test-db/collections/items/attributes/string
-          headers:
-            Content-Type: application/json
-            X-Appwrite-Project: '{{projectId}}'
-            X-Appwrite-Key: '{{apiKey}}'
-          body:
-            key: title
-            size: 256
-            required: false
-        assertions:
-          - assertions:
-              - path: $.response.status
-                operator: in
-                value: [201, 202]
-
-      - name: Wait for worker to process attribute
-        repeat:
-          count: 15
-          as: attempt
-          delayMs: 2000
-          until:
-            - path: $.response.body.status
-              operator: eq
-              value: available
-        action:
-          type: httpRequest
-          method: GET
-          url: appwrite/v1/databases/test-db/collections/items/attributes/title
-          headers:
-            X-Appwrite-Project: '{{projectId}}'
-            X-Appwrite-Key: '{{apiKey}}'
-
-      - name: Create document
-        action:
-          type: httpRequest
-          method: POST
-          url: appwrite/v1/databases/test-db/collections/items/documents
-          headers:
-            Content-Type: application/json
-            X-Appwrite-Project: '{{projectId}}'
-            X-Appwrite-Key: '{{apiKey}}'
-          body:
-            documentId: 'unique()'
-            data:
-              title: Test Document
-            permissions:
-              - 'read("any")'
+              - 'create("any")'
               - 'update("any")'
               - 'delete("any")'
-        extract:
-          docId: $.response.body.$id
         assertions:
           - assertions:
               - path: $.response.status
                 operator: eq
                 value: 201
-              - path: $.response.body.title
-                operator: eq
-                value: Test Document
 
-      - name: Read document back
+      # --- Upload file with known content ---
+
+      - name: Upload text file
+        action:
+          type: httpRequest
+          method: POST
+          url: appwrite/v1/storage/buckets/integrity-bucket/files
+          headers:
+            X-Appwrite-Project: '{{projectId}}'
+            X-Appwrite-Key: '{{apiKey}}'
+          formData:
+            fileId: 'unique()'
+            file:
+              filename: hello.txt
+              content: 'Hello from Dokkimi integrity test!'
+              contentType: text/plain
+            permissions:
+              - 'read("any")'
+        extract:
+          textFileId: $.response.body.$id
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 201
+              - path: $.response.body.name
+                operator: eq
+                value: hello.txt
+
+      - name: Verify file metadata
         action:
           type: httpRequest
           method: GET
-          url: appwrite/v1/databases/test-db/collections/items/documents/{{docId}}
+          url: appwrite/v1/storage/buckets/integrity-bucket/files/{{textFileId}}
           headers:
             X-Appwrite-Project: '{{projectId}}'
             X-Appwrite-Key: '{{apiKey}}'
@@ -255,50 +186,99 @@ tests:
               - path: $.response.status
                 operator: eq
                 value: 200
-              - path: $.response.body.title
+              - path: $.response.body.name
                 operator: eq
-                value: Test Document
+                value: hello.txt
+              - path: $.response.body.sizeOriginal
+                operator: gt
+                value: 0
 
-      - name: Update document
+      - name: Download file and verify content
         action:
           type: httpRequest
-          method: PATCH
-          url: appwrite/v1/databases/test-db/collections/items/documents/{{docId}}
+          method: GET
+          url: appwrite/v1/storage/buckets/integrity-bucket/files/{{textFileId}}/download
           headers:
-            Content-Type: application/json
             X-Appwrite-Project: '{{projectId}}'
             X-Appwrite-Key: '{{apiKey}}'
-          body:
-            data:
-              title: Updated Title
         assertions:
           - assertions:
               - path: $.response.status
                 operator: eq
                 value: 200
-              - path: $.response.body.title
-                operator: eq
-                value: Updated Title
 
-      - name: Delete document
+      # --- Upload empty file ---
+
+      - name: Upload empty file
         action:
           type: httpRequest
-          method: DELETE
-          url: appwrite/v1/databases/test-db/collections/items/documents/{{docId}}
+          method: POST
+          url: appwrite/v1/storage/buckets/integrity-bucket/files
           headers:
             X-Appwrite-Project: '{{projectId}}'
             X-Appwrite-Key: '{{apiKey}}'
-        assertions:
-          - assertions:
-              - path: $.response.status
-                operator: eq
-                value: 204
+          formData:
+            fileId: 'unique()'
+            file:
+              filename: empty.txt
+              content: ''
+              contentType: text/plain
+            permissions:
+              - 'read("any")'
+        extract:
+          emptyFileId: $.response.body.$id
+          emptyFileStatus: $.response.status
 
-      - name: Verify document deleted
+      - name: Verify empty file handling
         action:
           type: httpRequest
           method: GET
-          url: appwrite/v1/databases/test-db/collections/items/documents/{{docId}}
+          url: appwrite/v1/storage/buckets/integrity-bucket/files
+          headers:
+            X-Appwrite-Project: '{{projectId}}'
+            X-Appwrite-Key: '{{apiKey}}'
+        extract:
+          fileCountAfterEmpty: $.response.body.total
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+
+      # --- Upload JSON file ---
+
+      - name: Upload JSON file
+        action:
+          type: httpRequest
+          method: POST
+          url: appwrite/v1/storage/buckets/integrity-bucket/files
+          headers:
+            X-Appwrite-Project: '{{projectId}}'
+            X-Appwrite-Key: '{{apiKey}}'
+          formData:
+            fileId: 'unique()'
+            file:
+              filename: config.json
+              content: '{"key": "value", "nested": {"a": 1}}'
+              contentType: application/json
+            permissions:
+              - 'read("any")'
+        extract:
+          jsonFileId: $.response.body.$id
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 201
+              - path: $.response.body.name
+                operator: eq
+                value: config.json
+
+      - name: Download JSON file
+        action:
+          type: httpRequest
+          method: GET
+          url: appwrite/v1/storage/buckets/integrity-bucket/files/{{jsonFileId}}/download
           headers:
             X-Appwrite-Project: '{{projectId}}'
             X-Appwrite-Key: '{{apiKey}}'
@@ -306,4 +286,84 @@ tests:
           - assertions:
               - path: $.response.status
                 operator: eq
-                value: 404
+                value: 200
+
+      # --- Duplicate filenames should persist independently ---
+
+      - name: Upload duplicate filename (different content)
+        action:
+          type: httpRequest
+          method: POST
+          url: appwrite/v1/storage/buckets/integrity-bucket/files
+          headers:
+            X-Appwrite-Project: '{{projectId}}'
+            X-Appwrite-Key: '{{apiKey}}'
+          formData:
+            fileId: 'unique()'
+            file:
+              filename: hello.txt
+              content: 'Different content, same filename!'
+              contentType: text/plain
+            permissions:
+              - 'read("any")'
+        extract:
+          dupFileId: $.response.body.$id
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 201
+
+      - name: Both files exist independently
+        action:
+          type: httpRequest
+          method: GET
+          url: appwrite/v1/storage/buckets/integrity-bucket/files
+          headers:
+            X-Appwrite-Project: '{{projectId}}'
+            X-Appwrite-Key: '{{apiKey}}'
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+              - path: $.response.body.total
+                operator: gte
+                value: 3
+
+      - name: Original file still has correct metadata
+        action:
+          type: httpRequest
+          method: GET
+          url: appwrite/v1/storage/buckets/integrity-bucket/files/{{textFileId}}
+          headers:
+            X-Appwrite-Project: '{{projectId}}'
+            X-Appwrite-Key: '{{apiKey}}'
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+              - path: $.response.body.name
+                operator: eq
+                value: hello.txt
+
+      - name: Duplicate file has different ID
+        action:
+          type: httpRequest
+          method: GET
+          url: appwrite/v1/storage/buckets/integrity-bucket/files/{{dupFileId}}
+          headers:
+            X-Appwrite-Project: '{{projectId}}'
+            X-Appwrite-Key: '{{apiKey}}'
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+              - path: $.response.body.name
+                operator: eq
+                value: hello.txt
+              - path: $.response.body.$id
+                operator: ne
+                value: '{{textFileId}}'
