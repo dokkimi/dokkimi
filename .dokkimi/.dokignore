@@ -2,3 +2,4 @@ traffic-tester/definitions/validation-test.*
 failure-tests/definitions/bad-image.yaml
 failure-tests/definitions/crash-loop.yaml
 failure-tests/definitions/crash-on-start.yaml
+oss-probes/
