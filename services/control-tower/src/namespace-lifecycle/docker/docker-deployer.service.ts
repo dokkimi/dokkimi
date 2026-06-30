@@ -363,7 +363,11 @@ export class DockerDeployerService {
           if (instanceItemId) {
             await this.instanceItemService.updateInstanceItemStatus(
               instanceItemId,
-              ItemStatus.READY,
+              ItemStatus.RUNNING,
+            );
+            await this.instanceItemService.updateInstanceItemReadiness(
+              instanceItemId,
+              'READY',
             );
           }
         }),

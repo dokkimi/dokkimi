@@ -85,6 +85,7 @@ export class DockerDeployConfigService {
       const itemStages = groupItemsByStage(items);
       expectedItemStages = itemStages.map((stage) =>
         stage
+          .filter((item) => item.type !== 'WORKER')
           .map((item) => ctx.instanceItemIds.get(item.name))
           .filter((id): id is string => !!id),
       );
