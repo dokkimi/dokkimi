@@ -75,6 +75,13 @@ func (e *TestExecutor) executeStepAt(ctx context.Context, fs flatStep) (StepExec
 		iterEnd := time.Now().Format(time.RFC3339Nano)
 
 		if err != nil {
+			hasUntil := repeat != nil && len(repeat.Until) > 0
+			stopOnFailure := iterStep.StopOnFailure == nil || *iterStep.StopOnFailure
+			if !stopOnFailure || hasUntil {
+				e.testExecutionLogger.LogEvent("STEP_WARNING",
+					fmt.Sprintf("%s failed at iteration %d (continuing): %v", label, iterIdx, err), &si, nil)
+				return nil, nil
+			}
 			stepExec.EndTime = iterEnd
 			e.testExecutionLogger.LogEvent("STEP_FAILED",
 				fmt.Sprintf("%s failed at iteration %d: %v", label, iterIdx, err), &si, nil)

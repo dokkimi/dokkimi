@@ -26,7 +26,7 @@ func (e *TestExecutor) executeAPIStep(ctx context.Context, action StepAction, st
 	e.testExecutionLogger.LogRequestStarted(stepIndex, action.Method, action.URL)
 
 	var lastErr error
-	var lastStatusCode int
+	var lastResp *APIResponse
 	backoff := initialBackoff
 
 	for attempt := 0; attempt <= maxRetries; attempt++ {
@@ -46,15 +46,14 @@ func (e *TestExecutor) executeAPIStep(ctx context.Context, action StepAction, st
 		resp, err := e.doAPIRequest(ctx, action, fullURL)
 		if err != nil {
 			lastErr = err
-			lastStatusCode = 0
+			lastResp = nil
 			log.Printf("Request failed with error: %v (URL: %s)", err, fullURL)
 			continue
 		}
 
-		lastStatusCode = resp.StatusCode
-
 		if retryableStatusCodes[resp.StatusCode] {
 			lastErr = fmt.Errorf("received retryable status code %d", resp.StatusCode)
+			lastResp = resp
 			log.Printf("Received retryable status code %d for %s %s", resp.StatusCode, action.Method, fullURL)
 			continue
 		}
@@ -62,9 +61,9 @@ func (e *TestExecutor) executeAPIStep(ctx context.Context, action StepAction, st
 		return apiResponseToExtractDoc(resp), nil
 	}
 
-	if lastStatusCode > 0 {
-		log.Printf("Request failed after %d retries with status code %d: %s %s", maxRetries+1, lastStatusCode, action.Method, fullURL)
-		return nil, fmt.Errorf("%s %s failed with status %d", action.Method, action.URL, lastStatusCode)
+	if lastResp != nil {
+		log.Printf("Request returned status %d after %d retries: %s %s", lastResp.StatusCode, maxRetries+1, action.Method, fullURL)
+		return apiResponseToExtractDoc(lastResp), nil
 	}
 	log.Printf("Request failed after %d retries: %v", maxRetries+1, lastErr)
 	return nil, fmt.Errorf("%s %s failed: %s", action.Method, action.URL, rootCause(lastErr))
