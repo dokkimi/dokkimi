@@ -6,19 +6,100 @@
 
 ## What we did
 
-Using Dokkimi, we deployed the full Hyperswitch stack (Postgres, Redis, payment router) and mocked Stripe's API at the DNS level — no changes to Hyperswitch source code. Mocks intercept outbound HTTPS to `api.stripe.com` and return controlled responses simulating success, failures, malformed data, and edge cases. Across 9 definition files and 50+ individual probes, we tested connector error handling, multi-tenant isolation, payment state machine enforcement, refund validation, input sanitization, and PCI compliance.
+Using Dokkimi, we deployed the full Hyperswitch stack (Postgres, Redis, payment router) and mocked Stripe's API at the DNS level — no changes to Hyperswitch source code. Mocks intercept outbound HTTPS to `api.stripe.com` and return controlled responses simulating success, failures, malformed data, and edge cases. Across 11 definition files and 50+ individual probes, we tested connector error handling, multi-tenant isolation, payment state machine enforcement, refund validation, concurrency safety, input sanitization, and PCI compliance.
 
 ## Test Environment
 
-- **Hyperswitch v1.123.1** (Docker image with baked TOML config)
+- **Hyperswitch v1.123.1** (official Docker image with config mounted via Dokkimi `mountFiles`)
 - **PostgreSQL 15** with consolidated migrations (435 files, 4,298 lines of SQL)
 - **Redis** with password auth
-- **14 Dokkimi MOCK items** intercepting `api.stripe.com` (customers, payment_intents, and refunds with multiple response variants)
-- 7 definition files in `.dokkimi/hyperswitch/definitions/`
+- **Dokkimi MOCK items** intercepting `api.stripe.com` (customers, payment_intents, and refunds with multiple response variants)
+- 11 definition files in `.dokkimi/hyperswitch/definitions/`
 
 ---
 
-## Finding 1: Connector HTTP errors return misleading 200 OK
+## Finding 1: Concurrent refunds can exceed captured amount (TOCTOU race condition)
+
+**Severity: High — direct financial loss**
+
+The refund validation in `refunds_validator.rs` has a time-of-check-time-of-use (TOCTOU) race condition. When two refund requests arrive simultaneously, both read the same refund history from the database, both validate that the new refund fits within the captured amount, and both proceed — resulting in total refunds exceeding the original payment.
+
+### Reproduction
+
+```
+1. Create a $100.00 payment (amount: 10000) and confirm it
+2. Send two $60.00 refunds (amount: 6000) simultaneously using Dokkimi's parallel action
+3. Both requests pass validation: each sees $0 existing refunds, calculates $60 ≤ $100 ✓
+4. Both refunds are created
+```
+
+### Proof (database query)
+
+```sql
+SELECT COALESCE(SUM(refund_amount), 0)::text as total_refunded,
+       COUNT(*)::text as refund_count
+FROM refund
+WHERE payment_id = '{{paymentId}}'
+  AND refund_status NOT IN ('failure', 'transaction_failure')
+
+-- Result: total_refunded = 12000, refund_count = 2
+-- $120.00 refunded on a $100.00 payment
+```
+
+### Why this matters
+
+- **Real money loss:** The merchant is out $20. Both refunds are sent to the connector and processed. This isn't a display bug — the connector (Stripe, Adyen, etc.) processes each refund independently.
+- **No lock or atomic check:** The validation at `refunds_validator.rs:51-77` fetches all refunds, sums non-failed ones, and checks the total. But between the check and the refund creation, no database lock prevents another request from passing the same check.
+- **Exploitable:** An attacker who knows the payment ID and API key can trivially send concurrent refund requests to extract more than the captured amount.
+- **The mock doesn't matter:** The bug is entirely inside Hyperswitch's validation layer, before any connector is called. The same race exists with real Stripe, real Adyen, or any other connector.
+
+### Root cause
+
+`validate_refund_amount` (line 51) queries `db.find_refund_by_payment_id_merchant_id`, iterates to sum amounts, and validates. The caller then creates the refund record. There is no `SELECT ... FOR UPDATE`, no advisory lock, and no atomic compare-and-insert to prevent a concurrent request from passing the same validation against stale data.
+
+### Definition file
+
+`.dokkimi/hyperswitch/definitions/11-refund-race-condition.yaml`
+
+---
+
+## Finding 2: Stripe-compat API silently defaults mandate amount to 0
+
+**Severity: Medium — silent data corruption on financial field**
+
+When a payment is created through the Stripe compatibility API (`/vs/v1/payment_intents`) with `mandate_data` but no explicit amount, Hyperswitch silently defaults the mandate amount to `MinorUnit(0)` instead of returning a validation error. The merchant gets a $0.00 mandate created with no warning.
+
+### Reproduction
+
+```
+POST /vs/v1/payment_intents (form-encoded)
+  amount=6540&currency=usd&confirm=true&customer={{customerId}}
+  &mandate_data[customer_acceptance][type]=online
+  &mandate_data[mandate_type]=single_use
+  (no mandate amount field)
+
+Result: HTTP 200
+  amount: 6540                                    ← payment amount correct
+  mandate_data.mandate_type.single_use.amount: 0  ← mandate amount silently zeroed
+```
+
+### Why this matters
+
+- **Silent corruption:** The API returns 200 with no warning. The merchant believes they created a valid mandate. The mandate amount is a critical financial field that governs future charges.
+- **Stripe doesn't do this:** Stripe's API requires explicit amounts on mandates. A Hyperswitch merchant migrating from Stripe may omit the field expecting a validation error, not a silent zero.
+- **Downstream impact:** A $0 mandate may block future recurring charges or allow unintended ones, depending on how the connector interprets it.
+
+### Root cause
+
+In `types.rs` (lines 752/761/771), `mandate.amount.unwrap_or_default()` converts `Option<i64>` `None` into `MinorUnit(0)`. The `unwrap_or_default` pattern is appropriate for optional display fields, but not for a financial amount that should be explicitly provided.
+
+### Definition file
+
+`.dokkimi/hyperswitch/definitions/10-mandate-amount-bug.yaml`
+
+---
+
+## Finding 3: Connector HTTP errors return misleading 200 OK
 
 **Severity: Medium — can cause financial reconciliation issues**
 
@@ -75,7 +156,7 @@ This is arguably worse than the payment case: `status: "pending"` tells the merc
 
 ---
 
-## Finding 2: Zero-amount payments accepted without validation
+## Finding 4: Zero-amount payments accepted without validation
 
 **Severity: Low**
 
@@ -208,17 +289,14 @@ dokkimi run .dokkimi/hyperswitch/definitions/06-state-machine.yaml
 dokkimi run .dokkimi/hyperswitch/definitions/07-refund-probes.yaml
 dokkimi run .dokkimi/hyperswitch/definitions/08-input-validation.yaml
 dokkimi run .dokkimi/hyperswitch/definitions/09-data-leakage.yaml
+dokkimi run .dokkimi/hyperswitch/definitions/10-mandate-amount-bug.yaml
+dokkimi run .dokkimi/hyperswitch/definitions/11-refund-race-condition.yaml
 
 # Inspect traffic after a run
 dokkimi dump
 ```
 
-Prerequisites: Build the wrapper Docker image first:
-
-```bash
-cd .dokkimi/hyperswitch/docker
-docker build -t dokkimi/hyperswitch-router:local .
-```
+No build step required — tests use the official Hyperswitch Docker image with config files mounted via Dokkimi's `mountFiles`.
 
 ---
 
@@ -226,9 +304,9 @@ docker build -t dokkimi/hyperswitch-router:local .
 
 These notes document non-obvious requirements discovered during test authoring that may be useful for anyone extending these tests.
 
-- **Wrapper image required:** Hyperswitch reads a 146KB TOML config at startup. Since Dokkimi doesn't yet support file mounts, a wrapper Docker image bakes the config in (see `.dokkimi/hyperswitch/docker/`).
+- **Config via mountFiles:** Hyperswitch reads a 146KB TOML config at startup. Dokkimi's `mountFiles` mounts the config and entrypoint script into the official Docker image — no custom wrapper image needed.
 - **Redis password injection:** Hyperswitch's `RedisSettings` has no password field. The password is injected into the TOML config's `host` field as `:password@hostname`, which gets embedded in the Redis URL.
-- **Startup ordering:** The entrypoint script waits for Postgres and Redis TCP connectivity before launching the router.
+- **Startup ordering:** The entrypoint script waits for Postgres and Redis TCP connectivity before launching the router. Mounted via `mountFiles` in the server fragment.
 - **Form-encoded Stripe requests:** The Stripe connector sends `application/x-www-form-urlencoded` requests (not JSON), so `mockRequestBodyContains` matches against form-encoded strings like `description=pay_success`.
 - **Customer creation prerequisite:** Hyperswitch calls `POST /v1/customers` before `POST /v1/payment_intents` — both endpoints need mocks.
 - **Required `metadata` field:** The `PaymentIntentResponse` struct has a required (non-optional) `metadata` field. Mocks must include `metadata: {}` or deserialization fails with a generic 500.

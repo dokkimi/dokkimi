@@ -4,6 +4,7 @@ description: Hyperswitch payment router — handles payment requests, routes to 
 image: docker.juspay.io/juspaydotin/hyperswitch-router:latest
 port: 8080
 healthCheck: /health
+stage: 1
 command: ['/bin/bash', '/entrypoint.sh']
 mountFiles:
   - source: ../docker/docker_compose.toml

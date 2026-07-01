@@ -2,3 +2,4 @@ type: DATABASE
 name: hs-redis
 description: Redis for Hyperswitch — caching, pub/sub, drainer queue
 database: redis
+noAuth: true

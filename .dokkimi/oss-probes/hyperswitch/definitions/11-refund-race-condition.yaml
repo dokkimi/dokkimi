@@ -1,0 +1,206 @@
+name: refund-race-condition
+description: |
+  Proves Bug: TOCTOU race condition in refund validation allows over-refunding.
+  In refunds_validator.rs:51-77, validate_refund_amount fetches all refunds,
+  sums them, and checks the new amount fits — but between the check and the
+  actual refund creation, another refund can complete, exceeding the capture total.
+config:
+  timeoutSeconds: 180
+items:
+  - $ref: ../shared/hs-postgres.yaml
+  - $ref: ../shared/hs-redis.yaml
+  - $ref: ../shared/hs-server.yaml
+
+  - type: MOCK
+    name: mock-stripe-payment
+    mockTarget: api.stripe.com
+    mockPath: /v1/payment_intents
+    mockMethod: POST
+    mockResponseStatus: 200
+    mockResponseHeaders:
+      Content-Type: application/json
+    mockResponseBody:
+      id: pi_race_test_123
+      object: payment_intent
+      amount: 10000
+      currency: usd
+      status: succeeded
+      client_secret: pi_race_test_123_secret
+      metadata: {}
+      latest_charge:
+        id: ch_race_test_123
+
+  - type: MOCK
+    name: mock-stripe-refund
+    mockTarget: api.stripe.com
+    mockPath: /v1/refunds
+    mockMethod: POST
+    mockResponseStatus: 200
+    mockResponseHeaders:
+      Content-Type: application/json
+    mockResponseBody:
+      id: re_race_test_123
+      object: refund
+      amount: 6000
+      currency: usd
+      metadata: {}
+      payment_intent: pi_race_test_123
+      status: succeeded
+
+  - type: MOCK
+    name: mock-stripe-customers
+    mockTarget: api.stripe.com
+    mockPath: /v1/customers
+    mockMethod: POST
+    mockResponseStatus: 200
+    mockResponseHeaders:
+      Content-Type: application/json
+    mockResponseBody:
+      id: cus_race_test_123
+      object: customer
+
+variables:
+  adminKey: test_admin
+tests:
+  - name: 'BUG: Concurrent refunds can exceed captured amount'
+    steps:
+      - name: Create merchant
+        action:
+          type: httpRequest
+          method: POST
+          url: hs-server/accounts
+          headers:
+            Content-Type: application/json
+            api-key: '{{adminKey}}'
+          body:
+            merchant_id: race-test-merchant
+            merchant_name: Race Condition Test
+            merchant_details:
+              primary_contact_person: Test
+              primary_email: test@example.com
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+        extract:
+          merchantId: $.response.body.merchant_id
+
+      - name: Create API key
+        action:
+          type: httpRequest
+          method: POST
+          url: hs-server/api_keys/{{merchantId}}
+          headers:
+            Content-Type: application/json
+            api-key: '{{adminKey}}'
+          body:
+            name: race-test-key
+            expiration: never
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+        extract:
+          apiKey: $.response.body.api_key
+
+      - name: Configure Stripe connector
+        action:
+          type: httpRequest
+          method: POST
+          url: hs-server/account/{{merchantId}}/connectors
+          headers:
+            Content-Type: application/json
+            api-key: '{{apiKey}}'
+          body:
+            connector_type: payment_processor
+            connector_name: stripe
+            connector_account_details:
+              auth_type: HeaderKey
+              api_key: sk_test_mock_race
+            test_mode: true
+            payment_methods_enabled:
+              - payment_method: card
+                payment_method_types:
+                  - payment_method_type: credit
+                    card_networks:
+                      - Visa
+                    minimum_amount: 1
+                    maximum_amount: 68607706
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+
+      - name: Create $100 payment
+        action:
+          type: httpRequest
+          method: POST
+          url: hs-server/payments
+          headers:
+            Content-Type: application/json
+            api-key: '{{apiKey}}'
+          body:
+            amount: 10000
+            currency: USD
+            confirm: true
+            payment_method: card
+            payment_method_type: credit
+            payment_method_data:
+              card:
+                card_number: '4242424242424242'
+                card_exp_month: '12'
+                card_exp_year: '2030'
+                card_holder_name: Test User
+                card_cvc: '123'
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+              - path: $.response.body.status
+                operator: eq
+                value: succeeded
+        extract:
+          paymentId: $.response.body.payment_id
+
+      - name: 'RACE: Send two $60 refunds simultaneously (total $120 > $100)'
+        action:
+          type: parallel
+          actions:
+            - type: httpRequest
+              method: POST
+              url: hs-server/refunds
+              headers:
+                Content-Type: application/json
+                api-key: '{{apiKey}}'
+              body:
+                payment_id: '{{paymentId}}'
+                amount: 6000
+            - type: httpRequest
+              method: POST
+              url: hs-server/refunds
+              headers:
+                Content-Type: application/json
+                api-key: '{{apiKey}}'
+              body:
+                payment_id: '{{paymentId}}'
+                amount: 6000
+
+      - name: 'BUG: Total refunded should not exceed captured amount ($100)'
+        action:
+          type: dbQuery
+          database: hs-postgres
+          query: >-
+            SELECT
+              COALESCE(SUM(refund_amount), 0)::text as total_refunded
+            FROM refund
+            WHERE payment_id = '{{paymentId}}'
+              AND refund_status NOT IN ('failure', 'transaction_failure')
+        assertions:
+          - assertions:
+              - path: $.response.data[0].total_refunded
+                operator: lte
+                value: '10000'

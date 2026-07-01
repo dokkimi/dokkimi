@@ -1,0 +1,169 @@
+name: mandate-amount-defaults-to-zero
+description: |
+  Proves Bug: Stripe-compat API silently defaults mandate amount to 0.
+  In types.rs:752/761/771, mandate.amount.unwrap_or_default() converts
+  Option<i64> None into MinorUnit(0) instead of returning a validation error.
+  A merchant who omits the amount field gets a $0.00 mandate created.
+config:
+  timeoutSeconds: 180
+items:
+  - $ref: ../shared/hs-postgres.yaml
+  - $ref: ../shared/hs-redis.yaml
+  - $ref: ../shared/hs-server.yaml
+
+  - type: MOCK
+    name: mock-stripe-mandate
+    mockTarget: api.stripe.com
+    mockPath: /v1/payment_intents
+    mockMethod: POST
+    mockResponseStatus: 200
+    mockResponseHeaders:
+      Content-Type: application/json
+    mockResponseBody:
+      id: pi_mandate_test_123
+      object: payment_intent
+      amount: 6540
+      currency: usd
+      status: succeeded
+      client_secret: pi_mandate_test_123_secret
+      metadata: {}
+      latest_charge:
+        id: ch_mandate_test_123
+
+  - type: MOCK
+    name: mock-stripe-customers
+    mockTarget: api.stripe.com
+    mockPath: /v1/customers
+    mockMethod: POST
+    mockResponseStatus: 200
+    mockResponseHeaders:
+      Content-Type: application/json
+    mockResponseBody:
+      id: cus_mandate_test_123
+      object: customer
+      email: null
+      name: Mandate Test User
+
+  - type: MOCK
+    name: mock-stripe-pm
+    mockTarget: api.stripe.com
+    mockPath: /v1/payment_methods
+    mockMethod: POST
+    mockResponseStatus: 200
+    mockResponseHeaders:
+      Content-Type: application/json
+    mockResponseBody:
+      id: pm_mandate_test_123
+      object: payment_method
+      type: card
+
+variables:
+  adminKey: test_admin
+tests:
+  - name: 'BUG: mandate_data without amount silently creates $0 mandate'
+    steps:
+      - name: Create merchant account
+        action:
+          type: httpRequest
+          method: POST
+          url: hs-server/accounts
+          headers:
+            Content-Type: application/json
+            api-key: '{{adminKey}}'
+          body:
+            merchant_id: mandate-bug-merchant
+            merchant_name: Mandate Bug Test
+            merchant_details:
+              primary_contact_person: Test
+              primary_email: test@example.com
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+        extract:
+          merchantId: $.response.body.merchant_id
+
+      - name: Create API key
+        action:
+          type: httpRequest
+          method: POST
+          url: hs-server/api_keys/{{merchantId}}
+          headers:
+            Content-Type: application/json
+            api-key: '{{adminKey}}'
+          body:
+            name: mandate-bug-key
+            expiration: never
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+        extract:
+          apiKey: $.response.body.api_key
+
+      - name: Configure Stripe connector
+        action:
+          type: httpRequest
+          method: POST
+          url: hs-server/account/{{merchantId}}/connectors
+          headers:
+            Content-Type: application/json
+            api-key: '{{apiKey}}'
+          body:
+            connector_type: payment_processor
+            connector_name: stripe
+            connector_account_details:
+              auth_type: HeaderKey
+              api_key: sk_test_mock_mandate
+            test_mode: true
+            payment_methods_enabled:
+              - payment_method: card
+                payment_method_types:
+                  - payment_method_type: credit
+                    card_networks:
+                      - Visa
+                    minimum_amount: 1
+                    maximum_amount: 68607706
+                    recurring_enabled: true
+                    installment_payment_enabled: true
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+
+      - name: Create customer
+        action:
+          type: httpRequest
+          method: POST
+          url: hs-server/customers
+          headers:
+            Content-Type: application/json
+            api-key: '{{apiKey}}'
+          body:
+            email: mandate-test@example.com
+            name: Mandate Bug Test Customer
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+        extract:
+          customerId: $.response.body.customer_id
+
+      - name: 'BUG: Omitting mandate amount should return 400, not silently default to 0'
+        action:
+          type: httpRequest
+          method: POST
+          url: hs-server/vs/v1/payment_intents
+          headers:
+            Content-Type: application/x-www-form-urlencoded
+            api-key: '{{apiKey}}'
+          body: 'amount=6540&currency=usd&confirm=true&capture_method=automatic&customer={{customerId}}&payment_method=card&payment_method_data[type]=card&payment_method_data[card][number]=4242424242424242&payment_method_data[card][exp_month]=10&payment_method_data[card][exp_year]=2028&payment_method_data[card][cvc]=123&setup_future_usage=off_session&mandate_data[customer_acceptance][type]=online&mandate_data[customer_acceptance][online][ip_address]=127.0.0.1&mandate_data[customer_acceptance][online][user_agent]=dokkimi-bug-test&mandate_data[mandate_type]=single_use'
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 400

@@ -86,7 +86,7 @@ vault_encryption_key = ""
 vault_private_key = ""
 
 [redis]
-host = ":dokkimi@hs-redis"
+host = "hs-redis"
 port = 6379
 cluster_enabled = false
 cluster_urls = ["redis-cluster:6379"]
