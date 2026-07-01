@@ -1,6 +1,6 @@
 {
   "name": "@dokkimi/mcp",
-  "version": "0.5.4",
+  "version": "0.5.5",
   "license": "Elastic-2.0",
   "private": true,
   "type": "module",

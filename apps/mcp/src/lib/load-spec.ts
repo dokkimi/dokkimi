@@ -4,7 +4,6 @@ import { fileURLToPath } from 'url';
 
 const SPEC_PATH = path.join(
   path.dirname(fileURLToPath(import.meta.url)),
-  '..',
   'dokkimi-instructions.md',
 );
 
