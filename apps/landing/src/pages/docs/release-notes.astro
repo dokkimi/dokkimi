@@ -7,6 +7,14 @@ import CodeBlock from '../../components/CodeBlock.astro';
   <h1>Release Notes</h1>
   <p class="subtitle">What's new in each release.</p>
 
+  <h2>v0.5.5</h2>
+  <p><time datetime="2026-07-01">July 1, 2026</time></p>
+
+  <h3>Bug fix</h3>
+  <ul>
+    <li><strong>MCP spec file path</strong> &mdash; <code>get_reference</code> and the spec resource were failing to load <code>dokkimi-instructions.md</code> at runtime due to an incorrect path resolution in the bundled output. The failure was invisible because Claude fell back to reading the file directly from <code>~/.dokkimi/</code>.</li>
+  </ul>
+
   <h2>v0.5.4</h2>
   <p><time datetime="2026-06-30">June 30, 2026</time></p>
 
