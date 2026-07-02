@@ -1,0 +1,316 @@
+name: lago-invoice-voided-bugs
+description: |
+  Probe Lago invoice lifecycle bugs: changing payment_status on voided
+  invoices, creating credit notes against voided invoices, and updating
+  metadata on voided invoices.
+config:
+  timeoutSeconds: 600
+items:
+  - $ref: ../shared/lago-postgres.yaml
+  - $ref: ../shared/lago-redis.yaml
+  - $ref: ../shared/lago-api.yaml
+
+variables:
+  dbPassword: changeme
+  apiKey: dokkimi-test-api-key-lago-123
+tests:
+  - name: Invoice voided-state bugs
+    steps:
+      - name: Health check
+        action:
+          type: httpRequest
+          method: GET
+          url: lago-api/health
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+
+      # --- Setup: customer + plan + add-on ---
+      - name: Create customer
+        action:
+          type: httpRequest
+          method: POST
+          url: lago-api/api/v1/customers
+          headers:
+            Content-Type: application/json
+            Authorization: 'Bearer {{apiKey}}'
+          body:
+            customer:
+              external_id: inv-bug-cust-001
+              name: Invoice Bug Customer
+              email: inv-bug@dokkimi.com
+              currency: USD
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+
+      - name: Create add-on for one-off invoices
+        action:
+          type: httpRequest
+          method: POST
+          url: lago-api/api/v1/add_ons
+          headers:
+            Content-Type: application/json
+            Authorization: 'Bearer {{apiKey}}'
+          body:
+            add_on:
+              name: Invoice Bug Add-on
+              code: inv-bug-addon
+              amount_cents: 10000
+              amount_currency: USD
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+
+      # --- Create a one-off invoice, then void it ---
+      - name: Create one-off invoice
+        action:
+          type: httpRequest
+          method: POST
+          url: lago-api/api/v1/invoices
+          headers:
+            Content-Type: application/json
+            Authorization: 'Bearer {{apiKey}}'
+          body:
+            invoice:
+              external_customer_id: inv-bug-cust-001
+              currency: USD
+              fees:
+                - add_on_code: inv-bug-addon
+                  units: '1'
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+        extract:
+          invoiceId: $.response.body.invoice.lago_id
+
+      - name: Void the invoice
+        action:
+          type: httpRequest
+          method: POST
+          url: lago-api/api/v1/invoices/{{invoiceId}}/void
+          headers:
+            Content-Type: application/json
+            Authorization: 'Bearer {{apiKey}}'
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+
+      - name: Confirm invoice is voided
+        action:
+          type: httpRequest
+          method: GET
+          url: lago-api/api/v1/invoices/{{invoiceId}}
+          headers:
+            Authorization: 'Bearer {{apiKey}}'
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+              - path: $.response.body.invoice.status
+                operator: eq
+                value: voided
+
+      # ==========================================
+      # BUG: Update payment_status on voided invoice
+      # InvoiceUpdateService blocks payment_status changes
+      # on draft invoices (line 34) but NOT on voided
+      # invoices. Only ready_for_payment_processing
+      # checks `!invoice.voided?` (line 38).
+      # ==========================================
+
+      - name: 'PROBE: Set payment_status to succeeded on voided invoice'
+        stopOnFailure: false
+        action:
+          type: httpRequest
+          method: PUT
+          url: lago-api/api/v1/invoices/{{invoiceId}}
+          headers:
+            Content-Type: application/json
+            Authorization: 'Bearer {{apiKey}}'
+          body:
+            invoice:
+              payment_status: succeeded
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [200, 403, 405, 422]
+
+      - name: 'PROBE: Set payment_status to failed on voided invoice'
+        stopOnFailure: false
+        action:
+          type: httpRequest
+          method: PUT
+          url: lago-api/api/v1/invoices/{{invoiceId}}
+          headers:
+            Content-Type: application/json
+            Authorization: 'Bearer {{apiKey}}'
+          body:
+            invoice:
+              payment_status: failed
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [200, 403, 405, 422]
+
+      # ==========================================
+      # BUG: Update metadata on voided invoice
+      # No state check at all on metadata updates.
+      # ==========================================
+
+      - name: 'PROBE: Add metadata to voided invoice'
+        stopOnFailure: false
+        action:
+          type: httpRequest
+          method: PUT
+          url: lago-api/api/v1/invoices/{{invoiceId}}
+          headers:
+            Content-Type: application/json
+            Authorization: 'Bearer {{apiKey}}'
+          body:
+            invoice:
+              metadata:
+                - key: ghost-key
+                  value: ghost-value
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [200, 403, 405, 422]
+
+      # ==========================================
+      # BUG: Credit note against voided invoice
+      # CreditNotes::CreateService.valid_type_or_status?
+      # maps voided → "finalized" and proceeds. This
+      # lets you issue credit/refund against a voided invoice.
+      # ==========================================
+
+      # First we need an invoice with a fee to reference
+      - name: Create second one-off invoice for credit note test
+        action:
+          type: httpRequest
+          method: POST
+          url: lago-api/api/v1/invoices
+          headers:
+            Content-Type: application/json
+            Authorization: 'Bearer {{apiKey}}'
+          body:
+            invoice:
+              external_customer_id: inv-bug-cust-001
+              currency: USD
+              fees:
+                - add_on_code: inv-bug-addon
+                  units: '2'
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+        extract:
+          invoice2Id: $.response.body.invoice.lago_id
+
+      - name: Get invoice fees for credit note
+        action:
+          type: httpRequest
+          method: GET
+          url: lago-api/api/v1/invoices/{{invoice2Id}}
+          headers:
+            Authorization: 'Bearer {{apiKey}}'
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+        extract:
+          feeId: $.response.body.invoice.fees[0].lago_id
+
+      - name: Void second invoice
+        action:
+          type: httpRequest
+          method: POST
+          url: lago-api/api/v1/invoices/{{invoice2Id}}/void
+          headers:
+            Content-Type: application/json
+            Authorization: 'Bearer {{apiKey}}'
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+
+      - name: 'PROBE: Create credit note against voided invoice'
+        stopOnFailure: false
+        action:
+          type: httpRequest
+          method: POST
+          url: lago-api/api/v1/credit_notes
+          headers:
+            Content-Type: application/json
+            Authorization: 'Bearer {{apiKey}}'
+          body:
+            credit_note:
+              invoice_id: '{{invoice2Id}}'
+              reason: other
+              credit_amount_cents: 5000
+              items:
+                - fee_id: '{{feeId}}'
+                  amount_cents: 5000
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [200, 403, 405, 422]
+
+      # ==========================================
+      # BUG: Void an already-voided invoice
+      # Check if double-voiding is handled.
+      # ==========================================
+
+      - name: 'PROBE: Void an already-voided invoice'
+        stopOnFailure: false
+        action:
+          type: httpRequest
+          method: POST
+          url: lago-api/api/v1/invoices/{{invoiceId}}/void
+          headers:
+            Content-Type: application/json
+            Authorization: 'Bearer {{apiKey}}'
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [200, 405, 409, 422]
+
+      # ==========================================
+      # BUG: Retry payment on voided invoice
+      # Invoices::Payments::RetryService may not
+      # check for voided state.
+      # ==========================================
+
+      - name: 'PROBE: Retry payment on voided invoice'
+        stopOnFailure: false
+        action:
+          type: httpRequest
+          method: POST
+          url: lago-api/api/v1/invoices/{{invoiceId}}/retry_payment
+          headers:
+            Content-Type: application/json
+            Authorization: 'Bearer {{apiKey}}'
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [200, 403, 405, 422]

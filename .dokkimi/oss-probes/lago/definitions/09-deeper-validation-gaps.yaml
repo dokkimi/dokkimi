@@ -1,0 +1,464 @@
+name: lago-deeper-validation-gaps
+description: |
+  Probe Lago validation gaps beyond the original findings: negative
+  trial periods, negative coupon percentage at creation, oversized
+  string fields, unvalidated metadata, billable metric rounding
+  precision, and adjusted fee amounts.
+config:
+  timeoutSeconds: 600
+items:
+  - $ref: ../shared/lago-postgres.yaml
+  - $ref: ../shared/lago-redis.yaml
+  - $ref: ../shared/lago-api.yaml
+
+variables:
+  dbPassword: changeme
+  apiKey: dokkimi-test-api-key-lago-123
+tests:
+  - name: Deeper validation gaps
+    steps:
+      - name: Health check
+        action:
+          type: httpRequest
+          method: GET
+          url: lago-api/health
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+
+      # --- Setup: customer ---
+      - name: Create customer
+        action:
+          type: httpRequest
+          method: POST
+          url: lago-api/api/v1/customers
+          headers:
+            Content-Type: application/json
+            Authorization: 'Bearer {{apiKey}}'
+          body:
+            customer:
+              external_id: val-gap-cust-001
+              name: Validation Gap Customer
+              email: valgap@dokkimi.com
+              currency: USD
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+
+      # ==========================================
+      # BUG: Negative trial_period on plans
+      # Plan model has no numericality validation on
+      # trial_period (float). The helper trial_period?
+      # checks .positive? but only for display — the
+      # value is stored as-is.
+      # ==========================================
+
+      - name: 'PROBE: Plan with negative trial_period'
+        stopOnFailure: false
+        action:
+          type: httpRequest
+          method: POST
+          url: lago-api/api/v1/plans
+          headers:
+            Content-Type: application/json
+            Authorization: 'Bearer {{apiKey}}'
+          body:
+            plan:
+              name: Negative Trial Plan
+              code: neg-trial-plan
+              interval: monthly
+              amount_cents: 5000
+              amount_currency: USD
+              pay_in_advance: false
+              trial_period: -30
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [200, 400, 422]
+
+      - name: 'PROBE: Plan with fractional trial_period'
+        stopOnFailure: false
+        action:
+          type: httpRequest
+          method: POST
+          url: lago-api/api/v1/plans
+          headers:
+            Content-Type: application/json
+            Authorization: 'Bearer {{apiKey}}'
+          body:
+            plan:
+              name: Fractional Trial Plan
+              code: frac-trial-plan
+              interval: monthly
+              amount_cents: 5000
+              amount_currency: USD
+              pay_in_advance: false
+              trial_period: 0.5
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [200, 400, 422]
+
+      - name: 'PROBE: Plan with absurdly large trial_period'
+        stopOnFailure: false
+        action:
+          type: httpRequest
+          method: POST
+          url: lago-api/api/v1/plans
+          headers:
+            Content-Type: application/json
+            Authorization: 'Bearer {{apiKey}}'
+          body:
+            plan:
+              name: Huge Trial Plan
+              code: huge-trial-plan
+              interval: monthly
+              amount_cents: 5000
+              amount_currency: USD
+              pay_in_advance: false
+              trial_period: 999999999
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [200, 400, 422]
+
+      # ==========================================
+      # BUG: Negative percentage_rate on coupons
+      # Coupon model validates percentage_rate with
+      # `presence: true` only (no numericality).
+      # Unlike amount_cents which has `greater_than: 0`.
+      # ==========================================
+
+      - name: 'PROBE: Coupon with negative percentage_rate at creation'
+        stopOnFailure: false
+        action:
+          type: httpRequest
+          method: POST
+          url: lago-api/api/v1/coupons
+          headers:
+            Content-Type: application/json
+            Authorization: 'Bearer {{apiKey}}'
+          body:
+            coupon:
+              name: Negative Pct Coupon
+              code: neg-pct-coupon
+              coupon_type: percentage
+              percentage_rate: '-25.0'
+              frequency: once
+              expiration: no_expiration
+              reusable: true
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [200, 400, 422]
+
+      - name: 'PROBE: Coupon with zero percentage_rate at creation'
+        stopOnFailure: false
+        action:
+          type: httpRequest
+          method: POST
+          url: lago-api/api/v1/coupons
+          headers:
+            Content-Type: application/json
+            Authorization: 'Bearer {{apiKey}}'
+          body:
+            coupon:
+              name: Zero Pct Coupon
+              code: zero-pct-coupon
+              coupon_type: percentage
+              percentage_rate: '0.0'
+              frequency: once
+              expiration: no_expiration
+              reusable: true
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [200, 400, 422]
+
+      # ==========================================
+      # BUG: Customer string fields have no length limit
+      # Customer model has no length validation on name,
+      # email, external_id, or any other string field.
+      # ==========================================
+
+      - name: 'PROBE: Customer with 10K character name'
+        stopOnFailure: false
+        action:
+          type: httpRequest
+          method: POST
+          url: lago-api/api/v1/customers
+          headers:
+            Content-Type: application/json
+            Authorization: 'Bearer {{apiKey}}'
+          body:
+            customer:
+              external_id: longname-cust-001
+              name: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'
+              email: long@dokkimi.com
+              currency: USD
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [200, 400, 413, 422]
+
+      - name: 'PROBE: Customer with extremely long email'
+        stopOnFailure: false
+        action:
+          type: httpRequest
+          method: POST
+          url: lago-api/api/v1/customers
+          headers:
+            Content-Type: application/json
+            Authorization: 'Bearer {{apiKey}}'
+          body:
+            customer:
+              external_id: longemail-cust-001
+              name: Long Email Customer
+              email: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa@dokkimi.com'
+              currency: USD
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [200, 400, 422]
+
+      # ==========================================
+      # BUG: Billable metric rounding_precision
+      # has no bounds validation. Extreme values
+      # could cause precision loss or overflow.
+      # ==========================================
+
+      - name: 'PROBE: Billable metric with negative rounding_precision'
+        stopOnFailure: false
+        action:
+          type: httpRequest
+          method: POST
+          url: lago-api/api/v1/billable_metrics
+          headers:
+            Content-Type: application/json
+            Authorization: 'Bearer {{apiKey}}'
+          body:
+            billable_metric:
+              name: Negative Precision Metric
+              code: neg-precision-metric
+              aggregation_type: sum_agg
+              field_name: amount
+              rounding_precision: -5
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [200, 400, 422]
+
+      - name: 'PROBE: Billable metric with huge rounding_precision'
+        stopOnFailure: false
+        action:
+          type: httpRequest
+          method: POST
+          url: lago-api/api/v1/billable_metrics
+          headers:
+            Content-Type: application/json
+            Authorization: 'Bearer {{apiKey}}'
+          body:
+            billable_metric:
+              name: Huge Precision Metric
+              code: huge-precision-metric
+              aggregation_type: sum_agg
+              field_name: amount
+              rounding_precision: 999999
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [200, 400, 422]
+
+      # ==========================================
+      # BUG: Invoice metadata has no length limit
+      # InvoiceMetadata value column is text with
+      # no length validation in the model.
+      # ==========================================
+
+      - name: Create add-on for metadata test
+        action:
+          type: httpRequest
+          method: POST
+          url: lago-api/api/v1/add_ons
+          headers:
+            Content-Type: application/json
+            Authorization: 'Bearer {{apiKey}}'
+          body:
+            add_on:
+              name: Metadata Test Add-on
+              code: metadata-addon
+              amount_cents: 1000
+              amount_currency: USD
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+
+      - name: Create invoice for metadata test
+        action:
+          type: httpRequest
+          method: POST
+          url: lago-api/api/v1/invoices
+          headers:
+            Content-Type: application/json
+            Authorization: 'Bearer {{apiKey}}'
+          body:
+            invoice:
+              external_customer_id: val-gap-cust-001
+              currency: USD
+              fees:
+                - add_on_code: metadata-addon
+                  units: '1'
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+        extract:
+          metaInvoiceId: $.response.body.invoice.lago_id
+
+      - name: 'PROBE: Invoice metadata with very long value'
+        stopOnFailure: false
+        action:
+          type: httpRequest
+          method: PUT
+          url: lago-api/api/v1/invoices/{{metaInvoiceId}}
+          headers:
+            Content-Type: application/json
+            Authorization: 'Bearer {{apiKey}}'
+          body:
+            invoice:
+              metadata:
+                - key: oversized
+                  value: 'BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB'
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [200, 400, 413, 422]
+
+      # ==========================================
+      # BUG: Plan with minimum_commitment negative
+      # Plan minimum_commitment fields may lack
+      # numericality checks similar to amount_cents.
+      # ==========================================
+
+      - name: 'PROBE: Plan with negative minimum_commitment amount'
+        stopOnFailure: false
+        action:
+          type: httpRequest
+          method: POST
+          url: lago-api/api/v1/plans
+          headers:
+            Content-Type: application/json
+            Authorization: 'Bearer {{apiKey}}'
+          body:
+            plan:
+              name: Neg Commitment Plan
+              code: neg-commit-plan
+              interval: monthly
+              amount_cents: 5000
+              amount_currency: USD
+              pay_in_advance: false
+              minimum_commitment:
+                amount_cents: -1000
+                invoice_display_name: Negative Minimum
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [200, 400, 422]
+
+      # ==========================================
+      # BUG: Subscription with plan_overrides
+      # can override currency to differ from the
+      # plan's original currency. Dead code:
+      # currency_missmatch? method exists but is
+      # never called.
+      # ==========================================
+
+      - name: Create USD plan for currency override test
+        action:
+          type: httpRequest
+          method: POST
+          url: lago-api/api/v1/plans
+          headers:
+            Content-Type: application/json
+            Authorization: 'Bearer {{apiKey}}'
+          body:
+            plan:
+              name: USD Override Plan
+              code: usd-override-plan
+              interval: monthly
+              amount_cents: 5000
+              amount_currency: USD
+              pay_in_advance: false
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+
+      - name: 'PROBE: Subscription with plan_overrides changing currency'
+        stopOnFailure: false
+        action:
+          type: httpRequest
+          method: POST
+          url: lago-api/api/v1/subscriptions
+          headers:
+            Content-Type: application/json
+            Authorization: 'Bearer {{apiKey}}'
+          body:
+            subscription:
+              external_customer_id: val-gap-cust-001
+              plan_code: usd-override-plan
+              external_id: currency-override-sub-001
+              plan_overrides:
+                amount_cents: 3000
+                amount_currency: EUR
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [200, 400, 422]
+
+      # ==========================================
+      # BUG: Tax code uniqueness per-org only
+      # scoped to organization, but rate has no
+      # numericality — verify rate of exactly 0.001
+      # (sub-penny precision) is accepted.
+      # ==========================================
+
+      - name: 'PROBE: Tax with sub-penny precision rate'
+        stopOnFailure: false
+        action:
+          type: httpRequest
+          method: POST
+          url: lago-api/api/v1/taxes
+          headers:
+            Content-Type: application/json
+            Authorization: 'Bearer {{apiKey}}'
+          body:
+            tax:
+              name: Sub-penny Tax
+              code: sub-penny-tax
+              rate: '0.001'
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [200, 400, 422]

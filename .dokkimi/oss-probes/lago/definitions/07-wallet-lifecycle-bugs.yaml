@@ -1,0 +1,277 @@
+name: lago-wallet-lifecycle-bugs
+description: |
+  Probe Lago wallet lifecycle bugs: updating terminated wallets,
+  topping up terminated wallets, and duplicate top-up idempotency.
+config:
+  timeoutSeconds: 600
+items:
+  - $ref: ../shared/lago-postgres.yaml
+  - $ref: ../shared/lago-redis.yaml
+  - $ref: ../shared/lago-api.yaml
+
+variables:
+  dbPassword: changeme
+  apiKey: dokkimi-test-api-key-lago-123
+tests:
+  - name: Wallet lifecycle bugs
+    steps:
+      - name: Health check
+        action:
+          type: httpRequest
+          method: GET
+          url: lago-api/health
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+
+      # --- Setup: customer ---
+      - name: Create customer
+        action:
+          type: httpRequest
+          method: POST
+          url: lago-api/api/v1/customers
+          headers:
+            Content-Type: application/json
+            Authorization: 'Bearer {{apiKey}}'
+          body:
+            customer:
+              external_id: wl-bug-cust-001
+              name: Wallet Lifecycle Bug Customer
+              email: wl-bug@dokkimi.com
+              currency: USD
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+
+      # --- Create wallet, then terminate it ---
+      - name: Create wallet
+        action:
+          type: httpRequest
+          method: POST
+          url: lago-api/api/v1/wallets
+          headers:
+            Content-Type: application/json
+            Authorization: 'Bearer {{apiKey}}'
+          body:
+            wallet:
+              external_customer_id: wl-bug-cust-001
+              name: Lifecycle Test Wallet
+              rate_amount: '1.0'
+              currency: USD
+              granted_credits: '100.0'
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+        extract:
+          walletId: $.response.body.wallet.lago_id
+
+      - name: Terminate wallet
+        action:
+          type: httpRequest
+          method: DELETE
+          url: lago-api/api/v1/wallets/{{walletId}}
+          headers:
+            Authorization: 'Bearer {{apiKey}}'
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+
+      # ==========================================
+      # BUG: Update terminated wallet
+      # WalletUpdateService#call checks `unless wallet`
+      # but never checks `wallet.terminated?` — the wallet
+      # is found in the DB so the update proceeds.
+      # ==========================================
+
+      - name: 'PROBE: Update terminated wallet name'
+        stopOnFailure: false
+        action:
+          type: httpRequest
+          method: PUT
+          url: lago-api/api/v1/wallets/{{walletId}}
+          headers:
+            Content-Type: application/json
+            Authorization: 'Bearer {{apiKey}}'
+          body:
+            wallet:
+              name: Zombie Wallet Name
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [200, 404, 422]
+
+      - name: 'PROBE: Update terminated wallet priority'
+        stopOnFailure: false
+        action:
+          type: httpRequest
+          method: PUT
+          url: lago-api/api/v1/wallets/{{walletId}}
+          headers:
+            Content-Type: application/json
+            Authorization: 'Bearer {{apiKey}}'
+          body:
+            wallet:
+              priority: 1
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [200, 404, 422]
+
+      - name: 'PROBE: Update terminated wallet expiration'
+        stopOnFailure: false
+        action:
+          type: httpRequest
+          method: PUT
+          url: lago-api/api/v1/wallets/{{walletId}}
+          headers:
+            Content-Type: application/json
+            Authorization: 'Bearer {{apiKey}}'
+          body:
+            wallet:
+              expiration_at: '2099-12-31T00:00:00Z'
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [200, 404, 422]
+
+      # ==========================================
+      # BUG: Top up terminated wallet
+      # WalletTransactions::CreateFromParamsService finds
+      # the wallet but doesn't verify it's active.
+      # ==========================================
+
+      - name: 'PROBE: Top up terminated wallet with paid_credits'
+        stopOnFailure: false
+        action:
+          type: httpRequest
+          method: POST
+          url: lago-api/api/v1/wallet_transactions
+          headers:
+            Content-Type: application/json
+            Authorization: 'Bearer {{apiKey}}'
+          body:
+            wallet_transaction:
+              wallet_id: '{{walletId}}'
+              paid_credits: '50.0'
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [200, 404, 422]
+
+      - name: 'PROBE: Top up terminated wallet with granted_credits'
+        stopOnFailure: false
+        action:
+          type: httpRequest
+          method: POST
+          url: lago-api/api/v1/wallet_transactions
+          headers:
+            Content-Type: application/json
+            Authorization: 'Bearer {{apiKey}}'
+          body:
+            wallet_transaction:
+              wallet_id: '{{walletId}}'
+              granted_credits: '50.0'
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [200, 404, 422]
+
+      # ==========================================
+      # BUG: Duplicate wallet top-ups (no idempotency)
+      # There is no idempotency key on manual top-ups.
+      # Sending the same request twice creates two
+      # separate wallet transactions.
+      # ==========================================
+
+      - name: Create fresh wallet for idempotency test
+        action:
+          type: httpRequest
+          method: POST
+          url: lago-api/api/v1/wallets
+          headers:
+            Content-Type: application/json
+            Authorization: 'Bearer {{apiKey}}'
+          body:
+            wallet:
+              external_customer_id: wl-bug-cust-001
+              name: Idempotency Test Wallet
+              rate_amount: '1.0'
+              currency: USD
+              granted_credits: '10.0'
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+        extract:
+          freshWalletId: $.response.body.wallet.lago_id
+
+      - name: 'PROBE: First top-up (should succeed)'
+        stopOnFailure: false
+        action:
+          type: httpRequest
+          method: POST
+          url: lago-api/api/v1/wallet_transactions
+          headers:
+            Content-Type: application/json
+            Authorization: 'Bearer {{apiKey}}'
+          body:
+            wallet_transaction:
+              wallet_id: '{{freshWalletId}}'
+              paid_credits: '100.0'
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+
+      - name: 'PROBE: Duplicate top-up (same payload, no idempotency key)'
+        stopOnFailure: false
+        action:
+          type: httpRequest
+          method: POST
+          url: lago-api/api/v1/wallet_transactions
+          headers:
+            Content-Type: application/json
+            Authorization: 'Bearer {{apiKey}}'
+          body:
+            wallet_transaction:
+              wallet_id: '{{freshWalletId}}'
+              paid_credits: '100.0'
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [200, 409, 422]
+
+      # ==========================================
+      # Verify: Check wallet balance after duplicates
+      # If both went through, balance reflects double.
+      # ==========================================
+
+      - name: 'PROBE: Get wallet to check balance after duplicate top-ups'
+        stopOnFailure: false
+        action:
+          type: httpRequest
+          method: GET
+          url: lago-api/api/v1/wallets/{{freshWalletId}}
+          headers:
+            Authorization: 'Bearer {{apiKey}}'
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
