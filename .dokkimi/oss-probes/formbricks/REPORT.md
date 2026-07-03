@@ -92,10 +92,45 @@ if (existingResponse.finished) {
 
 ---
 
+### Bug 3: PUT Finish Bypasses Required Field Check (CONFIRMED)
+
+**Severity:** Medium
+**File:** `apps/web/modules/api/lib/validation.ts` line 45 (same root cause as Bug 1)
+**Endpoint:** `PUT /api/v1/client/[workspaceId]/responses/[responseId]` (unauthenticated)
+
+**Root Cause:**
+Same `validateResponseData` filter as Bug 1, but exercised through a different attack vector. The PUT handler merges old response data with new data, then validates only elements present in the merged result. If a required field was never submitted in any step, the merge still lacks it and validation skips it — allowing the response to be marked `finished` with incomplete data.
+
+**Impact:**
+
+- Multi-step survey flows (save progress, resume later) can be completed with missing required answers
+- Unlike Bug 1 (which requires a single malicious POST), this exploits the normal partial-save → finish workflow
+- Harder to detect because the response genuinely has _some_ data — just not all required fields
+
+**Reproduction:**
+
+1. Create a survey with 2 required questions
+2. `POST` a partial response (`finished: false`) with only question 1 answered
+3. `PUT` the response with `finished: true` and `data: {}` (no question 2)
+4. Response: `200 OK` — response is now finished with only 1 of 2 required fields
+
+**Dokkimi test:** `formbricks-put-finish-bypass` — PASSED
+
+- Seeds a survey with 2 required openText questions
+- POSTs a partial response with only 1 field answered
+- PUTs `finished: true` with empty data → 200 (proves bypass)
+- Verification: response is `finished: true` in DB with only 1 of 2 required fields
+
+---
+
 ## Investigated and Ruled Out
 
 | Area                                  | Finding                                                                                                                                                                   |
 | ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Storage path traversal**            | S3-based storage (`@aws-sdk/client-s3`); S3 keys are literal strings with no `..` resolution — traversal is impossible                                                    |
+| **Cross-workspace response update**   | Both POST (line 129) and PUT (line 256) check `survey.workspaceId !== workspaceId` — properly blocked                                                                     |
+| **V2 API validation**                 | Uses the same `validateResponseData` — same Bug 1 root cause, not a separate bug                                                                                          |
+| **Display endpoint status check**     | `createDisplay` properly checks survey status and workspace                                                                                                               |
 | **Webhook SSRF**                      | Solid protection: private IP blocking, DNS resolution with timeout, IPv4-mapped IPv6 detection, DNS pinning via `createPinnedDispatcher()` closes TOCTOU rebinding window |
 | **API key auth timing attacks**       | Hybrid SHA-256 lookupHash + bcrypt hashedKey with control hash for constant-time comparison when key doesn't exist                                                        |
 | **Response creation race conditions** | Uses `prisma.$transaction` wrapping both `createResponse` and `evaluateResponseQuotas`                                                                                    |
@@ -109,8 +144,9 @@ if (existingResponse.finished) {
 
 All tests pass against `ghcr.io/formbricks/formbricks:latest`.
 
-| Definition                       | Purpose                                               | Steps | Result |
-| -------------------------------- | ----------------------------------------------------- | ----- | ------ |
-| `smoke.yaml`                     | Boot Formbricks, seed data via SQL, verify client API | 3     | PASSED |
-| `bug-required-field-bypass.yaml` | Prove required field validation bypass with control   | 5     | PASSED |
-| `bug-closed-survey-update.yaml`  | Prove closed survey accepts updates with control      | 6     | PASSED |
+| Definition                       | Purpose                                                    | Steps | Result |
+| -------------------------------- | ---------------------------------------------------------- | ----- | ------ |
+| `smoke.yaml`                     | Boot Formbricks, seed data via SQL, verify client API      | 3     | PASSED |
+| `bug-required-field-bypass.yaml` | Prove required field validation bypass (POST) with control | 5     | PASSED |
+| `bug-closed-survey-update.yaml`  | Prove closed survey accepts updates with control           | 6     | PASSED |
+| `bug-put-finish-bypass.yaml`     | Prove PUT finish bypasses required fields with control     | 4     | PASSED |

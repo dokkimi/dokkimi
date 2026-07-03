@@ -1,0 +1,101 @@
+name: formbricks-put-finish-bypass
+description: >
+  BUG: A partial response can be finished via PUT without all required fields.
+  The PUT handler merges old + new data, then validates only elements present in
+  the merged data. If a required field was never submitted, the merge still lacks
+  it, and validation skips it — allowing the response to be marked finished.
+  Same root cause as the POST bypass (validation.ts line 45) but different vector.
+config:
+  timeoutSeconds: 600
+items:
+  - $ref: ../shared/fb-postgres.yaml
+  - $ref: ../shared/fb-redis.yaml
+  - $ref: ../shared/fb-web.yaml
+variables:
+  userId: n0o1p2q3r4s5t6u7v8w9x0y1z
+  orgId: o1p2q3r4s5t6u7v8w9x0y1z2a
+  workspaceId: p2q3r4s5t6u7v8w9x0y1z2a3b
+  surveyId: q3r4s5t6u7v8w9x0y1z2a3b4c
+  q1Id: r4s5t6u7v8w9x0y1z2a3b4c5d
+  q2Id: s5t6u7v8w9x0y1z2a3b4c5d6e
+tests:
+  - name: PUT finish bypasses required field check
+    steps:
+      - name: Seed survey with TWO required questions
+        action:
+          type: dbQuery
+          database: fb-postgres
+          query: |
+            INSERT INTO "User" (id, name, email, email_verified, password, created_at, updated_at)
+            VALUES ('{{userId}}', 'Bug3 User', 'bug3@test.local', NOW(), 'unused', NOW(), NOW());
+
+            INSERT INTO "Organization" (id, name, created_at, updated_at)
+            VALUES ('{{orgId}}', 'Bug3 Org', NOW(), NOW());
+
+            INSERT INTO "Membership" ("userId", "organizationId", accepted, role)
+            VALUES ('{{userId}}', '{{orgId}}', true, 'owner');
+
+            INSERT INTO "Workspace" (id, name, "organizationId", created_at, updated_at)
+            VALUES ('{{workspaceId}}', 'Bug3 WS', '{{orgId}}', NOW(), NOW());
+
+            INSERT INTO "Survey" (id, name, "workspaceId", status, type, questions, blocks, created_at, updated_at)
+            VALUES (
+              '{{surveyId}}',
+              'PUT Finish Survey',
+              '{{workspaceId}}',
+              'inProgress',
+              'link',
+              '[{"id":"{{q1Id}}","type":"openText","headline":{"default":"Name (required)"},"required":true,"inputType":"text"},{"id":"{{q2Id}}","type":"openText","headline":{"default":"Email (required)"},"required":true,"inputType":"email"}]',
+              ARRAY[]::jsonb[],
+              NOW(),
+              NOW()
+            );
+
+      - name: Submit partial response with only ONE required field
+        action:
+          type: httpRequest
+          method: POST
+          url: formbricks/api/v1/client/{{workspaceId}}/responses
+          headers:
+            Content-Type: application/json
+          body:
+            surveyId: '{{surveyId}}'
+            finished: false
+            data:
+              '{{q1Id}}': 'Alice'
+        extract:
+          responseId: $.response.body.data.id
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+              - path: $.response.body.data.id
+                operator: exists
+
+      - name: 'BUG: PUT to finish the response without providing the missing required field'
+        action:
+          type: httpRequest
+          method: PUT
+          url: formbricks/api/v1/client/{{workspaceId}}/responses/{{responseId}}
+          headers:
+            Content-Type: application/json
+          body:
+            finished: true
+            data: {}
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+
+      - name: Verify response is finished with only 1 of 2 required fields
+        action:
+          type: dbQuery
+          database: fb-postgres
+          query: SELECT id, finished, data FROM "Response" WHERE id = '{{responseId}}'
+        assertions:
+          - assertions:
+              - path: $.response.data[0].finished
+                operator: eq
+                value: true
