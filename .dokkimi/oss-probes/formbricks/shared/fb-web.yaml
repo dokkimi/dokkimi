@@ -1,0 +1,41 @@
+type: SERVICE
+name: formbricks
+image: ghcr.io/formbricks/formbricks:latest
+port: 3000
+healthCheck: /api/v2/health
+stage: 1
+env:
+  - name: DATABASE_URL
+    value: postgresql://postgres:postgres@fb-postgres:5432/formbricks?schema=public
+  - name: REDIS_URL
+    value: redis://fb-redis:6379
+  - name: NEXTAUTH_SECRET
+    value: dokkimi-test-secret-at-least-32-chars-long
+  - name: ENCRYPTION_KEY
+    value: dokkimi-test-encryption-key-32ch
+  - name: WEBAPP_URL
+    value: http://formbricks:3000
+  - name: NEXTAUTH_URL
+    value: http://formbricks:3000
+  - name: EMAIL_VERIFICATION_DISABLED
+    value: '1'
+  - name: PASSWORD_RESET_DISABLED
+    value: '1'
+  - name: RATE_LIMITING_DISABLED
+    value: '1'
+  - name: TELEMETRY_DISABLED
+    value: '1'
+  - name: E2E_TESTING
+    value: '1'
+  - name: CRON_SECRET
+    value: dokkimi-cron-secret-value
+  - name: CUBEJS_API_SECRET
+    value: dokkimi-cubejs-secret
+  - name: CUBEJS_API_URL
+    value: http://localhost:4000
+  - name: HUB_API_URL
+    value: http://localhost:8080
+  - name: HUB_API_KEY
+    value: dokkimi-hub-api-key
+  - name: NODE_ENV
+    value: production

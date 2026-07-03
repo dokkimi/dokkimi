@@ -1,0 +1,7 @@
+type: DATABASE
+name: fb-postgres
+database: postgres
+image: pgvector/pgvector:pg16
+dbName: formbricks
+dbUser: postgres
+dbPassword: postgres

@@ -1,0 +1,84 @@
+name: formbricks-smoke-test
+description: >
+  Smoke test — verify Formbricks boots, DB seeds via SQL, and the client
+  response API accepts a valid submission.
+config:
+  timeoutSeconds: 600
+items:
+  - $ref: ../shared/fb-postgres.yaml
+  - $ref: ../shared/fb-redis.yaml
+  - $ref: ../shared/fb-web.yaml
+variables:
+  userId: a1b2c3d4e5f6g7h8i9j0k1l2m
+  orgId: b2c3d4e5f6g7h8i9j0k1l2m3n
+  workspaceId: c3d4e5f6g7h8i9j0k1l2m3n4o
+  surveyId: d4e5f6g7h8i9j0k1l2m3n4o5p
+  questionId: e5f6g7h8i9j0k1l2m3n4o5p6q
+tests:
+  - name: Boot and submit a response
+    steps:
+      - name: Seed user, org, membership, workspace, and survey
+        action:
+          type: dbQuery
+          database: fb-postgres
+          query: |
+            INSERT INTO "User" (id, name, email, email_verified, password, created_at, updated_at)
+            VALUES ('{{userId}}', 'Test User', 'smoke@test.local', NOW(), 'unused', NOW(), NOW());
+
+            INSERT INTO "Organization" (id, name, created_at, updated_at)
+            VALUES ('{{orgId}}', 'Test Org', NOW(), NOW());
+
+            INSERT INTO "Membership" ("userId", "organizationId", accepted, role)
+            VALUES ('{{userId}}', '{{orgId}}', true, 'owner');
+
+            INSERT INTO "Workspace" (id, name, "organizationId", created_at, updated_at)
+            VALUES ('{{workspaceId}}', 'Test Workspace', '{{orgId}}', NOW(), NOW());
+
+            INSERT INTO "Survey" (id, name, "workspaceId", status, type, questions, blocks, created_at, updated_at)
+            VALUES (
+              '{{surveyId}}',
+              'Smoke Survey',
+              '{{workspaceId}}',
+              'inProgress',
+              'link',
+              '[{"id":"{{questionId}}","type":"openText","headline":{"default":"What is your name?"},"required":false,"inputType":"text"}]',
+              ARRAY[]::jsonb[],
+              NOW(),
+              NOW()
+            );
+
+      - name: Submit a valid response
+        action:
+          type: httpRequest
+          method: POST
+          url: formbricks/api/v1/client/{{workspaceId}}/responses
+          headers:
+            Content-Type: application/json
+          body:
+            surveyId: '{{surveyId}}'
+            finished: false
+            data:
+              '{{questionId}}': 'Hello World'
+        extract:
+          responseId: $.response.body.data.id
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+              - path: $.response.body.data.id
+                operator: exists
+
+      - name: Verify response persisted in DB
+        action:
+          type: dbQuery
+          database: fb-postgres
+          query: SELECT id, finished, data FROM "Response" WHERE "surveyId" = '{{surveyId}}'
+        assertions:
+          - assertions:
+              - count: $.response.data
+                operator: eq
+                value: 1
+              - path: $.response.data[0].finished
+                operator: eq
+                value: false

@@ -1,0 +1,4 @@
+type: DATABASE
+name: fb-redis
+database: redis
+noAuth: true

@@ -1,0 +1,137 @@
+name: formbricks-closed-survey-update
+description: >
+  BUG: The PUT response-update endpoint does not check survey.status, only
+  existingResponse.finished. A response created while the survey was open can be
+  updated/finished after the survey is closed, bypassing the status gate that
+  the POST endpoint enforces.
+  File: apps/web/app/api/v1/client/[workspaceId]/responses/[responseId]/lib/put-response-handler.ts
+config:
+  timeoutSeconds: 600
+items:
+  - $ref: ../shared/fb-postgres.yaml
+  - $ref: ../shared/fb-redis.yaml
+  - $ref: ../shared/fb-web.yaml
+variables:
+  userId: j0k1l2m3n4o5p6q7r8s9t0u1v
+  orgId: k1l2m3n4o5p6q7r8s9t0u1v2w
+  workspaceId: l2m3n4o5p6q7r8s9t0u1v2w3x
+  surveyId: m3n4o5p6q7r8s9t0u1v2w3x4y
+  questionId: q3y4z5a6b7c8d9e0f1g2h3i4j
+tests:
+  - name: Survey status bypass on response update
+    steps:
+      - name: Seed user, org, workspace, and an in-progress survey
+        action:
+          type: dbQuery
+          database: fb-postgres
+          query: |
+            INSERT INTO "User" (id, name, email, email_verified, password, created_at, updated_at)
+            VALUES ('{{userId}}', 'Bug2 User', 'bug2@test.local', NOW(), 'unused', NOW(), NOW());
+
+            INSERT INTO "Organization" (id, name, created_at, updated_at)
+            VALUES ('{{orgId}}', 'Bug2 Org', NOW(), NOW());
+
+            INSERT INTO "Membership" ("userId", "organizationId", accepted, role)
+            VALUES ('{{userId}}', '{{orgId}}', true, 'owner');
+
+            INSERT INTO "Workspace" (id, name, "organizationId", created_at, updated_at)
+            VALUES ('{{workspaceId}}', 'Bug2 WS', '{{orgId}}', NOW(), NOW());
+
+            INSERT INTO "Survey" (id, name, "workspaceId", status, type, questions, blocks, created_at, updated_at)
+            VALUES (
+              '{{surveyId}}',
+              'Status Bypass Survey',
+              '{{workspaceId}}',
+              'inProgress',
+              'link',
+              '[{"id":"{{questionId}}","type":"openText","headline":{"default":"Your feedback"},"required":false,"inputType":"text"}]',
+              ARRAY[]::jsonb[],
+              NOW(),
+              NOW()
+            );
+
+      - name: Create a partial response while the survey is still open
+        action:
+          type: httpRequest
+          method: POST
+          url: formbricks/api/v1/client/{{workspaceId}}/responses
+          headers:
+            Content-Type: application/json
+          body:
+            surveyId: '{{surveyId}}'
+            finished: false
+            data:
+              '{{questionId}}': 'partial answer'
+        extract:
+          responseId: $.response.body.data.id
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+              - path: $.response.body.data.id
+                operator: exists
+
+      - name: Close the survey by setting status to completed
+        action:
+          type: dbQuery
+          database: fb-postgres
+          query: UPDATE "Survey" SET status = 'completed', updated_at = NOW() WHERE id = '{{surveyId}}'
+
+      - name: 'CONTROL: Verify POST to a closed survey is rejected'
+        action:
+          type: httpRequest
+          method: POST
+          url: formbricks/api/v1/client/{{workspaceId}}/responses
+          headers:
+            Content-Type: application/json
+          body:
+            surveyId: '{{surveyId}}'
+            finished: false
+            data:
+              '{{questionId}}': 'new submission attempt'
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 403
+
+      - name: 'BUG: PUT update on the existing response succeeds despite survey being closed'
+        action:
+          type: httpRequest
+          method: PUT
+          url: formbricks/api/v1/client/{{workspaceId}}/responses/{{responseId}}
+          headers:
+            Content-Type: application/json
+          body:
+            finished: true
+            data:
+              '{{questionId}}': 'updated answer on closed survey'
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+              - path: $.response.body.data.id
+                operator: exists
+
+      - name: Verify response was updated and marked finished despite closed survey
+        action:
+          type: dbQuery
+          database: fb-postgres
+          query: |
+            SELECT r.finished, r.data, s.status as survey_status
+            FROM "Response" r
+            JOIN "Survey" s ON s.id = r."surveyId"
+            WHERE r.id = '{{responseId}}'
+        assertions:
+          - assertions:
+              - count: $.response.data
+                operator: eq
+                value: 1
+              - path: $.response.data[0].finished
+                operator: eq
+                value: true
+              - path: $.response.data[0].survey_status
+                operator: eq
+                value: completed

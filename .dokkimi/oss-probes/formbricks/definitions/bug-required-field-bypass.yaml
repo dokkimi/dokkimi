@@ -1,0 +1,131 @@
+name: formbricks-required-field-bypass
+description: >
+  BUG: Server-side validation only checks elements present in responseData.
+  Omitting a required field entirely bypasses validation — a response can be
+  submitted as finished with no data at all.
+  File: apps/web/modules/api/lib/validation.ts line 45
+config:
+  timeoutSeconds: 600
+items:
+  - $ref: ../shared/fb-postgres.yaml
+  - $ref: ../shared/fb-redis.yaml
+  - $ref: ../shared/fb-web.yaml
+variables:
+  userId: f6g7h8i9j0k1l2m3n4o5p6q7r
+  orgId: g7h8i9j0k1l2m3n4o5p6q7r8s
+  workspaceId: h8i9j0k1l2m3n4o5p6q7r8s9t
+  surveyId: i9j0k1l2m3n4o5p6q7r8s9t0u
+  q1Id: q1a2b3c4d5e6f7g8h9i0j1k2l
+  q2Id: q2m3n4o5p6q7r8s9t0u1v2w3x
+tests:
+  - name: Required field validation bypass
+    steps:
+      - name: Seed survey with TWO required questions
+        action:
+          type: dbQuery
+          database: fb-postgres
+          query: |
+            INSERT INTO "User" (id, name, email, email_verified, password, created_at, updated_at)
+            VALUES ('{{userId}}', 'Bug1 User', 'bug1@test.local', NOW(), 'unused', NOW(), NOW());
+
+            INSERT INTO "Organization" (id, name, created_at, updated_at)
+            VALUES ('{{orgId}}', 'Bug1 Org', NOW(), NOW());
+
+            INSERT INTO "Membership" ("userId", "organizationId", accepted, role)
+            VALUES ('{{userId}}', '{{orgId}}', true, 'owner');
+
+            INSERT INTO "Workspace" (id, name, "organizationId", created_at, updated_at)
+            VALUES ('{{workspaceId}}', 'Bug1 WS', '{{orgId}}', NOW(), NOW());
+
+            INSERT INTO "Survey" (id, name, "workspaceId", status, type, questions, blocks, created_at, updated_at)
+            VALUES (
+              '{{surveyId}}',
+              'Required Fields Survey',
+              '{{workspaceId}}',
+              'inProgress',
+              'link',
+              '[{"id":"{{q1Id}}","type":"openText","headline":{"default":"Your name (required)"},"required":true,"inputType":"text"},{"id":"{{q2Id}}","type":"openText","headline":{"default":"Your email (required)"},"required":true,"inputType":"email"}]',
+              ARRAY[]::jsonb[],
+              NOW(),
+              NOW()
+            );
+
+      - name: 'CONTROL: Submit with both required fields — should succeed'
+        action:
+          type: httpRequest
+          method: POST
+          url: formbricks/api/v1/client/{{workspaceId}}/responses
+          headers:
+            Content-Type: application/json
+          body:
+            surveyId: '{{surveyId}}'
+            finished: true
+            data:
+              '{{q1Id}}': 'Alice'
+              '{{q2Id}}': 'alice@example.com'
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+              - path: $.response.body.data.id
+                operator: exists
+
+      - name: 'BUG: Submit finished=true with EMPTY data — all required fields skipped'
+        action:
+          type: httpRequest
+          method: POST
+          url: formbricks/api/v1/client/{{workspaceId}}/responses
+          headers:
+            Content-Type: application/json
+          body:
+            surveyId: '{{surveyId}}'
+            finished: true
+            data: {}
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+              - path: $.response.body.data.id
+                operator: exists
+
+      - name: 'BUG: Submit finished=true with only ONE required field — the other skipped'
+        action:
+          type: httpRequest
+          method: POST
+          url: formbricks/api/v1/client/{{workspaceId}}/responses
+          headers:
+            Content-Type: application/json
+          body:
+            surveyId: '{{surveyId}}'
+            finished: true
+            data:
+              '{{q1Id}}': 'Bob'
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+              - path: $.response.body.data.id
+                operator: exists
+
+      - name: Verify DB has 3 responses including 2 that should have been rejected
+        action:
+          type: dbQuery
+          database: fb-postgres
+          query: SELECT id, finished, data FROM "Response" WHERE "surveyId" = '{{surveyId}}' ORDER BY created_at
+        assertions:
+          - assertions:
+              - count: $.response.data
+                operator: eq
+                value: 3
+              - path: $.response.data[0].finished
+                operator: eq
+                value: true
+              - path: $.response.data[1].finished
+                operator: eq
+                value: true
+              - path: $.response.data[2].finished
+                operator: eq
+                value: true
