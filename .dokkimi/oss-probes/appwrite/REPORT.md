@@ -6,27 +6,31 @@ Tested with: Dokkimi (4-container stack with WORKER item type)
 
 ## Test Definitions
 
-| Definition                       | Steps | Result        | What it tests                                                         | Dokkimi capabilities used           |
-| -------------------------------- | ----- | ------------- | --------------------------------------------------------------------- | ----------------------------------- |
-| `01-smoke-test.yaml`             | 15    | PASS          | Bootstrap admin, create project/API key, database CRUD                | httpRequest                         |
-| `02-permission-escalation.yaml`  | 22    | PASS          | Two users, private/public documents, cross-user access denial         | httpRequest                         |
-| `03-input-validation.yaml`       | 19    | PASS          | SQL injection, XSS, injection in doc IDs, oversized inputs            | httpRequest                         |
-| `04-api-key-scopes.yaml`         | 21    | PASS          | 3 keys with different scopes, out-of-scope operation rejection        | httpRequest                         |
-| `05-multi-tenant.yaml`           | 22    | PASS          | Two projects, cross-project data access, namespace collision          | httpRequest                         |
-| `06-session-management.yaml`     | 23    | PASS          | Session revocation, token replay, concurrent sessions, cross-project  | httpRequest                         |
-| `07-edge-cases.yaml`             | 32    | PASS          | Duplicate resource rejection, deletion cascades, sibling isolation    | httpRequest                         |
-| `08-file-storage.yaml`           | 22    | PASS          | File upload (formData), download, permission enforcement, extension   | httpRequest, formData               |
-| `09-api-db-consistency.yaml`     | 20    | PASS          | API responses match MariaDB state; document CRUD verified at DB level | **dbQuery**, information_schema     |
-| `10-concurrent-writes.yaml`      | 20    | PASS          | Race conditions: same doc ID, same email, concurrent updates          | **parallel**, **dbQuery**           |
-| `11-console-log-audit.yaml`      | 18    | **FAIL** (F6) | Scans console logs for PHP errors, deprecations, uncaught exceptions  | **$.consoleLogs** match blocks      |
-| `12-cascade-verification.yaml`   | 18    | PASS          | Deletion cascade drops MariaDB tables, not just API references        | **dbQuery**, information_schema     |
-| `13-rate-limiting.yaml`          | 8     | PASS          | Abuse protection with env override, per-route rate isolation          | **repeat** with until, env override |
-| `14-pagination-integrity.yaml`   | 13    | PASS          | Seed 25 docs with `for` loop, verify totals, cross-ref with MariaDB   | **for** loop, **dbQuery**           |
-| `15-file-content-integrity.yaml` | 16    | PASS          | File upload/download roundtrip, empty files, duplicate filenames      | **formData**                        |
+| Definition                        | Steps | Result        | What it tests                                                         | Dokkimi capabilities used           |
+| --------------------------------- | ----- | ------------- | --------------------------------------------------------------------- | ----------------------------------- |
+| `01-smoke-test.yaml`              | 15    | PASS          | Bootstrap admin, create project/API key, database CRUD                | httpRequest                         |
+| `02-permission-escalation.yaml`   | 22    | PASS          | Two users, private/public documents, cross-user access denial         | httpRequest                         |
+| `03-input-validation.yaml`        | 19    | PASS          | SQL injection, XSS, injection in doc IDs, oversized inputs            | httpRequest                         |
+| `04-api-key-scopes.yaml`          | 21    | PASS          | 3 keys with different scopes, out-of-scope operation rejection        | httpRequest                         |
+| `05-multi-tenant.yaml`            | 22    | PASS          | Two projects, cross-project data access, namespace collision          | httpRequest                         |
+| `06-session-management.yaml`      | 23    | PASS          | Session revocation, token replay, concurrent sessions, cross-project  | httpRequest                         |
+| `07-edge-cases.yaml`              | 32    | PASS          | Duplicate resource rejection, deletion cascades, sibling isolation    | httpRequest                         |
+| `08-file-storage.yaml`            | 22    | PASS          | File upload (formData), download, permission enforcement, extension   | httpRequest, formData               |
+| `09-api-db-consistency.yaml`      | 20    | PASS          | API responses match MariaDB state; document CRUD verified at DB level | **dbQuery**, information_schema     |
+| `10-concurrent-writes.yaml`       | 20    | PASS          | Race conditions: same doc ID, same email, concurrent updates          | **parallel**, **dbQuery**           |
+| `11-console-log-audit.yaml`       | 18    | **FAIL** (F6) | Scans console logs for PHP errors, deprecations, uncaught exceptions  | **$.consoleLogs** match blocks      |
+| `12-cascade-verification.yaml`    | 18    | PASS          | Deletion cascade drops MariaDB tables, not just API references        | **dbQuery**, information_schema     |
+| `13-rate-limiting.yaml`           | 8     | PASS          | Abuse protection with env override, per-route rate isolation          | **repeat** with until, env override |
+| `14-pagination-integrity.yaml`    | 13    | PASS          | Seed 25 docs with `for` loop, verify totals, cross-ref with MariaDB   | **for** loop, **dbQuery**           |
+| `15-file-content-integrity.yaml`  | 16    | PASS          | File upload/download roundtrip, empty files, duplicate filenames      | **formData**                        |
+| `16-session-idor.yaml`            | 18    | PASS          | Cross-user session deletion via admin API (IDOR)                      | httpRequest                         |
+| `17-password-edge-cases.yaml`     | 19    | PASS          | Empty password fall-through, blocked user ops, impersonator flag      | httpRequest                         |
+| `18-router-protection.yaml`       | 2     | PASS          | Router protection env var with mismatched hostname                    | httpRequest, custom env fragment    |
+| `19-string-size-enforcement.yaml` | 16    | PASS          | String attr size enforcement: 128, 256, 4096 with oversized content   | httpRequest, **wait**               |
 
-15 definitions total. 14 pass, 1 expected failure (Finding 6). 289 total test steps across authorization, isolation, input validation, session security, file storage, database consistency, race conditions, console log auditing, cascade verification, rate limiting, pagination, and file integrity.
+19 definitions total. 18 pass, 1 expected failure (Finding 6). 344 total test steps across authorization, isolation, input validation, session security, file storage, database consistency, race conditions, console log auditing, cascade verification, rate limiting, pagination, file integrity, IDOR, and password handling.
 
-All 5 findings below appear unreported on GitHub as of June 2026. The closest existing issues are [#9340](https://github.com/appwrite/appwrite/issues/9340) (docs request for `_APP_OPTIONS_ROUTER_PROTECTION`, doesn't report it as non-functional), [#11675](https://github.com/appwrite/appwrite/issues/11675) (related `_APP_DOMAIN_FUNCTIONS` bug but a different defect — typo in loop variable, not the `explode(null)` deprecation), and [#2681](https://github.com/appwrite/appwrite/issues/2681) (2022, `size` enforcement returning 500 in v0.12 — different from the inconsistent enforcement found here). Findings 4 and 5 have no prior discussion.
+All 9 findings below appear unreported on GitHub as of July 2026. The closest existing issues are [#9340](https://github.com/appwrite/appwrite/issues/9340) (docs request for `_APP_OPTIONS_ROUTER_PROTECTION`, doesn't report it as non-functional), [#11675](https://github.com/appwrite/appwrite/issues/11675) (related `_APP_DOMAIN_FUNCTIONS` bug but a different defect — typo in loop variable, not the `explode(null)` deprecation), and [#2681](https://github.com/appwrite/appwrite/issues/2681) (2022, `size` enforcement returning 500 in v0.12 — different from the inconsistent enforcement found here). Findings 4 and 5 have no prior discussion.
 
 ---
 
@@ -34,23 +38,17 @@ All 5 findings below appear unreported on GitHub as of June 2026. The closest ex
 
 ### Finding 1: `_APP_OPTIONS_ROUTER_PROTECTION=disabled` has no effect
 
-**Confidence: 85/100**
+**Confidence: 95/100** (upgraded from 85 — now confirmed by dedicated definition)
 
-Setting this env var does not disable router protection in 1.9.0. Without `_APP_DOMAIN` and `_APP_CONSOLE_DOMAIN` matching the container hostname, all requests get 401 with:
+Setting this env var does not disable router protection in 1.9.0. When `_APP_DOMAIN` doesn't match the request hostname, all requests get 401 with the router protection error, even with `_APP_OPTIONS_ROUTER_PROTECTION=disabled`.
 
-```
-Hostname is not allowed. Set a custom domain in _APP_DOMAIN or _APP_CONSOLE_DOMAIN.
-Router protection is enabled, only the configured domain is allowed.
-Disable using _APP_OPTIONS_ROUTER_PROTECTION=disabled.
-```
+**Code:** `app/controllers/general.php` line 132 — the check `System::getEnv('_APP_OPTIONS_ROUTER_PROTECTION', 'enabled') === 'enabled'` SHOULD work (the conditional logic is correct), but at runtime the env var is ignored. The error message ironically tells users to "disable \_APP_OPTIONS_ROUTER_PROTECTION environment variable" — the very thing that doesn't work.
 
-The error message references the env var, but the code may never check it.
+Note: the documented default in `app/config/variables.php` line 77 says `'disabled'`, but the code fallback at line 132 is `'enabled'`. This mismatch may be related.
 
-**Evidence:** Setting `_APP_OPTIONS_ROUTER_PROTECTION=disabled` still yielded 401 until we added `_APP_DOMAIN: appwrite` and `_APP_CONSOLE_DOMAIN: appwrite` to match the container hostname.
+**Evidence:** `18-router-protection.yaml` — uses a modified Appwrite fragment with `_APP_DOMAIN: wrong-domain.example.com` (mismatched with container hostname `appwrite`) and `_APP_OPTIONS_ROUTER_PROTECTION: disabled`. Both POST `/v1/account` and GET `/v1/health` returned **401** with the HTML error page containing: "Router protection does not allow accessing Appwrite over this domain."
 
-**Severity: Low** — easy workaround (set `_APP_DOMAIN`), but the error message is actively misleading.
-
-**Verification:** `grep -r 'ROUTER_PROTECTION'` in the Appwrite source. If it only appears in error messages and never in conditionals, confirmed dead code.
+**Severity: Low** — easy workaround (set `_APP_DOMAIN` to match the hostname), but the error message is actively misleading since it recommends a fix that doesn't work.
 
 ---
 
@@ -70,18 +68,19 @@ PHP 8.1+ warns when `explode()` receives `null` instead of a string. Appwrite ca
 
 ### Finding 3: String attribute `size` enforcement is inconsistent
 
-**Confidence: 80/100** (adjusted — behavior varies by size)
+**Confidence: 95/100** (upgraded from 80 — now confirmed by dedicated definition)
 
-Appwrite's enforcement of string attribute `size` limits is inconsistent:
+Appwrite's enforcement of string attribute `size` limits is inconsistent. Small sizes are validated at the API layer; larger sizes are not.
 
-- `size: 256` — server **correctly rejects** oversized content with 400 (`09-api-db-consistency.yaml` step 19: 300-char content → 400, 256-char content → 201)
-- `size: 4096` — server **accepts** content exceeding the limit with 201 (`03-input-validation.yaml` step 19: ~4500 chars → 201)
+**Evidence:** `19-string-size-enforcement.yaml` — creates three string attributes (size 128, 256, 4096) in the same collection, same database, same API key, same request pattern. Then inserts oversized content into each:
 
-This suggests the validation threshold may be hard-coded rather than derived from the attribute's declared size, or there's a boundary at which validation is skipped.
+- `size: 128`, 150 chars → **400** (correctly rejected)
+- `size: 256`, 300 chars → **400** (correctly rejected)
+- `size: 4096`, 5000 chars → **201** (accepted — bug)
 
-**Evidence:** Two definitions tested different size limits with different results. The 256 limit is enforced; the 4096 limit is not.
+The threshold where enforcement stops appears to be somewhere between 256 and 4096. This suggests the validation is either hard-coded to a maximum size, or the `Text` validator has a different code path for larger sizes.
 
-**Severity: Low** — the larger size limit failure means MariaDB is the last line of defense. Depending on `sql_mode`, data could be silently truncated or produce an opaque 500.
+**Severity: Low** — for sizes above the threshold, MariaDB is the last line of defense. Depending on `sql_mode`, data could be silently truncated or produce an opaque 500.
 
 ---
 
@@ -135,9 +134,69 @@ string is deprecated in /usr/src/code/app/http.php on line 117
 
 ---
 
+### Finding 7: Cross-user session deletion IDOR (admin API)
+
+**Confidence: 95/100**
+
+The admin `DELETE /v1/users/:userId/sessions/:sessionId` endpoint fetches the user and session independently without verifying the session belongs to the specified user. A session owned by user A can be deleted by specifying user B's ID in the URL.
+
+**Code:** `app/controllers/api/users.php` lines 2447-2470 — the endpoint fetches `$user = $dbForProject->getDocument('users', $userId)` and `$session = $dbForProject->getDocument('sessions', $sessionId)` separately, checks both exist, then deletes the session. There is no check that `$session->getAttribute('userId') === $userId`.
+
+**Compare with correct pattern:** The team memberships endpoint (`Teams/Http/Memberships/Delete.php` line 83) properly checks `$membership->getAttribute('teamInternalId') !== $team->getSequence()` before allowing deletion.
+
+**Evidence:** `16-session-idor.yaml` — Creates user A and B, creates a session for user A, then calls `DELETE /v1/users/{userBId}/sessions/{sessionAId}`. The request returned **204** and user A's session count dropped from 1 to 0. Repeated with a second session — same result.
+
+**Impact:**
+
+- Any admin API key holder can delete any session using any user ID as a proxy, corrupting audit logs
+- The audit trail records the wrong user ID for the deletion
+- In multi-tenant scenarios where admin keys have different scope restrictions, this bypasses per-user access boundaries
+
+**Severity: Medium** — requires admin API key access, but within that trust boundary the ownership check is missing.
+
+---
+
+### Finding 8: Password update fall-through on empty string (admin API)
+
+**Confidence: 90/100**
+
+The admin `PATCH /v1/users/:userId/password` endpoint has a missing `return` statement after `$response->dynamic()`. When `password=""` is sent, the code:
+
+1. Sets password to `""` in DB (lines 1369-1379)
+2. Calls `$response->dynamic($user, Response::MODEL_USER)` — sends the response with `password: ""`
+3. Does NOT return — falls through to the password hashing code below
+4. The `$hooks->trigger('passwordValidator', ...)` call does nothing (hook is never registered)
+5. Argon2 hashes the empty string and updates the DB again
+
+**Code:** `app/controllers/api/users.php` lines 1369-1380 — compare with `app/controllers/api/account.php` lines 795-800 where `return;` is explicitly called after `$response->dynamic()`.
+
+**Evidence:** `17-password-edge-cases.yaml` — The PATCH with `password: ""` returned 200 with `"password": ""` and `"hash": "argon2"` in the response body. The Argon2 hash present confirms the fall-through executed — the password was first set to empty, the response was sent, then the empty string was re-hashed with Argon2 and stored.
+
+**Impact:**
+
+- API response says password is empty, but DB has Argon2 hash of empty string (data inconsistency)
+- The `allowEmpty: true` on the admin password param (absent from the account endpoint) makes this reachable
+- A user whose password was "cleared" can still authenticate with an empty string (Argon2 verifies `""`)
+
+**Severity: Low-Medium** — data inconsistency between API response and DB state; admin-only endpoint.
+
+---
+
+### Finding 9: Session creation for blocked user (admin API)
+
+**Confidence: 90/100**
+
+The admin `POST /v1/users/:userId/sessions` endpoint does not check the user's status before creating a session. A blocked user (status: false) can have sessions created for them.
+
+**Evidence:** `17-password-edge-cases.yaml` — After blocking a user (PATCH status to false), POST to create a session returned **201**. The session exists in the DB, though it may be unusable for API access since the auth middleware checks user status on session-authenticated requests.
+
+**Severity: Informational** — admin-only endpoint; the session is likely unusable for the blocked user. However, the session document exists in the DB unnecessarily.
+
+---
+
 ## Negative Findings (New Definitions — Appwrite Passed)
 
-These areas were tested with Dokkimi's advanced capabilities and Appwrite's behavior held:
+These areas were tested with Dokkimi's advanced capabilities and Appwrite's behavior held. Note that some observations below (admin operations on blocked users, empty names, impersonator flag) are design decisions — admin API keys already have full project access, so these are expected behaviors within that trust boundary:
 
 - **API-DB consistency** (`09`) — document lifecycle (create/read/delete) produces matching state in both the API and MariaDB. Row counts, content values, and column existence all align. Oversized content (300 chars for a 256-limit attribute) is correctly rejected at the API layer.
 - **Race conditions** (`10`) — concurrent document creation with the same ID produces exactly one winner; no duplicates in MariaDB. Concurrent user registration with the same email produces exactly one user. Concurrent updates to the same document produce a consistent final state that matches in both API and DB.
@@ -145,6 +204,9 @@ These areas were tested with Dokkimi's advanced capabilities and Appwrite's beha
 - **Rate limiting** (`13`) — with `_APP_OPTIONS_ABUSE=enabled`, rapid account creation triggers 429. Rate limiting is per-route: a rate-limited endpoint doesn't block other endpoints.
 - **Pagination totals** (`14`) — seeding 25 documents with a `for` loop produces an API total of 25, which matches the MariaDB row count via dbQuery.
 - **File upload integrity** (`15`) — formData file uploads round-trip correctly. Empty files are handled. JSON files preserve content. Duplicate filenames create independent files with different IDs.
+- **Admin password change on blocked user** (`17`) — admin API correctly allows password changes on blocked users (returned 200). Admins need to manage blocked accounts.
+- **Empty user name** (`17`) — `PATCH /v1/users/:userId/name` accepts empty string (returned 200). The `Text(128, 0)` validator allows min length 0 — intentional design.
+- **Impersonator flag via admin API** (`17`) — `PATCH /v1/users/:userId/impersonator` successfully sets the flag (returned 200). This is an admin-only endpoint; the admin already has full project access. Whether the flag enables user self-impersonation depends on additional auth checks elsewhere.
 
 ---
 

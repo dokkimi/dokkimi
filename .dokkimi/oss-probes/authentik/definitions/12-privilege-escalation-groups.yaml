@@ -1,0 +1,366 @@
+name: authentik-privilege-escalation-groups
+description: |
+  Probe Authentik group-based privilege escalation vectors: adding users
+  to superuser groups via the group endpoint (bypassing enable_group_superuser
+  check), changing user types, and PATCH-based superuser field manipulation.
+config:
+  timeoutSeconds: 600
+items:
+  - $ref: ../shared/authentik-postgres.yaml
+  - $ref: ../shared/authentik-worker.yaml
+  - $ref: ../shared/authentik-server.yaml
+variables:
+  apiToken: dokkimi-bootstrap-api-token
+tests:
+  - name: Group-based privilege escalation probes
+    steps:
+      - name: Wait for migrations and startup
+        action:
+          type: wait
+          durationMs: 60000
+
+      - name: Wait for API to be ready
+        stopOnFailure: false
+        repeat:
+          count: 30
+          as: attempt
+          delayMs: 5000
+          until:
+            - path: $.response.status
+              operator: eq
+              value: 200
+        action:
+          type: httpRequest
+          method: GET
+          url: authentik-server/api/v3/admin/version/
+          headers:
+            Authorization: Bearer {{apiToken}}
+
+      # --- Setup: create a regular user and a superuser group ---
+
+      - name: Create regular user
+        action:
+          type: httpRequest
+          method: POST
+          url: authentik-server/api/v3/core/users/
+          headers:
+            Authorization: Bearer {{apiToken}}
+            Content-Type: application/json
+          body:
+            username: escalation-target
+            name: Escalation Target
+            email: escalation@dokkimi.test
+            is_active: true
+            path: users
+        extract:
+          targetUserId: $.response.body.pk
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 201
+
+      - name: Verify user is not superuser
+        action:
+          type: httpRequest
+          method: GET
+          url: authentik-server/api/v3/core/users/{{targetUserId}}/
+          headers:
+            Authorization: Bearer {{apiToken}}
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+              - path: $.response.body.is_superuser
+                operator: eq
+                value: false
+
+      - name: Create superuser group
+        action:
+          type: httpRequest
+          method: POST
+          url: authentik-server/api/v3/core/groups/
+          headers:
+            Authorization: Bearer {{apiToken}}
+            Content-Type: application/json
+          body:
+            name: Probe Superuser Group
+            is_superuser: true
+        extract:
+          superGroupId: $.response.body.pk
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 201
+              - path: $.response.body.is_superuser
+                operator: eq
+                value: true
+
+      # ==========================================
+      # PROBE: Add user to superuser group via
+      # POST /groups/{pk}/add_user/
+      # GroupViewSet.add_user only checks
+      # add_user_to_group permission but NOT
+      # enable_group_superuser.
+      # The user-side path (PATCH /users/{id} with
+      # groups: [superuser_group_pk]) does check
+      # enable_group_superuser.
+      # ==========================================
+
+      - name: 'PROBE: Add user to superuser group via group endpoint'
+        stopOnFailure: false
+        action:
+          type: httpRequest
+          method: POST
+          url: authentik-server/api/v3/core/groups/{{superGroupId}}/add_user/
+          headers:
+            Authorization: Bearer {{apiToken}}
+            Content-Type: application/json
+          body:
+            pk: '{{targetUserId}}'
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [204, 403]
+
+      - name: Check if user became superuser after group add
+        stopOnFailure: false
+        action:
+          type: httpRequest
+          method: GET
+          url: authentik-server/api/v3/core/users/{{targetUserId}}/
+          headers:
+            Authorization: Bearer {{apiToken}}
+        extract:
+          isSuperuserAfterGroupAdd: $.response.body.is_superuser
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+
+      # Remove user from superuser group to reset state
+      - name: Remove user from superuser group
+        stopOnFailure: false
+        action:
+          type: httpRequest
+          method: POST
+          url: authentik-server/api/v3/core/groups/{{superGroupId}}/remove_user/
+          headers:
+            Authorization: Bearer {{apiToken}}
+            Content-Type: application/json
+          body:
+            pk: '{{targetUserId}}'
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [204, 404]
+
+      # ==========================================
+      # PROBE: Add user to superuser group via
+      # PATCH /groups/{pk}/ with users list
+      # GroupSerializer.validate_users only checks
+      # add_user_to_group, NOT enable_group_superuser.
+      # ==========================================
+
+      - name: 'PROBE: Add user to superuser group via group PATCH'
+        stopOnFailure: false
+        action:
+          type: httpRequest
+          method: PATCH
+          url: authentik-server/api/v3/core/groups/{{superGroupId}}/
+          headers:
+            Authorization: Bearer {{apiToken}}
+            Content-Type: application/json
+          body:
+            users:
+              - '{{targetUserId}}'
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [200, 403]
+
+      - name: Check if user became superuser after group PATCH
+        stopOnFailure: false
+        action:
+          type: httpRequest
+          method: GET
+          url: authentik-server/api/v3/core/users/{{targetUserId}}/
+          headers:
+            Authorization: Bearer {{apiToken}}
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+
+      # Remove user again
+      - name: Remove user from superuser group again
+        stopOnFailure: false
+        action:
+          type: httpRequest
+          method: POST
+          url: authentik-server/api/v3/core/groups/{{superGroupId}}/remove_user/
+          headers:
+            Authorization: Bearer {{apiToken}}
+            Content-Type: application/json
+          body:
+            pk: '{{targetUserId}}'
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [204, 404]
+
+      # ==========================================
+      # PROBE: User type change — internal → service_account
+      # UserSerializer.validate_type blocks:
+      # - internal_service_account → anything else
+      # - anything → internal_service_account
+      # But does NOT block:
+      # - internal → service_account
+      # - external → service_account
+      # Changing type may bypass licensing or UI restrictions.
+      # ==========================================
+
+      - name: 'PROBE: Change user type to service_account'
+        stopOnFailure: false
+        action:
+          type: httpRequest
+          method: PATCH
+          url: authentik-server/api/v3/core/users/{{targetUserId}}/
+          headers:
+            Authorization: Bearer {{apiToken}}
+            Content-Type: application/json
+          body:
+            type: service_account
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [200, 400, 403, 422]
+
+      - name: Check user type after change
+        stopOnFailure: false
+        action:
+          type: httpRequest
+          method: GET
+          url: authentik-server/api/v3/core/users/{{targetUserId}}/
+          headers:
+            Authorization: Bearer {{apiToken}}
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+
+      - name: 'PROBE: Change user type to external'
+        stopOnFailure: false
+        action:
+          type: httpRequest
+          method: PATCH
+          url: authentik-server/api/v3/core/users/{{targetUserId}}/
+          headers:
+            Authorization: Bearer {{apiToken}}
+            Content-Type: application/json
+          body:
+            type: external
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [200, 400, 403, 422]
+
+      - name: 'PROBE: Change user type to internal_service_account'
+        stopOnFailure: false
+        action:
+          type: httpRequest
+          method: PATCH
+          url: authentik-server/api/v3/core/users/{{targetUserId}}/
+          headers:
+            Authorization: Bearer {{apiToken}}
+            Content-Type: application/json
+          body:
+            type: internal_service_account
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [200, 400, 403, 422]
+
+      # ==========================================
+      # PROBE: PATCH is_superuser on user directly
+      # Already in report as F1 — is_superuser is a
+      # SerializerMethodField (read-only) so PATCH
+      # returns 200 but silently drops the change.
+      # Re-testing for completeness and to capture
+      # the exact response.
+      # ==========================================
+
+      - name: 'PROBE: PATCH is_superuser to true on user'
+        stopOnFailure: false
+        action:
+          type: httpRequest
+          method: PATCH
+          url: authentik-server/api/v3/core/users/{{targetUserId}}/
+          headers:
+            Authorization: Bearer {{apiToken}}
+            Content-Type: application/json
+          body:
+            is_superuser: true
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [200, 400, 403, 422]
+
+      - name: Verify is_superuser still false after PATCH
+        stopOnFailure: false
+        action:
+          type: httpRequest
+          method: GET
+          url: authentik-server/api/v3/core/users/{{targetUserId}}/
+          headers:
+            Authorization: Bearer {{apiToken}}
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+              - path: $.response.body.is_superuser
+                operator: eq
+                value: false
+
+      # Cleanup
+      - name: Delete superuser group
+        stopOnFailure: false
+        action:
+          type: httpRequest
+          method: DELETE
+          url: authentik-server/api/v3/core/groups/{{superGroupId}}/
+          headers:
+            Authorization: Bearer {{apiToken}}
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [204, 404]
+
+      - name: Delete target user
+        stopOnFailure: false
+        action:
+          type: httpRequest
+          method: DELETE
+          url: authentik-server/api/v3/core/users/{{targetUserId}}/
+          headers:
+            Authorization: Bearer {{apiToken}}
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [204, 404]

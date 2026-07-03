@@ -1,0 +1,72 @@
+name: appwrite-router-protection
+description: |
+  Probe Appwrite router protection behavior. When _APP_DOMAIN is not set
+  (defaults to 'localhost') but _APP_OPTIONS_ROUTER_PROTECTION=disabled,
+  requests to the 'appwrite' hostname should still succeed because the
+  env var disables the hostname check. This tests whether F1 from the
+  original report is accurate.
+
+  Code: general.php line 132:
+    if (!in_array($host, $platformHostnames) &&
+        System::getEnv('_APP_OPTIONS_ROUTER_PROTECTION', 'enabled') === 'enabled')
+
+  With _APP_OPTIONS_ROUTER_PROTECTION=disabled, the second condition is
+  false, so the exception should NOT be thrown even if the hostname
+  doesn't match _APP_DOMAIN.
+config:
+  timeoutSeconds: 300
+items:
+  - $ref: ../shared/appwrite-mariadb.yaml
+  - $ref: ../shared/appwrite-redis.yaml
+  - $ref: ../shared/appwrite-worker-db.yaml
+  - $ref: ../shared/appwrite-api-no-domain.yaml
+tests:
+  - name: Router protection with disabled env var
+    steps:
+      # ==========================================
+      # PROBE: With _APP_DOMAIN unset (defaults to
+      # 'localhost') and _APP_OPTIONS_ROUTER_PROTECTION
+      # =disabled, a request to hostname 'appwrite'
+      # should succeed. If the env var works, we get
+      # 201. If it doesn't, we get 401.
+      # ==========================================
+
+      - name: 'PROBE: Register account with mismatched hostname'
+        stopOnFailure: false
+        action:
+          type: httpRequest
+          method: POST
+          url: appwrite/v1/account
+          headers:
+            Content-Type: application/json
+            X-Appwrite-Project: console
+          body:
+            userId: 'unique()'
+            email: routertest@dokkimi.test
+            password: TestPass123!
+            name: Router Test
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [201, 401, 403]
+
+      # ==========================================
+      # PROBE: Also test the health endpoint which
+      # has a different code path. If router protection
+      # is NOT disabled, this should also fail.
+      # ==========================================
+
+      - name: 'PROBE: Health check with mismatched hostname'
+        stopOnFailure: false
+        action:
+          type: httpRequest
+          method: GET
+          url: appwrite/v1/health
+          headers:
+            X-Appwrite-Project: console
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [200, 401, 403]

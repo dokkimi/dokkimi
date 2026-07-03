@@ -1,0 +1,270 @@
+name: authentik-api-error-handling
+description: |
+  Probe Authentik API endpoints for unhandled exceptions and input validation
+  gaps: non-numeric query params, trivially short token keys, past-expiry
+  tokens, and service account creation with special characters.
+config:
+  timeoutSeconds: 600
+items:
+  - $ref: ../shared/authentik-postgres.yaml
+  - $ref: ../shared/authentik-worker.yaml
+  - $ref: ../shared/authentik-server.yaml
+variables:
+  apiToken: dokkimi-bootstrap-api-token
+tests:
+  - name: API error handling and input validation
+    steps:
+      - name: Wait for migrations and startup
+        action:
+          type: wait
+          durationMs: 60000
+
+      - name: Wait for API to be ready
+        stopOnFailure: false
+        repeat:
+          count: 30
+          as: attempt
+          delayMs: 5000
+          until:
+            - path: $.response.status
+              operator: eq
+              value: 200
+        action:
+          type: httpRequest
+          method: GET
+          url: authentik-server/api/v3/admin/version/
+          headers:
+            Authorization: Bearer {{apiToken}}
+
+      # ==========================================
+      # BUG: top_per_user crashes on non-numeric top_n
+      # events/api/events.py line 244:
+      #   top_n = int(request.query_params.get("top_n", "15"))
+      # No try/except around int() — non-numeric input
+      # causes unhandled ValueError → 500.
+      # ==========================================
+
+      - name: 'PROBE: Events top_per_user with non-numeric top_n'
+        stopOnFailure: false
+        action:
+          type: httpRequest
+          method: GET
+          url: authentik-server/api/v3/events/events/top_per_user/?top_n=abc
+          headers:
+            Authorization: Bearer {{apiToken}}
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [200, 400, 422, 500]
+
+      - name: 'PROBE: Events top_per_user with negative top_n'
+        stopOnFailure: false
+        action:
+          type: httpRequest
+          method: GET
+          url: authentik-server/api/v3/events/events/top_per_user/?top_n=-5
+          headers:
+            Authorization: Bearer {{apiToken}}
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [200, 400, 422, 500]
+
+      - name: 'PROBE: Events top_per_user with huge top_n'
+        stopOnFailure: false
+        action:
+          type: httpRequest
+          method: GET
+          url: authentik-server/api/v3/events/events/top_per_user/?top_n=999999999
+          headers:
+            Authorization: Bearer {{apiToken}}
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [200, 400, 422, 500]
+
+      # ==========================================
+      # BUG: Token set_key has no minimum length
+      # tokens.py TokenViewSet.set_key checks
+      #   if not key: return Response(status=400)
+      # but accepts any non-empty string including "a".
+      # A single-character token key is trivially guessable.
+      # ==========================================
+
+      - name: Create test token
+        action:
+          type: httpRequest
+          method: POST
+          url: authentik-server/api/v3/core/tokens/
+          headers:
+            Authorization: Bearer {{apiToken}}
+            Content-Type: application/json
+          body:
+            identifier: test-short-key-token
+            intent: api
+        extract:
+          tokenIdentifier: $.response.body.identifier
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 201
+
+      - name: 'PROBE: Set token key to single character'
+        stopOnFailure: false
+        action:
+          type: httpRequest
+          method: POST
+          url: authentik-server/api/v3/core/tokens/{{tokenIdentifier}}/set_key/
+          headers:
+            Authorization: Bearer {{apiToken}}
+            Content-Type: application/json
+          body:
+            key: a
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [204, 400, 422]
+
+      - name: 'PROBE: Set token key to empty string'
+        stopOnFailure: false
+        action:
+          type: httpRequest
+          method: POST
+          url: authentik-server/api/v3/core/tokens/{{tokenIdentifier}}/set_key/
+          headers:
+            Authorization: Bearer {{apiToken}}
+            Content-Type: application/json
+          body:
+            key: ''
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [204, 400, 422]
+
+      # ==========================================
+      # BUG: Service account with special characters
+      # UserViewSet.service_account uses:
+      #   username = body.validated_data["name"]
+      #   User.objects.create(username=username, ...)
+      # User.objects.create() bypasses model-level
+      # username validators (UnicodeUsernameValidator).
+      # ==========================================
+
+      - name: 'PROBE: Service account with spaces in name'
+        stopOnFailure: false
+        action:
+          type: httpRequest
+          method: POST
+          url: authentik-server/api/v3/core/users/service_account/
+          headers:
+            Authorization: Bearer {{apiToken}}
+            Content-Type: application/json
+          body:
+            name: 'service with spaces'
+            create_group: false
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [200, 400, 422]
+
+      - name: 'PROBE: Service account with HTML in name'
+        stopOnFailure: false
+        action:
+          type: httpRequest
+          method: POST
+          url: authentik-server/api/v3/core/users/service_account/
+          headers:
+            Authorization: Bearer {{apiToken}}
+            Content-Type: application/json
+          body:
+            name: '<script>alert(1)</script>'
+            create_group: false
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [200, 400, 422]
+
+      - name: 'PROBE: Service account with path traversal in name'
+        stopOnFailure: false
+        action:
+          type: httpRequest
+          method: POST
+          url: authentik-server/api/v3/core/users/service_account/
+          headers:
+            Authorization: Bearer {{apiToken}}
+            Content-Type: application/json
+          body:
+            name: '../../../etc/passwd'
+            create_group: false
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [200, 400, 422]
+
+      - name: 'PROBE: Service account with very long name (500 chars)'
+        stopOnFailure: false
+        action:
+          type: httpRequest
+          method: POST
+          url: authentik-server/api/v3/core/users/service_account/
+          headers:
+            Authorization: Bearer {{apiToken}}
+            Content-Type: application/json
+          body:
+            name: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+            create_group: false
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [200, 400, 422]
+
+      # ==========================================
+      # BUG: Token with past expiry date accepted
+      # TokenSerializer.validate for app_password
+      # checks expires <= max_lifetime but does NOT
+      # check if expires is in the past.
+      # ==========================================
+
+      - name: 'PROBE: Create app_password token with past expiry'
+        stopOnFailure: false
+        action:
+          type: httpRequest
+          method: POST
+          url: authentik-server/api/v3/core/tokens/
+          headers:
+            Authorization: Bearer {{apiToken}}
+            Content-Type: application/json
+          body:
+            identifier: test-past-expiry-token
+            intent: app_password
+            expires: '2020-01-01T00:00:00Z'
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [201, 400, 422]
+
+      # Cleanup
+      - name: Delete test token
+        stopOnFailure: false
+        action:
+          type: httpRequest
+          method: DELETE
+          url: authentik-server/api/v3/core/tokens/test-short-key-token/
+          headers:
+            Authorization: Bearer {{apiToken}}
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [204, 404]

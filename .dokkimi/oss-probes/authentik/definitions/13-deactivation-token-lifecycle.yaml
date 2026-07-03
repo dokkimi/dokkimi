@@ -1,0 +1,413 @@
+name: authentik-deactivation-token-lifecycle
+description: |
+  Probe Authentik user deactivation and token lifecycle edge cases:
+  deactivated user session revocation, token creation for deactivated users,
+  token user binding, and token intent manipulation.
+config:
+  timeoutSeconds: 600
+items:
+  - $ref: ../shared/authentik-postgres.yaml
+  - $ref: ../shared/authentik-worker.yaml
+  - $ref: ../shared/authentik-server.yaml
+variables:
+  apiToken: dokkimi-bootstrap-api-token
+tests:
+  - name: Deactivation and token lifecycle probes
+    steps:
+      - name: Wait for migrations and startup
+        action:
+          type: wait
+          durationMs: 60000
+
+      - name: Wait for API to be ready
+        stopOnFailure: false
+        repeat:
+          count: 30
+          as: attempt
+          delayMs: 5000
+          until:
+            - path: $.response.status
+              operator: eq
+              value: 200
+        action:
+          type: httpRequest
+          method: GET
+          url: authentik-server/api/v3/admin/version/
+          headers:
+            Authorization: Bearer {{apiToken}}
+
+      # --- Setup: create user with API token ---
+
+      - name: Create user for deactivation test
+        action:
+          type: httpRequest
+          method: POST
+          url: authentik-server/api/v3/core/users/
+          headers:
+            Authorization: Bearer {{apiToken}}
+            Content-Type: application/json
+          body:
+            username: deactivation-test-user
+            name: Deactivation Test User
+            email: deact@dokkimi.test
+            is_active: true
+            path: users
+        extract:
+          userId: $.response.body.pk
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 201
+
+      - name: Create API token for user
+        action:
+          type: httpRequest
+          method: POST
+          url: authentik-server/api/v3/core/tokens/
+          headers:
+            Authorization: Bearer {{apiToken}}
+            Content-Type: application/json
+          body:
+            identifier: deact-user-token
+            intent: api
+            user: '{{userId}}'
+        extract:
+          userTokenId: $.response.body.identifier
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 201
+
+      - name: Get token key
+        action:
+          type: httpRequest
+          method: GET
+          url: authentik-server/api/v3/core/tokens/deact-user-token/view_key/
+          headers:
+            Authorization: Bearer {{apiToken}}
+        extract:
+          userTokenKey: $.response.body.key
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+
+      - name: Verify token works before deactivation
+        action:
+          type: httpRequest
+          method: GET
+          url: authentik-server/api/v3/core/users/me/
+          headers:
+            Authorization: Bearer {{userTokenKey}}
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+              - path: $.response.body.user.username
+                operator: eq
+                value: deactivation-test-user
+
+      # ==========================================
+      # PROBE: Deactivate user and check token
+      # UserViewSet.partial_update deletes sessions
+      # when is_active=false, but does it also
+      # revoke API tokens? The code only deletes
+      # Session objects, not Token objects.
+      # ==========================================
+
+      - name: Deactivate user
+        action:
+          type: httpRequest
+          method: PATCH
+          url: authentik-server/api/v3/core/users/{{userId}}/
+          headers:
+            Authorization: Bearer {{apiToken}}
+            Content-Type: application/json
+          body:
+            is_active: false
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+              - path: $.response.body.is_active
+                operator: eq
+                value: false
+
+      - name: 'PROBE: Use deactivated user token'
+        stopOnFailure: false
+        action:
+          type: httpRequest
+          method: GET
+          url: authentik-server/api/v3/core/users/me/
+          headers:
+            Authorization: Bearer {{userTokenKey}}
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [200, 401, 403]
+
+      # ==========================================
+      # PROBE: Create token for deactivated user
+      # TokenSerializer.validate doesn't check if
+      # the user is active. Can we create new tokens
+      # for a deactivated user?
+      # ==========================================
+
+      - name: 'PROBE: Create token for deactivated user'
+        stopOnFailure: false
+        action:
+          type: httpRequest
+          method: POST
+          url: authentik-server/api/v3/core/tokens/
+          headers:
+            Authorization: Bearer {{apiToken}}
+            Content-Type: application/json
+          body:
+            identifier: deact-user-new-token
+            intent: api
+            user: '{{userId}}'
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [201, 400, 403, 422]
+
+      # Reactivate user for further tests
+      - name: Reactivate user
+        action:
+          type: httpRequest
+          method: PATCH
+          url: authentik-server/api/v3/core/users/{{userId}}/
+          headers:
+            Authorization: Bearer {{apiToken}}
+            Content-Type: application/json
+          body:
+            is_active: true
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+
+      # ==========================================
+      # PROBE: Change token user binding
+      # TokenSerializer.validate_user blocks user
+      # change on UPDATE but what about on create?
+      # Can admin create token for user A then
+      # PATCH it to user B?
+      # ==========================================
+
+      - name: Create second user
+        action:
+          type: httpRequest
+          method: POST
+          url: authentik-server/api/v3/core/users/
+          headers:
+            Authorization: Bearer {{apiToken}}
+            Content-Type: application/json
+          body:
+            username: token-rebind-target
+            name: Token Rebind Target
+            email: rebind@dokkimi.test
+            is_active: true
+            path: users
+        extract:
+          secondUserId: $.response.body.pk
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 201
+
+      - name: Create token bound to first user
+        action:
+          type: httpRequest
+          method: POST
+          url: authentik-server/api/v3/core/tokens/
+          headers:
+            Authorization: Bearer {{apiToken}}
+            Content-Type: application/json
+          body:
+            identifier: rebind-test-token
+            intent: api
+            user: '{{userId}}'
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 201
+
+      - name: 'PROBE: PATCH token to change user binding'
+        stopOnFailure: false
+        action:
+          type: httpRequest
+          method: PATCH
+          url: authentik-server/api/v3/core/tokens/rebind-test-token/
+          headers:
+            Authorization: Bearer {{apiToken}}
+            Content-Type: application/json
+          body:
+            user: '{{secondUserId}}'
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [200, 400, 403, 422]
+
+      # ==========================================
+      # PROBE: Token intent change after creation
+      # Can we change a token's intent from api
+      # to verification or recovery?
+      # ==========================================
+
+      - name: 'PROBE: PATCH token intent to verification'
+        stopOnFailure: false
+        action:
+          type: httpRequest
+          method: PATCH
+          url: authentik-server/api/v3/core/tokens/rebind-test-token/
+          headers:
+            Authorization: Bearer {{apiToken}}
+            Content-Type: application/json
+          body:
+            intent: verification
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [200, 400, 403, 422]
+
+      - name: 'PROBE: PATCH token intent to recovery'
+        stopOnFailure: false
+        action:
+          type: httpRequest
+          method: PATCH
+          url: authentik-server/api/v3/core/tokens/rebind-test-token/
+          headers:
+            Authorization: Bearer {{apiToken}}
+            Content-Type: application/json
+          body:
+            intent: recovery
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [200, 400, 403, 422]
+
+      # ==========================================
+      # PROBE: Create token with invalid intent
+      # TokenSerializer.validate checks:
+      #   if intent not in [api, app_password]: error
+      # But does PATCH enforce the same check?
+      # ==========================================
+
+      - name: 'PROBE: Create token with verification intent'
+        stopOnFailure: false
+        action:
+          type: httpRequest
+          method: POST
+          url: authentik-server/api/v3/core/tokens/
+          headers:
+            Authorization: Bearer {{apiToken}}
+            Content-Type: application/json
+          body:
+            identifier: invalid-intent-token
+            intent: verification
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [201, 400, 422]
+
+      - name: 'PROBE: Create token with recovery intent'
+        stopOnFailure: false
+        action:
+          type: httpRequest
+          method: POST
+          url: authentik-server/api/v3/core/tokens/
+          headers:
+            Authorization: Bearer {{apiToken}}
+            Content-Type: application/json
+          body:
+            identifier: recovery-intent-token
+            intent: recovery
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [201, 400, 422]
+
+      # ==========================================
+      # PROBE: Set password to empty string
+      # User.set_password with empty string might
+      # create a usable but trivially guessable password.
+      # ==========================================
+
+      - name: 'PROBE: Set password to empty string'
+        stopOnFailure: false
+        action:
+          type: httpRequest
+          method: POST
+          url: authentik-server/api/v3/core/users/{{userId}}/set_password/
+          headers:
+            Authorization: Bearer {{apiToken}}
+            Content-Type: application/json
+          body:
+            password: ''
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [204, 400, 422]
+
+      - name: 'PROBE: Set password to single space'
+        stopOnFailure: false
+        action:
+          type: httpRequest
+          method: POST
+          url: authentik-server/api/v3/core/users/{{userId}}/set_password/
+          headers:
+            Authorization: Bearer {{apiToken}}
+            Content-Type: application/json
+          body:
+            password: ' '
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [204, 400, 422]
+
+      # Cleanup
+      - name: Delete first user
+        stopOnFailure: false
+        action:
+          type: httpRequest
+          method: DELETE
+          url: authentik-server/api/v3/core/users/{{userId}}/
+          headers:
+            Authorization: Bearer {{apiToken}}
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [204, 404]
+
+      - name: Delete second user
+        stopOnFailure: false
+        action:
+          type: httpRequest
+          method: DELETE
+          url: authentik-server/api/v3/core/users/{{secondUserId}}/
+          headers:
+            Authorization: Bearer {{apiToken}}
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [204, 404]

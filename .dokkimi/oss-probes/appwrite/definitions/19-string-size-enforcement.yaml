@@ -1,0 +1,354 @@
+name: appwrite-string-size-enforcement
+description: |
+  Probe Appwrite string attribute size enforcement consistency.
+  Creates attributes with different size limits (128, 256, 1024, 4096)
+  in the same collection and tests insertion of content that exceeds
+  each limit. If enforcement is consistent, all oversized inserts
+  should be rejected with 400.
+config:
+  timeoutSeconds: 600
+items:
+  - $ref: ../shared/appwrite-mariadb.yaml
+  - $ref: ../shared/appwrite-redis.yaml
+  - $ref: ../shared/appwrite-worker-db.yaml
+  - $ref: ../shared/appwrite-api.yaml
+variables:
+  adminEmail: admin@dokkimi.test
+  adminPassword: TestPass123!
+  projectId: dokkimi-size-test
+tests:
+  - name: String size enforcement
+    steps:
+      - name: Register admin account
+        action:
+          type: httpRequest
+          method: POST
+          url: appwrite/v1/account
+          headers:
+            Content-Type: application/json
+            X-Appwrite-Project: console
+          body:
+            userId: 'unique()'
+            email: '{{adminEmail}}'
+            password: '{{adminPassword}}'
+            name: Admin
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 201
+
+      - name: Create admin session
+        action:
+          type: httpRequest
+          method: POST
+          url: appwrite/v1/account/sessions/email
+          headers:
+            Content-Type: application/json
+            X-Appwrite-Project: console
+          body:
+            email: '{{adminEmail}}'
+            password: '{{adminPassword}}'
+        extract:
+          fallbackCookies: $.response.headers.x-fallback-cookies
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 201
+
+      - name: Create team
+        action:
+          type: httpRequest
+          method: POST
+          url: appwrite/v1/teams
+          headers:
+            Content-Type: application/json
+            X-Appwrite-Project: console
+            X-Fallback-Cookies: '{{fallbackCookies}}'
+          body:
+            teamId: 'unique()'
+            name: Size Test Org
+        extract:
+          teamId: $.response.body.$id
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 201
+
+      - name: Create project
+        action:
+          type: httpRequest
+          method: POST
+          url: appwrite/v1/projects
+          headers:
+            Content-Type: application/json
+            X-Appwrite-Project: console
+            X-Fallback-Cookies: '{{fallbackCookies}}'
+          body:
+            projectId: '{{projectId}}'
+            name: Size Test Project
+            teamId: '{{teamId}}'
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 201
+
+      - name: Create API key
+        action:
+          type: httpRequest
+          method: POST
+          url: appwrite/v1/projects/{{projectId}}/keys
+          headers:
+            Content-Type: application/json
+            X-Appwrite-Project: console
+            X-Fallback-Cookies: '{{fallbackCookies}}'
+          body:
+            name: Size Test Key
+            scopes:
+              - databases.read
+              - databases.write
+              - collections.read
+              - collections.write
+              - documents.read
+              - documents.write
+        extract:
+          apiKey: $.response.body.secret
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 201
+
+      - name: Create database
+        action:
+          type: httpRequest
+          method: POST
+          url: appwrite/v1/databases
+          headers:
+            Content-Type: application/json
+            X-Appwrite-Project: '{{projectId}}'
+            X-Appwrite-Key: '{{apiKey}}'
+          body:
+            databaseId: 'unique()'
+            name: Size Test DB
+        extract:
+          dbId: $.response.body.$id
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 201
+
+      - name: Create collection
+        action:
+          type: httpRequest
+          method: POST
+          url: appwrite/v1/databases/{{dbId}}/collections
+          headers:
+            Content-Type: application/json
+            X-Appwrite-Project: '{{projectId}}'
+            X-Appwrite-Key: '{{apiKey}}'
+          body:
+            collectionId: 'unique()'
+            name: Size Test Collection
+            documentSecurity: false
+            permissions:
+              - 'read("any")'
+              - 'create("any")'
+              - 'update("any")'
+              - 'delete("any")'
+        extract:
+          collectionId: $.response.body.$id
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 201
+
+      # Create 3 string attributes with different sizes
+
+      - name: Create attr size 128
+        action:
+          type: httpRequest
+          method: POST
+          url: appwrite/v1/databases/{{dbId}}/collections/{{collectionId}}/attributes/string
+          headers:
+            Content-Type: application/json
+            X-Appwrite-Project: '{{projectId}}'
+            X-Appwrite-Key: '{{apiKey}}'
+          body:
+            key: small
+            size: 128
+            required: false
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 202
+
+      - name: Create attr size 256
+        action:
+          type: httpRequest
+          method: POST
+          url: appwrite/v1/databases/{{dbId}}/collections/{{collectionId}}/attributes/string
+          headers:
+            Content-Type: application/json
+            X-Appwrite-Project: '{{projectId}}'
+            X-Appwrite-Key: '{{apiKey}}'
+          body:
+            key: medium
+            size: 256
+            required: false
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 202
+
+      - name: Create attr size 4096
+        action:
+          type: httpRequest
+          method: POST
+          url: appwrite/v1/databases/{{dbId}}/collections/{{collectionId}}/attributes/string
+          headers:
+            Content-Type: application/json
+            X-Appwrite-Project: '{{projectId}}'
+            X-Appwrite-Key: '{{apiKey}}'
+          body:
+            key: large
+            size: 4096
+            required: false
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 202
+
+      # Wait for attributes to be processed by the worker
+      - name: Wait for attributes
+        action:
+          type: wait
+          durationMs: 5000
+
+      # Verify attributes are available
+      - name: Verify attributes ready
+        action:
+          type: httpRequest
+          method: GET
+          url: appwrite/v1/databases/{{dbId}}/collections/{{collectionId}}/attributes
+          headers:
+            X-Appwrite-Project: '{{projectId}}'
+            X-Appwrite-Key: '{{apiKey}}'
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+              - path: $.response.body.total
+                operator: eq
+                value: 3
+
+      # ==========================================
+      # PROBE: Insert content that fits within limits
+      # All three should succeed.
+      # ==========================================
+
+      - name: Insert within all limits
+        action:
+          type: httpRequest
+          method: POST
+          url: appwrite/v1/databases/{{dbId}}/collections/{{collectionId}}/documents
+          headers:
+            Content-Type: application/json
+            X-Appwrite-Project: '{{projectId}}'
+            X-Appwrite-Key: '{{apiKey}}'
+          body:
+            documentId: 'unique()'
+            data:
+              small: short text
+              medium: medium length text here
+              large: some content for the large field
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 201
+
+      # ==========================================
+      # PROBE: 150 chars into size:128 field
+      # Should be rejected (400).
+      # ==========================================
+
+      - name: 'PROBE: Exceed size 128 (150 chars)'
+        stopOnFailure: false
+        action:
+          type: httpRequest
+          method: POST
+          url: appwrite/v1/databases/{{dbId}}/collections/{{collectionId}}/documents
+          headers:
+            Content-Type: application/json
+            X-Appwrite-Project: '{{projectId}}'
+            X-Appwrite-Key: '{{apiKey}}'
+          body:
+            documentId: 'unique()'
+            data:
+              small: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [400, 201]
+
+      # ==========================================
+      # PROBE: 300 chars into size:256 field
+      # Should be rejected (400).
+      # ==========================================
+
+      - name: 'PROBE: Exceed size 256 (300 chars)'
+        stopOnFailure: false
+        action:
+          type: httpRequest
+          method: POST
+          url: appwrite/v1/databases/{{dbId}}/collections/{{collectionId}}/documents
+          headers:
+            Content-Type: application/json
+            X-Appwrite-Project: '{{projectId}}'
+            X-Appwrite-Key: '{{apiKey}}'
+          body:
+            documentId: 'unique()'
+            data:
+              medium: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [400, 201]
+
+      # ==========================================
+      # PROBE: 5000 chars into size:4096 field
+      # Should be rejected (400) if enforcement
+      # is consistent. If 201, it's the bug.
+      # ==========================================
+
+      - name: 'PROBE: Exceed size 4096 (5000 chars)'
+        stopOnFailure: false
+        action:
+          type: httpRequest
+          method: POST
+          url: appwrite/v1/databases/{{dbId}}/collections/{{collectionId}}/documents
+          headers:
+            Content-Type: application/json
+            X-Appwrite-Project: '{{projectId}}'
+            X-Appwrite-Key: '{{apiKey}}'
+          body:
+            documentId: 'unique()'
+            data:
+              large: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [400, 201]

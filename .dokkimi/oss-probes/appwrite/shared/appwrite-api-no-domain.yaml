@@ -1,0 +1,63 @@
+type: SERVICE
+name: appwrite
+image: appwrite/appwrite:latest
+port: 80
+healthCheck: tcp
+command: ['php', 'app/http.php']
+env:
+  - name: _APP_ENV
+    value: development
+  - name: _APP_OPENSSL_KEY_V1
+    value: dokkimi-test-openssl-key-v1-1234567890
+  - name: _APP_CONSOLE_WHITELIST_ROOT
+    value: enabled
+  - name: _APP_OPTIONS_ABUSE
+    value: disabled
+  - name: _APP_OPTIONS_FORCE_HTTPS
+    value: disabled
+  - name: _APP_OPTIONS_ROUTER_FORCE_HTTPS
+    value: disabled
+  - name: _APP_OPTIONS_ROUTER_PROTECTION
+    value: disabled
+  - name: _APP_DOMAIN_TARGET
+    value: localhost
+  - name: _APP_DB_ADAPTER
+    value: mariadb
+  - name: _APP_DB_HOST
+    value: appwrite-mariadb
+  - name: _APP_DB_PORT
+    value: '3306'
+  - name: _APP_DB_SCHEMA
+    value: appwrite
+  - name: _APP_DB_USER
+    value: dokkimi
+  - name: _APP_DB_PASS
+    value: dokkimi
+  - name: _APP_DB_ROOT_PASS
+    value: dokkimi
+  - name: _APP_REDIS_HOST
+    value: appwrite-redis
+  - name: _APP_REDIS_PORT
+    value: '6379'
+  - name: _APP_CONNECTIONS_CACHE
+    value: 'redis://appwrite-redis:6379'
+  - name: _APP_CONNECTIONS_QUEUE
+    value: 'redis://appwrite-redis:6379'
+  - name: _APP_CONNECTIONS_SESSION
+    value: 'redis://appwrite-redis:6379'
+  - name: _APP_CONNECTIONS_PUBSUB
+    value: 'redis://appwrite-redis:6379'
+  - name: _APP_STORAGE_DEVICE
+    value: Local
+  - name: _APP_WORKERS_NUM
+    value: '4'
+  - name: _APP_EXECUTOR_SECRET
+    value: dokkimi-executor-secret
+  - name: _APP_EXECUTOR_HOST
+    value: ''
+  - name: _APP_DOMAIN
+    value: wrong-domain.example.com
+  - name: _APP_CONSOLE_DOMAIN
+    value: wrong-domain.example.com
+  - name: _APP_STORAGE_LIMIT
+    value: '10000000'
