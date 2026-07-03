@@ -1,0 +1,158 @@
+name: caldiy-slot-reservation-race
+description: |
+  Tests for TOCTOU race condition in Cal.diy's slot reservation system.
+  reserveSlotHandler checks for existing reservations via
+  findReservedByOthers() (READ), then upserts the reservation (WRITE)
+  without a transaction. The TOCTOU pattern exists but the race window
+  is too narrow to exploit — the upsert completes in ~1ms and Node.js
+  single-threaded event loop serializes the critical path.
+  File: packages/trpc/server/routers/viewer/slots/reserveSlot.handler.ts
+config:
+  timeoutSeconds: 600
+items:
+  - $ref: ../shared/cal-postgres.yaml
+  - $ref: ../shared/cal-redis.yaml
+  - $ref: ../shared/cal-web.yaml
+tests:
+  - name: Slot reservation race condition
+    steps:
+      - name: Create admin user
+        action:
+          type: httpRequest
+          method: POST
+          url: calcom/api/auth/setup
+          headers:
+            Content-Type: application/json
+          body:
+            username: testhost
+            full_name: Test Host User
+            email_address: host@dokkimi-test.com
+            password: TestPassword123!!
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+
+      - name: Create schedule for host user
+        action:
+          type: dbQuery
+          database: cal-postgres
+          query: >
+            INSERT INTO "Schedule" ("userId", "name", "timeZone")
+            VALUES (1, 'Working Hours', 'UTC')
+            RETURNING id
+
+      - name: Create all-day availability
+        action:
+          type: dbQuery
+          database: cal-postgres
+          query: >
+            INSERT INTO "Availability" ("scheduleId", "days", "startTime", "endTime")
+            VALUES (1, ARRAY[0,1,2,3,4,5,6], '00:00:00', '23:59:00')
+
+      - name: Configure user schedule
+        action:
+          type: dbQuery
+          database: cal-postgres
+          query: >
+            UPDATE "users"
+            SET "defaultScheduleId" = 1,
+                "completedOnboarding" = true,
+                "timeZone" = 'UTC'
+            WHERE id = 1
+
+      - name: Create event type
+        action:
+          type: dbQuery
+          database: cal-postgres
+          query: >
+            INSERT INTO "EventType"
+              ("title", "slug", "length", "userId", "scheduleId",
+               "minimumBookingNotice", "hidden")
+            VALUES
+              ('30 Min Meeting', '30min', 30, 1, 1, 0, false)
+            RETURNING id
+
+      - name: Link event type to host user
+        action:
+          type: dbQuery
+          database: cal-postgres
+          query: >
+            INSERT INTO "_user_eventtype" ("A", "B") VALUES (1, 1)
+
+      - name: Five concurrent slot reservations with different UIDs
+        action:
+          type: parallel
+          actions:
+            - type: httpRequest
+              method: POST
+              url: calcom/api/trpc/slots/reserveSlot
+              headers:
+                Content-Type: application/json
+                Cookie: uid=user-alpha-uid-00001
+              body:
+                json:
+                  eventTypeId: 1
+                  slotUtcStartDate: '2026-07-10T14:00:00.000Z'
+                  slotUtcEndDate: '2026-07-10T14:30:00.000Z'
+            - type: httpRequest
+              method: POST
+              url: calcom/api/trpc/slots/reserveSlot
+              headers:
+                Content-Type: application/json
+                Cookie: uid=user-beta-uid-000002
+              body:
+                json:
+                  eventTypeId: 1
+                  slotUtcStartDate: '2026-07-10T14:00:00.000Z'
+                  slotUtcEndDate: '2026-07-10T14:30:00.000Z'
+            - type: httpRequest
+              method: POST
+              url: calcom/api/trpc/slots/reserveSlot
+              headers:
+                Content-Type: application/json
+                Cookie: uid=user-gamma-uid-0003
+              body:
+                json:
+                  eventTypeId: 1
+                  slotUtcStartDate: '2026-07-10T14:00:00.000Z'
+                  slotUtcEndDate: '2026-07-10T14:30:00.000Z'
+            - type: httpRequest
+              method: POST
+              url: calcom/api/trpc/slots/reserveSlot
+              headers:
+                Content-Type: application/json
+                Cookie: uid=user-delta-uid-0004
+              body:
+                json:
+                  eventTypeId: 1
+                  slotUtcStartDate: '2026-07-10T14:00:00.000Z'
+                  slotUtcEndDate: '2026-07-10T14:30:00.000Z'
+            - type: httpRequest
+              method: POST
+              url: calcom/api/trpc/slots/reserveSlot
+              headers:
+                Content-Type: application/json
+                Cookie: uid=user-epsilon-uid-005
+              body:
+                json:
+                  eventTypeId: 1
+                  slotUtcStartDate: '2026-07-10T14:00:00.000Z'
+                  slotUtcEndDate: '2026-07-10T14:30:00.000Z'
+
+      - name: Count slot reservations for the contested slot
+        action:
+          type: dbQuery
+          database: cal-postgres
+          query: >
+            SELECT count(*)::int AS reservation_count
+            FROM "SelectedSlots"
+            WHERE "eventTypeId" = 1
+              AND "slotUtcStartDate" = '2026-07-10T14:00:00.000Z'
+              AND "slotUtcEndDate" = '2026-07-10T14:30:00.000Z'
+        assertions:
+          - assertions:
+              - path: $.response.data[0].reservation_count
+                operator: eq
+                value: 1

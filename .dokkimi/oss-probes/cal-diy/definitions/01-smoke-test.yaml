@@ -1,0 +1,66 @@
+name: caldiy-smoke-test
+description: |
+  Verify the Cal.diy stack boots: check version endpoint, CSRF token,
+  and NextAuth session endpoint. Exercises the health surface of the
+  Next.js web app.
+config:
+  timeoutSeconds: 600
+items:
+  - $ref: ../shared/cal-postgres.yaml
+  - $ref: ../shared/cal-redis.yaml
+  - $ref: ../shared/cal-web.yaml
+tests:
+  - name: Stack health checks
+    steps:
+      - name: Check version endpoint
+        action:
+          type: httpRequest
+          method: GET
+          url: calcom/api/version
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [200, 301, 302]
+
+      - name: Get CSRF token
+        action:
+          type: httpRequest
+          method: GET
+          url: calcom/api/auth/csrf
+        extract:
+          csrfToken: $.response.body.csrfToken
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+              - path: $.response.body.csrfToken
+                operator: ne
+                value: ''
+
+      - name: Check session endpoint (not logged in)
+        action:
+          type: httpRequest
+          method: GET
+          url: calcom/api/auth/session
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+
+      - name: Check username availability
+        action:
+          type: httpRequest
+          method: POST
+          url: calcom/api/username
+          headers:
+            Content-Type: application/json
+          body:
+            username: dokkimi-test-user
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: in
+                value: [200, 400, 401]

@@ -1,0 +1,124 @@
+name: caldiy-rolling-window-bypass
+description: |
+  Tests that ROLLING_WINDOW period restrictions are NOT enforced server-side.
+  When an event type has periodType=ROLLING_WINDOW with periodDays=2, bookings
+  should be limited to the next 2 bookable days. The frontend enforces this by
+  hiding out-of-bounds slots, but the backend skips the check entirely:
+    isOutOfBounds() calls calculatePeriodLimits() with _skipRollingWindowCheck: true
+  File: packages/lib/isOutOfBounds.tsx (line 373-374)
+  The code comment acknowledges the gap: "for bookings that happen through API,
+  we absolutely need to check the ROLLING_WINDOW limits."
+config:
+  timeoutSeconds: 600
+items:
+  - $ref: ../shared/cal-postgres.yaml
+  - $ref: ../shared/cal-redis.yaml
+  - $ref: ../shared/cal-web.yaml
+tests:
+  - name: ROLLING_WINDOW period bypass via direct API booking
+    steps:
+      - name: Create admin user
+        action:
+          type: httpRequest
+          method: POST
+          url: calcom/api/auth/setup
+          headers:
+            Content-Type: application/json
+          body:
+            username: testhost
+            full_name: Test Host User
+            email_address: host@dokkimi-test.com
+            password: TestPassword123!!
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+
+      - name: Create schedule for host user
+        action:
+          type: dbQuery
+          database: cal-postgres
+          query: >
+            INSERT INTO "Schedule" ("userId", "name", "timeZone")
+            VALUES (1, 'Working Hours', 'UTC')
+            RETURNING id
+
+      - name: Create all-day availability
+        action:
+          type: dbQuery
+          database: cal-postgres
+          query: >
+            INSERT INTO "Availability" ("scheduleId", "days", "startTime", "endTime")
+            VALUES (1, ARRAY[0,1,2,3,4,5,6], '00:00:00', '23:59:00')
+
+      - name: Configure user schedule
+        action:
+          type: dbQuery
+          database: cal-postgres
+          query: >
+            UPDATE "users"
+            SET "defaultScheduleId" = 1,
+                "completedOnboarding" = true,
+                "timeZone" = 'UTC'
+            WHERE id = 1
+
+      - name: Create event type with ROLLING_WINDOW period of 2 days
+        action:
+          type: dbQuery
+          database: cal-postgres
+          query: >
+            INSERT INTO "EventType"
+              ("title", "slug", "length", "userId", "scheduleId",
+               "minimumBookingNotice", "hidden",
+               "periodType", "periodDays", "periodCountCalendarDays")
+            VALUES
+              ('30 Min Meeting', '30min', 30, 1, 1, 0, false,
+               'rolling_window', 2, true)
+            RETURNING id
+
+      - name: Link event type to host user
+        action:
+          type: dbQuery
+          database: cal-postgres
+          query: >
+            INSERT INTO "_user_eventtype" ("A", "B") VALUES (1, 1)
+
+      - name: Book a slot 90 days in the future (should be blocked by ROLLING_WINDOW)
+        action:
+          type: httpRequest
+          method: POST
+          url: calcom/api/book/event
+          headers:
+            Content-Type: application/json
+          body:
+            eventTypeId: 1
+            start: '2026-10-01T14:00:00.000Z'
+            end: '2026-10-01T14:30:00.000Z'
+            timeZone: UTC
+            language: en
+            metadata: {}
+            responses:
+              name: Far Future Booker
+              email: farfuture@dokkimi-test.com
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+
+      - name: Verify booking was actually created in the database
+        action:
+          type: dbQuery
+          database: cal-postgres
+          query: >
+            SELECT count(*)::int AS booking_count
+            FROM "Booking"
+            WHERE "eventTypeId" = 1
+              AND "startTime" = '2026-10-01 14:00:00'
+              AND status = 'accepted'
+        assertions:
+          - assertions:
+              - path: $.response.data[0].booking_count
+                operator: eq
+                value: 1

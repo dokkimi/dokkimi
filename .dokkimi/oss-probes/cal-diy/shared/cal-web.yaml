@@ -1,0 +1,31 @@
+type: SERVICE
+name: calcom
+image: calcom/cal.com:latest
+port: 3000
+healthCheck: /api/version
+stage: 1
+env:
+  - name: DATABASE_URL
+    value: postgresql://unicorn_user:magical_password@cal-postgres:5432/calendso
+  - name: DATABASE_DIRECT_URL
+    value: postgresql://unicorn_user:magical_password@cal-postgres:5432/calendso
+  - name: NEXTAUTH_URL
+    value: http://calcom:3000
+  - name: NEXTAUTH_SECRET
+    value: dokkimi-test-nextauth-secret-key-1234567890
+  - name: CALENDSO_ENCRYPTION_KEY
+    value: dokkimi-test-encryption-key-1234567890abcdef
+  - name: NEXT_PUBLIC_WEBAPP_URL
+    value: http://calcom:3000
+  - name: NEXT_PUBLIC_WEBSITE_URL
+    value: http://calcom:3000
+  - name: CALCOM_TELEMETRY_DISABLED
+    value: '1'
+  - name: NODE_ENV
+    value: production
+  - name: CRON_API_KEY
+    value: dokkimi-test-cron-key
+  - name: ALLOWED_HOSTNAMES
+    value: '"calcom:3000","calcom","localhost:3000"'
+  - name: RESERVED_SUBDOMAINS
+    value: '"app","auth","docs","api","www","admin"'

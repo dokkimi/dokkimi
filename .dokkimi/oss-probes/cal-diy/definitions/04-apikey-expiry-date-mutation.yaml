@@ -1,0 +1,77 @@
+name: caldiy-apikey-expiry-date-mutation
+description: |
+  Proves that the API v2 date mutation bug in the API key expiry check
+  gives expired keys an extra day of validity. The check uses
+  Date.setHours(0,0,0,0) on both sides, zeroing to midnight:
+    new Date().setHours(0,0,0,0) > keyData.expiresAt.setHours(0,0,0,0)
+  A key with expiresAt = CURRENT_DATE (midnight today) passes as valid
+  because midnight > midnight is false.
+  File: apps/api/v2/src/modules/auth/strategies/api-auth/api-auth.strategy.ts:245
+config:
+  timeoutSeconds: 600
+items:
+  - $ref: ../shared/cal-postgres.yaml
+  - $ref: ../shared/cal-redis.yaml
+  - $ref: ../shared/cal-web.yaml
+  - $ref: ../shared/cal-api-v2.yaml
+tests:
+  - name: Expired API key accepted due to setHours day-granularity
+    steps:
+      - name: Create admin user via web app
+        action:
+          type: httpRequest
+          method: POST
+          url: calcom/api/auth/setup
+          headers:
+            Content-Type: application/json
+          body:
+            username: testhost
+            full_name: Test Host User
+            email_address: host@dokkimi-test.com
+            password: TestPassword123!!
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200
+
+      - name: Insert API key with expiresAt = midnight today (expired)
+        action:
+          type: dbQuery
+          database: cal-postgres
+          query: >
+            INSERT INTO "ApiKey" (id, "userId", "hashedKey", "expiresAt", "createdAt")
+            VALUES (
+              'dokkimi_test_key_01',
+              1,
+              encode(sha256('testkey123'::bytea), 'hex'),
+              CURRENT_DATE,
+              NOW()
+            )
+
+      - name: Verify API key was inserted with today's date
+        action:
+          type: dbQuery
+          database: cal-postgres
+          query: >
+            SELECT id, "expiresAt", "expiresAt" < NOW() AS should_be_expired
+            FROM "ApiKey"
+            WHERE id = 'dokkimi_test_key_01'
+        assertions:
+          - assertions:
+              - path: $.response.data[0].should_be_expired
+                operator: eq
+                value: true
+
+      - name: Hit authenticated endpoint with the expired key
+        action:
+          type: httpRequest
+          method: GET
+          url: calcom-api/v2/me
+          headers:
+            Authorization: Bearer cal_testkey123
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 200

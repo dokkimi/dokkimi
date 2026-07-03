@@ -1,0 +1,33 @@
+type: SERVICE
+name: calcom-api
+image: calcom/api-v2:local
+port: 5555
+healthCheck: /health
+stage: 1
+env:
+  - name: DATABASE_URL
+    value: postgresql://unicorn_user:magical_password@cal-postgres:5432/calendso
+  - name: DATABASE_DIRECT_URL
+    value: postgresql://unicorn_user:magical_password@cal-postgres:5432/calendso
+  - name: DATABASE_READ_URL
+    value: postgresql://unicorn_user:magical_password@cal-postgres:5432/calendso
+  - name: DATABASE_WRITE_URL
+    value: postgresql://unicorn_user:magical_password@cal-postgres:5432/calendso
+  - name: REDIS_URL
+    value: redis://cal-redis:6379
+  - name: NEXTAUTH_SECRET
+    value: dokkimi-test-nextauth-secret-key-1234567890
+  - name: API_PORT
+    value: '5555'
+  - name: NODE_ENV
+    value: production
+  - name: JWT_SECRET
+    value: dokkimi-test-jwt-secret-key-1234567890
+  - name: STRIPE_API_KEY
+    value: sk_test_fake_dokkimi_key
+  - name: STRIPE_WEBHOOK_SECRET
+    value: whsec_fake_dokkimi_secret
+  - name: CALENDSO_ENCRYPTION_KEY
+    value: dokkimi-test-encryption-key-1234567890abcdef
+  - name: CALCOM_TELEMETRY_DISABLED
+    value: '1'

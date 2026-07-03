@@ -1,0 +1,6 @@
+type: DATABASE
+name: cal-postgres
+database: postgres
+dbName: calendso
+dbUser: unicorn_user
+dbPassword: magical_password
