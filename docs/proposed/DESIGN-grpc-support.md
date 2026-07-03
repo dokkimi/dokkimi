@@ -37,7 +37,39 @@ The interceptor currently uses Go's `net/http` server and transport, which defau
 
 3. **Use `httputil.ReverseProxy` with the h2c-capable transport.** Go's standard `ReverseProxy` with an HTTP/2 transport handles stream multiplexing, flow control, and backpressure transparently for both unary and streaming RPCs. No hand-rolled HTTP/2 frame parsing is needed.
 
+4. **Detect gRPC traffic.** Requests with `content-type: application/grpc` (or `application/grpc+proto`) are routed to the gRPC logging/deserialization path. All other HTTP/2 traffic is handled as normal HTTP.
+
 Since the interceptor only captures outbound traffic (via dnsmasq DNS redirect), it must be a fully compliant HTTP/2 endpoint that the service's gRPC client is willing to connect to, then forward calls upstream.
+
+### gRPC Message Framing
+
+gRPC uses a length-prefixed wire format on top of HTTP/2 bodies. Each message in the stream is preceded by a 5-byte header:
+
+```
+[1 byte: compressed flag (0 or 1)] [4 bytes: big-endian message length]
+```
+
+The interceptor must parse this framing to extract protobuf payloads for logging, even in Phase 1 (opaque logging). Without parsing the 5-byte prefix, the raw body includes framing bytes mixed with payload bytes. The framing parser is also required for:
+
+- Decompressing messages (the compressed flag indicates whether `grpc-encoding` applies to this message)
+- Extracting individual messages from streaming RPCs (Phase 3)
+- Serving mock responses (must emit properly framed protobuf)
+
+### Trailer Handling
+
+gRPC reports call status via HTTP/2 trailers, not response headers. Key trailers:
+
+- `grpc-status` — the numeric status code (0=OK, 1=CANCELLED, etc.)
+- `grpc-message` — human-readable error description
+- `grpc-status-details-bin` — binary-encoded error details (base64 in HTTP/2 trailers)
+
+Go's `httputil.ReverseProxy` propagates trailers correctly, but the logging layer must read `grpc-status` from the **response trailers** (via `http.Response.Trailer`), not from response headers. This is where `grpcStatus` for the log entry comes from.
+
+In error-only responses (no body, just trailers), the interceptor still logs a complete entry with the status and any error message — there's simply no body to deserialize.
+
+### Streaming RPCs in Phase 1
+
+Phase 1 only targets unary RPCs for full logging, but streaming RPCs must still proxy correctly. Since `httputil.ReverseProxy` handles HTTP/2 streaming transparently, streaming calls will pass through without interruption — they just won't have per-message logging. The interceptor logs a single entry for the stream with the method, headers, and final gRPC status, but body content is omitted until Phase 3 adds per-message capture.
 
 ### Proto File Loading (Optional)
 
@@ -81,7 +113,14 @@ The existing mock matching system works on method, path, and body contents. For 
 - **Method matching** is trivially `POST` for all gRPC calls
 - **Body matching** requires proto files. If provided, the interceptor deserializes the request and matches against field values. If not, body matching is unavailable — mocks can only match on service/method name.
 
-Mock responses for gRPC must be valid protobuf. If proto files are provided, the user could define mock responses as JSON (which the interceptor serializes to protobuf before returning). Without proto files, the user would need to provide raw protobuf bytes.
+Mock responses for gRPC must be valid protobuf. If proto files are provided, the user defines mock responses as JSON (which the interceptor serializes to protobuf before returning). Without proto files, gRPC mocks are unavailable (consistent with body matching being unavailable without protos).
+
+When serving a gRPC mock response, the interceptor must:
+
+1. Serialize the JSON response to protobuf using the loaded proto schema
+2. Wrap the protobuf bytes in the 5-byte gRPC length-prefixed frame (compressed=0 + 4-byte length)
+3. Set `content-type: application/grpc` and appropriate gRPC response headers
+4. Emit `grpc-status: 0` and `grpc-message` in HTTP/2 **trailers** (not headers) — gRPC clients expect status in trailers and will fail if it's missing
 
 ### Definition File Changes
 
