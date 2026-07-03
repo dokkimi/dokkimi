@@ -335,11 +335,15 @@ func (vc *VariableContext) resolveValue(value interface{}) (interface{}, error) 
 	case map[string]interface{}:
 		resolved := make(map[string]interface{}, len(v))
 		for key, val := range v {
+			resolvedKey, err := vc.Resolve(key)
+			if err != nil {
+				return nil, err
+			}
 			resolvedVal, err := vc.resolveValue(val)
 			if err != nil {
 				return nil, err
 			}
-			resolved[key] = resolvedVal
+			resolved[resolvedKey] = resolvedVal
 		}
 		return resolved, nil
 	case []interface{}:

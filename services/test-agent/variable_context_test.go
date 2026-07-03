@@ -489,6 +489,59 @@ func TestResolveAction_QueryParams(t *testing.T) {
 	})
 }
 
+func TestResolveValue_MapKeys(t *testing.T) {
+	t.Run("resolves {{var}} in map keys", func(t *testing.T) {
+		vc := NewVariableContext()
+		vc.Set("questionId", "q1abc")
+		input := map[string]interface{}{
+			"{{questionId}}": "my answer",
+		}
+		result, err := vc.resolveValue(input)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		m := result.(map[string]interface{})
+		if v, ok := m["q1abc"]; !ok || v != "my answer" {
+			t.Errorf("expected key 'q1abc' with value 'my answer', got %v", m)
+		}
+		if _, ok := m["{{questionId}}"]; ok {
+			t.Error("unresolved key '{{questionId}}' should not be present")
+		}
+	})
+
+	t.Run("resolves {{var}} in both key and value", func(t *testing.T) {
+		vc := NewVariableContext()
+		vc.Set("field", "email")
+		vc.Set("val", "test@example.com")
+		input := map[string]interface{}{
+			"{{field}}": "{{val}}",
+		}
+		result, err := vc.resolveValue(input)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		m := result.(map[string]interface{})
+		if m["email"] != "test@example.com" {
+			t.Errorf("expected email=test@example.com, got %v", m)
+		}
+	})
+
+	t.Run("plain keys are unaffected", func(t *testing.T) {
+		vc := NewVariableContext()
+		input := map[string]interface{}{
+			"name": "Alice",
+		}
+		result, err := vc.resolveValue(input)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		m := result.(map[string]interface{})
+		if m["name"] != "Alice" {
+			t.Errorf("expected name=Alice, got %v", m)
+		}
+	})
+}
+
 func TestExtractKeyInterpolation(t *testing.T) {
 	vc := NewVariableContext()
 	vc.Set("prefix", "user")
