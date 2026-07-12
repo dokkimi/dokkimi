@@ -7,6 +7,16 @@ import CodeBlock from '../../components/CodeBlock.astro';
   <h1>Release Notes</h1>
   <p class="subtitle">What's new in each release.</p>
 
+  <h2>v0.5.6</h2>
+  <p><time datetime="2026-07-12">July 12, 2026</time></p>
+
+  <h3>Documentation fixes</h3>
+  <ul>
+    <li><strong>Corrected operator case-sensitivity</strong> &mdash; The bundled reference (<code>dokkimi-instructions.md</code>) incorrectly described <code>eq</code> and <code>contains</code> as case-insensitive for strings. Both are actually <strong>case-sensitive</strong> &mdash; use <code>eqIgnoreCase</code> and <code>containsIgnoreCase</code> for case-insensitive comparisons. AI agents reading the bundled reference would generate incorrect assertions without the <code>IgnoreCase</code> variants when needed.</li>
+    <li><strong>Fixed <code>$.response.duration</code></strong> &mdash; The DB query assertion path table listed <code>$.response.duration</code>, which doesn't exist on the root context. The correct path is <code>$.responseTime</code> (same as HTTP steps).</li>
+    <li><strong>Updated CLI reference</strong> &mdash; Added <code>junit</code>, <code>stop</code>, <code>reboot</code>, <code>shutdown</code>, <code>mcp</code>, and <code>uninstall</code> commands to the bundled reference and npm readme.</li>
+  </ul>
+
   <h2>v0.5.5</h2>
   <p><time datetime="2026-07-01">July 1, 2026</time></p>
 
