@@ -73,6 +73,37 @@ import CodeBlock from '../../components/CodeBlock.astro';
     </tbody>
   </table>
 
+  <h2 id="root-context">The root context</h2>
+  <p>After each step executes, the test agent assembles a <strong>root context document</strong> — a single JSON object that assertions and extract rules query using <code>$.</code>-prefixed paths. Understanding this document is key to writing assertions and extractions.</p>
+
+  <CodeBlock code={`$
+├── request          // the step's own request
+├── response         // the step's own response
+├── responseTime     // response time in milliseconds
+├── variables        // all variables in scope
+├── traffic          // HTTP traffic captured between services
+├── consoleLogs      // console output from services
+├── dbLogs           // database query logs
+├── messageLogs      // broker messages (AMQP/Kafka)
+└── timeline         // all of the above merged chronologically`} lang="text" />
+
+  <p>The shape of <code>request</code> and <code>response</code> depends on the action type:</p>
+  <table>
+    <thead>
+      <tr><th>Action type</th><th><code>$.request</code></th><th><code>$.response</code></th><th><code>$.responseTime</code></th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>httpRequest</code></td><td><code>method</code>, <code>url</code>, <code>headers</code>, <code>body</code></td><td><code>status</code>, <code>headers</code>, <code>body</code></td><td>ms (number)</td></tr>
+      <tr><td><code>dbQuery</code></td><td><code>database</code>, <code>query</code></td><td><code>success</code>, <code>data</code>, <code>rowsAffected</code>, <code>error</code></td><td>ms (number)</td></tr>
+      <tr><td><code>ui</code></td><td>—</td><td>UI execution result</td><td>—</td></tr>
+      <tr><td><code>wait</code></td><td>—</td><td>—</td><td>—</td></tr>
+    </tbody>
+  </table>
+
+  <p>The captured-data fields (<code>traffic</code>, <code>consoleLogs</code>, <code>dbLogs</code>, <code>messageLogs</code>) contain only entries from the current test's steps — traffic from one test is never visible in another.</p>
+
+  <p>See <a href="/docs/assertions">Assertions</a> for how to query this document and <a href="/docs/variables">Variables</a> for how to extract values from it.</p>
+
   <h2>Definition-level variables</h2>
   <p>The definition file itself can have a top-level <code>variables</code> field alongside <code>name</code>, <code>items</code>, and <code>tests</code>. These are shared across all tests in the definition. Test-level variables override definition-level variables with the same key.</p>
   <CodeBlock code={`{

@@ -126,11 +126,11 @@ import CodeBlock from '../../components/CodeBlock.astro';
   </ul>
 
   <div class="callout">
-    <p><strong>Unified root context.</strong> Extract and assertion paths use the same unified root context. See <a href="/docs/assertions">Assertions</a> for the full path reference.</p>
+    <p><strong>Root context.</strong> Extract paths query the same <a href="/docs/tests-and-steps#root-context">root context document</a> as assertions. See <a href="/docs/assertions">Assertions</a> for the full path reference.</p>
   </div>
 
   <h2>Extraction in assertion blocks</h2>
-  <p>You can also extract values from within assertion blocks — useful for capturing values from intercepted inter-service traffic:</p>
+  <p>You can also extract values from within assertion blocks — useful for capturing values from intercepted inter-service traffic. This example uses a <a href="/docs/assertions#match-blocks">match block</a> to find specific traffic and extract a value from it:</p>
   <CodeBlock code={`{
   "match": {
     "path": "$.traffic",
@@ -161,9 +161,9 @@ import CodeBlock from '../../components/CodeBlock.astro';
   <h2>Scoping rules</h2>
   <ul>
     <li>Definition-level variables are seeded first, then test-level variables override</li>
-    <li>Variables persist across all groups within a single test run</li>
-    <li>Extracted variables from group N are available in groups N+1, N+2, etc.</li>
-    <li>Within a parallel group, variable extraction order is non-deterministic</li>
+    <li>Variables persist across all steps within a single test</li>
+    <li>Extracted variables from step N are available in steps N+1, N+2, etc.</li>
+    <li>Within a <code>parallel</code> action, variable extraction order is non-deterministic</li>
     <li>Referencing an undefined variable causes an immediate error</li>
   </ul>
 

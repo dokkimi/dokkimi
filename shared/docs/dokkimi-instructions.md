@@ -1535,7 +1535,7 @@ Each step can have an `assertions` array of blocks. Block type is determined by 
 Asserts on the step's own outcome:
 
 - HTTP step → the response (`$.response.status`, `$.response.body`, `$.response.headers.*`, `$.responseTime`).
-- DB query step → the query result (`$.response.success`, `$.response.data`, `$.response.rowsAffected`, `$.response.error`, `$.response.duration`).
+- DB query step → the query result (`$.response.success`, `$.response.data`, `$.response.rowsAffected`, `$.response.error`, `$.responseTime`).
 - UI step → variables newly pulled out by the action's `extract` sub-steps, exposed as `$.variables.<varName>` (e.g. `$.variables.errorText`).
 - Wait step → captured logs within the step's time window (`$.messageLogs`, `$.traffic`, `$.consoleLogs`, `$.dbLogs`).
 
@@ -1759,7 +1759,7 @@ All assertion paths start with `$.` and resolve against the unified root context
 | `$.response.data[0].column` | Specific column from a result row              |
 | `$.response.rowsAffected`   | Number of affected rows (integer)              |
 | `$.response.error`          | Error message if query failed (string or null) |
-| `$.response.duration`       | Query execution time in milliseconds           |
+| `$.responseTime`            | Query execution time in milliseconds           |
 
 **Inside match blocks:**
 
@@ -1816,26 +1816,26 @@ Kafka metadata:
 
 ### Assertion Operators
 
-| Operator                | Value required? | Value type     | Description                                                                                                        |
-| ----------------------- | --------------- | -------------- | ------------------------------------------------------------------------------------------------------------------ |
-| `eq`                    | Yes             | any            | Exact equality (case-insensitive for strings)                                                                      |
-| `ne`                    | Yes             | any            | Not equal (case-insensitive for strings)                                                                           |
-| `gt`                    | Yes             | number         | Greater than                                                                                                       |
-| `gte`                   | Yes             | number         | Greater than or equal                                                                                              |
-| `lt`                    | Yes             | number         | Less than                                                                                                          |
-| `lte`                   | Yes             | number         | Less than or equal                                                                                                 |
-| `contains`              | Yes             | any            | Dispatches by type: string → case-insensitive substring match, array → element containment, object → key existence |
-| `notContains`           | Yes             | any            | Dispatches by type: string → substring NOT present, array → element NOT present, object → key NOT present          |
-| `matches`               | Yes             | string (regex) | Regular expression match                                                                                           |
-| `exists`                | No              | —              | Value exists (is defined and not null)                                                                             |
-| `notExists`             | No              | —              | Value does not exist                                                                                               |
-| `in`                    | Yes             | array          | Value is in the given array                                                                                        |
-| `notIn`                 | Yes             | array          | Value is NOT in the given array                                                                                    |
-| `isEmpty`               | No              | —              | Value is empty/null/undefined/empty array/empty object                                                             |
-| `notEmpty`              | No              | —              | Value is not empty                                                                                                 |
-| `eqIgnoreCase`          | Yes             | string         | Explicit case-insensitive equality (same behavior as `eq` for strings, but clearer intent)                         |
-| `containsIgnoreCase`    | Yes             | any            | Explicit case-insensitive containment (same behavior as `contains`, but clearer intent)                            |
-| `notContainsIgnoreCase` | Yes             | any            | Explicit case-insensitive non-containment (same behavior as `notContains`, but clearer intent)                     |
+| Operator                | Value required? | Value type     | Description                                                                                                             |
+| ----------------------- | --------------- | -------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| `eq`                    | Yes             | any            | Equality with coercion: numeric (`1` == `"1"`) and boolean (`true` == `"TRUE"`); case-sensitive for non-boolean strings |
+| `ne`                    | Yes             | any            | Not equal (inverse of `eq`)                                                                                             |
+| `gt`                    | Yes             | number         | Greater than                                                                                                            |
+| `gte`                   | Yes             | number         | Greater than or equal                                                                                                   |
+| `lt`                    | Yes             | number         | Less than                                                                                                               |
+| `lte`                   | Yes             | number         | Less than or equal                                                                                                      |
+| `contains`              | Yes             | any            | Dispatches by type: string → substring match (case-sensitive), array → element containment, object → key existence      |
+| `notContains`           | Yes             | any            | Inverse of `contains` (case-sensitive)                                                                                  |
+| `matches`               | Yes             | string (regex) | Regular expression match                                                                                                |
+| `exists`                | No              | —              | Value exists (is defined and not null)                                                                                  |
+| `notExists`             | No              | —              | Value does not exist                                                                                                    |
+| `in`                    | Yes             | array          | Value is in the given array                                                                                             |
+| `notIn`                 | Yes             | array          | Value is NOT in the given array                                                                                         |
+| `isEmpty`               | No              | —              | Value is empty/null/undefined/empty array/empty object                                                                  |
+| `notEmpty`              | No              | —              | Value is not empty                                                                                                      |
+| `eqIgnoreCase`          | Yes             | any            | Case-insensitive equality for strings                                                                                   |
+| `containsIgnoreCase`    | Yes             | any            | Case-insensitive substring containment                                                                                  |
+| `notContainsIgnoreCase` | Yes             | any            | Inverse of `containsIgnoreCase`                                                                                         |
 
 To check the type or length of a value, use the `type` or `count` source fields instead of an operator (see "Source Fields" above).
 
@@ -2056,12 +2056,17 @@ The `dokkimi` CLI manages the full lifecycle: validate definitions, run tests, i
 | `dokkimi inspect [path]`        | Interactively inspect results from the last run         |
 | `dokkimi dump [path] [-o file]` | Output raw JSON data dump for LLM-assisted debugging    |
 | `dokkimi baselines`             | Review and approve pending visual baselines             |
-| `dokkimi version`               | Show version (e.g., `v0.1.0`)                           |
-| `dokkimi status`                | Show service and instance status                        |
+| `dokkimi junit`                 | Generate a JUnit XML report from a test run             |
 | `dokkimi doctor`                | Run environment pre-flight checks                       |
 | `dokkimi stop`                  | Stop the current test run                               |
+| `dokkimi status`                | Show service and instance status                        |
 | `dokkimi clean`                 | Stop all instances and clean up resources               |
+| `dokkimi reboot`                | Restart all Dokkimi services                            |
+| `dokkimi shutdown`              | Stop all running Dokkimi services                       |
 | `dokkimi config`                | View and edit Dokkimi settings (concurrency, telemetry) |
+| `dokkimi mcp`                   | Start the MCP server (for AI tool integration)          |
+| `dokkimi uninstall`             | Remove Dokkimi data, images, and services               |
+| `dokkimi version`               | Show installed version                                  |
 
 ### `dokkimi run`
 

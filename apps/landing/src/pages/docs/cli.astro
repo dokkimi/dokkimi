@@ -19,10 +19,16 @@ import CodeBlock from '../../components/CodeBlock.astro';
       <tr><td><code>dokkimi inspect [path]</code></td><td>Interactively inspect results from the last run</td></tr>
       <tr><td><code>dokkimi dump [path]</code></td><td>Output raw JSON data dump for debugging</td></tr>
       <tr><td><code>dokkimi baselines</code></td><td>Review and approve pending visual baselines</td></tr>
+      <tr><td><code>dokkimi junit</code></td><td>Generate a JUnit XML report from a test run</td></tr>
       <tr><td><code>dokkimi doctor</code></td><td>Run environment pre-flight checks</td></tr>
+      <tr><td><code>dokkimi stop</code></td><td>Stop the current test run</td></tr>
       <tr><td><code>dokkimi status</code></td><td>Show service and instance status</td></tr>
       <tr><td><code>dokkimi clean</code></td><td>Stop all instances and clean up resources</td></tr>
+      <tr><td><code>dokkimi reboot</code></td><td>Restart all Dokkimi services</td></tr>
+      <tr><td><code>dokkimi shutdown</code></td><td>Stop all running Dokkimi services</td></tr>
       <tr><td><code>dokkimi config</code></td><td>View and edit Dokkimi settings</td></tr>
+      <tr><td><code>dokkimi mcp</code></td><td>Start the MCP server (for AI tool integration)</td></tr>
+      <tr><td><code>dokkimi uninstall</code></td><td>Remove Dokkimi data, images, and services</td></tr>
       <tr><td><code>dokkimi version</code></td><td>Show installed version</td></tr>
     </tbody>
   </table>
@@ -56,6 +62,20 @@ dokkimi run auth --watch`} lang="bash" />
     <li><code>b</code> — review baselines (shown when visual baselines are pending)</li>
     <li><code>q</code> — quit</li>
   </ul>
+
+  <h3>Run flags</h3>
+  <table>
+    <thead>
+      <tr><th>Flag</th><th>Description</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>--watch, -w</code></td><td>Re-run automatically when definition files change</td></tr>
+      <tr><td><code>--ci</code></td><td>CI-optimized output (no interactive UI, exits with code 0/1)</td></tr>
+      <tr><td><code>--failed</code></td><td>Re-run only definitions that failed in the last run</td></tr>
+      <tr><td><code>--timeout &lt;seconds&gt;</code></td><td>Fail if not complete within the timeout (default: 600 in CI mode)</td></tr>
+      <tr><td><code>--junit &lt;path&gt;</code></td><td>Write a JUnit XML report to the given path after the run completes</td></tr>
+    </tbody>
+  </table>
 
   <h3>Post-run inspect prompt</h3>
   <p>After a run completes (TTY only, non-watch), the CLI prompts: <code>Press i to inspect results, or any other key to exit...</code>. In CI/non-TTY environments, this is skipped.</p>
@@ -149,6 +169,37 @@ dokkimi dump .dokkimi/auth.json -o out.json  # Specific definitions only`} lang=
   ]
 }`} lang="json" />
 
+  <h2>dokkimi junit</h2>
+  <p>Generates a JUnit XML report from a test run. Useful for CI integration and test result aggregation.</p>
+  <CodeBlock code={`dokkimi junit                              # Output XML to stdout
+dokkimi junit -o results.xml               # Write to file
+dokkimi junit --failed -o failures.xml     # Only failed instances
+dokkimi junit --summary                    # Markdown summary instead of XML`} lang="bash" />
+
+  <h3>Options</h3>
+  <table>
+    <thead>
+      <tr><th>Option</th><th>Description</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>-o, --output &lt;file&gt;</code></td><td>Write XML to a file instead of stdout</td></tr>
+      <tr><td><code>--summary</code></td><td>Output a Markdown summary instead of XML</td></tr>
+      <tr><td><code>--dir &lt;path&gt;</code></td><td>Read XML files from a directory (use with <code>--summary</code> to combine multi-run results)</td></tr>
+      <tr><td><code>--run [runId]</code></td><td>Target a specific run by ID (defaults to latest)</td></tr>
+      <tr><td><code>--failed</code></td><td>Only include instances that failed</td></tr>
+    </tbody>
+  </table>
+
+  <h3>GitHub Actions integration</h3>
+  <p>Generate XML during the run with <code>--junit</code>, then produce a Markdown summary for the GitHub Step Summary:</p>
+  <CodeBlock code={`- name: Run tests
+  run: dokkimi run .dokkimi/ --ci --junit junit-results.xml
+
+- name: Post summary
+  if: always()
+  run: dokkimi junit --summary --dir . >> $GITHUB_STEP_SUMMARY`} lang="yaml" />
+  <p>See <a href="/docs/ci">CI Pipeline</a> for complete workflow examples.</p>
+
   <h2>dokkimi doctor</h2>
   <p>Checks your environment is ready to run tests:</p>
   <ul>
@@ -169,25 +220,35 @@ dokkimi validate .dokkimi/auth.json  # Validate a specific file`} lang="bash" />
   <h3>dokkimi init</h3>
   <p>Scaffolds a <code>.dokkimi/</code> folder with example definitions, shared fragments, and init scripts.</p>
 
+  <h3>dokkimi stop</h3>
+  <p>Stops the current test run without cleaning up resources or history. If no run is active, reports that there is nothing to stop.</p>
+
   <h3>dokkimi status</h3>
   <p>Shows the current state of Dokkimi services and any running test instances.</p>
 
   <h3>dokkimi clean</h3>
-  <p>Stops all running instances, removes their Docker networks and containers, and cleans up resources.</p>
+  <p>Stops all running instances, removes their Docker networks and containers, and cleans up resources. Use <code>--all</code> to clean across all projects.</p>
+
+  <h3>dokkimi reboot</h3>
+  <p>Restarts all Dokkimi services (shuts down then re-starts). Use after changing configuration with <code>dokkimi config</code>.</p>
+
+  <h3>dokkimi shutdown</h3>
+  <p>Stops all running Dokkimi services without restarting them.</p>
 
   <h3>dokkimi config</h3>
-  <p>Interactive settings editor. Opens a full-screen menu with three categories:</p>
-  <ul>
-    <li><strong>Concurrency</strong> — max parallel environments and max booting environments</li>
-    <li><strong>Telemetry</strong> — enable or disable anonymous usage telemetry</li>
-  </ul>
-  <p>Settings are saved to <code>~/.dokkimi/config.json</code>. After making changes, you can reboot Dokkimi services immediately or exit with a reminder to run <code>dokkimi reboot</code>.</p>
+  <p>Interactive settings editor. Opens a full-screen menu with categories for concurrency (max parallel environments, max booting environments) and telemetry. Settings are saved to <code>~/.dokkimi/config.json</code>.</p>
+
+  <h3>dokkimi mcp</h3>
+  <p>Starts the MCP server in stdio mode for AI tool integration. This is registered automatically on install for Claude Code, Cursor, and Copilot — you typically only need this command to manually restart the server if it stops responding.</p>
+
+  <h3>dokkimi uninstall</h3>
+  <p>Fully removes Dokkimi: stops services, removes Docker containers/networks/images, deletes <code>~/.dokkimi/</code>, and removes AI tool configuration entries.</p>
 
   <h3>dokkimi version</h3>
-  <p>Prints the installed version (e.g., <code>v0.1.0</code>).</p>
+  <p>Prints the installed version.</p>
 
   <div class="nav-links">
-    <a href="/docs/assertions">&larr; Assertions</a>
+    <a href="/docs/ci">&larr; CI Pipeline</a>
     <a href="/docs/release-notes">Release Notes &rarr;</a>
   </div>
 </DocsLayout>

@@ -166,6 +166,7 @@ Image tags and other values can be centralized in `.dokkimi/config.yaml` using `
 | `dokkimi inspect`           | Inspect traffic logs from the last run            |
 | `dokkimi baselines`         | Review and approve pending visual baselines       |
 | `dokkimi dump`              | Export last run as JSON for AI-assisted debugging |
+| `dokkimi junit`             | Generate a JUnit XML report from a test run       |
 | `dokkimi stop`              | Stop the current test run                         |
 | `dokkimi doctor`            | Check prerequisites and system health             |
 | `dokkimi mcp`               | Start the MCP server (auto-registered on install) |

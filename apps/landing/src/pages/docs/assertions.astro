@@ -3,14 +3,28 @@ import DocsLayout from '../../layouts/DocsLayout.astro';
 import CodeBlock from '../../components/CodeBlock.astro';
 ---
 
-<DocsLayout title="Assertions — Dokkimi Docs" description="Assert on HTTP responses, inter-service traffic, and console logs.">
+<DocsLayout title="Assertions — Dokkimi Docs" description="Assert on HTTP responses, inter-service traffic, console logs, database queries, and broker messages.">
   <h1>Assertions</h1>
-  <p class="subtitle">Assert on your step's response, inter-service traffic, and console logs.</p>
+  <p class="subtitle">Verify your step's response, inter-service traffic, console logs, database queries, and broker messages.</p>
 
-  <p>Each step can have an <code>assertions</code> array of blocks. Block type is determined by shape — there are three kinds:</p>
+  <div class="callout">
+    <p>Assertion paths query the <strong>root context document</strong> — a JSON object assembled after each step executes. If you haven't seen it yet, read <a href="/docs/tests-and-steps#root-context">The root context</a> first.</p>
+  </div>
 
-  <h2>Self block</h2>
-  <p>Asserts on the step's own response (HTTP response or DB query result). A self block has no <code>match</code> field.</p>
+  <h2>How paths work</h2>
+  <p>All paths start with <code>$.</code> and navigate the root context using dot notation, array indices, and nested fields:</p>
+
+  <CodeBlock code={`$.response.status            // top-level field
+$.response.body.user.name    // nested object access
+$.response.body.items[0].id  // array index (zero-based)
+$.response.body.items[-1]    // negative index (last element)
+$.response.headers.x-auth    // header lookup (case-insensitive)`} lang="text" />
+
+  <p>Key lookups are <strong>case-insensitive</strong> — <code>$.response.headers.Content-Type</code> and <code>$.response.headers.content-type</code> both work.</p>
+
+  <h2>Writing assertions</h2>
+  <p>Each step can have an <code>assertions</code> array. Place individual assertions directly in the array:</p>
+
   <CodeBlock code={`{
   "assertions": [
     { "path": "$.response.status", "operator": "eq", "value": 201 },
@@ -21,28 +35,85 @@ import CodeBlock from '../../components/CodeBlock.astro';
   ]
 }`} lang="json" />
 
-  <h2>Match block</h2>
-  <p>Asserts on inter-service traffic captured by the interceptor sidecar. A match block uses the <code>match</code> field with a <code>path</code> to select the data source and <code>where</code> clauses to filter entries.</p>
+  <p>Each individual assertion has three parts:</p>
+  <table>
+    <thead>
+      <tr><th>Field</th><th>Required</th><th>Description</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><strong>Source field</strong></td><td>Yes</td><td>Which value to check. Usually <code>path</code>, but can also be <code>count</code>, <code>type</code>, <code>keys</code>, <code>values</code>, or <code>entries</code> (see <a href="#source-fields">Source fields</a>)</td></tr>
+      <tr><td><code>operator</code></td><td>Yes</td><td>How to compare (see <a href="#operators">Operators</a>)</td></tr>
+      <tr><td><code>value</code></td><td>Depends</td><td>Expected value. Not needed for <code>exists</code>, <code>notExists</code>, <code>isEmpty</code>, <code>notEmpty</code></td></tr>
+    </tbody>
+  </table>
+
+  <h2>Assertion blocks</h2>
+  <p>When you need to query captured data (<code>match</code>), extract variables, or loop, wrap assertions in an <strong>assertion block</strong> — an object with its own <code>assertions</code> array. The block scopes <code>$.match.*</code> results and extract targets to that group. It can include:</p>
+  <table>
+    <thead>
+      <tr><th>Field</th><th>Type</th><th>Description</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>assertions</code></td><td>array</td><td>Individual assertions to evaluate</td></tr>
+      <tr><td><code>match</code></td><td>object</td><td>Query captured data (traffic, logs, messages) and make results available via <code>$.match.*</code></td></tr>
+      <tr><td><code>extract</code></td><td>object</td><td>Extract values into <a href="/docs/variables">variables</a> for use in later steps</td></tr>
+      <tr><td><code>forEach</code> / <code>for</code> / <code>repeat</code></td><td>object</td><td>Loop the block's assertions (see <a href="/docs/loops">Loops</a>)</td></tr>
+    </tbody>
+  </table>
+
+  <p>A step's <code>assertions</code> array can mix flat assertions and blocks freely:</p>
+  <CodeBlock code={`{
+  "assertions": [
+    { "path": "$.response.status", "operator": "eq", "value": 200 },
+
+    {
+      "match": { "path": "$.traffic", "where": ["..."] },
+      "assertions": [
+        { "path": "$.match.response.status", "operator": "eq", "value": 201 }
+      ]
+    },
+
+    {
+      "assertions": [
+        { "path": "$.response.body.total", "operator": "gte", "value": 1 }
+      ],
+      "extract": { "total": "$.response.body.total" }
+    }
+  ]
+}`} lang="json" />
+
+  <h2 id="match-blocks">Match blocks</h2>
+  <p>A <code>match</code> field queries one of the captured data sources on the root context, filters entries, and makes the results available for assertions. This is how you assert on inter-service traffic, console output, database queries, and broker messages.</p>
+
   <CodeBlock code={`{
   "match": {
     "path": "$.traffic",
     "where": [
       { "path": "$$.origin", "operator": "eq", "value": "api-gateway" },
       { "path": "$$.request.method", "operator": "eq", "value": "POST" },
-      { "path": "$$.request.url", "operator": "contains", "value": "user-service/api/users" }
+      { "path": "$$.request.url", "operator": "contains", "value": "/api/users" }
     ],
     "count": 1
   },
   "assertions": [
     { "path": "$.match.request.body.email", "operator": "eq", "value": "{{email}}" },
-    { "path": "$.match.response.status", "operator": "eq", "value": 201 },
-    { "path": "$.match.response.body.id", "operator": "exists" }
+    { "path": "$.match.response.status", "operator": "eq", "value": 201 }
   ]
 }`} lang="json" />
 
-  <div class="callout">
-    <p><strong>Scoped per test.</strong> <code>$.traffic</code>, <code>$.consoleLogs</code>, <code>$.dbLogs</code>, and <code>$.messageLogs</code> only include entries captured during the current test's steps. Traffic from one test is not visible in another test within the same definition. If you need to assert on traffic triggered by a previous step, keep the assertion in the same test.</p>
-  </div>
+  <h3>How it works</h3>
+  <ol>
+    <li><code>match.path</code> selects the data source array (e.g. <code>$.traffic</code>)</li>
+    <li><code>match.where</code> filters that array — each clause uses <code>$$.</code>-prefixed paths that reference fields on the <em>candidate entry</em>, not the root context. All clauses must pass (AND logic).</li>
+    <li>The matched entries are injected into the root context as:
+      <ul>
+        <li><code>$.match</code> — the first matched entry</li>
+        <li><code>$.lastMatch</code> — the last matched entry</li>
+        <li><code>$.matches</code> — the full array of matched entries</li>
+      </ul>
+    </li>
+    <li>The block's <code>assertions</code> can then reference <code>$.match.*</code> to check the matched data.</li>
+  </ol>
 
   <h3>Match fields</h3>
   <table>
@@ -50,21 +121,23 @@ import CodeBlock from '../../components/CodeBlock.astro';
       <tr><th>Field</th><th>Type</th><th>Required</th><th>Description</th></tr>
     </thead>
     <tbody>
-      <tr><td><code>path</code></td><td>string</td><td>Yes</td><td>Data source to query: <code>$.traffic</code> for HTTP traffic, <code>$.consoleLogs</code> for console output, <code>$.messageLogs</code> for broker messages, <code>$.dbLogs</code> for database queries</td></tr>
-      <tr><td><code>where</code></td><td>array</td><td>No</td><td>Filter entries. Each clause uses <code>$$.</code> prefix to reference fields on the matched entry</td></tr>
-      <tr><td><code>count</code></td><td>integer or object</td><td>No</td><td>Assert how many entries match. An integer asserts an exact count. An object <code>&#123; "operator": "gte", "value": 1 &#125;</code> supports range operators (<code>eq</code>, <code>gt</code>, <code>gte</code>, <code>lt</code>, <code>lte</code>). If omitted, at least one match is expected.</td></tr>
+      <tr><td><code>path</code></td><td>string</td><td>Yes</td><td>Data source: <code>$.traffic</code>, <code>$.consoleLogs</code>, <code>$.dbLogs</code>, or <code>$.messageLogs</code></td></tr>
+      <tr><td><code>where</code></td><td>array</td><td>No</td><td>Filter entries using <code>$$.</code>-prefixed paths. All clauses must pass (AND). Omit to match all entries.</td></tr>
+      <tr><td><code>count</code></td><td>integer or object</td><td>No</td><td>Assert how many entries match. Integer for exact count, or <code>&#123; "operator": "gte", "value": 1 &#125;</code> for range checks (<code>eq</code>, <code>gt</code>, <code>gte</code>, <code>lt</code>, <code>lte</code>). Omit to require at least one.</td></tr>
+      <tr><td><code>as</code></td><td>string</td><td>No</td><td>Save matched entries to a named variable, accessible as <code>$.variables.&lt;name&gt;</code> or <code>&#123;&#123;name&#125;&#125;</code> in later steps</td></tr>
     </tbody>
   </table>
 
   <h3>Where clauses</h3>
-  <p>Each where clause filters entries using <code>$$.</code>-prefixed paths that reference the candidate entry's fields. All clauses must pass for an entry to match (AND logic). All support <code>&#123;&#123;variables&#125;&#125;</code>:</p>
+  <p>Each where clause uses <code>$$.</code>-prefixed paths to reference the candidate entry being tested. The <code>$$.</code> prefix means "this entry" — it scopes the path to the array element under evaluation rather than the root context.</p>
+
   <CodeBlock code={`"where": [
   { "path": "$$.origin", "operator": "eq", "value": "api-gateway" },
   { "path": "$$.request.method", "operator": "eq", "value": "POST" },
   { "path": "$$.request.url", "operator": "contains", "value": "/api/users" }
 ]`} lang="json" />
 
-  <p>You can use combinators for complex filtering:</p>
+  <p>Use combinators for complex filtering:</p>
   <CodeBlock code={`"where": [
   { "or": [
     { "path": "$$.request.method", "operator": "eq", "value": "POST" },
@@ -73,15 +146,10 @@ import CodeBlock from '../../components/CodeBlock.astro';
   { "not": { "path": "$$.request.url", "operator": "contains", "value": "/health" } }
 ]`} lang="json" />
 
-  <h3>Assertion paths inside match blocks</h3>
-  <p>Inside a match block, assertion paths reference the matched entry via <code>$.match.*</code> (the first/default match) or <code>$.lastMatch.*</code> (the last match):</p>
-  <CodeBlock code={`"assertions": [
-  { "path": "$.match.response.status", "operator": "eq", "value": 200 },
-  { "path": "$.match.request.body.name", "operator": "exists" }
-]`} lang="json" />
+  <p>Where clause values also support <code>&#123;&#123;variables&#125;&#125;</code> and <a href="#valueref">ValueRef</a> (<code>&#123; "from": "$.path" &#125;</code>) to compare against root context values.</p>
 
   <h3>Iterating over multiple matches</h3>
-  <p>To assert on each matching entry individually, use a <code>forEach</code> block:</p>
+  <p>To assert on each matched entry individually, use <code>forEach</code> with <code>$.matches</code>. The loop variable is accessed via <code>$.variables.&lt;as&gt;</code>:</p>
   <CodeBlock code={`{
   "match": {
     "path": "$.traffic",
@@ -98,8 +166,54 @@ import CodeBlock from '../../components/CodeBlock.astro';
   }
 }`} lang="json" />
 
-  <h2>Console log block</h2>
-  <p>Asserts on console output from a specific service during the step's execution. Console assertions use the same <code>match</code> structure with <code>path: "$.consoleLogs"</code>:</p>
+  <h2>Data sources</h2>
+  <p>Each data source is an array on the root context. Use <code>match</code> to filter entries and assert on them.</p>
+
+  <div class="callout">
+    <p><strong>Scoped per test.</strong> <code>$.traffic</code>, <code>$.consoleLogs</code>, <code>$.dbLogs</code>, and <code>$.messageLogs</code> only include entries captured during the current test's steps. Traffic from one test is not visible in another.</p>
+  </div>
+
+  <h3>HTTP traffic (<code>$.traffic</code>)</h3>
+  <p>HTTP requests captured between services by the interceptor sidecar. Each entry contains the full request and response:</p>
+
+  <CodeBlock code={`{
+  "match": {
+    "path": "$.traffic",
+    "where": [
+      { "path": "$$.origin", "operator": "eq", "value": "api-gateway" },
+      { "path": "$$.request.url", "operator": "contains", "value": "/api/users" }
+    ],
+    "count": 1
+  },
+  "assertions": [
+    { "path": "$.match.response.status", "operator": "eq", "value": 201 },
+    { "path": "$.match.response.body.id", "operator": "exists" }
+  ]
+}`} lang="json" />
+
+  <h4>Traffic entry fields</h4>
+  <table>
+    <thead>
+      <tr><th>Path</th><th>Type</th><th>Description</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>$$.origin</code> / <code>$$.from</code></td><td>string</td><td>Service that sent the request</td></tr>
+      <tr><td><code>$$.to</code></td><td>string</td><td>Destination service</td></tr>
+      <tr><td><code>$$.request.method</code></td><td>string</td><td>HTTP method</td></tr>
+      <tr><td><code>$$.request.url</code></td><td>string</td><td>Request URL</td></tr>
+      <tr><td><code>$$.request.headers</code></td><td>object</td><td>Request headers (lowercase keys)</td></tr>
+      <tr><td><code>$$.request.body</code></td><td>any</td><td>Request body</td></tr>
+      <tr><td><code>$$.response.status</code></td><td>number</td><td>HTTP status code</td></tr>
+      <tr><td><code>$$.response.headers</code></td><td>object</td><td>Response headers (lowercase keys)</td></tr>
+      <tr><td><code>$$.response.body</code></td><td>any</td><td>Response body</td></tr>
+      <tr><td><code>$$.responseTime</code></td><td>number</td><td>Response time in milliseconds</td></tr>
+      <tr><td><code>$$.timestamp</code></td><td>string</td><td>When the request was captured</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Console logs (<code>$.consoleLogs</code>)</h3>
+  <p>Console output from services, captured by the interceptor sidecar:</p>
+
   <CodeBlock code={`{
   "match": {
     "path": "$.consoleLogs",
@@ -112,7 +226,7 @@ import CodeBlock from '../../components/CodeBlock.astro';
   }
 }`} lang="json" />
 
-  <p>To assert zero errors from a service:</p>
+  <p>Assert zero errors from a service:</p>
   <CodeBlock code={`{
   "match": {
     "path": "$.consoleLogs",
@@ -124,7 +238,7 @@ import CodeBlock from '../../components/CodeBlock.astro';
   }
 }`} lang="json" />
 
-  <p>To assert on message content with regex:</p>
+  <p>Match with regex:</p>
   <CodeBlock code={`{
   "match": {
     "path": "$.consoleLogs",
@@ -136,20 +250,55 @@ import CodeBlock from '../../components/CodeBlock.astro';
   }
 }`} lang="json" />
 
-  <h3>Console log where fields</h3>
+  <h4>Console log entry fields</h4>
   <table>
     <thead>
       <tr><th>Path</th><th>Type</th><th>Description</th></tr>
     </thead>
     <tbody>
       <tr><td><code>$$.service</code></td><td>string</td><td>Service name that emitted the log</td></tr>
-      <tr><td><code>$$.level</code></td><td>enum</td><td>Log level: <code>INFO</code>, <code>WARN</code>, <code>ERROR</code>, <code>DEBUG</code></td></tr>
+      <tr><td><code>$$.level</code></td><td>enum</td><td><code>INFO</code>, <code>WARN</code>, <code>ERROR</code>, <code>DEBUG</code></td></tr>
       <tr><td><code>$$.message</code></td><td>string</td><td>Log message content</td></tr>
+      <tr><td><code>$$.timestamp</code></td><td>number</td><td>Unix timestamp</td></tr>
     </tbody>
   </table>
 
-  <h2>Message log block</h2>
-  <p>Asserts on broker messages (AMQP or Kafka) captured during the step. Uses <code>match</code> with <code>path: "$.messageLogs"</code>:</p>
+  <h3>Database logs (<code>$.dbLogs</code>)</h3>
+  <p>Database queries captured by the DB proxy sidecar. Use this to verify that a service executed the expected queries:</p>
+
+  <CodeBlock code={`{
+  "match": {
+    "path": "$.dbLogs",
+    "where": [
+      { "path": "$$.database", "operator": "eq", "value": "users-db" },
+      { "path": "$$.query", "operator": "contains", "value": "INSERT INTO users" }
+    ],
+    "count": 1
+  },
+  "assertions": [
+    { "path": "$.match.result.success", "operator": "eq", "value": true }
+  ]
+}`} lang="json" />
+
+  <h4>Database log entry fields</h4>
+  <table>
+    <thead>
+      <tr><th>Path</th><th>Type</th><th>Description</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>$$.database</code></td><td>string</td><td>Database item name</td></tr>
+      <tr><td><code>$$.query</code></td><td>string</td><td>SQL query or command</td></tr>
+      <tr><td><code>$$.duration</code></td><td>number</td><td>Query execution time in milliseconds</td></tr>
+      <tr><td><code>$$.result.success</code></td><td>boolean</td><td>Whether the query succeeded</td></tr>
+      <tr><td><code>$$.result.rowsAffected</code></td><td>number</td><td>Number of affected rows</td></tr>
+      <tr><td><code>$$.result.error</code></td><td>string</td><td>Error message if query failed</td></tr>
+      <tr><td><code>$$.timestamp</code></td><td>string</td><td>When the query was captured</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Broker messages (<code>$.messageLogs</code>)</h3>
+  <p>Messages captured by the broker proxy sidecar (AMQP or Kafka):</p>
+
   <CodeBlock code={`{
   "match": {
     "path": "$.messageLogs",
@@ -165,7 +314,7 @@ import CodeBlock from '../../components/CodeBlock.astro';
   ]
 }`} lang="json" />
 
-  <h3>Message log where fields</h3>
+  <h4>Message log entry fields</h4>
   <table>
     <thead>
       <tr><th>Path</th><th>Type</th><th>Description</th></tr>
@@ -181,13 +330,13 @@ import CodeBlock from '../../components/CodeBlock.astro';
       <tr><td><code>$$.partition</code></td><td>integer</td><td>Kafka partition index</td></tr>
       <tr><td><code>$$.key</code></td><td>string/object</td><td>Kafka message key</td></tr>
       <tr><td><code>$$.offset</code></td><td>integer</td><td>Kafka message offset (consume only)</td></tr>
+      <tr><td><code>$$.timestamp</code></td><td>string</td><td>When the message was captured</td></tr>
     </tbody>
   </table>
 
-  <h2>Assertion paths</h2>
-  <p>All assertion and extract paths use the unified root context. Paths must start with <code>$.</code> followed by the document root field.</p>
+  <h2>Path reference</h2>
 
-  <h3>HTTP responses (self block or match block)</h3>
+  <h3>Step response — HTTP</h3>
   <table>
     <thead>
       <tr><th>Path</th><th>Description</th></tr>
@@ -207,7 +356,7 @@ import CodeBlock from '../../components/CodeBlock.astro';
     </tbody>
   </table>
 
-  <h3>Database query results (self block only)</h3>
+  <h3>Step response — Database query</h3>
   <table>
     <thead>
       <tr><th>Path</th><th>Description</th></tr>
@@ -221,7 +370,33 @@ import CodeBlock from '../../components/CodeBlock.astro';
     </tbody>
   </table>
 
-  <h2>Operators</h2>
+  <h3>Variables</h3>
+  <table>
+    <thead>
+      <tr><th>Path</th><th>Description</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>$.variables.&lt;name&gt;</code></td><td>A variable's value (equivalent to <code>&#123;&#123;name&#125;&#125;</code> in most contexts)</td></tr>
+      <tr><td><code>$.variables.&lt;name&gt;.field</code></td><td>Nested access into an object variable</td></tr>
+      <tr><td><code>$.variables.&lt;name&gt;[0]</code></td><td>Array element from a variable</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Match results</h3>
+  <p>Available inside assertion blocks that have a <code>match</code> field:</p>
+  <table>
+    <thead>
+      <tr><th>Path</th><th>Description</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>$.match.*</code></td><td>First matched entry</td></tr>
+      <tr><td><code>$.lastMatch.*</code></td><td>Last matched entry</td></tr>
+      <tr><td><code>$.matches</code></td><td>Full array of matched entries</td></tr>
+      <tr><td><code>$.matches[N].*</code></td><td>Specific matched entry by index</td></tr>
+    </tbody>
+  </table>
+
+  <h2 id="operators">Operators</h2>
   <table>
     <thead>
       <tr><th>Operator</th><th>Value required?</th><th>Value type</th><th>Description</th></tr>
@@ -234,7 +409,7 @@ import CodeBlock from '../../components/CodeBlock.astro';
       <tr><td><code>gte</code></td><td>Yes</td><td>number</td><td>Greater than or equal</td></tr>
       <tr><td><code>lt</code></td><td>Yes</td><td>number</td><td>Less than</td></tr>
       <tr><td><code>lte</code></td><td>Yes</td><td>number</td><td>Less than or equal</td></tr>
-      <tr><td><code>contains</code></td><td>Yes</td><td>any</td><td>Unified containment: substring match for strings, element check for arrays, key check for objects (case-sensitive)</td></tr>
+      <tr><td><code>contains</code></td><td>Yes</td><td>any</td><td>Substring match for strings, element check for arrays, key check for objects (case-sensitive)</td></tr>
       <tr><td><code>notContains</code></td><td>Yes</td><td>any</td><td>Inverse of <code>contains</code> (case-sensitive)</td></tr>
       <tr><td><code>containsIgnoreCase</code></td><td>Yes</td><td>string</td><td>Substring match (case-insensitive)</td></tr>
       <tr><td><code>notContainsIgnoreCase</code></td><td>Yes</td><td>string</td><td>Substring does NOT match (case-insensitive)</td></tr>
@@ -248,8 +423,8 @@ import CodeBlock from '../../components/CodeBlock.astro';
     </tbody>
   </table>
 
-  <h2>Type coercion and edge cases</h2>
-  <p>The <code>eq</code> and <code>ne</code> operators use loose comparison with automatic type coercion. Understanding these rules helps avoid surprising results, especially with typed variables.</p>
+  <h2>Type coercion</h2>
+  <p>The <code>eq</code> and <code>ne</code> operators use loose comparison with automatic type coercion.</p>
 
   <h3>How <code>eq</code> compares values</h3>
   <p><code>eq</code> checks three things in order:</p>
@@ -266,8 +441,8 @@ import CodeBlock from '../../components/CodeBlock.astro';
       <tr><th>Actual</th><th>Expected</th><th>Result</th><th>Why</th></tr>
     </thead>
     <tbody>
-      <tr><td><code>42</code></td><td><code>"42"</code></td><td>pass</td><td>Both parse as <code>float64(42)</code></td></tr>
-      <tr><td><code>"1.0"</code></td><td><code>1</code></td><td>pass</td><td>Both parse as <code>float64(1)</code></td></tr>
+      <tr><td><code>42</code></td><td><code>"42"</code></td><td>pass</td><td>Both parse as numbers</td></tr>
+      <tr><td><code>"1.0"</code></td><td><code>1</code></td><td>pass</td><td>Both parse as numbers</td></tr>
       <tr><td><code>true</code></td><td><code>"true"</code></td><td>pass</td><td>Both coerce to boolean <code>true</code></td></tr>
       <tr><td><code>"FALSE"</code></td><td><code>false</code></td><td>pass</td><td>Case-insensitive boolean coercion</td></tr>
       <tr><td><code>[1, 2]</code></td><td><code>[1, 2]</code></td><td>pass</td><td>Deep equality</td></tr>
@@ -296,44 +471,45 @@ import CodeBlock from '../../components/CodeBlock.astro';
   <p>These always coerce both sides to numbers. If either side can't be parsed as a number, the assertion <strong>errors</strong> (not just fails). Numeric strings like <code>"200"</code> are coerced, but <code>"fast"</code> or <code>true</code> will error.</p>
 
   <h3>String operators (<code>contains</code>, <code>matches</code>)</h3>
-  <p>Both sides are converted to their string representation before comparison. This means non-string values are stringified: numbers become <code>"42"</code>, booleans become <code>"true"</code>/<code>"false"</code>, objects become their Go <code>fmt.Sprintf("%v")</code> representation (which may not match JSON). For reliable results, use string operators on string values.</p>
+  <p>Both sides are converted to their string representation before comparison. Non-string values are stringified: numbers become <code>"42"</code>, booleans become <code>"true"</code>/<code>"false"</code>. For objects and arrays, the stringified form may not match JSON — use string operators on string values for reliable results.</p>
 
   <div class="callout">
     <p><strong>Tip:</strong> If you're unsure about a value's type, use the <code>type</code> source field to assert it explicitly before comparing: <code>&#123; "type": "$.response.body.count", "operator": "eq", "value": "number" &#125;</code></p>
   </div>
 
-  <h2>Source fields</h2>
-  <p>Source fields are alternatives to <code>path</code> that transform the resolved value before the operator is applied:</p>
+  <h2 id="source-fields">Source fields</h2>
+  <p>Source fields are alternatives to <code>path</code> that transform the resolved value before the operator is applied. Each assertion must have exactly one source field.</p>
   <table>
     <thead>
       <tr><th>Source field</th><th>Resolves to</th><th>Description</th></tr>
     </thead>
     <tbody>
-      <tr><td><code>type</code></td><td>string</td><td>The JavaScript type of the value at the given path: <code>string</code>, <code>number</code>, <code>boolean</code>, <code>object</code>, <code>array</code>, <code>null</code></td></tr>
-      <tr><td><code>count</code></td><td>number</td><td>Length of an array or string at the given path</td></tr>
-      <tr><td><code>keys</code></td><td>array</td><td>Array of key strings from an object at the given path</td></tr>
-      <tr><td><code>values</code></td><td>array</td><td>Array of values from an object at the given path</td></tr>
-      <tr><td><code>entries</code></td><td>array</td><td>Array of <code>&#123; key, value &#125;</code> objects from an object at the given path</td></tr>
+      <tr><td><code>path</code></td><td>any</td><td>The raw value at the given path — the default and most common source field</td></tr>
+      <tr><td><code>type</code></td><td>string</td><td>The type of the value at the path: <code>"string"</code>, <code>"number"</code>, <code>"boolean"</code>, <code>"object"</code>, <code>"array"</code>, or <code>"null"</code></td></tr>
+      <tr><td><code>count</code></td><td>number</td><td>Length of an array or string at the path</td></tr>
+      <tr><td><code>keys</code></td><td>array</td><td>Sorted array of key strings from an object at the path</td></tr>
+      <tr><td><code>values</code></td><td>array</td><td>Array of values from an object at the path (sorted by key)</td></tr>
+      <tr><td><code>entries</code></td><td>array</td><td>Array of <code>&#123; key, value &#125;</code> objects from an object at the path (sorted by key)</td></tr>
     </tbody>
   </table>
 
   <p>Examples:</p>
-  <CodeBlock code={`// Type check (replaces the old "type" operator)
+  <CodeBlock code={`// Check the type of a value
 { "type": "$.response.body.items", "operator": "eq", "value": "array" }
 
-// Length check (replaces the old "length" operator)
+// Check the length of an array
 { "count": "$.response.body.items", "operator": "eq", "value": 3 }
 
-// Object keys
+// Check if an object has a specific key
 { "keys": "$.response.body.config", "operator": "contains", "value": "timeout" }`} lang="json" />
 
-  <h2>ValueRef</h2>
-  <p>Instead of a literal <code>value</code>, you can compare against another path in the document using <code>&#123; "from": "$.path" &#125;</code>:</p>
+  <h2 id="valueref">ValueRef</h2>
+  <p>Instead of a literal <code>value</code>, you can compare against another path in the root context using <code>&#123; "from": "$.path" &#125;</code>:</p>
   <CodeBlock code={`{ "path": "$.response.body.createdAt", "operator": "eq", "value": { "from": "$.response.body.updatedAt" } }`} lang="json" />
   <p>This resolves both sides before comparing, enabling dynamic assertions that compare two fields against each other.</p>
 
   <div class="nav-links">
     <a href="/docs/variables">← Variables</a>
-    <a href="/docs/cli">CLI Reference →</a>
+    <a href="/docs/ci">CI Pipeline →</a>
   </div>
 </DocsLayout>

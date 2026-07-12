@@ -236,6 +236,29 @@ jobs:
     <p><strong>You don't need registry auth for locally-built images.</strong> Any image you build on the runner with <code>docker build</code> is already available to Dokkimi. Registry login is only needed for images that need to be pulled from a remote registry.</p>
   </div>
 
+  <h2>JUnit XML reports</h2>
+  <p>Generate JUnit XML reports during your test run for integration with CI dashboards and GitHub Step Summary.</p>
+
+  <h3>Inline with <code>dokkimi run</code></h3>
+  <p>The <code>--junit</code> flag writes an XML report after the run completes:</p>
+  <CodeBlock code={`dokkimi run .dokkimi/ --ci --junit junit-results.xml`} lang="bash" />
+
+  <h3>Standalone with <code>dokkimi junit</code></h3>
+  <p>Generate a report from a completed run:</p>
+  <CodeBlock code={`dokkimi junit -o results.xml            # XML from latest run
+dokkimi junit --failed -o failures.xml  # Only failed tests
+dokkimi junit --summary                 # Markdown summary instead of XML`} lang="bash" />
+
+  <h3>GitHub Step Summary</h3>
+  <p>Post a Markdown test summary directly to the GitHub Actions run page:</p>
+  <CodeBlock code={`- name: Run tests
+  run: dokkimi run .dokkimi/ --ci --junit junit-results.xml
+
+- name: Post test summary
+  if: always()
+  run: dokkimi junit --summary --dir . >> $GITHUB_STEP_SUMMARY`} lang="yaml" />
+  <p>The <code>--summary --dir</code> mode reads all <code>.xml</code> files from a directory and produces a combined Markdown summary with per-test breakdowns. This works with multi-run setups where each run writes to a separate XML file.</p>
+
   <h2>Tips</h2>
 
   <h3>Free disk space on GitHub Actions</h3>
@@ -281,4 +304,8 @@ steps:
     name: test-failures
     path: test-failures.json`} lang="yaml" />
 
+  <div class="nav-links">
+    <a href="/docs/assertions">← Assertions</a>
+    <a href="/docs/cli">CLI Reference →</a>
+  </div>
 </DocsLayout>

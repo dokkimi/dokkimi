@@ -7,6 +7,8 @@ import CodeBlock from '../../components/CodeBlock.astro';
   <h1>Mocks</h1>
   <p class="subtitle">Intercept outbound HTTP requests from your services and return controlled responses.</p>
 
+  <p>When a service makes an outbound HTTP request, the interceptor sidecar checks it against all MOCK items. If a mock matches, the mock response is returned. If no mock matches, the request passes through to its real destination.</p>
+
   <h2>Required fields</h2>
   <table>
     <thead>
@@ -69,6 +71,32 @@ import CodeBlock from '../../components/CodeBlock.astro';
   }
 }`} lang="json" />
 
+  <h2>Path matching</h2>
+  <p>The <code>mockPath</code> field supports several matching patterns:</p>
+  <table>
+    <thead>
+      <tr><th>Pattern</th><th>Example</th><th>Matches</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>Exact</td><td><code>/v1/charges</code></td><td>Only <code>/v1/charges</code></td></tr>
+      <tr><td>Trailing wildcard</td><td><code>/api/*</code></td><td>Any path starting with <code>/api/</code></td></tr>
+      <tr><td>Path variable (braces)</td><td><code>/api/users/&#123;userId&#125;</code></td><td><code>/api/users/123</code>, <code>/api/users/abc</code></td></tr>
+      <tr><td>Path variable (colon)</td><td><code>/api/users/:id</code></td><td>Same as above — colon syntax is converted to braces internally</td></tr>
+      <tr><td>Full wildcard</td><td><code>*</code></td><td>Any path</td></tr>
+    </tbody>
+  </table>
+  <p>Query strings are ignored during path matching. Wildcards in the middle of a path (e.g., <code>/api/*/posts</code>) are not supported — only trailing wildcards work.</p>
+
+  <h2>Mock precedence</h2>
+  <p>When multiple mocks match the same request, the most specific mock wins. Specificity is scored by how many fields are narrowed beyond the default wildcard:</p>
+  <ul>
+    <li>Specific <code>mockOrigin</code> (not <code>*</code>): +1</li>
+    <li>Specific <code>mockTarget</code> (not <code>*</code>): +1</li>
+    <li>Specific <code>mockMethod</code> (not <code>*</code>): +1</li>
+    <li>Exact path or path variable: +2, trailing wildcard: +1</li>
+  </ul>
+  <p>On a tie, exact paths beat path variables, and the mock defined first wins.</p>
+
   <h2>Alternative: top-level mocks array</h2>
   <p>Mocks can also be defined in a top-level <code>mocks</code> array on the definition, with shorter field names:</p>
   <CodeBlock code={`{
@@ -106,7 +134,7 @@ import CodeBlock from '../../components/CodeBlock.astro';
   </table>
 
   <div class="nav-links">
-    <a href="/docs/databases">← Databases</a>
+    <a href="/docs/brokers">← Brokers</a>
     <a href="/docs/refs">References ($ref) →</a>
   </div>
 </DocsLayout>
