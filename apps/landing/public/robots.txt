@@ -16,4 +16,4 @@ Allow: /
 User-agent: GoogleBot
 Allow: /
 
-Sitemap: https://dokkimi.com/sitemap-index.xml
+Sitemap: https://dokkimi.com/sitemap.xml

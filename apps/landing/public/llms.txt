@@ -41,17 +41,17 @@ Install: `npm install -g dokkimi` or `brew install dokkimi/tap/dokkimi`. Require
 
 ## Blog
 
-- [Why we built Dokkimi](https://dokkimi.com/blog/why-we-built-dokkimi): the motivation behind the project
-- [Getting started with Dokkimi](https://dokkimi.com/blog/getting-started-with-dokkimi): walkthrough of a first test
-- [How traffic interception works](https://dokkimi.com/blog/how-traffic-interception-works): the interceptor sidecar architecture
-- [Mocking external APIs](https://dokkimi.com/blog/mocking-external-apis): intercepting calls to Stripe, Twilio, and more
-- [Testing with real databases](https://dokkimi.com/blog/testing-with-real-databases): seeding and querying Postgres, MySQL, MongoDB
-- [Parallel test execution](https://dokkimi.com/blog/parallel-test-execution): running tests concurrently
-- [Reusable definitions with $ref](https://dokkimi.com/blog/ref-pattern-reusable-definitions): the $ref pattern for shared configs
-- [Debugging failed tests](https://dokkimi.com/blog/debugging-failed-tests): reading output and fixing failures
-- [Variables and extraction](https://dokkimi.com/blog/variables-and-extraction): using runtime variables in test steps
-- [Console log assertions](https://dokkimi.com/blog/console-log-assertions): asserting on service console output
-- [Dokkimi vs Docker Compose testing](https://dokkimi.com/blog/dokkimi-vs-docker-compose-testing): why Docker Compose alone isn't enough
+- [Why we built Dokkimi](https://dokkimi.com/blogs/why-we-built-dokkimi): the motivation behind the project
+- [Getting started with Dokkimi](https://dokkimi.com/blogs/getting-started-with-dokkimi): walkthrough of a first test
+- [How traffic interception works](https://dokkimi.com/blogs/how-traffic-interception-works): the interceptor sidecar architecture
+- [Mocking external APIs](https://dokkimi.com/blogs/mocking-external-apis): intercepting calls to Stripe, Twilio, and more
+- [Testing with real databases](https://dokkimi.com/blogs/testing-with-real-databases): seeding and querying Postgres, MySQL, MongoDB
+- [Parallel test execution](https://dokkimi.com/blogs/parallel-test-execution): running tests concurrently
+- [Reusable definitions with $ref](https://dokkimi.com/blogs/ref-pattern-reusable-definitions): the $ref pattern for shared configs
+- [Debugging failed tests](https://dokkimi.com/blogs/debugging-failed-tests): reading output and fixing failures
+- [Variables and extraction](https://dokkimi.com/blogs/variables-and-extraction): using runtime variables in test steps
+- [Console log assertions](https://dokkimi.com/blogs/console-log-assertions): asserting on service console output
+- [Dokkimi vs Docker Compose testing](https://dokkimi.com/blogs/dokkimi-vs-docker-compose-testing): why Docker Compose alone isn't enough
 
 ## Optional
 

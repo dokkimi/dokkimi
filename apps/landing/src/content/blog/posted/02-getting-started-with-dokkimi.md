@@ -119,4 +119,4 @@ This shows every HTTP call the interceptor captured during the last run — whic
 - Try adding a `MOCK` item to intercept calls to an external API.
 - Add a `ui` action to drive a browser through your frontend and take screenshots for visual regression testing.
 
-Once you're comfortable with the basics, check out [how traffic interception works](/blog/how-traffic-interception-works) for a deeper look at what's happening under the hood.
+Once you're comfortable with the basics, check out [how traffic interception works](/blogs/how-traffic-interception-works) for a deeper look at what's happening under the hood.

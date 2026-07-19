@@ -1,0 +1,121 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import Nav from '../components/Nav.astro';
+import Footer from '../components/Footer.astro';
+import { getCollection } from 'astro:content';
+
+const blogPosts = (await getCollection('blog')).sort((a, b) => a.data.title.localeCompare(b.data.title));
+const tutorials = (await getCollection('tutorials')).sort((a, b) => a.data.title.localeCompare(b.data.title));
+
+const docPages = [
+  { title: 'Getting Started', href: '/docs/' },
+  { title: 'Project Structure', href: '/docs/project-structure/' },
+  { title: 'Services', href: '/docs/services/' },
+  { title: 'Databases', href: '/docs/databases/' },
+  { title: 'Brokers', href: '/docs/brokers/' },
+  { title: 'Mocks', href: '/docs/mocks/' },
+  { title: 'Tests & Steps', href: '/docs/tests-and-steps/' },
+  { title: 'Actions', href: '/docs/actions/' },
+  { title: 'Assertions', href: '/docs/assertions/' },
+  { title: 'Variables', href: '/docs/variables/' },
+  { title: 'Refs & Fragments', href: '/docs/refs/' },
+  { title: 'Loops', href: '/docs/loops/' },
+  { title: 'CLI Reference', href: '/docs/cli/' },
+  { title: 'CI/CD', href: '/docs/ci/' },
+  { title: 'AI Integration', href: '/docs/ai-integration/' },
+  { title: 'Release Notes', href: '/docs/release-notes/' },
+];
+---
+
+<BaseLayout title="Sitemap — Dokkimi" description="All pages on dokkimi.com.">
+  <Nav />
+  <main class="container sitemap">
+    <h1>Sitemap</h1>
+
+    <section>
+      <h2>Pages</h2>
+      <ul>
+        <li><a href="/">Home</a></li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>Documentation</h2>
+      <ul>
+        {docPages.map((page) => (
+          <li><a href={page.href}>{page.title}</a></li>
+        ))}
+      </ul>
+    </section>
+
+    <section>
+      <h2>Blog</h2>
+      <ul>
+        <li><a href="/blogs/">All posts</a></li>
+        {blogPosts.map((post) => (
+          <li><a href={`/blogs/${post.data.slug}/`}>{post.data.title}</a></li>
+        ))}
+      </ul>
+    </section>
+
+    <section>
+      <h2>Tutorials</h2>
+      <ul>
+        <li><a href="/tutorials/">All tutorials</a></li>
+        {tutorials.map((tutorial) => (
+          <li><a href={`/tutorials/${tutorial.data.slug}/`}>{tutorial.data.title}</a></li>
+        ))}
+      </ul>
+    </section>
+
+    <section>
+      <h2>Legal</h2>
+      <ul>
+        <li><a href="/cookie-policy/">Cookie Policy</a></li>
+      </ul>
+    </section>
+  </main>
+  <Footer />
+</BaseLayout>
+
+<style>
+  .sitemap {
+    padding-top: 6rem;
+    padding-bottom: 4rem;
+    max-width: 48rem;
+  }
+
+  h1 {
+    font-size: 2rem;
+    margin-bottom: 2rem;
+  }
+
+  section {
+    margin-bottom: 2rem;
+  }
+
+  h2 {
+    font-size: 1.25rem;
+    margin-bottom: 0.75rem;
+    color: var(--color-text-secondary, #6b7280);
+  }
+
+  ul {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+  }
+
+  li {
+    padding: 0.3rem 0;
+  }
+
+  a {
+    color: var(--color-link, #14b8a6);
+    text-decoration: none;
+  }
+
+  a:hover {
+    text-decoration: underline;
+  }
+</style>
