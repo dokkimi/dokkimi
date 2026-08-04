@@ -4,12 +4,11 @@ import Nav from '../components/Nav.astro';
 import Hero from '../components/Hero.astro';
 import Features from '../components/Features.astro';
 import HowItWorks from '../components/HowItWorks.astro';
-import GetStarted from '../components/GetStarted.astro';
 import BuiltForAI from '../components/BuiltForAI.astro';
 import Coverage from '../components/Coverage.astro';
 import LearnMore from '../components/LearnMore.astro';
 import Pricing from '../components/Pricing.astro';
-import Subscribe from '../components/Subscribe.astro';
+import FinalCta from '../components/FinalCta.astro';
 import Footer from '../components/Footer.astro';
 ---
 
@@ -17,14 +16,30 @@ import Footer from '../components/Footer.astro';
   <Nav />
   <main>
     <Hero />
-    <GetStarted />
     <BuiltForAI />
     <Features />
     <Coverage />
     <HowItWorks />
     <LearnMore />
     <Pricing />
-    <Subscribe />
+    <FinalCta />
   </main>
   <Footer />
 </BaseLayout>
+
+<script>
+  // Scroll-reveal observer
+  const observer = new IntersectionObserver(
+    (entries) => {
+      entries.forEach((entry) => {
+        if (entry.isIntersecting) {
+          entry.target.classList.add('visible');
+          observer.unobserve(entry.target);
+        }
+      });
+    },
+    { threshold: 0.1, rootMargin: '0px 0px -40px 0px' }
+  );
+
+  document.querySelectorAll('.reveal').forEach((el) => observer.observe(el));
+</script>

@@ -4,11 +4,11 @@
 
 <section id="pricing" class="pricing">
   <div class="container">
-    <h2 class="section-heading">Pricing</h2>
-    <p class="section-subtitle">
+    <h2 class="section-heading reveal">Pricing</h2>
+    <p class="section-subtitle reveal">
       Free to run locally and in CI. Cloud pricing coming soon.
     </p>
-    <div class="grid">
+    <div class="grid reveal">
       <div class="card">
         <div class="card-header">
           <h3>Community</h3>
@@ -37,7 +37,7 @@
           <li>Flaky test detection and regression tracking</li>
           <li>Visual baseline management UI</li>
         </ul>
-        <a href="#subscribe" class="card-cta" data-cta="join_waitlist" data-plan="Dokkimi Cloud">Join the waitlist</a>
+        <a href="#hero-newsletter-form" class="card-cta" data-cta="join_waitlist" data-plan="Dokkimi Cloud">Join the waitlist</a>
       </div>
     </div>
   </div>
@@ -64,6 +64,12 @@
     padding: 36px;
     display: flex;
     flex-direction: column;
+    transition: transform 0.25s ease, box-shadow 0.25s ease;
+  }
+
+  .card:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.3);
   }
 
   .card.featured {

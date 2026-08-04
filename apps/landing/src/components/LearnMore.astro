@@ -4,9 +4,9 @@
 
 <section class="learn-more">
   <div class="container">
-    <h2 class="section-heading">Learn More</h2>
-    <p class="section-subtitle">Dive into the docs or follow a step-by-step tutorial.</p>
-    <div class="links">
+    <h2 class="section-heading reveal">Learn More</h2>
+    <p class="section-subtitle reveal">Dive into the docs or follow a step-by-step tutorial.</p>
+    <div class="links reveal">
       <a href="/docs" class="link-card">
         <div class="link-icon">
           <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
@@ -50,12 +50,14 @@
     background: var(--color-bg-soft);
     border: 1px solid var(--color-border);
     border-radius: 12px;
-    transition: border-color 0.2s;
+    transition: border-color 0.2s, transform 0.25s ease, box-shadow 0.25s ease;
   }
 
   .link-card:hover {
     border-color: var(--color-primary);
     color: var(--color-primary);
+    transform: translateY(-3px);
+    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.25);
   }
 
   .link-icon {

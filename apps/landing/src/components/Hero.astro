@@ -3,36 +3,305 @@
 ---
 
 <section class="hero">
+  <div class="hero-glow"></div>
   <div class="container">
     <h1>Test Everything</h1>
     <p class="subtitle">
       The only testing framework that does integration, E2E, and visual regression
       testing. All without a staging environment.
     </p>
+
+    <div class="hero-ctas">
+      <div class="install-options">
+        <div class="install-cmd">
+          <code>brew install dokkimi/tap/dokkimi</code>
+          <button class="copy-btn" aria-label="Copy command" data-copy="brew install dokkimi/tap/dokkimi">
+            <svg class="icon-copy" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+            <svg class="icon-check" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+          </button>
+        </div>
+        <span class="install-or">or</span>
+        <div class="install-cmd">
+          <code>npm install -g dokkimi</code>
+          <button class="copy-btn" aria-label="Copy command" data-copy="npm install -g dokkimi">
+            <svg class="icon-copy" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+            <svg class="icon-check" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+          </button>
+        </div>
+      </div>
+
+      <div class="hero-divider">
+        <span>or stay in the loop</span>
+      </div>
+
+      <form
+        action="https://buttondown.com/api/emails/embed-subscribe/dokkimi"
+        method="post"
+        class="subscribe-form"
+        id="hero-newsletter-form"
+      >
+        <input type="email" name="email" placeholder="you@example.com" required />
+        <button type="submit">Subscribe</button>
+      </form>
+    </div>
   </div>
 </section>
 
 <style>
   .hero {
-    padding: 120px 0 var(--section-spacing);
+    position: relative;
+    padding: 140px 0 var(--section-spacing);
     text-align: center;
+    overflow: hidden;
+  }
+
+  .hero-glow {
+    position: absolute;
+    top: -120px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 800px;
+    height: 500px;
+    background: radial-gradient(
+      ellipse at center,
+      rgba(14, 165, 233, 0.12) 0%,
+      rgba(14, 165, 233, 0.04) 40%,
+      transparent 70%
+    );
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .container {
+    position: relative;
+    z-index: 1;
   }
 
   h1 {
-    font-size: 3.5rem;
+    font-size: 4rem;
     font-weight: 700;
     line-height: 1.1;
     letter-spacing: -0.03em;
     max-width: 720px;
     margin: 0 auto 24px;
+    animation: reveal-up 0.7s ease both;
   }
 
   .subtitle {
-    font-size: 1.2rem;
+    font-size: 1.25rem;
     color: var(--color-text-muted);
     max-width: 600px;
-    margin: 0 auto;
+    margin: 0 auto 48px;
     line-height: 1.7;
+    animation: reveal-up 0.7s ease 0.1s both;
   }
 
+  .hero-ctas {
+    animation: reveal-up 0.7s ease 0.2s both;
+  }
+
+  .install-options {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .install-or {
+    font-size: 0.9rem;
+    color: var(--color-text-muted);
+  }
+
+  .install-cmd {
+    display: inline-flex;
+    align-items: center;
+    gap: 16px;
+    background: var(--color-bg-soft);
+    border: 1px solid var(--color-border);
+    border-radius: 8px;
+    padding: 12px 12px 12px 24px;
+    transition: border-color 0.2s, box-shadow 0.2s;
+  }
+
+  .install-cmd:hover {
+    border-color: var(--color-primary);
+    box-shadow: 0 0 20px rgba(14, 165, 233, 0.08);
+  }
+
+  .install-cmd code {
+    font-size: 1rem;
+    background: none;
+    padding: 0;
+    color: var(--color-accent);
+    white-space: nowrap;
+  }
+
+  .copy-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    background: transparent;
+    border: none;
+    border-radius: 6px;
+    color: var(--color-text-muted);
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s;
+  }
+
+  .copy-btn:hover {
+    background: rgba(255, 255, 255, 0.06);
+    color: var(--color-text);
+  }
+
+  .copy-btn .icon-check {
+    display: none;
+    color: var(--color-primary);
+  }
+
+  .copy-btn.copied .icon-copy {
+    display: none;
+  }
+
+  .copy-btn.copied .icon-check {
+    display: block;
+  }
+
+  .hero-divider {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin: 28px auto;
+    max-width: 360px;
+  }
+
+  .hero-divider::before,
+  .hero-divider::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--color-border);
+  }
+
+  .hero-divider span {
+    font-size: 0.85rem;
+    color: var(--color-text-muted);
+    white-space: nowrap;
+  }
+
+  .subscribe-form {
+    display: flex;
+    gap: 12px;
+    justify-content: center;
+    max-width: 400px;
+    margin: 0 auto;
+  }
+
+  .subscribe-form input {
+    flex: 1;
+    padding: 12px 16px;
+    background: var(--color-bg-soft);
+    border: 1px solid var(--color-border);
+    border-radius: 8px;
+    color: var(--color-text);
+    font-family: var(--font-sans);
+    font-size: 0.925rem;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+
+  .subscribe-form input::placeholder {
+    color: var(--color-text-muted);
+  }
+
+  .subscribe-form input:focus {
+    border-color: var(--color-primary);
+  }
+
+  .subscribe-form button {
+    padding: 12px 24px;
+    background: var(--color-primary);
+    border: 1px solid var(--color-primary);
+    border-radius: 8px;
+    color: white;
+    font-family: var(--font-sans);
+    font-size: 0.925rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background 0.2s, border-color 0.2s, transform 0.15s;
+    white-space: nowrap;
+  }
+
+  .subscribe-form button:hover {
+    background: var(--color-primary-soft);
+    border-color: var(--color-primary-soft);
+    transform: translateY(-1px);
+  }
+
+  @media (max-width: 768px) {
+    h1 {
+      font-size: 2.75rem;
+    }
+
+    .subtitle {
+      font-size: 1.1rem;
+    }
+
+    .install-cmd {
+      min-width: 0;
+      width: 100%;
+      justify-content: center;
+    }
+
+    .subscribe-form {
+      flex-direction: column;
+    }
+  }
 </style>
+
+<script>
+  document.querySelectorAll<HTMLButtonElement>('.hero .copy-btn').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const text = btn.dataset.copy;
+      if (!text) return;
+      try {
+        await navigator.clipboard.writeText(text);
+        btn.classList.add('copied');
+        setTimeout(() => btn.classList.remove('copied'), 1500);
+        window.dataLayer = window.dataLayer || [];
+        window.dataLayer.push({
+          event: 'install_copy',
+          install_method: text.startsWith('brew') ? 'brew' : 'npm',
+          install_command: text,
+        });
+      } catch {
+        // Clipboard API not available
+      }
+    });
+  });
+
+  // Newsletter submit tracking
+  (function () {
+    var form = document.getElementById('hero-newsletter-form');
+    if (!form) return;
+    form.addEventListener('submit', function (e) {
+      e.preventDefault();
+      var submitted = false;
+      function submitForm() {
+        if (submitted) return;
+        submitted = true;
+        (form as HTMLFormElement).submit();
+      }
+      window.dataLayer = window.dataLayer || [];
+      window.dataLayer.push({
+        event: 'newsletter_subscribe',
+        form_location: 'hero',
+        eventCallback: submitForm,
+        eventTimeout: 1000,
+      });
+      setTimeout(submitForm, 1000);
+    });
+  })();
+</script>

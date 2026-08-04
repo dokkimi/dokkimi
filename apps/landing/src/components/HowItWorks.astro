@@ -60,11 +60,11 @@ tests:
 
 <section id="how-it-works" class="how-it-works">
   <div class="container">
-    <h2 class="section-heading">How It Works</h2>
-    <p class="section-subtitle">
+    <h2 class="section-heading reveal">How It Works</h2>
+    <p class="section-subtitle reveal">
       Define your services, databases, and tests in simple YAML/JSON. Dokkimi handles the rest.
     </p>
-    <div class="example">
+    <div class="example reveal">
       <Code code={yaml} lang="yaml" theme="tokyo-night" />
       <div class="steps">
         <div class="step">
@@ -103,6 +103,15 @@ tests:
     grid-template-columns: 1fr 360px;
     gap: 48px;
     align-items: start;
+  }
+
+  .example :global(pre) {
+    transition: border-color 0.3s, box-shadow 0.3s;
+  }
+
+  .example :global(pre:hover) {
+    border-color: var(--color-primary);
+    box-shadow: 0 0 24px rgba(14, 165, 233, 0.08);
   }
 
   .steps {

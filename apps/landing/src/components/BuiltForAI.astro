@@ -4,9 +4,9 @@
 
 <section class="built-for-ai">
   <div class="container">
-    <h2 class="section-heading">Built for AI</h2>
-    <p class="section-subtitle">Your agent already understands your application E2E — now you can let it test it properly. Dokkimi ships with a full MCP server and auto-registers with your AI tools on install.</p>
-    <div class="ai-list">
+    <h2 class="section-heading reveal">Built for AI</h2>
+    <p class="section-subtitle reveal">Your agent already understands your application E2E — now you can let it test it properly. Dokkimi ships with a full MCP server and auto-registers with your AI tools on install.</p>
+    <div class="ai-list reveal">
       <div class="ai-row">
         <div class="ai-icon" style="color: var(--color-accent);">
           <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/></svg>
@@ -57,8 +57,18 @@
     display: flex;
     align-items: center;
     gap: 24px;
-    padding: 20px 0;
+    padding: 20px 12px;
     border-bottom: 1px solid var(--color-border);
+    border-left: 2px solid transparent;
+    margin-left: -12px;
+    margin-right: -12px;
+    border-radius: 4px;
+    transition: border-left-color 0.2s, background 0.2s;
+  }
+
+  .ai-row:hover {
+    border-left-color: var(--color-primary);
+    background: rgba(14, 165, 233, 0.03);
   }
 
   .ai-row:first-child {

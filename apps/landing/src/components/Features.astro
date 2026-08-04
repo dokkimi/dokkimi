@@ -53,17 +53,17 @@ const features = [
 
 <section id="features" class="features">
   <div class="container">
-    <h2 class="section-heading">Why Dokkimi?</h2>
-    <p class="section-subtitle">
+    <h2 class="section-heading reveal">Why Dokkimi?</h2>
+    <p class="section-subtitle reveal">
       Unit tests mock away the interesting parts. Staging environments drift from reality.
       Dokkimi gives you production-like environments on demand.
     </p>
-    <div class="grid">
+    <div class="grid reveal-group">
       {features.map((f) => (
-        <div class="card" style={`border-top: 2px solid ${f.color};`}>
+        <div class="card reveal" style={`--card-color: ${f.color};`}>
           <div class="card-header">
-            <div class="card-icon" style={`color: ${f.color};`} set:html={f.icon} />
-            <h3 style={`color: ${f.color};`}>{f.title}</h3>
+            <div class="card-icon" set:html={f.icon} />
+            <h3>{f.title}</h3>
           </div>
           <p>{f.description}</p>
         </div>
@@ -86,8 +86,16 @@ const features = [
   .card {
     background: var(--color-bg-soft);
     border: 1px solid var(--color-border);
+    border-top: 2px solid var(--card-color);
     border-radius: 12px;
     padding: 32px;
+    transition: transform 0.25s ease, box-shadow 0.25s ease, border-color 0.25s ease;
+  }
+
+  .card:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.3), 0 0 20px color-mix(in srgb, var(--card-color) 15%, transparent);
+    border-color: color-mix(in srgb, var(--card-color) 40%, var(--color-border));
   }
 
   .card-header {
@@ -100,11 +108,13 @@ const features = [
   .card-icon {
     flex-shrink: 0;
     display: flex;
+    color: var(--card-color);
   }
 
   .card h3 {
     font-size: 1.1rem;
     font-weight: 600;
+    color: var(--card-color);
   }
 
   .card p {

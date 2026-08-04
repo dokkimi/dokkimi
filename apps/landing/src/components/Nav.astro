@@ -18,6 +18,7 @@
       <a href="/tutorials">Tutorials</a>
       <a href="/blogs">Blog</a>
       <a href="https://github.com/dokkimi/dokkimi/discussions" target="_blank" rel="noopener noreferrer">Community</a>
+      <a href="/docs" class="nav-cta" data-cta="get_started" data-plan="nav">Get Started</a>
     </div>
   </div>
 </nav>
@@ -99,13 +100,18 @@
 
   .nav-cta {
     padding: 6px 16px;
-    border: 1px solid var(--color-border);
+    background: var(--color-primary);
+    border: 1px solid var(--color-primary);
     border-radius: 6px;
+    color: white !important;
+    transition: background 0.2s, border-color 0.2s, transform 0.15s;
   }
 
   .nav-cta:hover {
-    border-color: var(--color-primary);
-    color: var(--color-text) !important;
+    background: var(--color-primary-soft);
+    border-color: var(--color-primary-soft);
+    color: white !important;
+    transform: translateY(-1px);
   }
 
   .menu-toggle {

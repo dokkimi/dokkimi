@@ -1,0 +1,129 @@
+---
+
+---
+
+<section class="final-cta">
+  <div class="container">
+    <h2 class="reveal">Ready to test everything?</h2>
+    <p class="reveal">Install Dokkimi and run your first test in minutes.</p>
+    <div class="install-cmd reveal">
+      <code>brew install dokkimi/tap/dokkimi</code>
+      <button class="copy-btn" aria-label="Copy command" data-copy="brew install dokkimi/tap/dokkimi">
+        <svg class="icon-copy" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+        <svg class="icon-check" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+      </button>
+    </div>
+    <a href="/docs" class="docs-link reveal" data-cta="read_docs" data-plan="final_cta">or read the docs to learn more</a>
+  </div>
+</section>
+
+<style>
+  .final-cta {
+    padding: var(--section-spacing) 0;
+    text-align: center;
+  }
+
+  h2 {
+    font-size: 2rem;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    margin-bottom: 12px;
+  }
+
+  p {
+    color: var(--color-text-muted);
+    font-size: 1.05rem;
+    margin-bottom: 28px;
+  }
+
+  .install-cmd {
+    display: inline-flex;
+    align-items: center;
+    gap: 16px;
+    background: var(--color-bg-soft);
+    border: 1px solid var(--color-border);
+    border-radius: 8px;
+    padding: 14px 14px 14px 28px;
+    transition: border-color 0.2s, box-shadow 0.2s;
+  }
+
+  .install-cmd:hover {
+    border-color: var(--color-primary);
+    box-shadow: 0 0 20px rgba(14, 165, 233, 0.08);
+  }
+
+  .install-cmd code {
+    font-size: 1rem;
+    background: none;
+    padding: 0;
+    color: var(--color-accent);
+    white-space: nowrap;
+  }
+
+  .copy-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    background: transparent;
+    border: none;
+    border-radius: 6px;
+    color: var(--color-text-muted);
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s;
+  }
+
+  .copy-btn:hover {
+    background: rgba(255, 255, 255, 0.06);
+    color: var(--color-text);
+  }
+
+  .copy-btn .icon-check {
+    display: none;
+    color: var(--color-primary);
+  }
+
+  .copy-btn.copied .icon-copy {
+    display: none;
+  }
+
+  .copy-btn.copied .icon-check {
+    display: block;
+  }
+
+  .docs-link {
+    display: block;
+    margin-top: 16px;
+    font-size: 0.9rem;
+    color: var(--color-text-muted);
+  }
+
+  .docs-link:hover {
+    color: var(--color-primary-soft);
+  }
+</style>
+
+<script>
+  document.querySelectorAll<HTMLButtonElement>('.final-cta .copy-btn').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const text = btn.dataset.copy;
+      if (!text) return;
+      try {
+        await navigator.clipboard.writeText(text);
+        btn.classList.add('copied');
+        setTimeout(() => btn.classList.remove('copied'), 1500);
+        window.dataLayer = window.dataLayer || [];
+        window.dataLayer.push({
+          event: 'install_copy',
+          install_method: 'brew',
+          install_command: text,
+          form_location: 'final_cta',
+        });
+      } catch {
+        // Clipboard API not available
+      }
+    });
+  });
+</script>
