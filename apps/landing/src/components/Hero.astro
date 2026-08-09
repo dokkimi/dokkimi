@@ -1,15 +1,22 @@
 ---
-
+import HeroDemo from './HeroDemo.astro';
 ---
 
 <section class="hero">
   <div class="hero-glow"></div>
   <div class="container">
-    <h1>Test Everything</h1>
-    <p class="subtitle">
-      The only testing framework that does integration, E2E, and visual regression
-      testing. All without a staging environment.
-    </p>
+    <div class="hero-top">
+      <div class="hero-text">
+        <h1>Test Everything</h1>
+        <p class="subtitle">
+          The only testing framework that does integration, E2E, and visual regression
+          testing. All without a staging environment.
+        </p>
+      </div>
+      <div class="hero-demo-col">
+        <HeroDemo />
+      </div>
+    </div>
 
     <div class="hero-ctas">
       <div class="install-options">
@@ -51,7 +58,6 @@
   .hero {
     position: relative;
     padding: 140px 0 var(--section-spacing);
-    text-align: center;
     overflow: hidden;
   }
 
@@ -77,34 +83,55 @@
     z-index: 1;
   }
 
+  .hero-top {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+    gap: 64px;
+    margin-bottom: 64px;
+  }
+
+  .hero-text {
+    flex: 0 0 auto;
+    max-width: 500px;
+    animation: reveal-up 0.7s ease both;
+  }
+
+  .hero-demo-col {
+    flex: 1 1 500px;
+    max-width: 560px;
+    min-width: 0;
+    animation: reveal-up 0.7s ease 0.15s both;
+  }
+
   h1 {
     font-size: 4rem;
     font-weight: 700;
     line-height: 1.1;
     letter-spacing: -0.03em;
-    max-width: 720px;
-    margin: 0 auto 24px;
-    animation: reveal-up 0.7s ease both;
+    margin: 0 0 24px;
+    white-space: nowrap;
   }
 
   .subtitle {
     font-size: 1.25rem;
     color: var(--color-text-muted);
-    max-width: 600px;
-    margin: 0 auto 48px;
+    margin: 0;
     line-height: 1.7;
-    animation: reveal-up 0.7s ease 0.1s both;
   }
 
   .hero-ctas {
+    text-align: center;
     animation: reveal-up 0.7s ease 0.2s both;
   }
 
   .install-options {
     display: flex;
-    flex-direction: column;
     align-items: center;
-    gap: 12px;
+    justify-content: center;
+    gap: 16px;
+    flex-wrap: wrap;
   }
 
   .install-or {
@@ -241,12 +268,22 @@
   }
 
   @media (max-width: 768px) {
+    .hero-top {
+      gap: 40px;
+      text-align: center;
+      justify-content: center;
+    }
+
     h1 {
       font-size: 2.75rem;
     }
 
     .subtitle {
       font-size: 1.1rem;
+    }
+
+    .install-options {
+      flex-direction: column;
     }
 
     .install-cmd {

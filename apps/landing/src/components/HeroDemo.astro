@@ -1,0 +1,494 @@
+---
+
+---
+
+<div class="hero-demo reveal">
+  <div class="demo-window">
+    <div class="demo-titlebar">
+      <div class="demo-dots">
+        <span></span><span></span><span></span>
+      </div>
+      <div class="demo-title" id="demo-title">Terminal</div>
+    </div>
+    <div class="demo-body" id="demo-body"></div>
+    <div class="demo-progress">
+      <div class="demo-progress-bar" id="demo-progress-bar"></div>
+    </div>
+  </div>
+  <div class="demo-labels">
+    <button class="demo-label active" data-step="0">AI writes tests</button>
+    <button class="demo-label" data-step="1">CLI runs them</button>
+    <button class="demo-label" data-step="2">Results</button>
+  </div>
+</div>
+
+<style>
+  .hero-demo {
+    width: 100%;
+  }
+
+  .demo-window {
+    background: #0a0a0f;
+    border: 1px solid var(--color-border);
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4), 0 0 40px rgba(14, 165, 233, 0.06);
+    max-width: 100%;
+  }
+
+  .demo-titlebar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 16px;
+    background: var(--color-bg-muted);
+    border-bottom: 1px solid var(--color-border);
+  }
+
+  .demo-dots {
+    display: flex;
+    gap: 6px;
+  }
+
+  .demo-dots span {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+  }
+
+  .demo-dots span:first-child { background: #ef4444; }
+  .demo-dots span:nth-child(2) { background: #f59e0b; }
+  .demo-dots span:last-child { background: #22c55e; }
+
+  .demo-title {
+    font-family: var(--font-mono);
+    font-size: 0.8rem;
+    color: var(--color-text-muted);
+    flex: 1;
+    text-align: center;
+    margin-right: 42px;
+  }
+
+  .demo-body {
+    padding: 20px 24px;
+    height: 340px;
+    font-family: var(--font-mono);
+    font-size: 0.82rem;
+    line-height: 1.65;
+    color: var(--color-text);
+    white-space: pre;
+    text-align: left;
+    overflow-y: auto;
+    overflow-x: auto;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255, 255, 255, 0.15) transparent;
+  }
+
+  .demo-body::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  .demo-body::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .demo-body::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.15);
+    border-radius: 3px;
+  }
+
+  .demo-progress {
+    height: 2px;
+    background: var(--color-border);
+  }
+
+  .demo-progress-bar {
+    height: 100%;
+    width: 0%;
+    background: var(--color-primary);
+    transition: width 0.3s linear;
+  }
+
+  /* Step labels */
+  .demo-labels {
+    display: flex;
+    justify-content: center;
+    gap: 8px;
+    margin-top: 16px;
+  }
+
+  .demo-label {
+    padding: 6px 14px;
+    border: 1px solid var(--color-border);
+    border-radius: 20px;
+    background: transparent;
+    color: var(--color-text-muted);
+    font-family: var(--font-sans);
+    font-size: 0.8rem;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+
+  .demo-label:hover {
+    border-color: var(--color-primary);
+    color: var(--color-text);
+  }
+
+  .demo-label.active {
+    border-color: var(--color-primary);
+    background: rgba(14, 165, 233, 0.1);
+    color: var(--color-primary-soft);
+  }
+
+  @media (max-width: 768px) {
+    .demo-body {
+      padding: 16px;
+      height: 300px;
+      font-size: 0.72rem;
+    }
+
+    .demo-labels {
+      flex-wrap: wrap;
+    }
+  }
+</style>
+
+<script>
+(function () {
+  // --- CLI-accurate colors (matching ANSI codes from the real CLI) ---
+  const C = {
+    green: '#22c55e',
+    red: '#ef4444',
+    yellow: '#f59e0b',
+    cyan: '#22d3ee',
+    dim: '#8888a0',
+    bold: '#e4e4ef',
+    text: '#e4e4ef',
+    blue: '#60a5fa',
+    magenta: '#c084fc',
+    orange: '#e8956a',
+  };
+
+  function span(text: string, color: string, bold = false): string {
+    const fw = bold ? 'font-weight:700;' : '';
+    return `<span style="color:${color};${fw}">${text}</span>`;
+  }
+
+  // --- Braille spinner (actual CLI frames) ---
+  const SPINNER = ['⣶', '⣧', '⣏', '⡟', '⠿', '⢻', '⣹', '⣼'];
+
+  // --- Data ---
+  const YAML_LINES = [
+    'services:',
+    '  auth-api:',
+    '    image: auth-api:latest',
+    '    port: 3000',
+    '  user-db:',
+    '    type: postgres',
+    '    seed: ./fixtures/users.sql',
+    '',
+    'tests:',
+    '  auth-flow:',
+    '    steps:',
+    '      - POST /auth/register:',
+    '          body:',
+    '            email: test@demo.com',
+    '            password: secret123',
+    '          assert:',
+    '            status: 201',
+    '            body.token: $exists',
+    '      - POST /auth/login:',
+    '          body:',
+    '            email: test@demo.com',
+    '            password: secret123',
+    '          assert:',
+    '            status: 200',
+    '            body.user.email: test@demo.com',
+  ];
+
+  // --- Helpers ---
+  const body = document.getElementById('demo-body')!;
+  const titleEl = document.getElementById('demo-title')!;
+  const progressBar = document.getElementById('demo-progress-bar')!;
+  const labels = document.querySelectorAll<HTMLButtonElement>('.demo-label');
+  let abortCtrl: AbortController | null = null;
+  let running = false;
+
+  function setProgress(pct: number) { progressBar.style.width = pct + '%'; }
+  function setLabel(i: number) { labels.forEach((l, j) => l.classList.toggle('active', j === i)); }
+  function scrollToBottom() { body.scrollTop = body.scrollHeight; }
+
+  function sleep(ms: number, signal: AbortSignal): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const t = setTimeout(resolve, ms);
+      signal.addEventListener('abort', () => { clearTimeout(t); reject(new DOMException('', 'AbortError')); }, { once: true });
+    });
+  }
+
+  // --- YAML syntax highlighting ---
+  function highlightYaml(line: string): string {
+    if (!line.trim()) return '';
+    const indent = line.match(/^(\s*)/)?.[1] || '';
+    const rest = line.slice(indent.length);
+
+    if (rest.startsWith('#')) return indent + span(rest, C.dim);
+    if (rest.startsWith('- ')) {
+      const inner = rest.slice(2);
+      return indent + span('- ', C.text) + highlightYamlValue(inner);
+    }
+
+    const colonIdx = rest.indexOf(':');
+    if (colonIdx === -1) return indent + span(rest, C.text);
+
+    const key = rest.slice(0, colonIdx);
+    const after = rest.slice(colonIdx + 1);
+
+    if (!after.trim()) {
+      return indent + span(key + ':', C.cyan);
+    }
+    return indent + span(key + ':', C.cyan) + ' ' + highlightYamlValue(after.trim());
+  }
+
+  function highlightYamlValue(val: string): string {
+    if (/^\d+$/.test(val)) return span(val, C.green);
+    if (val === 'true' || val === 'false') return span(val, C.blue);
+    if (val.startsWith('$')) return span(val, C.magenta);
+    return span(val, C.orange);
+  }
+
+  // -------------------------------------------------------------------
+  // Phase 1: Agent writes tests (Claude Code style)
+  // -------------------------------------------------------------------
+  async function phaseAgent(signal: AbortSignal) {
+    setLabel(0);
+    titleEl.textContent = 'Claude Code';
+    setProgress(0);
+
+    // Prompt typing
+    const promptPrefix = span('> ', C.dim);
+    const cursor = `<span style="color:${C.cyan};animation:demo-blink 0.8s step-end infinite">▋</span>`;
+    const promptText = 'Write integration tests for my auth service';
+
+    for (let i = 0; i <= promptText.length; i++) {
+      signal.throwIfAborted();
+      body.innerHTML = promptPrefix + span(promptText.slice(0, i), C.text) + cursor;
+      scrollToBottom();
+      await sleep(35, signal);
+    }
+
+    body.innerHTML = promptPrefix + span(promptText, C.text);
+    scrollToBottom();
+    await sleep(500, signal);
+
+    // Agent response: writing YAML
+    let yamlSoFar = '';
+    const headerLine = '\n\n' + span('  Writing .dokkimi/auth-tests.yaml…', C.dim) + '\n\n';
+    const codeBlockTop = `<span style="color:${C.dim}">  ┌─────────────────────────────────────────┐</span>\n`;
+    const codeBlockBot = `\n<span style="color:${C.dim}">  └─────────────────────────────────────────┘</span>`;
+
+    for (let i = 0; i < YAML_LINES.length; i++) {
+      signal.throwIfAborted();
+      yamlSoFar += '  │ ' + highlightYaml(YAML_LINES[i]) + '\n';
+      body.innerHTML = promptPrefix + span(promptText, C.text)
+        + headerLine + codeBlockTop + yamlSoFar + codeBlockBot;
+      scrollToBottom();
+      setProgress(3 + (i / YAML_LINES.length) * 27);
+      await sleep(55, signal);
+    }
+
+    await sleep(400, signal);
+
+    // Done message
+    body.innerHTML = promptPrefix + span(promptText, C.text)
+      + headerLine + codeBlockTop + yamlSoFar + codeBlockBot
+      + '\n\n  ' + span('✔', C.green) + ' ' + span('Definition saved.', C.text);
+    scrollToBottom();
+
+    setProgress(33);
+    await sleep(1500, signal);
+  }
+
+  // -------------------------------------------------------------------
+  // Phase 2: CLI runs tests (matches `dokkimi run` display)
+  // -------------------------------------------------------------------
+  async function phaseRun(signal: AbortSignal) {
+    setLabel(1);
+    titleEl.textContent = 'Terminal';
+
+    // Running state with spinner
+    const elapsed = [0];
+    let spinIdx = 0;
+
+    function renderRunning(status: string, instances: Array<{name: string, state: string, dur: string, err?: string}>) {
+      let out = span(`Running 1 definition...`, C.text, true) + '  ' + span(`${(elapsed[0] / 10).toFixed(1)}s`, C.dim) + '\n\n';
+      for (const inst of instances) {
+        let prefix: string, stateLabel: string, stateColor: string;
+        if (inst.state === 'RUNNING') {
+          prefix = span(SPINNER[spinIdx % SPINNER.length], C.cyan);
+          stateLabel = 'RUNNING';
+          stateColor = C.yellow;
+        } else if (inst.state === 'PASSED') {
+          prefix = span('✔', C.green);
+          stateLabel = 'PASSED';
+          stateColor = C.green;
+        } else {
+          prefix = span('–', C.dim);
+          stateLabel = 'PENDING';
+          stateColor = C.dim;
+        }
+        const padName = inst.name.padEnd(28);
+        const padState = stateLabel.padEnd(12);
+        out += '  ' + prefix + ' ' + span(padName, C.text) + span(padState, stateColor);
+        if (inst.dur) out += span(`(${inst.dur})`, C.dim);
+        if (inst.err) out += '  ' + span(inst.err, C.red);
+        out += '\n';
+      }
+      out += '\n';
+      if (status === 'running') {
+        out += '  ' + span('0 passed', C.dim) + '  ' + span('·', C.dim) + '  ' + span('0 failed', C.dim) + '  ' + span('·', C.dim) + '  ' + span('1 running', C.dim) + '  ' + span('·', C.dim) + '  ' + span('0 pending', C.dim);
+        out += '\n\n' + span('Press q/Ctrl+C to stop', C.dim);
+      } else {
+        out += span('1 of 1 definitions passed.', C.green) + '  ' + span(`(total ${inst[0]?.dur || '3.2s'})`, C.dim);
+      }
+      body.innerHTML = out;
+      scrollToBottom();
+    }
+
+    const inst = [{ name: 'auth-flow', state: 'RUNNING', dur: '0.0s' }];
+
+    // Animate spinner for ~3.2 seconds
+    const spinStart = Date.now();
+    const spinDuration = 3200;
+    while (Date.now() - spinStart < spinDuration) {
+      signal.throwIfAborted();
+      const e = Date.now() - spinStart;
+      elapsed[0] = Math.round(e / 100);
+      inst[0].dur = (e / 1000).toFixed(1) + 's';
+      renderRunning('running', inst);
+      setProgress(33 + (e / spinDuration) * 30);
+      spinIdx++;
+      await sleep(100, signal);
+    }
+
+    // Flash to passed
+    inst[0].state = 'PASSED';
+    inst[0].dur = '3.2s';
+    elapsed[0] = 34;
+
+    let out = span('Running 1 definition...', C.text, true) + '  ' + span('3.4s', C.dim) + '\n\n';
+    out += '  ' + span('✔', C.green) + ' ' + span('auth-flow'.padEnd(28), C.text) + span('PASSED'.padEnd(12), C.green) + span('(3.2s)', C.dim) + '\n\n';
+    out += span('1 of 1 definitions passed.', C.green) + '  ' + span('(total 3.2s)', C.dim);
+    body.innerHTML = out;
+    scrollToBottom();
+
+    setProgress(66);
+    await sleep(1800, signal);
+  }
+
+  // -------------------------------------------------------------------
+  // Phase 3: Results (matches `dokkimi inspect` assertion display)
+  // -------------------------------------------------------------------
+  async function phaseResults(signal: AbortSignal) {
+    setLabel(2);
+    titleEl.textContent = 'Terminal';
+    setProgress(68);
+
+    const assertions = [
+      { section: 'POST /auth/register', checks: [
+        { path: '$.status', op: 'equals', val: '201', pass: true },
+        { path: '$.body.token', op: 'exists', val: '', pass: true },
+      ]},
+      { section: 'POST /auth/login', checks: [
+        { path: '$.status', op: 'equals', val: '200', pass: true },
+        { path: '$.body.user.email', op: 'equals', val: '"test@demo.com"', pass: true },
+      ]},
+    ];
+
+    let out = '';
+    out += span('Assertions', C.text, true) + '\n\n';
+    out += '  ' + span('4 passed', C.green) + '  ' + span('0 failed', C.dim) + '\n';
+
+    body.innerHTML = out;
+    scrollToBottom();
+    await sleep(400, signal);
+
+    let checkCount = 0;
+    const totalChecks = assertions.reduce((a, s) => a + s.checks.length, 0);
+
+    for (const section of assertions) {
+      signal.throwIfAborted();
+      out += '\n  ' + span(`── HTTP calls: ${section.section} ──`, C.dim) + '\n\n';
+      body.innerHTML = out;
+      scrollToBottom();
+      await sleep(300, signal);
+
+      for (const check of section.checks) {
+        signal.throwIfAborted();
+        const icon = check.pass ? span('✓', C.green) : span('✗', C.red);
+        const desc = check.val
+          ? `${check.path} ${span(check.op, C.dim)} ${span(check.val, C.green)}`
+          : `${check.path} ${span(check.op, C.dim)}`;
+        out += '  ' + icon + ' ' + desc + '\n';
+        body.innerHTML = out;
+        scrollToBottom();
+        checkCount++;
+        setProgress(68 + (checkCount / totalChecks) * 28);
+        await sleep(350, signal);
+      }
+    }
+
+    await sleep(500, signal);
+    out += '\n' + span('─'.repeat(44), C.dim) + '\n';
+    out += span('auth-flow', C.text, true) + '  ' + span('PASSED', C.green) + '  ' + span('3.2s', C.dim) + '\n';
+    out += span('4/4 assertions passed', C.green) + '  ' + span('·', C.dim) + '  ' + span('2 HTTP requests captured', C.dim) + '  ' + span('·', C.dim) + '  ' + span('3 containers', C.dim);
+    body.innerHTML = out;
+    scrollToBottom();
+    setProgress(100);
+    await sleep(3500, signal);
+  }
+
+  // --- Orchestration ---
+  async function runAll(startPhase = 0) {
+    if (running) { abortCtrl?.abort(); await sleep(50, new AbortController().signal).catch(() => {}); }
+    running = true;
+    abortCtrl = new AbortController();
+    const signal = abortCtrl.signal;
+
+    try {
+      while (true) {
+        if (startPhase <= 0) await phaseAgent(signal);
+        if (startPhase <= 1) await phaseRun(signal);
+        await phaseResults(signal);
+        await sleep(1000, signal);
+        startPhase = 0;
+      }
+    } catch (e) {
+      if (e instanceof DOMException && e.name === 'AbortError') return;
+      throw e;
+    } finally {
+      running = false;
+    }
+  }
+
+  labels.forEach(btn => {
+    btn.addEventListener('click', () => {
+      const step = parseInt(btn.dataset.step || '0');
+      runAll(step);
+    });
+  });
+
+  const obs = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) { runAll(); obs.unobserve(entry.target); }
+    });
+  }, { threshold: 0.3 });
+
+  const el = document.querySelector('.hero-demo');
+  if (el) obs.observe(el);
+
+  // Inject blink keyframes
+  const style = document.createElement('style');
+  style.textContent = '@keyframes demo-blink { 50% { opacity: 0; } }';
+  document.head.appendChild(style);
+})();
+</script>
