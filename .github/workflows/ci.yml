@@ -135,6 +135,47 @@ jobs:
       - name: Go tests — broker-proxy-kafka
         run: cd services/broker-proxy/kafka && go test ./...
 
+  windows-build-and-test:
+    name: Windows Build & Test
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: yarn
+
+      - name: Enable Corepack (Yarn 4)
+        run: corepack enable
+
+      - name: Install dependencies
+        run: yarn install --immutable
+
+      - name: Generate Prisma client
+        run: cd shared/prisma && npx prisma generate
+
+      - name: Build all packages
+        run: yarn build
+
+      - name: Config tests
+        run: yarn workspace @dokkimi/config test
+
+      - name: CLI unit tests
+        run: yarn workspace @dokkimi/cli test
+
+      - name: Control Tower unit tests
+        run: yarn workspace control-tower test
+
+      - name: Definition validator tests
+        run: yarn workspace @dokkimi/definition-validator test
+
+      - name: Definition resolver tests
+        run: yarn workspace @dokkimi/definition-resolver test
+
   integration-tests:
     name: Integration Tests
     runs-on: ubuntu-latest
@@ -183,21 +224,32 @@ jobs:
 
       - name: Build Docker images
         run: |
+          pids=()
           docker build -t dokkimi/control-tower:latest \
             -f services/control-tower/Dockerfile . &
+          pids+=($!)
           docker build -t ghcr.io/dokkimi/interceptor:latest \
             -f services/interceptor/Dockerfile services/interceptor &
+          pids+=($!)
           docker build -t ghcr.io/dokkimi/test-agent:latest \
             -f services/test-agent/Dockerfile services/test-agent &
+          pids+=($!)
           for db in postgres mysql mongo redis; do
             docker build -t ghcr.io/dokkimi/db-proxy-${db}:latest \
               -f services/db-proxy/${db}/Dockerfile services/db-proxy &
+            pids+=($!)
           done
           docker build -t ghcr.io/dokkimi/broker-proxy-amqp:latest \
             -f services/broker-proxy/amqp/Dockerfile services/broker-proxy &
+          pids+=($!)
           docker build -t ghcr.io/dokkimi/broker-proxy-kafka:latest \
             -f services/broker-proxy/kafka/Dockerfile services/broker-proxy &
-          wait
+          pids+=($!)
+          fail=0
+          for pid in "${pids[@]}"; do
+            wait "$pid" || fail=1
+          done
+          exit $fail
 
       - name: Free disk space
         run: |

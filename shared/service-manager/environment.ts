@@ -107,7 +107,8 @@ export function runPrismaMigrate(appRoot: string, config: DokkimiConfig): void {
 
   const dbUrl = config.database.url.replace(/^file:~/, `file:${os.homedir()}`);
 
-  const localPrisma = path.join(appRoot, 'node_modules', '.bin', 'prisma');
+  const prismaName = process.platform === 'win32' ? 'prisma.cmd' : 'prisma';
+  const localPrisma = path.join(appRoot, 'node_modules', '.bin', prismaName);
   const prismaBin = fs.existsSync(localPrisma)
     ? `"${localPrisma}"`
     : 'npx prisma';
@@ -133,7 +134,7 @@ export function runPrismaMigrate(appRoot: string, config: DokkimiConfig): void {
         `  DATABASE_URL: ${dbUrl}\n` +
         `  Prisma binary: ${prismaBin}\n` +
         `  Error:\n${detail
-          .split('\n')
+          .split(/\r?\n/)
           .map((l) => `    ${l}`)
           .join('\n')}`,
     );

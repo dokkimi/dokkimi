@@ -89,8 +89,8 @@ describe('baseline-upload', () => {
 
       const result = listBaselineFiles('/baselines');
       expect(result).toEqual([
-        { name: 'login-page', path: '/baselines/login-page.png' },
-        { name: 'dashboard', path: '/baselines/dashboard.png' },
+        { name: 'login-page', path: path.join('/baselines', 'login-page.png') },
+        { name: 'dashboard', path: path.join('/baselines', 'dashboard.png') },
       ]);
     });
 

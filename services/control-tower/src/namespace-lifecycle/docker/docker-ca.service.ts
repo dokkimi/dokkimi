@@ -2,6 +2,7 @@ import { Injectable, Logger, OnApplicationBootstrap } from '@nestjs/common';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
+import * as tls from 'tls';
 import * as forge from 'node-forge';
 
 const CA_DIR = path.join(os.homedir(), '.dokkimi', 'ca');
@@ -49,19 +50,23 @@ export class DockerCaService implements OnApplicationBootstrap {
 
     // Build combined CA bundle: system CAs + Dokkimi CA
     let systemCaCerts = '';
-    const systemCaPaths = [
-      '/etc/ssl/certs/ca-certificates.crt',
-      '/etc/pki/tls/certs/ca-bundle.crt',
-      '/usr/local/etc/openssl@3/cert.pem',
-      '/usr/local/etc/openssl/cert.pem',
-    ];
+    if (process.platform === 'win32') {
+      systemCaCerts = tls.rootCertificates.join('\n');
+    } else {
+      const systemCaPaths = [
+        '/etc/ssl/certs/ca-certificates.crt',
+        '/etc/pki/tls/certs/ca-bundle.crt',
+        '/usr/local/etc/openssl@3/cert.pem',
+        '/usr/local/etc/openssl/cert.pem',
+      ];
 
-    for (const sysPath of systemCaPaths) {
-      try {
-        systemCaCerts = fs.readFileSync(sysPath, 'utf-8');
-        break;
-      } catch {
-        // Try next path
+      for (const sysPath of systemCaPaths) {
+        try {
+          systemCaCerts = fs.readFileSync(sysPath, 'utf-8');
+          break;
+        } catch {
+          // Try next path
+        }
       }
     }
 

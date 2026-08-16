@@ -336,7 +336,7 @@ function findDokkimiContainers(): string[] {
       'docker ps -a --filter "label=dokkimi" --format "{{.Names}}"',
       { timeout: 10000 },
     );
-    return output.split('\n').filter(Boolean);
+    return output.split(/\r?\n/).filter(Boolean);
   } catch {
     return [];
   }
@@ -348,7 +348,7 @@ function findDokkimiNetworks(): string[] {
       'docker network ls --filter "label=dokkimi" --format "{{.Name}}"',
       { timeout: 10000 },
     );
-    return output.split('\n').filter(Boolean);
+    return output.split(/\r?\n/).filter(Boolean);
   } catch {
     return [];
   }

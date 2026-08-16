@@ -90,6 +90,7 @@ export async function ensureServicesRunning(
       cwd: servicePath,
       stdio,
       detached: true,
+      windowsHide: true,
       env: { ...process.env, LOG_FILE: logPath },
     });
 
@@ -127,8 +128,8 @@ export async function ensureServicesRunning(
     }
 
     throw new Error(
-      'Timed out waiting for Dokkimi to start. ' +
-        'Check logs at ~/.dokkimi/logs/ for details.',
+      `Timed out waiting for Dokkimi to start. ` +
+        `Check logs at ${LOGS_DIR} for details.`,
     );
   } finally {
     releaseLock();

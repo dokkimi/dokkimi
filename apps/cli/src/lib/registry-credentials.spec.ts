@@ -1,5 +1,6 @@
 import * as fs from 'fs';
 import * as os from 'os';
+import * as path from 'path';
 import * as yaml from 'js-yaml';
 import { execSilent } from '@dokkimi/platform';
 
@@ -54,10 +55,16 @@ function mockExistsSync(pathMap: Record<string, boolean>) {
 // ---------------------------------------------------------------------------
 
 describe('resolveRegistryCredentials — registries.yaml', () => {
+  const registriesYamlPath = path.join(
+    '/projects/my-app',
+    '.dokkimi',
+    'registries.yaml',
+  );
+
   it('reads and parses YAML when registries.yaml exists', () => {
     // The finder walks up from cwd. Let the first candidate match.
     mockedFs.existsSync.mockImplementation((p: fs.PathLike) => {
-      return String(p) === '/projects/my-app/.dokkimi/registries.yaml';
+      return String(p) === registriesYamlPath;
     });
     mockedFs.readFileSync.mockReturnValue('raw-yaml');
     mockedYaml.load.mockReturnValue({
@@ -72,7 +79,7 @@ describe('resolveRegistryCredentials — registries.yaml', () => {
 
     const result = resolveRegistryCredentials();
     expect(mockedFs.readFileSync).toHaveBeenCalledWith(
-      '/projects/my-app/.dokkimi/registries.yaml',
+      registriesYamlPath,
       'utf-8',
     );
     expect(result).toEqual([
@@ -85,7 +92,7 @@ describe('resolveRegistryCredentials — registries.yaml', () => {
     process.env.REGISTRY_PASS = 'envpass';
 
     mockedFs.existsSync.mockImplementation((p: fs.PathLike) => {
-      return String(p) === '/projects/my-app/.dokkimi/registries.yaml';
+      return String(p) === registriesYamlPath;
     });
     mockedFs.readFileSync.mockReturnValue('raw-yaml');
     mockedYaml.load.mockReturnValue({
@@ -110,7 +117,7 @@ describe('resolveRegistryCredentials — registries.yaml', () => {
     delete process.env.NONEXISTENT_VAR;
 
     mockedFs.existsSync.mockImplementation((p: fs.PathLike) => {
-      return String(p) === '/projects/my-app/.dokkimi/registries.yaml';
+      return String(p) === registriesYamlPath;
     });
     mockedFs.readFileSync.mockReturnValue('raw-yaml');
     mockedYaml.load.mockReturnValue({
@@ -134,6 +141,12 @@ describe('resolveRegistryCredentials — registries.yaml', () => {
 // ---------------------------------------------------------------------------
 
 describe('resolveRegistryCredentials — Docker config', () => {
+  const dockerConfigPath = path.join(
+    '/home/testuser',
+    '.docker',
+    'config.json',
+  );
+
   beforeEach(() => {
     // No registries.yaml anywhere
     mockedFs.existsSync.mockImplementation((p: fs.PathLike) => {
@@ -142,7 +155,7 @@ describe('resolveRegistryCredentials — Docker config', () => {
         return false;
       }
       // Docker config exists
-      if (pathStr === '/home/testuser/.docker/config.json') {
+      if (pathStr === dockerConfigPath) {
         return true;
       }
       return false;

@@ -218,7 +218,7 @@ export class DockerServiceGroupService {
         const safeName = path
           .basename(mf.source)
           .replace(/[^a-zA-Z0-9_.-]/g, '_');
-        mountFileBinds.push(`${mountDir}/${safeName}:${mf.target}:ro`);
+        mountFileBinds.push(`${path.join(mountDir, safeName)}:${mf.target}:ro`);
       }
     }
 

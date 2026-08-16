@@ -226,7 +226,7 @@ function findDokkimiContainers(): string[] {
     if (!output) {
       return [];
     }
-    return output.split('\n').filter(Boolean);
+    return output.split(/\r?\n/).filter(Boolean);
   } catch {
     return [];
   }
@@ -241,7 +241,7 @@ function findDokkimiNetworks(): string[] {
     if (!output) {
       return [];
     }
-    return output.split('\n').filter(Boolean);
+    return output.split(/\r?\n/).filter(Boolean);
   } catch {
     return [];
   }
@@ -256,7 +256,7 @@ function findImageIds(imagePrefix: string): string[] {
     if (!output) {
       return [];
     }
-    return output.split('\n').filter(Boolean);
+    return output.split(/\r?\n/).filter(Boolean);
   } catch {
     return [];
   }

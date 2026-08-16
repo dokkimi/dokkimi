@@ -65,7 +65,7 @@ export function loadDokignore(dokkimiDir: string): IgnoreRules {
   const content = fs.readFileSync(ignorePath, 'utf-8');
   const exact = new Set<string>();
   const globs: string[] = [];
-  for (const line of content.split('\n')) {
+  for (const line of content.split(/\r?\n/)) {
     const trimmed = line.trim();
     if (!trimmed || trimmed.startsWith('#')) {
       continue;

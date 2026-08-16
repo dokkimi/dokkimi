@@ -312,6 +312,7 @@ function flushDetached(): void {
     const workerPath = path.join(__dirname, 'flush-worker.js');
     const child = spawn(process.execPath, [workerPath], {
       detached: true,
+      windowsHide: true,
       stdio: 'ignore',
       env: { ...process.env, DOKKIMI_TELEMETRY_PAYLOAD: payload },
     });

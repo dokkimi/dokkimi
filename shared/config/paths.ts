@@ -14,7 +14,9 @@ export function formatRunTimestamp(date: Date): string {
 }
 
 export function projectRunsDir(projectPath: string): string {
-  const stripped = projectPath.replace(/^\//, '');
+  const stripped = projectPath
+    .replace(/^([a-zA-Z]):/, '$1')
+    .replace(/^[/\\]+/, '');
   return path.join(DOKKIMI_DIR, 'runs', stripped);
 }
 
