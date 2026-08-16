@@ -36,6 +36,7 @@ jest.mock('fs', () => {
 });
 
 import * as fs from 'fs';
+import * as path from 'path';
 import { fetchJson } from '../lib/cli-utils';
 import { trackEvent } from '@dokkimi/telemetry';
 import { dump } from './dump';
@@ -202,7 +203,9 @@ describe('dump', () => {
 
     await dump(['-o', '/tmp/custom-dump.json']);
 
-    expect(mockCreateWriteStream).toHaveBeenCalledWith('/tmp/custom-dump.json');
+    expect(mockCreateWriteStream).toHaveBeenCalledWith(
+      path.resolve('/tmp/custom-dump.json'),
+    );
   });
 
   it('handles no latest run gracefully', async () => {

@@ -224,21 +224,32 @@ jobs:
 
       - name: Build Docker images
         run: |
+          pids=()
           docker build -t dokkimi/control-tower:latest \
             -f services/control-tower/Dockerfile . &
+          pids+=($!)
           docker build -t ghcr.io/dokkimi/interceptor:latest \
             -f services/interceptor/Dockerfile services/interceptor &
+          pids+=($!)
           docker build -t ghcr.io/dokkimi/test-agent:latest \
             -f services/test-agent/Dockerfile services/test-agent &
+          pids+=($!)
           for db in postgres mysql mongo redis; do
             docker build -t ghcr.io/dokkimi/db-proxy-${db}:latest \
               -f services/db-proxy/${db}/Dockerfile services/db-proxy &
+            pids+=($!)
           done
           docker build -t ghcr.io/dokkimi/broker-proxy-amqp:latest \
             -f services/broker-proxy/amqp/Dockerfile services/broker-proxy &
+          pids+=($!)
           docker build -t ghcr.io/dokkimi/broker-proxy-kafka:latest \
             -f services/broker-proxy/kafka/Dockerfile services/broker-proxy &
-          wait
+          pids+=($!)
+          fail=0
+          for pid in "${pids[@]}"; do
+            wait "$pid" || fail=1
+          done
+          exit $fail
 
       - name: Free disk space
         run: |
