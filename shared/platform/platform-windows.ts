@@ -55,7 +55,7 @@ export const windows: Platform = {
         { encoding: 'utf8', timeout: 5000, stdio: ['pipe', 'pipe', 'pipe'] },
       );
       return output
-        .split('\n')
+        .split(/\r?\n/)
         .map((line) => parseInt(line.trim(), 10))
         .filter((pid) => !isNaN(pid) && pid !== process.pid);
     } catch {

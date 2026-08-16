@@ -26,7 +26,7 @@ function checkCommand(
 ): { available: boolean; version: string } {
   try {
     const output = execSilent(`${cmd} ${versionFlag}`, { timeout: 5000 });
-    const firstLine = output.split('\n')[0].trim();
+    const firstLine = output.split(/\r?\n/)[0].trim();
     return { available: true, version: firstLine };
   } catch {
     return { available: false, version: '' };

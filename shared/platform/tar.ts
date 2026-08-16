@@ -31,8 +31,9 @@ function packDirectory(
     } else if (entry.isFile()) {
       const stat = fs.statSync(entryFull);
       const content = fs.readFileSync(entryFull);
+      const tarName = entryRelative.split(path.sep).join('/');
       archive.entry(
-        { name: entryRelative, size: stat.size, mode: stat.mode },
+        { name: tarName, size: stat.size, mode: stat.mode },
         content,
       );
     }
