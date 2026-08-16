@@ -8,7 +8,7 @@
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch --preserveWatchOutput",
-    "clean": "rm -rf dist"
+    "clean": "shx rm -rf dist"
   },
   "dependencies": {
     "@dokkimi/config": "workspace:*",
@@ -16,6 +16,7 @@
   },
   "devDependencies": {
     "@types/node": "^26.0.0",
+    "shx": "^0.4.0",
     "typescript": "^6.0.3"
   }
 }

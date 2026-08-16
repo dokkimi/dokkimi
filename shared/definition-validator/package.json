@@ -8,13 +8,14 @@
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch --preserveWatchOutput",
-    "clean": "rm -rf dist",
+    "clean": "shx rm -rf dist",
     "test": "jest"
   },
   "devDependencies": {
     "@types/jest": "^30.0.0",
     "@types/node": "^26.0.0",
     "jest": "^30.4.2",
+    "shx": "^0.4.0",
     "ts-jest": "^29.4.11",
     "typescript": "^6.0.3"
   },

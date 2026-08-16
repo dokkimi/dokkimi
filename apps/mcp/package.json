@@ -6,11 +6,11 @@
   "type": "module",
   "main": "dist/index.js",
   "scripts": {
-    "build": "tsup && cp ../../shared/docs/dokkimi-instructions.md dist/dokkimi-instructions.md",
+    "build": "tsup && shx cp ../../shared/docs/dokkimi-instructions.md dist/dokkimi-instructions.md",
     "dev": "tsup --watch",
     "typecheck": "tsc",
     "test": "jest",
-    "clean": "rm -rf dist"
+    "clean": "shx rm -rf dist"
   },
   "dependencies": {
     "@dokkimi/config": "workspace:*",
@@ -23,6 +23,7 @@
     "@types/jest": "^30.0.0",
     "@types/node": "^26.0.0",
     "jest": "^30.4.2",
+    "shx": "^0.4.0",
     "ts-jest": "^29.4.11",
     "tsup": "^8.5.1",
     "typescript": "^6.0.3"
