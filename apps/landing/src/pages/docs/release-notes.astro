@@ -7,6 +7,16 @@ import CodeBlock from '../../components/CodeBlock.astro';
   <h1>Release Notes</h1>
   <p class="subtitle">What's new in each release.</p>
 
+  <h2>v0.5.7</h2>
+  <p><time datetime="2026-08-16">August 16, 2026</time></p>
+
+  <h3>Windows portability</h3>
+  <p>Dokkimi now runs correctly on Windows under Git Bash / MSYS2.</p>
+  <ul>
+    <li><strong>Run storage paths</strong> &mdash; <code>projectRunsDir</code> now strips Windows drive letters (<code>C:</code>) and UNC prefixes (<code>\\server\share</code>) before building the runs directory path. Previously, the embedded colon made the directory impossible to create on Windows.</li>
+    <li><strong>Build script</strong> &mdash; <code>build-package.sh</code> converts POSIX paths from Git Bash to the mixed form (<code>C:/...</code>) via <code>cygpath</code> so that native <code>node.exe</code> can resolve them. The BSD-specific <code>sed -i ''</code> is replaced with a portable temp-file approach, and <code>sha256sum</code> (GNU coreutils) is used when available, falling back to <code>shasum</code> on macOS.</li>
+  </ul>
+
   <h2>v0.5.6</h2>
   <p><time datetime="2026-07-12">July 12, 2026</time></p>
 
