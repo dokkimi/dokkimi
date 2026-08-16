@@ -12,6 +12,9 @@ node_modules/
 !.yarn/releases
 !.yarn/plugins
 
+# Astro generated
+.astro/
+
 # Testing
 coverage/
 
@@ -71,3 +74,8 @@ services/broker-proxy/kafka/kafka
 # Claude Code
 .claude/settings.json
 .claude/settings.local.json
+.claude/skills/
+
+# AI agent skills
+.agents/
+skills-lock.json

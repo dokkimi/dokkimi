@@ -1,4 +1,4 @@
-import { getCollection } from 'astro:content';
+import { getPosts, getTutorials } from '../utils/sanity';
 
 const SITE = 'https://dokkimi.com';
 
@@ -27,17 +27,17 @@ const staticPages = [
 ];
 
 export async function GET() {
-  const blogPosts = await getCollection('blog');
-  const tutorials = await getCollection('tutorials');
+  const blogPosts = await getPosts();
+  const tutorials = await getTutorials();
 
   const dynamicPages = [
     ...blogPosts.map((post) => ({
-      path: `/blogs/${post.data.slug}/`,
+      path: `/blogs/${post.slug.current}/`,
       changefreq: 'monthly',
       priority: 0.8,
     })),
     ...tutorials.map((tutorial) => ({
-      path: `/tutorials/${tutorial.data.slug}/`,
+      path: `/tutorials/${tutorial.slug.current}/`,
       changefreq: 'monthly',
       priority: 0.8,
     })),

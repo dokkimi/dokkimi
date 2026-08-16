@@ -20,7 +20,7 @@ export default tseslint.config(
       '**/generated/**',
       '**/*.min.js',
       'shared/prisma/migrations/**',
-      'apps/landing/.astro/**',
+      '**/.astro/**',
       'apps/landing/public/assets/consent-manager/**',
       '.dokkimi/**',
       '**/.next/**',

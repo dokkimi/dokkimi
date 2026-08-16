@@ -16,6 +16,7 @@
     "apps/mcp",
     "apps/vscode",
     "apps/landing",
+    "apps/studio-dokkimi",
     "services/*",
     "shared/config",
     "shared/definition-validator",

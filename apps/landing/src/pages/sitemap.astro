@@ -2,10 +2,10 @@
 import BaseLayout from '../layouts/BaseLayout.astro';
 import Nav from '../components/Nav.astro';
 import Footer from '../components/Footer.astro';
-import { getCollection } from 'astro:content';
+import { getPosts, getTutorials } from '../utils/sanity';
 
-const blogPosts = (await getCollection('blog')).sort((a, b) => a.data.title.localeCompare(b.data.title));
-const tutorials = (await getCollection('tutorials')).sort((a, b) => a.data.title.localeCompare(b.data.title));
+const blogPosts = (await getPosts()).sort((a, b) => a.title.localeCompare(b.title));
+const tutorials = (await getTutorials()).sort((a, b) => a.title.localeCompare(b.title));
 
 const docPages = [
   { title: 'Getting Started', href: '/docs/' },
@@ -53,7 +53,7 @@ const docPages = [
       <ul>
         <li><a href="/blogs/">All posts</a></li>
         {blogPosts.map((post) => (
-          <li><a href={`/blogs/${post.data.slug}/`}>{post.data.title}</a></li>
+          <li><a href={`/blogs/${post.slug.current}/`}>{post.title}</a></li>
         ))}
       </ul>
     </section>
@@ -63,7 +63,7 @@ const docPages = [
       <ul>
         <li><a href="/tutorials/">All tutorials</a></li>
         {tutorials.map((tutorial) => (
-          <li><a href={`/tutorials/${tutorial.data.slug}/`}>{tutorial.data.title}</a></li>
+          <li><a href={`/tutorials/${tutorial.slug.current}/`}>{tutorial.title}</a></li>
         ))}
       </ul>
     </section>

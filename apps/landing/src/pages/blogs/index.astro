@@ -2,12 +2,9 @@
 import BaseLayout from '../../layouts/BaseLayout.astro';
 import Nav from '../../components/Nav.astro';
 import Footer from '../../components/Footer.astro';
-import { getCollection } from 'astro:content';
+import { getPosts } from '../../utils/sanity';
 
-const posts = await getCollection('blog');
-const sortedPosts = posts.sort(
-  (a, b) => new Date(b.data.date).getTime() - new Date(a.data.date).getTime()
-);
+const sortedPosts = await getPosts();
 ---
 
 <BaseLayout title="Blog — Dokkimi" description="Articles about microservice testing and Dokkimi.">
@@ -19,10 +16,10 @@ const sortedPosts = posts.sort(
     )}
     <div class="posts">
       {sortedPosts.map((post) => (
-        <a href={`/blogs/${post.data.slug}`} class="post-card">
-          <time datetime={post.data.date}>{new Date(post.data.date).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</time>
-          <h2>{post.data.title}</h2>
-          <p>{post.data.description}</p>
+        <a href={`/blogs/${post.slug.current}`} class="post-card">
+          <time datetime={post.date}>{new Date(post.date).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</time>
+          <h2>{post.title}</h2>
+          <p>{post.description}</p>
         </a>
       ))}
     </div>
@@ -32,7 +29,7 @@ const sortedPosts = posts.sort(
 
 <style>
   .blog {
-    padding: 120px 0 0;
+    padding-top: 120px;
   }
 
   h1 {

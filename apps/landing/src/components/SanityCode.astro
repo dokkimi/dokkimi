@@ -1,0 +1,5 @@
+---
+const { node } = Astro.props;
+---
+
+<pre><code class={node.language ? `language-${node.language}` : ''}>{node.code}</code></pre>

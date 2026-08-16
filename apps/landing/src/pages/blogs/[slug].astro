@@ -2,31 +2,33 @@
 import BaseLayout from '../../layouts/BaseLayout.astro';
 import Nav from '../../components/Nav.astro';
 import Footer from '../../components/Footer.astro';
-import { getCollection, render } from 'astro:content';
+import SanityCode from '../../components/SanityCode.astro';
+import { PortableText } from 'astro-portabletext';
+import { getPosts, getPostBySlug } from '../../utils/sanity';
 
 export async function getStaticPaths() {
-  const posts = await getCollection('blog');
+  const posts = await getPosts();
   return posts.map((post) => ({
-    params: { slug: post.data.slug },
-    props: { post },
+    params: { slug: post.slug.current },
   }));
 }
 
-const { post } = Astro.props;
-const { Content } = await render(post);
+const { slug } = Astro.params;
+const post = await getPostBySlug(slug);
+if (!post) return Astro.redirect('/404');
 ---
 
-<BaseLayout title={`${post.data.title} — Dokkimi`} description={post.data.description}>
+<BaseLayout title={`${post.title} — Dokkimi`} description={post.description}>
   <Nav />
   <main class="container article">
     <header>
-      <time datetime={post.data.date}>
-        {new Date(post.data.date).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}
+      <time datetime={post.date}>
+        {new Date(post.date).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}
       </time>
-      <h1>{post.data.title}</h1>
+      <h1>{post.title}</h1>
     </header>
     <div class="prose">
-      <Content />
+      <PortableText value={post.body} components={{ type: { code: SanityCode } }} />
     </div>
   </main>
   <Footer />
@@ -34,7 +36,7 @@ const { Content } = await render(post);
 
 <style>
   .article {
-    padding: 120px 0 0;
+    padding-top: 120px;
     max-width: 720px;
   }
 
