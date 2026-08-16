@@ -13,8 +13,19 @@ export function formatRunTimestamp(date: Date): string {
   return `${y}${mo}${d}-${h}${mi}${s}`;
 }
 
+/**
+ * Maps a project path to its runs directory under ~/.dokkimi/runs.
+ *
+ * The project path becomes a nested path segment, so anything that cannot
+ * legally appear inside another path has to go first: the leading separator on
+ * POSIX, and on Windows the drive letter — a colon is illegal in a path
+ * component, so leaving `C:` in place produces an unwritable path.
+ */
 export function projectRunsDir(projectPath: string): string {
-  const stripped = projectPath.replace(/^\//, '');
+  const stripped = projectPath
+    .replace(/^[a-zA-Z]:/, '') // Windows drive letter
+    .replace(/^[\\/]+/, '') // leading separator(s), including a UNC prefix
+    .replace(/:/g, '_'); // any remaining colon is illegal on Windows
   return path.join(DOKKIMI_DIR, 'runs', stripped);
 }
 

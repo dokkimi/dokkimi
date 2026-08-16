@@ -1,6 +1,6 @@
 {
   "name": "@dokkimi/cli",
-  "version": "0.5.6",
+  "version": "0.5.7",
   "license": "Elastic-2.0",
   "private": true,
   "main": "dist/bin/dokkimi.js",
@@ -8,8 +8,8 @@
     "dokkimi": "dist/bin/dokkimi.js"
   },
   "scripts": {
-    "build": "tsc && chmod +x dist/bin/dokkimi.js && cp ../../shared/docs/dokkimi-instructions.md dist/dokkimi-instructions.md",
-    "dev": "yarn workspace @dokkimi/config build && yarn workspace @dokkimi/platform build && yarn workspace @dokkimi/telemetry build && yarn workspace @dokkimi/definition-validator build && yarn workspace @dokkimi/definition-resolver build && yarn workspace @dokkimi/service-manager build && yarn workspace @dokkimi/mcp build && tsc && chmod +x dist/bin/dokkimi.js && cp ../../shared/docs/dokkimi-instructions.md dist/dokkimi-instructions.md && DEPLOYMENT_TYPE=desktop NODE_ENV=development concurrently -n cfg,plat,tel,val,res,sm,mcp,ct,tsc -c gray,gray,gray,gray,gray,gray,gray,blue,green \"yarn workspace @dokkimi/config dev\" \"yarn workspace @dokkimi/platform dev\" \"yarn workspace @dokkimi/telemetry dev\" \"yarn workspace @dokkimi/definition-validator dev\" \"yarn workspace @dokkimi/definition-resolver dev\" \"yarn workspace @dokkimi/service-manager dev\" \"yarn workspace @dokkimi/mcp dev\" \"yarn workspace control-tower start:dev\" \"tsc --watch --preserveWatchOutput\"",
+    "build": "tsc && shx chmod +x dist/bin/dokkimi.js && shx cp ../../shared/docs/dokkimi-instructions.md dist/dokkimi-instructions.md",
+    "dev": "yarn workspace @dokkimi/config build && yarn workspace @dokkimi/platform build && yarn workspace @dokkimi/telemetry build && yarn workspace @dokkimi/definition-validator build && yarn workspace @dokkimi/definition-resolver build && yarn workspace @dokkimi/service-manager build && yarn workspace @dokkimi/mcp build && tsc && shx chmod +x dist/bin/dokkimi.js && shx cp ../../shared/docs/dokkimi-instructions.md dist/dokkimi-instructions.md && DEPLOYMENT_TYPE=desktop NODE_ENV=development concurrently -n cfg,plat,tel,val,res,sm,mcp,ct,tsc -c gray,gray,gray,gray,gray,gray,gray,blue,green \"yarn workspace @dokkimi/config dev\" \"yarn workspace @dokkimi/platform dev\" \"yarn workspace @dokkimi/telemetry dev\" \"yarn workspace @dokkimi/definition-validator dev\" \"yarn workspace @dokkimi/definition-resolver dev\" \"yarn workspace @dokkimi/service-manager dev\" \"yarn workspace @dokkimi/mcp dev\" \"yarn workspace control-tower start:dev\" \"tsc --watch --preserveWatchOutput\"",
     "test": "jest",
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage"
@@ -48,6 +48,7 @@
     "@types/node": "^26.0.0",
     "concurrently": "^10.0.3",
     "jest": "^30.4.2",
+    "shx": "^0.4.0",
     "ts-jest": "^29.4.11",
     "typescript": "^6.0.3"
   }

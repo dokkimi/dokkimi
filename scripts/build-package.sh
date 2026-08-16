@@ -2,6 +2,13 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+# Under Git Bash/MSYS, `pwd` yields a POSIX path (/c/Users/...) that native
+# Windows node.exe cannot resolve — it reads it as relative to the drive root.
+# `cygpath -m` produces the mixed form (C:/Users/...), which both bash and node
+# understand. No-op everywhere else, since cygpath only exists on MSYS.
+if command -v cygpath >/dev/null 2>&1; then
+  REPO_ROOT="$(cygpath -m "$REPO_ROOT")"
+fi
 STAGE_DIR="$REPO_ROOT/.publish-staging"
 CURRENT_VERSION=$(cat "$REPO_ROOT/VERSION" | tr -d '[:space:]')
 
@@ -124,9 +131,12 @@ chmod +x "$CLI_ENTRY"
 # Config (inject PostHog telemetry key for published builds)
 mkdir -p "$STAGE_DIR/config"
 cp config/config.yaml "$STAGE_DIR/config/config.yaml"
-sed -i '' \
-  -e 's|posthogApiKey:.*|posthogApiKey: phc_qRHhgna4UJzsZ47Vr3yf4aRQ4mSD9ykqyN5kDtoigSJp|' \
-  "$STAGE_DIR/config/config.yaml"
+# Written via temp file rather than `sed -i`: the in-place flag takes a
+# mandatory suffix argument on BSD/macOS (`-i ''`) but an attached one on GNU
+# (`-i`), so no single invocation works on both. This form needs neither.
+sed -e 's|posthogApiKey:.*|posthogApiKey: phc_qRHhgna4UJzsZ47Vr3yf4aRQ4mSD9ykqyN5kDtoigSJp|' \
+  "$STAGE_DIR/config/config.yaml" > "$STAGE_DIR/config/config.yaml.tmp"
+mv "$STAGE_DIR/config/config.yaml.tmp" "$STAGE_DIR/config/config.yaml"
 
 # Postinstall script
 mkdir -p "$STAGE_DIR/scripts"
@@ -154,7 +164,13 @@ if [ -f "$FORMULA" ]; then
   echo ""
   echo "==> Packing staging tarball and updating Formula/dokkimi.rb"
   TARBALL=$(npm pack --json 2>/dev/null | node -e "let d=''; process.stdin.on('data',c=>d+=c); process.stdin.on('end',()=>console.log(JSON.parse(d)[0].filename))")
-  SHA=$(shasum -a 256 "$TARBALL" | awk '{print $1}')
+  # sha256sum ships with GNU coreutils (Linux, Git Bash); shasum is the
+  # Perl-based equivalent present on macOS.
+  if command -v sha256sum >/dev/null 2>&1; then
+    SHA=$(sha256sum "$TARBALL" | awk '{print $1}')
+  else
+    SHA=$(shasum -a 256 "$TARBALL" | awk '{print $1}')
+  fi
   rm -f "$TARBALL"
 
   node -e "

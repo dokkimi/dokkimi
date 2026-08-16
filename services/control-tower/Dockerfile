@@ -20,6 +20,7 @@ COPY apps/vscode/package.json apps/vscode/
 COPY apps/cli/package.json apps/cli/
 COPY apps/mcp/package.json apps/mcp/
 COPY apps/landing/package.json apps/landing/
+COPY apps/studio-dokkimi/package.json apps/studio-dokkimi/
 
 # Copy Prisma schema (needed for install/generate)
 COPY shared/prisma/ shared/prisma/
@@ -73,6 +74,7 @@ COPY apps/vscode/package.json apps/vscode/
 COPY apps/cli/package.json apps/cli/
 COPY apps/mcp/package.json apps/mcp/
 COPY apps/landing/package.json apps/landing/
+COPY apps/studio-dokkimi/package.json apps/studio-dokkimi/
 
 # Copy config files for runtime
 COPY config/config.yaml config/config.yaml
