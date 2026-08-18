@@ -1,0 +1,9 @@
+{
+  "redirects": [
+    {
+      "source": "/studio",
+      "destination": "https://dokkimi.sanity.studio",
+      "permanent": false
+    }
+  ]
+}
