@@ -12,6 +12,10 @@ import HeroDemo from './HeroDemo.astro';
           The only testing framework that does integration, E2E, and visual regression
           testing. All without a staging environment.
         </p>
+        <p class="complement">
+          Unit tests cover your logic. Browser tests cover your UI.<br/>
+          Dokkimi ensures everything works together seamlessly.
+        </p>
       </div>
       <div class="hero-demo-col">
         <HeroDemo />
@@ -120,6 +124,15 @@ import HeroDemo from './HeroDemo.astro';
     margin: 0;
     line-height: 1.7;
   }
+
+  .complement {
+    font-size: 1rem;
+    color: var(--color-text-muted);
+    margin: 12px 0 0;
+    opacity: 0.75;
+    line-height: 1.7;
+  }
+
 
   .hero-ctas {
     text-align: center;

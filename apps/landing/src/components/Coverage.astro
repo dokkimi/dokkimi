@@ -4,14 +4,24 @@
 
 <section class="coverage">
   <div class="container">
-    <h2 class="section-heading reveal">Unmatched Coverage</h2>
-    <p class="section-subtitle reveal">Most tools only cover a slice. Dokkimi covers the whole picture.</p>
+    <h2 class="section-heading reveal"><p>Every testing layer covers a piece.</p><p>Dokkimi fills in the rest.</p></h2>
     <div class="tool-buttons reveal">
       <button class="tool-btn active" data-tool="dokkimi">Dokkimi</button>
-      <button class="tool-btn" data-tool="cypress">Cypress / Playwright</button>
-      <button class="tool-btn" data-tool="testcontainers">Testcontainers</button>
-      <button class="tool-btn" data-tool="postman">Postman / Bruno</button>
-      <button class="tool-btn" data-tool="jest">Jest / Vitest</button>
+      <button class="tool-btn" data-tool="jest">Unit Tests</button>
+      <button class="tool-btn" data-tool="cypress">Browser Tests</button>
+      <button class="tool-btn" data-tool="postman">API Tests</button>
+      <button class="tool-btn" data-tool="e2e">E2E Tests</button>
+      <button class="tool-btn" data-tool="testcontainers">Container Tests</button>
+    </div>
+    <div class="diagram-key reveal">
+      <span class="key-item">
+        <svg width="40" height="12" viewBox="0 0 40 12"><line x1="0" y1="6" x2="40" y2="6" stroke="var(--color-primary)" stroke-width="2" /></svg>
+        <span>Asserted</span>
+      </span>
+      <span class="key-item">
+        <svg width="40" height="12" viewBox="0 0 40 12"><line x1="0" y1="6" x2="40" y2="6" stroke="var(--color-primary)" stroke-width="2" stroke-dasharray="6 4" /></svg>
+        <span>Unobserved</span>
+      </span>
     </div>
     <div class="diagram-wrapper reveal">
       <svg viewBox="0 0 800 290" xmlns="http://www.w3.org/2000/svg" class="diagram" data-active-tool="dokkimi">
@@ -175,34 +185,67 @@
     min-height: 3em;
     transition: all 0.3s;
   }
+
+  .diagram-key {
+    display: flex;
+    justify-content: center;
+    gap: 24px;
+    margin-bottom: 20px;
+  }
+
+  .key-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.8rem;
+    color: var(--color-text-muted);
+  }
+
+  .arrow.passthrough line {
+    stroke: var(--color-primary);
+    stroke-width: 2.5;
+    stroke-dasharray: 6 4;
+    marker-end: url(#arrow-lit);
+  }
 </style>
 
 <script>
-  const tools: Record<string, { nodes: string[]; arrows: string[]; label: string }> = {
+  const tools: Record<string, { nodes: string[]; asserted: string[]; passthrough: string[]; label: string }> = {
     dokkimi: {
       nodes: ['fe', 'be', 'ext', 'db'],
-      arrows: ['fe-be', 'be-ext', 'be-db'],
+      asserted: ['fe-be', 'be-ext', 'be-db'],
+      passthrough: [],
       label: 'Full coverage of UI interactions, http traffic between all services and external APIs, including all database interactions.',
-    },
-    cypress: {
-      nodes: ['fe'],
-      arrows: ['fe-be'],
-      label: 'Tests the browser and its requests, but can\'t see what happens after the backend.',
-    },
-    testcontainers: {
-      nodes: ['be', 'db'],
-      arrows: ['be-db'],
-      label: 'Spins up isolated containers for the backend and database, but no real frontend or external APIs.',
-    },
-    postman: {
-      nodes: ['be'],
-      arrows: ['fe-be'],
-      label: 'Sends requests to the API and validates responses, but no browser, database, or downstream visibility.',
     },
     jest: {
       nodes: ['be'],
-      arrows: [],
+      asserted: [],
+      passthrough: [],
       label: 'Unit tests individual functions in isolation — no real services, network, or database.',
+    },
+    cypress: {
+      nodes: ['fe'],
+      asserted: [],
+      passthrough: ['fe-be'],
+      label: 'Tests the browser and its requests, but can\'t see what happens after the backend.',
+    },
+    postman: {
+      nodes: ['be'],
+      asserted: ['fe-be'],
+      passthrough: [],
+      label: 'Sends requests to the API and validates responses, but no browser, database, or downstream visibility.',
+    },
+    e2e: {
+      nodes: ['fe', 'be', 'db', 'ext'],
+      asserted: [],
+      passthrough: ['fe-be', 'be-db', 'be-ext'],
+      label: 'Tests full user flows through the browser, backend, and database, but can\'t inspect service-to-service traffic or external API calls.',
+    },
+    testcontainers: {
+      nodes: ['be', 'db'],
+      asserted: ['fe-be'],
+      passthrough: ['be-db'],
+      label: 'Spins up isolated containers for the backend and database, but no real frontend or external APIs.',
     },
   };
 
@@ -226,9 +269,11 @@
 
     allArrows.forEach((a) => {
       const id = (a as HTMLElement).dataset.arrow!;
-      const isLit = tool.arrows.includes(id);
-      a.classList.toggle('lit', isLit);
-      a.classList.toggle('dim', !isLit);
+      const isAsserted = tool.asserted.includes(id);
+      const isPassthrough = tool.passthrough.includes(id);
+      a.classList.toggle('lit', isAsserted);
+      a.classList.toggle('passthrough', isPassthrough);
+      a.classList.toggle('dim', !isAsserted && !isPassthrough);
     });
 
     if (labelEl) labelEl.textContent = tool.label;
@@ -246,9 +291,26 @@
     }
   }
 
+  const toolKeys = Object.keys(tools);
+  let currentIndex = 0;
+  let autoplayTimer: ReturnType<typeof setInterval> | null = null;
+
+  function startAutoplay() {
+    if (autoplayTimer) clearInterval(autoplayTimer);
+    autoplayTimer = setInterval(() => {
+      currentIndex = (currentIndex + 1) % toolKeys.length;
+      activate(toolKeys[currentIndex], false);
+    }, 3000);
+  }
+
   buttons.forEach((btn) => {
-    btn.addEventListener('click', () => activate(btn.dataset.tool!));
+    btn.addEventListener('click', () => {
+      currentIndex = toolKeys.indexOf(btn.dataset.tool!);
+      activate(btn.dataset.tool!);
+      startAutoplay();
+    });
   });
 
   activate('dokkimi', false);
+  startAutoplay();
 </script>
