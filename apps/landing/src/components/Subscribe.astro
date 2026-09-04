@@ -8,41 +8,110 @@
     <p class="section-subtitle">
       New features, tutorials, and tips every two weeks. No spam.
     </p>
-    <form
-      action="https://buttondown.com/api/emails/embed-subscribe/dokkimi"
-      method="post"
-      class="subscribe-form"
-      id="newsletter-form"
-    >
-      <input type="email" name="email" placeholder="you@example.com" required />
-      <button type="submit">Subscribe</button>
-    </form>
+    <div class="subscribe-form-container" id="newsletter-form-container">
+      <form
+        action="https://app.loops.so/api/newsletter-form/cmtngnrxk01un0jzqt64wm72v"
+        method="POST"
+        class="subscribe-form"
+        id="newsletter-form"
+      >
+        <input
+          type="email"
+          name="newsletter-form-input"
+          placeholder="Enter your email"
+          required
+          class="subscribe-input"
+        />
+        <button type="submit" class="subscribe-button">Subscribe</button>
+        <button type="button" class="subscribe-loading" style="display:none">Please wait...</button>
+      </form>
+      <p class="subscribe-success" style="display:none">Thanks! We'll be in touch!</p>
+      <p class="subscribe-error" style="display:none">Oops! Something went wrong, please try again</p>
+      <button type="button" class="subscribe-back" style="display:none">&larr; Back</button>
+    </div>
   </div>
 </section>
 
 <script is:inline>
   (function () {
-    var form = document.getElementById('newsletter-form');
-    if (!form) return;
+    var container = document.getElementById('newsletter-form-container');
+    if (!container) return;
+
+    var form = container.querySelector('#newsletter-form');
+    var input = container.querySelector('.subscribe-input');
+    var submitBtn = container.querySelector('.subscribe-button');
+    var loadingBtn = container.querySelector('.subscribe-loading');
+    var success = container.querySelector('.subscribe-success');
+    var error = container.querySelector('.subscribe-error');
+    var backBtn = container.querySelector('.subscribe-back');
+
     form.addEventListener('submit', function (e) {
-      // Intercept so the GA4 event is recorded before the form POSTs to
-      // Buttondown and the page navigates away (avoids the lost-event race).
       e.preventDefault();
-      var submitted = false;
-      function submitForm() {
-        if (submitted) return;
-        submitted = true;
-        form.submit();
-      }
+
+      // GA4 event
       window.dataLayer = window.dataLayer || [];
       window.dataLayer.push({
         event: 'newsletter_subscribe',
         form_location: 'subscribe_section',
-        eventCallback: submitForm, // submit once GTM has fired the tag
-        eventTimeout: 1000,
       });
-      // Fallback: if GTM is blocked/absent, submit anyway after 1s.
-      setTimeout(submitForm, 1000);
+
+      // Rate limit: 1 signup per minute
+      var now = Date.now();
+      var prev = localStorage.getItem('loops-form-timestamp');
+      if (prev && Number(prev) + 60000 > now) {
+        error.textContent = 'Too many signups, please try again in a little while';
+        error.style.display = 'block';
+        submitBtn.style.display = 'none';
+        input.style.display = 'none';
+        backBtn.style.display = 'inline-block';
+        return;
+      }
+      localStorage.setItem('loops-form-timestamp', now);
+
+      submitBtn.style.display = 'none';
+      loadingBtn.style.display = 'inline-flex';
+
+      var body = 'userGroup=&mailingLists=&email=' + encodeURIComponent(input.value);
+
+      fetch(form.action, {
+        method: 'POST',
+        body: body,
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      })
+        .then(function (res) {
+          if (res.ok) {
+            success.style.display = 'block';
+            form.reset();
+          } else {
+            res.json().then(function (data) {
+              error.textContent = data.message || res.statusText;
+              error.style.display = 'block';
+            });
+          }
+        })
+        .catch(function (err) {
+          if (err.message === 'Failed to fetch') {
+            error.textContent = 'Too many signups, please try again in a little while';
+          } else if (err.message) {
+            error.textContent = err.message;
+          }
+          error.style.display = 'block';
+          localStorage.setItem('loops-form-timestamp', '');
+        })
+        .finally(function () {
+          input.style.display = 'none';
+          loadingBtn.style.display = 'none';
+          backBtn.style.display = 'inline-block';
+        });
+    });
+
+    backBtn.addEventListener('click', function () {
+      success.style.display = 'none';
+      error.style.display = 'none';
+      error.textContent = 'Oops! Something went wrong, please try again';
+      backBtn.style.display = 'none';
+      input.style.display = 'block';
+      submitBtn.style.display = 'inline-flex';
     });
   })();
 </script>
@@ -52,15 +121,19 @@
     padding: var(--section-spacing) 0;
   }
 
+  .subscribe-form-container {
+    max-width: 440px;
+    margin: 0 auto;
+    text-align: center;
+  }
+
   .subscribe-form {
     display: flex;
     gap: 12px;
     justify-content: center;
-    max-width: 440px;
-    margin: 0 auto;
   }
 
-  .subscribe-form input {
+  .subscribe-input {
     flex: 1;
     padding: 12px 16px;
     background: var(--color-bg-soft);
@@ -73,15 +146,16 @@
     transition: border-color 0.2s;
   }
 
-  .subscribe-form input::placeholder {
+  .subscribe-input::placeholder {
     color: var(--color-text-muted);
   }
 
-  .subscribe-form input:focus {
+  .subscribe-input:focus {
     border-color: var(--color-primary);
   }
 
-  .subscribe-form button {
+  .subscribe-button,
+  .subscribe-loading {
     padding: 12px 24px;
     background: var(--color-primary);
     border: 1px solid var(--color-primary);
@@ -93,11 +167,46 @@
     cursor: pointer;
     transition: background 0.2s, border-color 0.2s;
     white-space: nowrap;
+    align-items: center;
+    justify-content: center;
   }
 
-  .subscribe-form button:hover {
+  .subscribe-button:hover {
     background: var(--color-primary-soft);
     border-color: var(--color-primary-soft);
+  }
+
+  .subscribe-loading {
+    cursor: default;
+    opacity: 0.7;
+  }
+
+  .subscribe-success {
+    color: var(--color-primary);
+    font-family: var(--font-sans);
+    font-size: 0.925rem;
+    margin-top: 8px;
+  }
+
+  .subscribe-error {
+    color: #ef4444;
+    font-family: var(--font-sans);
+    font-size: 0.925rem;
+    margin-top: 8px;
+  }
+
+  .subscribe-back {
+    background: transparent;
+    border: none;
+    color: var(--color-text-muted);
+    font-family: var(--font-sans);
+    font-size: 0.875rem;
+    cursor: pointer;
+    margin-top: 8px;
+  }
+
+  .subscribe-back:hover {
+    text-decoration: underline;
   }
 
   @media (max-width: 480px) {

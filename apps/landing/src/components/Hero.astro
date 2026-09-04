@@ -45,15 +45,21 @@ import HeroDemo from './HeroDemo.astro';
         <span>or stay in the loop</span>
       </div>
 
-      <form
-        action="https://buttondown.com/api/emails/embed-subscribe/dokkimi"
-        method="post"
-        class="subscribe-form"
-        id="hero-newsletter-form"
-      >
-        <input type="email" name="email" placeholder="you@example.com" required />
-        <button type="submit">Subscribe</button>
-      </form>
+      <div class="hero-newsletter-container" id="hero-newsletter-container">
+        <form
+          action="https://app.loops.so/api/newsletter-form/cmtngnrxk01un0jzqt64wm72v"
+          method="POST"
+          class="subscribe-form"
+          id="hero-newsletter-form"
+        >
+          <input type="email" name="newsletter-form-input" placeholder="Enter your email" required class="subscribe-input" />
+          <button type="submit" class="subscribe-button">Subscribe</button>
+          <button type="button" class="subscribe-loading" style="display:none">Please wait...</button>
+        </form>
+        <p class="subscribe-success" style="display:none">Thanks! We'll be in touch!</p>
+        <p class="subscribe-error" style="display:none">Oops! Something went wrong, please try again</p>
+        <button type="button" class="subscribe-back" style="display:none">&larr; Back</button>
+      </div>
     </div>
   </div>
 </section>
@@ -280,6 +286,56 @@ import HeroDemo from './HeroDemo.astro';
     transform: translateY(-1px);
   }
 
+  .hero-newsletter-container {
+    max-width: 400px;
+    margin: 0 auto;
+    text-align: center;
+  }
+
+  .subscribe-loading {
+    padding: 12px 24px;
+    background: var(--color-primary);
+    border: 1px solid var(--color-primary);
+    border-radius: 8px;
+    color: white;
+    font-family: var(--font-sans);
+    font-size: 0.925rem;
+    font-weight: 500;
+    cursor: default;
+    opacity: 0.7;
+    white-space: nowrap;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .subscribe-success {
+    color: var(--color-primary);
+    font-family: var(--font-sans);
+    font-size: 0.925rem;
+    margin-top: 8px;
+  }
+
+  .subscribe-error {
+    color: #ef4444;
+    font-family: var(--font-sans);
+    font-size: 0.925rem;
+    margin-top: 8px;
+  }
+
+  .subscribe-back {
+    background: transparent;
+    border: none;
+    color: var(--color-text-muted);
+    font-family: var(--font-sans);
+    font-size: 0.875rem;
+    cursor: pointer;
+    margin-top: 8px;
+  }
+
+  .subscribe-back:hover {
+    text-decoration: underline;
+  }
+
   @media (max-width: 768px) {
     .hero-top {
       gap: 40px;
@@ -337,26 +393,84 @@ import HeroDemo from './HeroDemo.astro';
     });
   });
 
-  // Newsletter submit tracking
+  // Newsletter submit (Loops)
   (function () {
-    var form = document.getElementById('hero-newsletter-form');
-    if (!form) return;
+    var container = document.getElementById('hero-newsletter-container');
+    if (!container) return;
+
+    var form = container.querySelector('#hero-newsletter-form') as HTMLFormElement;
+    var input = container.querySelector('.subscribe-input') as HTMLInputElement;
+    var submitBtn = container.querySelector('.subscribe-button') as HTMLElement;
+    var loadingBtn = container.querySelector('.subscribe-loading') as HTMLElement;
+    var success = container.querySelector('.subscribe-success') as HTMLElement;
+    var error = container.querySelector('.subscribe-error') as HTMLElement;
+    var backBtn = container.querySelector('.subscribe-back') as HTMLElement;
+
     form.addEventListener('submit', function (e) {
       e.preventDefault();
-      var submitted = false;
-      function submitForm() {
-        if (submitted) return;
-        submitted = true;
-        (form as HTMLFormElement).submit();
-      }
+
       window.dataLayer = window.dataLayer || [];
       window.dataLayer.push({
         event: 'newsletter_subscribe',
         form_location: 'hero',
-        eventCallback: submitForm,
-        eventTimeout: 1000,
       });
-      setTimeout(submitForm, 1000);
+
+      var now = Date.now();
+      var prev = localStorage.getItem('loops-form-timestamp');
+      if (prev && Number(prev) + 60000 > now) {
+        error.textContent = 'Too many signups, please try again in a little while';
+        error.style.display = 'block';
+        submitBtn.style.display = 'none';
+        input.style.display = 'none';
+        backBtn.style.display = 'inline-block';
+        return;
+      }
+      localStorage.setItem('loops-form-timestamp', String(now));
+
+      submitBtn.style.display = 'none';
+      loadingBtn.style.display = 'inline-flex';
+
+      var body = 'userGroup=&mailingLists=&email=' + encodeURIComponent(input.value);
+
+      fetch(form.action, {
+        method: 'POST',
+        body: body,
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      })
+        .then(function (res) {
+          if (res.ok) {
+            success.style.display = 'block';
+            form.reset();
+          } else {
+            res.json().then(function (data: any) {
+              error.textContent = data.message || res.statusText;
+              error.style.display = 'block';
+            });
+          }
+        })
+        .catch(function (err) {
+          if (err.message === 'Failed to fetch') {
+            error.textContent = 'Too many signups, please try again in a little while';
+          } else if (err.message) {
+            error.textContent = err.message;
+          }
+          error.style.display = 'block';
+          localStorage.setItem('loops-form-timestamp', '');
+        })
+        .finally(function () {
+          input.style.display = 'none';
+          loadingBtn.style.display = 'none';
+          backBtn.style.display = 'inline-block';
+        });
+    });
+
+    backBtn.addEventListener('click', function () {
+      success.style.display = 'none';
+      error.style.display = 'none';
+      error.textContent = 'Oops! Something went wrong, please try again';
+      backBtn.style.display = 'none';
+      input.style.display = 'block';
+      submitBtn.style.display = 'inline-flex';
     });
   })();
 </script>
