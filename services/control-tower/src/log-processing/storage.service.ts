@@ -14,12 +14,27 @@ export class StorageService {
   constructor(private readonly prisma: PrismaService) {}
 
   /**
+   * Sidecars retry log delivery, so a lost response can produce a second
+   * insert of the same log. The [logId, timestamp] unique constraint catches
+   * it; treat the violation as success. Kept observable at debug level so a
+   * nonzero dedup rate outside retries (a genuine double-insert bug) can
+   * still be spotted.
+   */
+  private isDuplicateLog(error: unknown): boolean {
+    return (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === 'P2002'
+    );
+  }
+
+  /**
    * Stores an HTTP log
    */
   async storeHttpLog(message: HttpLogMessage): Promise<string> {
     try {
       const httpLog = await this.prisma.httpLog.create({
         data: {
+          logId: message.logId ?? null,
           instanceId: message.instanceId,
           instanceItemId: message.instanceItemId ?? null,
           method: message.method,
@@ -52,6 +67,12 @@ export class StorageService {
       );
       return httpLog.id;
     } catch (error) {
+      if (this.isDuplicateLog(error)) {
+        this.logger.debug(
+          `Deduplicated retried HTTP log ${message.logId} for instance ${message.instanceId}`,
+        );
+        return '';
+      }
       this.logger.error(`Error storing HTTP log:`, error);
       throw error;
     }
@@ -105,6 +126,7 @@ export class StorageService {
 
       const databaseLog = await this.prisma.databaseLog.create({
         data: {
+          logId: message.logId ?? null,
           instanceId: message.instanceId,
           instanceItemId: message.instanceItemId ?? null,
           databaseType: normalizedType,
@@ -127,6 +149,12 @@ export class StorageService {
       );
       return databaseLog.id;
     } catch (error) {
+      if (this.isDuplicateLog(error)) {
+        this.logger.debug(
+          `Deduplicated retried database log ${message.logId} for instance ${message.instanceId}`,
+        );
+        return '';
+      }
       this.logger.error(`Error storing database log:`, error);
       throw error;
     }
@@ -136,6 +164,7 @@ export class StorageService {
     try {
       const messageLog = await this.prisma.messageLog.create({
         data: {
+          logId: message.logId ?? null,
           instanceId: message.instanceId,
           instanceItemId: message.instanceItemId ?? null,
           brokerType: message.brokerType,
@@ -157,6 +186,12 @@ export class StorageService {
       );
       return messageLog.id;
     } catch (error) {
+      if (this.isDuplicateLog(error)) {
+        this.logger.debug(
+          `Deduplicated retried message log ${message.logId} for instance ${message.instanceId}`,
+        );
+        return '';
+      }
       this.logger.error(`Error storing message log:`, error);
       throw error;
     }

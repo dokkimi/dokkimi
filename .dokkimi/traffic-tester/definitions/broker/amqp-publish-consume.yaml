@@ -382,10 +382,9 @@ tests:
       - name: Verify all three publishes were logged
         action:
           type: wait
-          # 3s, not 500ms: three parallel publishes open three broker-proxy
-          # connections at once, and log ingestion under CI load has repeatedly
-          # lost the race with a 500ms window (recurring CI flake at this step).
-          durationMs: 3000
+          # 1.5s, not 500ms: sidecar delivery retries land at +250ms, and this
+          # step flaked repeatedly at 500ms under CI load before retries existed.
+          durationMs: 1500
         assertions:
           - assertions:
               - count: $.messageLogs

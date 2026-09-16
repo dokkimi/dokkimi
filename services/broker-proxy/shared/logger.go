@@ -3,6 +3,8 @@ package shared
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"log"
 	"net/http"
@@ -10,6 +12,7 @@ import (
 )
 
 type MessageLogMessage struct {
+	LogID          string                 `json:"logId,omitempty"`
 	InstanceID     string                 `json:"instanceId"`
 	InstanceItemID string                 `json:"instanceItemId,omitempty"`
 	BrokerType     string                 `json:"brokerType"`
@@ -51,6 +54,7 @@ func (l *MessageLogger) SetTestAgentURL(url string) {
 }
 
 func (l *MessageLogger) Log(message MessageLogMessage) {
+	message.LogID = newLogID()
 	select {
 	case l.logChan <- message:
 	default:
@@ -88,41 +92,83 @@ func (l *MessageLogger) sendLog(message MessageLogMessage) {
 		go l.sendToTestAgent(body)
 	}
 
+	// Retry transient failures — this write is the durable record. Runs on the
+	// sequential worker, so retries block the queue; the buffered channel
+	// absorbs the stall. A 4xx is deterministic (validation) — never retried.
 	url := l.logEndpointURL + "/logs/message"
-	req, err := http.NewRequest(http.MethodPost, url, bytes.NewBuffer(body))
-	if err != nil {
-		log.Printf("[MessageLogger] Failed to create request to %s: %v", url, err)
+	for attempt, backoff := 0, 250*time.Millisecond; attempt < 3; attempt, backoff = attempt+1, backoff*4 {
+		if attempt > 0 {
+			time.Sleep(backoff)
+		}
+		req, err := http.NewRequest(http.MethodPost, url, bytes.NewBuffer(body))
+		if err != nil {
+			log.Printf("[MessageLogger] Failed to create request to %s: %v", url, err)
+			return
+		}
+		req.Header.Set("Content-Type", "application/json")
+
+		resp, err := l.httpClient.Do(req)
+		if err != nil {
+			log.Printf("[MessageLogger] Failed to send log to %s (attempt %d/3): %v", url, attempt+1, err)
+			continue
+		}
+		status := resp.StatusCode
+		resp.Body.Close()
+		if status >= 200 && status < 300 {
+			return
+		}
+		if status >= 500 || status == http.StatusTooManyRequests {
+			log.Printf("[MessageLogger] CT returned status %d (attempt %d/3)", status, attempt+1)
+			continue
+		}
+		log.Printf("[MessageLogger] CT rejected log with status %d — not retrying", status)
 		return
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := l.httpClient.Do(req)
-	if err != nil {
-		log.Printf("[MessageLogger] Failed to send log to %s: %v", url, err)
-		return
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		log.Printf("[MessageLogger] CT returned non-success status %d", resp.StatusCode)
 	}
 }
 
+// sendToTestAgent retries because these logs feed in-flight assertion
+// validation — a dropped POST loses the log for the current test window,
+// unlike the CT path where the log is also persisted.
 func (l *MessageLogger) sendToTestAgent(body []byte) {
 	url := l.testAgentURL + "/logs/message"
-	req, err := http.NewRequest(http.MethodPost, url, bytes.NewBuffer(body))
-	if err != nil {
-		return
-	}
-	req.Header.Set("Content-Type", "application/json")
+	for attempt, backoff := 0, 250*time.Millisecond; attempt < 3; attempt, backoff = attempt+1, backoff*4 {
+		if attempt > 0 {
+			time.Sleep(backoff)
+		}
+		req, err := http.NewRequest(http.MethodPost, url, bytes.NewBuffer(body))
+		if err != nil {
+			return
+		}
+		req.Header.Set("Content-Type", "application/json")
 
-	resp, err := l.testAgentClient.Do(req)
-	if err != nil {
-		log.Printf("[MessageLogger] Failed to send log to test-agent: %v", err)
+		resp, err := l.testAgentClient.Do(req)
+		if err != nil {
+			log.Printf("[MessageLogger] Failed to send log to test-agent (attempt %d/3): %v", attempt+1, err)
+			continue
+		}
+		status := resp.StatusCode
+		resp.Body.Close()
+		if status >= 200 && status < 300 {
+			return
+		}
+		if status >= 500 || status == http.StatusTooManyRequests {
+			log.Printf("[MessageLogger] Test-agent returned status %d (attempt %d/3)", status, attempt+1)
+			continue
+		}
+		log.Printf("[MessageLogger] Test-agent rejected log with status %d — not retrying", status)
 		return
 	}
-	resp.Body.Close()
+}
+
+// newLogID returns a random 128-bit hex id. The test-agent uses it to
+// deduplicate retried log deliveries; empty (on entropy failure) just means
+// no dedup for that message.
+func newLogID() string {
+	b := make([]byte, 16)
+	if _, err := rand.Read(b); err != nil {
+		return ""
+	}
+	return hex.EncodeToString(b)
 }
 
 func (l *MessageLogger) Stop() {

@@ -169,6 +169,7 @@ model HttpLog {
   requestSentAt     DateTime? // When the request was sent
   responseReceivedAt DateTime? // When the response was received
   timestamp        DateTime  @default(now())
+  logId          String?   // Sidecar-stamped delivery-dedup id (nullable: older sidecars omit it)
 
   // Relations
   instance NamespaceInstance? @relation(fields: [instanceId], references: [id], onDelete: Cascade)
@@ -179,6 +180,7 @@ model HttpLog {
   @@index([instanceId, timestamp]) // For timestamp window queries
   @@index([origin, target])
   @@index([isMocked])
+  @@unique([logId, timestamp]) // Dedup for retried deliveries; composite so it stays hypertable-compatible
   @@map("http_logs")
 }
 
@@ -216,6 +218,7 @@ model DatabaseLog {
   error          String? // Error message if failed
   duration       Int? // Query duration in milliseconds
   timestamp      DateTime @default(now())
+  logId          String?   // Sidecar-stamped delivery-dedup id (nullable: older sidecars omit it)
 
   // Relations
   instance NamespaceInstance? @relation(fields: [instanceId], references: [id], onDelete: Cascade)
@@ -225,6 +228,7 @@ model DatabaseLog {
   @@index([databaseName])
   @@index([timestamp])
   @@index([databaseType])
+  @@unique([logId, timestamp]) // Dedup for retried deliveries; composite so it stays hypertable-compatible
   @@map("database_logs")
 }
 
@@ -240,6 +244,7 @@ model MessageLog {
   contentType    String?
   metadata       Json?  // Protocol-specific fields (e.g. exchange/routingKey for AMQP, topic/partition for Kafka)
   timestamp      DateTime @default(now())
+  logId          String?   // Sidecar-stamped delivery-dedup id (nullable: older sidecars omit it)
 
   instance NamespaceInstance? @relation(fields: [instanceId], references: [id], onDelete: Cascade)
 
@@ -247,6 +252,7 @@ model MessageLog {
   @@index([instanceItemId])
   @@index([brokerName])
   @@index([timestamp])
+  @@unique([logId, timestamp]) // Dedup for retried deliveries; composite so it stays hypertable-compatible
   @@map("message_logs")
 }
 
