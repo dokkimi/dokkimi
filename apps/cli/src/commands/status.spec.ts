@@ -10,16 +10,21 @@ jest.mock('../lib/cli-utils', () => {
     fetchJson: jest.fn(),
   };
 });
+jest.mock('../lib/update-check', () => ({
+  getUpdateStatus: jest.fn(),
+}));
 
 import { getServiceStatus } from '@dokkimi/service-manager';
 import { fetchJson } from '../lib/cli-utils';
 import { loadConfig, buildServiceUrl } from '@dokkimi/config';
+import { getUpdateStatus } from '../lib/update-check';
 import { status } from './status';
 
 const mockServiceStatus = getServiceStatus as jest.Mock;
 const mockLoadConfig = loadConfig as jest.Mock;
 const mockFetchJson = fetchJson as jest.Mock;
 const mockBuildUrl = buildServiceUrl as jest.Mock;
+const mockGetUpdateStatus = getUpdateStatus as jest.Mock;
 
 let consoleSpy: jest.SpyInstance;
 let exitSpy: jest.SpyInstance;
@@ -40,6 +45,10 @@ beforeEach(() => {
   });
   mockLoadConfig.mockReturnValue(MOCK_CONFIG);
   mockBuildUrl.mockReturnValue('http://localhost:19001');
+  mockGetUpdateStatus.mockResolvedValue({
+    currentVersion: '1.0.0',
+    updateAvailable: false,
+  });
 });
 
 afterEach(() => {
@@ -228,6 +237,26 @@ describe('status', () => {
       .join('\n');
     expect(allLogs).toContain('No active instances.');
     expect(allLogs).not.toContain('stopped');
+  });
+
+  it('prints an update line when a newer version is cached', async () => {
+    mockServiceStatus.mockResolvedValue({ healthy: false });
+    mockGetUpdateStatus.mockResolvedValue({
+      currentVersion: '1.0.0',
+      updateAvailable: true,
+      latestVersion: '2.0.0',
+      updateCommand: 'npm install -g dokkimi',
+      releaseNotesUrl: 'https://dokkimi.com/docs/release-notes',
+    });
+
+    await expect(status([])).rejects.toThrow('process.exit');
+
+    const allLogs = consoleSpy.mock.calls
+      .map((c: unknown[]) => c.join(' '))
+      .join('\n');
+    expect(allLogs).toContain('Update available');
+    expect(allLogs).toContain('2.0.0');
+    expect(allLogs).toContain('npm install -g dokkimi');
   });
 
   it('handles null instances response', async () => {

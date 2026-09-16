@@ -19,7 +19,7 @@ const mockConfig = { DOKKIMI_VERSION: '1.0.0' };
 jest.mock('@dokkimi/config', () => mockConfig);
 
 import * as fs from 'fs';
-import { checkForUpdate } from './update-check';
+import { checkForUpdate, getUpdateStatus } from './update-check';
 
 const mockExistsSync = fs.existsSync as jest.Mock;
 const mockReadFileSync = fs.readFileSync as jest.Mock;
@@ -96,18 +96,13 @@ describe('update-check', () => {
   });
 
   describe('stale cache / no cache path', () => {
-    it('fetches from npm when cache is stale', async () => {
+    it('refreshes the cache in the background when stale, without printing', async () => {
       const staleState = {
         lastCheck: Date.now() - 25 * 60 * 60 * 1000,
         latestVersion: '1.0.0',
       };
 
-      mockExistsSync.mockImplementation((p: string) => {
-        if (p === CHECK_FILE) {
-          return true;
-        }
-        return true;
-      });
+      mockExistsSync.mockReturnValue(true);
       mockReadFileSync.mockReturnValue(JSON.stringify(staleState));
 
       globalThis.fetch = jest.fn().mockResolvedValue({
@@ -119,8 +114,51 @@ describe('update-check', () => {
       await flushPromises();
 
       expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+      expect(consoleSpy).not.toHaveBeenCalled();
+      const written = JSON.parse(mockWriteFileSync.mock.calls[0][1] as string);
+      expect(written.latestVersion).toBe('999.0.0');
+    });
+
+    it('prints banner from a stale cache that already knows a newer version', async () => {
+      const staleState = {
+        lastCheck: Date.now() - 25 * 60 * 60 * 1000,
+        latestVersion: '999.0.0',
+      };
+
+      mockExistsSync.mockReturnValue(true);
+      mockReadFileSync.mockReturnValue(JSON.stringify(staleState));
+
+      globalThis.fetch = jest.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ version: '999.0.0' }),
+      });
+
+      await checkForUpdate();
+      await flushPromises();
+
       expect(consoleSpy).toHaveBeenCalledTimes(1);
       expect(consoleSpy.mock.calls[0][0]).toContain('999.0.0');
+      expect(consoleSpy.mock.calls[0][0]).toContain('Update available');
+      expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+    });
+
+    it('keeps the last known version when the background refresh fails', async () => {
+      const staleState = {
+        lastCheck: Date.now() - 25 * 60 * 60 * 1000,
+        latestVersion: '999.0.0',
+      };
+
+      mockExistsSync.mockReturnValue(true);
+      mockReadFileSync.mockReturnValue(JSON.stringify(staleState));
+
+      globalThis.fetch = jest.fn().mockResolvedValue({ ok: false });
+
+      await checkForUpdate();
+      await flushPromises();
+
+      const written = JSON.parse(mockWriteFileSync.mock.calls[0][1] as string);
+      expect(written.latestVersion).toBe('999.0.0');
+      expect(written.lastCheck).toBeDefined();
     });
 
     it('fetches from npm when no cache file exists', async () => {
@@ -188,6 +226,66 @@ describe('update-check', () => {
       await flushPromises();
 
       expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('getUpdateStatus', () => {
+    it('answers from the cache without waiting for a fetch', async () => {
+      const staleState = {
+        lastCheck: Date.now() - 25 * 60 * 60 * 1000,
+        latestVersion: '999.0.0',
+      };
+
+      mockExistsSync.mockReturnValue(true);
+      mockReadFileSync.mockReturnValue(JSON.stringify(staleState));
+
+      // Never resolves — the result must come from the cache alone
+      globalThis.fetch = jest.fn().mockReturnValue(new Promise(() => {}));
+
+      const result = await getUpdateStatus();
+
+      expect(result.updateAvailable).toBe(true);
+      expect(result.latestVersion).toBe('999.0.0');
+      expect(result.currentVersion).toBe('1.0.0');
+    });
+
+    it('reports no update when there is no cache', async () => {
+      mockExistsSync.mockReturnValue(false);
+      globalThis.fetch = jest.fn().mockReturnValue(new Promise(() => {}));
+
+      const result = await getUpdateStatus();
+
+      expect(result).toEqual({
+        currentVersion: '1.0.0',
+        updateAvailable: false,
+      });
+    });
+
+    it('forceFetch uses the fetched version and writes the cache', async () => {
+      mockExistsSync.mockReturnValue(false);
+      globalThis.fetch = jest.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ version: '999.0.0' }),
+      });
+
+      const result = await getUpdateStatus({ forceFetch: true });
+
+      expect(result.updateAvailable).toBe(true);
+      expect(result.latestVersion).toBe('999.0.0');
+      const written = JSON.parse(mockWriteFileSync.mock.calls[0][1] as string);
+      expect(written.latestVersion).toBe('999.0.0');
+    });
+
+    it('forceFetch failure still writes lastCheck to rate-limit retries', async () => {
+      mockExistsSync.mockReturnValue(false);
+      globalThis.fetch = jest.fn().mockRejectedValue(new Error('offline'));
+
+      const result = await getUpdateStatus({ forceFetch: true });
+
+      expect(result.updateAvailable).toBe(false);
+      const written = JSON.parse(mockWriteFileSync.mock.calls[0][1] as string);
+      expect(written.lastCheck).toBeDefined();
+      expect(written.latestVersion).toBeUndefined();
     });
   });
 });

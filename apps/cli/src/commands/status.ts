@@ -10,6 +10,7 @@ import {
 } from '../lib/cli-utils';
 import { loadConfig, buildServiceUrl } from '@dokkimi/config';
 import { getServiceStatus } from '@dokkimi/service-manager';
+import { getUpdateStatus, UpdateStatus } from '../lib/update-check';
 
 export async function status(args: string[]): Promise<void> {
   if (args.includes('--help') || args.includes('-h')) {
@@ -26,10 +27,11 @@ export async function status(args: string[]): Promise<void> {
   const jsonMode = args.includes('--json');
   const config = loadConfig();
   const serviceStatus = await getServiceStatus(config);
+  const update = await getUpdateStatus();
 
   if (!serviceStatus.healthy) {
     if (jsonMode) {
-      console.log(JSON.stringify({ running: false, instances: [] }));
+      console.log(JSON.stringify({ running: false, instances: [], update }));
       return;
     }
     console.log('');
@@ -38,6 +40,7 @@ export async function status(args: string[]): Promise<void> {
     console.log(
       '  Run \x1b[1mdokkimi run\x1b[0m to start, or \x1b[1mdokkimi doctor\x1b[0m to diagnose issues.',
     );
+    printUpdateLine(update);
     console.log('');
     process.exit(0);
   }
@@ -73,6 +76,7 @@ export async function status(args: string[]): Promise<void> {
         running: true,
         ...(database !== undefined ? { database } : {}),
         instances,
+        update,
       }),
     );
     return;
@@ -121,5 +125,17 @@ export async function status(args: string[]): Promise<void> {
     }
   }
 
+  printUpdateLine(update);
   console.log('');
+}
+
+function printUpdateLine(update: UpdateStatus): void {
+  if (!update.updateAvailable) {
+    return;
+  }
+  console.log('');
+  console.log(
+    `\x1b[33mUpdate available: v${update.latestVersion} (you have v${update.currentVersion}). Run "${update.updateCommand}" to update.\x1b[0m`,
+  );
+  console.log(`\x1b[90mRelease notes: ${update.releaseNotesUrl}\x1b[0m`);
 }

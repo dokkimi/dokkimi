@@ -7,10 +7,19 @@ const CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000; // 1 day
 const CHECK_FILE = path.join(os.homedir(), '.dokkimi', 'update-check.json');
 const NPM_REGISTRY_URL = 'https://registry.npmjs.org/dokkimi/latest';
 const FETCH_TIMEOUT_MS = 3000;
+const RELEASE_NOTES_URL = 'https://dokkimi.com/docs/release-notes';
 
 interface CheckState {
   lastCheck: number;
   latestVersion?: string;
+}
+
+export interface UpdateStatus {
+  currentVersion: string;
+  updateAvailable: boolean;
+  latestVersion?: string;
+  updateCommand?: string;
+  releaseNotesUrl?: string;
 }
 
 function readCheckState(): CheckState | null {
@@ -53,36 +62,95 @@ function isNewer(remote: string, local: string): boolean {
 }
 
 /**
- * Checks npm for a newer version of dokkimi (at most once per day).
- * Prints a yellow warning if a newer version is available.
- * Never blocks, never throws — failures are silent.
+ * Homebrew installs the package under .../Cellar/dokkimi/<version>/libexec,
+ * so the real path of the running script identifies the install method.
  */
-export async function checkForUpdate(): Promise<void> {
-  const state = readCheckState();
-
-  // If we checked recently and have a cached result, use it
-  if (state && Date.now() - state.lastCheck < CHECK_INTERVAL_MS) {
-    if (state.latestVersion && isNewer(state.latestVersion, DOKKIMI_VERSION)) {
-      printUpdateBanner(state.latestVersion, DOKKIMI_VERSION);
+export function getUpdateCommand(): string {
+  try {
+    const realPath = fs.realpathSync(process.argv[1] ?? '');
+    if (realPath.split(path.sep).includes('Cellar')) {
+      return 'brew upgrade dokkimi';
     }
-    return;
+  } catch {
+    // Fall through to npm
   }
+  return 'npm install -g dokkimi';
+}
 
-  // Fetch in background — don't block the command
+function isCacheStale(state: CheckState | null): boolean {
+  return state === null || Date.now() - state.lastCheck >= CHECK_INTERVAL_MS;
+}
+
+// Fire-and-forget cache refresh. A failed fetch still advances lastCheck
+// (rate-limiting retries to once per day) and keeps the last known version.
+function refreshCacheInBackground(knownVersion?: string): void {
   fetchLatestVersion()
     .then((latest) => {
-      if (!latest) {
-        writeCheckState({ lastCheck: Date.now() });
-        return;
-      }
-      writeCheckState({ lastCheck: Date.now(), latestVersion: latest });
-      if (isNewer(latest, DOKKIMI_VERSION)) {
-        printUpdateBanner(latest, DOKKIMI_VERSION);
-      }
+      const version = latest ?? knownVersion;
+      writeCheckState({
+        lastCheck: Date.now(),
+        ...(version ? { latestVersion: version } : {}),
+      });
     })
     .catch(() => {
       // Silent failure
     });
+}
+
+/**
+ * Prints a yellow banner when the daily cache knows about a newer version
+ * (even a stale cache — the version it holds is still the best answer),
+ * then refreshes a stale cache in the background.
+ * Never blocks, never throws — failures are silent.
+ */
+export function checkForUpdate(): void {
+  const state = readCheckState();
+
+  if (state?.latestVersion && isNewer(state.latestVersion, DOKKIMI_VERSION)) {
+    printUpdateBanner(state.latestVersion);
+  }
+
+  if (isCacheStale(state)) {
+    refreshCacheInBackground(state?.latestVersion);
+  }
+}
+
+/**
+ * Resolves the current update status for status/doctor surfaces from the
+ * daily cache. Only forceFetch (doctor) hits the registry and blocks;
+ * otherwise a stale cache just triggers the background refresh.
+ */
+export async function getUpdateStatus(
+  options: { forceFetch?: boolean } = {},
+): Promise<UpdateStatus> {
+  const state = readCheckState();
+
+  let latest = state?.latestVersion;
+  if (options.forceFetch) {
+    const fetched = await fetchLatestVersion();
+    if (fetched) {
+      latest = fetched;
+    }
+    // Written even on failure so an unreachable registry is retried at most
+    // once per day instead of stalling every command.
+    writeCheckState({
+      lastCheck: Date.now(),
+      ...(latest ? { latestVersion: latest } : {}),
+    });
+  } else if (isCacheStale(state)) {
+    refreshCacheInBackground(state?.latestVersion);
+  }
+
+  if (latest && isNewer(latest, DOKKIMI_VERSION)) {
+    return {
+      currentVersion: DOKKIMI_VERSION,
+      updateAvailable: true,
+      latestVersion: latest,
+      updateCommand: getUpdateCommand(),
+      releaseNotesUrl: RELEASE_NOTES_URL,
+    };
+  }
+  return { currentVersion: DOKKIMI_VERSION, updateAvailable: false };
 }
 
 async function fetchLatestVersion(): Promise<string | null> {
@@ -101,8 +169,9 @@ async function fetchLatestVersion(): Promise<string | null> {
   }
 }
 
-function printUpdateBanner(latest: string, current: string): void {
+function printUpdateBanner(latest: string): void {
   console.log(
-    `\x1b[33mUpdate available: dokkimi v${latest} (you have v${current}). Run "npm install -g dokkimi" to update.\x1b[0m`,
+    `\x1b[33mUpdate available: dokkimi v${latest} (you have v${DOKKIMI_VERSION}). Run "${getUpdateCommand()}" to update.\x1b[0m\n` +
+      `\x1b[90mRelease notes: ${RELEASE_NOTES_URL}\x1b[0m`,
   );
 }

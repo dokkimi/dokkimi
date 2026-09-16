@@ -2,6 +2,7 @@ import * as path from 'path';
 import * as os from 'os';
 import { existsSync, readFileSync, readdirSync, statSync } from 'fs';
 import { PAD_LABEL } from '../lib/cli-utils';
+import { getUpdateStatus } from '../lib/update-check';
 import { loadConfig } from '@dokkimi/config';
 import { getServiceStatus } from '@dokkimi/service-manager';
 import { trackEvent } from '@dokkimi/telemetry';
@@ -289,6 +290,20 @@ export async function doctor(args: string[]): Promise<void> {
 
   const checks: Check[] = [];
 
+  // CLI version (force a registry check — doctor is a diagnostic)
+  const update = await getUpdateStatus({ forceFetch: true });
+  checks.push({
+    name: 'CLI Version',
+    pass: !update.updateAvailable,
+    warning: update.updateAvailable,
+    detail: update.updateAvailable
+      ? `v${update.currentVersion} — v${update.latestVersion} is available`
+      : `v${update.currentVersion}`,
+    fix: update.updateAvailable
+      ? `${update.updateCommand} — release notes: ${update.releaseNotesUrl}`
+      : undefined,
+  });
+
   // Node.js
   const nodeVersion = process.version;
   const nodeMajor = parseInt(nodeVersion.slice(1), 10);
@@ -342,10 +357,11 @@ export async function doctor(args: string[]): Promise<void> {
     const jsonChecks = checks.map((c) => ({
       name: c.name,
       passed: c.pass,
+      ...(c.warning ? { warning: true } : {}),
       detail: c.detail,
       ...(c.fix ? { fix: c.fix } : {}),
     }));
-    const failed = jsonChecks.filter((c) => !c.passed);
+    const failed = jsonChecks.filter((c) => !c.passed && !c.warning);
     console.log(
       JSON.stringify({
         passed: failures === 0,

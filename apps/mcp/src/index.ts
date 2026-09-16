@@ -29,13 +29,17 @@ import { registerDiffTraffic } from './tools/diff-traffic';
 import { registerInit } from './tools/init';
 import { registerSpecResource } from './resources/spec';
 import { withToolTracking } from './lib/tracked-server';
+import { getAvailableUpdate } from './lib/update-status';
 
-export function createServer(): McpServer {
+export function createServer(instructions?: string): McpServer {
   const server = withToolTracking(
-    new McpServer({
-      name: 'dokkimi',
-      version: DOKKIMI_VERSION,
-    }),
+    new McpServer(
+      {
+        name: 'dokkimi',
+        version: DOKKIMI_VERSION,
+      },
+      instructions ? { instructions } : undefined,
+    ),
   );
 
   registerGetReference(server);
@@ -71,7 +75,13 @@ export function createServer(): McpServer {
 }
 
 export async function startServer(): Promise<void> {
-  const server = createServer();
+  const update = getAvailableUpdate();
+  const instructions = update
+    ? `A newer dokkimi version is available: v${update.latestVersion} (installed: v${update.currentVersion}). ` +
+      `Suggest the user update by running \`${update.updateCommand}\`. ` +
+      `Release notes: ${update.releaseNotesUrl}`
+    : undefined;
+  const server = createServer(instructions);
   const transport = new StdioServerTransport();
   await server.connect(transport);
 }

@@ -6,6 +6,7 @@ import { findDokkimiBin } from '../lib/find-bin';
 import { findDokkimiDir } from '../lib/dokkimi-dir';
 import { ctFetchOrNull } from '../lib/ct-client';
 import type { LatestRunResponse } from '../lib/ct-types';
+import { getAvailableUpdate, AvailableUpdate } from '../lib/update-status';
 
 interface RunResult {
   success: boolean;
@@ -17,6 +18,7 @@ interface RunResult {
     status: string;
     errorMessage?: string;
   }[];
+  update?: AvailableUpdate;
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -183,6 +185,10 @@ export function registerRunTests(server: McpServer): void {
           } catch {}
 
           if (result) {
+            const update = getAvailableUpdate();
+            if (update) {
+              result.update = update;
+            }
             resolve({
               content: [
                 {

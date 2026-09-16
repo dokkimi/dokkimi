@@ -7,6 +7,21 @@ import CodeBlock from '../../components/CodeBlock.astro';
   <h1>Release Notes</h1>
   <p class="subtitle">What's new in each release.</p>
 
+  <h2>v0.5.9</h2>
+  <p><time datetime="2026-09-16">September 16, 2026</time></p>
+
+  <h3>Better update visibility</h3>
+  <p>Knowing a new version exists — and how to get it — no longer depends on catching a single banner.</p>
+  <ul>
+    <li><strong>Correct upgrade command per install method</strong> &mdash; The update banner now detects Homebrew installations and suggests <code>brew upgrade dokkimi</code> instead of <code>npm install -g dokkimi</code>. Previously, brew users following the banner would end up with two conflicting installations on their PATH.</li>
+    <li><strong>Release notes link</strong> &mdash; The update banner now includes a link to this page, so you can see what changed before updating.</li>
+    <li><strong><code>dokkimi status</code> shows updates</strong> &mdash; Both the human-readable output and <code>--json</code> now report update availability, including the version, upgrade command, and release notes link.</li>
+    <li><strong><code>dokkimi doctor</code> checks your CLI version</strong> &mdash; A new "CLI Version" check queries the registry directly and reports an available update as a warning (never a failure), with the upgrade command as the suggested fix.</li>
+    <li><strong>MCP server surfaces updates to AI agents</strong> &mdash; The MCP server includes update information in its startup instructions and in <code>run_tests</code> results, so agents driving Dokkimi can tell you when a newer version is available &mdash; even in long-lived sessions.</li>
+    <li><strong>No more mid-output banners</strong> &mdash; Update checks refresh their daily cache in the background and print only at command start, so the banner can no longer interleave with streaming <code>run</code> output. Failed registry checks retry at most once per day.</li>
+    <li><strong><code>doctor --json</code> distinguishes warnings from failures</strong> &mdash; Warning checks now carry <code>"warning": true</code> and are excluded from the <code>failed</code> array, so tooling no longer reads advisory items as broken environments.</li>
+  </ul>
+
   <h2>v0.5.8</h2>
   <p><time datetime="2026-09-15">September 15, 2026</time></p>
 

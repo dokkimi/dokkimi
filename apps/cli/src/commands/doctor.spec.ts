@@ -10,6 +10,9 @@ jest.mock('../lib/cli-utils', () => {
   const actual = jest.requireActual('../lib/cli-utils');
   return { ...actual };
 });
+jest.mock('../lib/update-check', () => ({
+  getUpdateStatus: jest.fn(),
+}));
 jest.mock('fs');
 
 import {
@@ -20,6 +23,7 @@ import {
 import { trackEvent } from '@dokkimi/telemetry';
 import { getServiceStatus } from '@dokkimi/service-manager';
 import { existsSync, readFileSync, statSync } from 'fs';
+import { getUpdateStatus } from '../lib/update-check';
 import { doctor } from './doctor';
 
 const mockExecSilent = execSilent as jest.Mock;
@@ -30,6 +34,7 @@ const mockServiceStatus = getServiceStatus as jest.Mock;
 const mockExistsSync = existsSync as jest.Mock;
 const mockReadFileSync = readFileSync as jest.Mock;
 const mockStatSync = statSync as jest.Mock;
+const mockGetUpdateStatus = getUpdateStatus as jest.Mock;
 
 let consoleSpy: jest.SpyInstance;
 let exitSpy: jest.SpyInstance;
@@ -70,6 +75,10 @@ beforeEach(() => {
   consoleSpy = jest.spyOn(console, 'log').mockImplementation();
   exitSpy = jest.spyOn(process, 'exit').mockImplementation(() => {
     throw new Error('process.exit');
+  });
+  mockGetUpdateStatus.mockResolvedValue({
+    currentVersion: '1.0.0',
+    updateAvailable: false,
   });
 });
 
@@ -175,6 +184,28 @@ describe('doctor', () => {
         checks: expect.any(Object),
       }),
     );
+  });
+
+  it('available update is a warning in --json, never a failure', async () => {
+    setupAllPassing();
+    mockGetUpdateStatus.mockResolvedValue({
+      currentVersion: '1.0.0',
+      updateAvailable: true,
+      latestVersion: '2.0.0',
+      updateCommand: 'npm install -g dokkimi',
+      releaseNotesUrl: 'https://dokkimi.com/docs/release-notes',
+    });
+
+    await doctor(['--json']);
+
+    expect(exitSpy).not.toHaveBeenCalled();
+    const output = JSON.parse(consoleSpy.mock.calls[0][0] as string);
+    expect(output.passed).toBe(true);
+    expect(output.failed).toBeUndefined();
+    const versionCheck = output.checks.find(
+      (c: { name: string }) => c.name === 'CLI Version',
+    );
+    expect(versionCheck).toMatchObject({ passed: false, warning: true });
   });
 
   it('missing .dokkimi/ is a warning, not a failure', async () => {
