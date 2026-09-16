@@ -3,7 +3,7 @@ import * as crypto from 'crypto';
 import { spawn } from 'child_process';
 import { PostHog } from 'posthog-node';
 import {
-  getConfig,
+  loadConfig,
   getTelemetryPrefs,
   setTelemetryPrefs,
   TelemetryPrefs,
@@ -17,7 +17,9 @@ const SHUTDOWN_TIMEOUT_MS = 2000;
 
 function getPosthogConfig(): { apiKey: string; host: string } | null {
   try {
-    const cfg = getConfig();
+    // loadConfig, not getConfig: the CLI initializes telemetry before any
+    // command has loaded the config, and getConfig throws until then.
+    const cfg = loadConfig();
     const apiKey = cfg.telemetry?.posthogApiKey;
     const host = cfg.telemetry?.posthogHost;
     if (apiKey && host) {

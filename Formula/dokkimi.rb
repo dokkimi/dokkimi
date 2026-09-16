@@ -1,8 +1,8 @@
 class Dokkimi < Formula
   desc "CLI for isolated Docker environments for microservice testing"
   homepage "https://dokkimi.com"
-  url "https://registry.npmjs.org/dokkimi/-/dokkimi-0.5.7.tgz"
-  sha256 "9921abe8bf04a2d755b6f03e702c4fa34a000baef475cddcd9d694a195600e13"
+  url "https://registry.npmjs.org/dokkimi/-/dokkimi-0.5.8.tgz"
+  sha256 "4671c5aebd6c5ba1dfa949700086f226eb612a235f5233dff1a4ab765e6a0bd3"
   license "Elastic-2.0"
 
   depends_on "node"

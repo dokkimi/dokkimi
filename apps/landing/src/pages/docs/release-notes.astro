@@ -7,6 +7,14 @@ import CodeBlock from '../../components/CodeBlock.astro';
   <h1>Release Notes</h1>
   <p class="subtitle">What's new in each release.</p>
 
+  <h2>v0.5.8</h2>
+  <p><time datetime="2026-09-15">September 15, 2026</time></p>
+
+  <h3>Bug fix</h3>
+  <ul>
+    <li><strong>CLI telemetry never initialized</strong> &mdash; The CLI initialized telemetry before loading its configuration, so the PostHog key was never found and anonymous usage events were silently dropped in every prior release. Telemetry now loads the config itself during initialization. Opt-out behavior is unchanged &mdash; <code>dokkimi config</code> preferences are respected exactly as before.</li>
+  </ul>
+
   <h2>v0.5.7</h2>
   <p><time datetime="2026-08-16">August 16, 2026</time></p>
 
