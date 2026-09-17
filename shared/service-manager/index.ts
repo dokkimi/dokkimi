@@ -1,7 +1,11 @@
 import path from 'path';
 import fs from 'fs';
 import { spawn } from 'child_process';
-import { DokkimiConfig, buildServiceUrl } from '@dokkimi/config';
+import {
+  DokkimiConfig,
+  DOKKIMI_VERSION,
+  buildServiceUrl,
+} from '@dokkimi/config';
 import { isProcessAlive, killProcess } from '@dokkimi/platform';
 
 import {
@@ -90,7 +94,13 @@ export async function ensureServicesRunning(
       cwd: servicePath,
       stdio,
       detached: true,
-      env: { ...process.env, LOG_FILE: logPath },
+      env: {
+        ...process.env,
+        LOG_FILE: logPath,
+        // Pin sidecar images to this release. Devs testing locally built
+        // sidecars can override with APP_VERSION=latest.
+        APP_VERSION: process.env.APP_VERSION ?? DOKKIMI_VERSION,
+      },
     });
 
     proc.unref();

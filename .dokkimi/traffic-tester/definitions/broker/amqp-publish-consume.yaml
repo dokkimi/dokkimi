@@ -382,7 +382,9 @@ tests:
       - name: Verify all three publishes were logged
         action:
           type: wait
-          durationMs: 500
+          # 1.5s, not 500ms: sidecar delivery retries land at +250ms, and this
+          # step flaked repeatedly at 500ms under CI load before retries existed.
+          durationMs: 1500
         assertions:
           - assertions:
               - count: $.messageLogs

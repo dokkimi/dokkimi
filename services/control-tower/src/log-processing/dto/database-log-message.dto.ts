@@ -8,6 +8,12 @@ import {
 import { Type } from 'class-transformer';
 
 export class DatabaseLogMessageDto {
+  // Delivery-dedup id stamped by the sidecar; persisted so the
+  // [logId, timestamp] unique constraint can dedup retried deliveries.
+  @IsOptional()
+  @IsString()
+  logId?: string;
+
   @IsString()
   instanceId!: string;
 

@@ -252,6 +252,21 @@ Log ingestion is HTTP-only — interceptors, DB Proxy, and Broker Proxy POST to 
 | CT modules      | DB                                       | Prisma               | Store logs and assertion results                                                       |
 | test-validation | RunsService (in-process)                 | direct injected call | Signal validation complete → CT updates run status                                     |
 
+### Log delivery reliability ("captured means observable")
+
+Sidecars (interceptor, db-proxy, broker-proxy) dual-write every captured log: to Control
+Tower `/logs/*` (the durable record) and to the test-agent (the copy assertions read).
+Both writes are at-least-once: each send retries up to 3 attempts with backoff
+(transport errors and 5xx only — a 4xx is a deterministic validation reject and is
+never retried). To make retries safe, every log is stamped with a random `logId` at
+capture time; the test-agent's step log buffer drops IDs it has already seen during the
+run (the seen-set survives window flushes, since a retry can straddle a step boundary),
+and CT enforces a `[logId, timestamp]` unique constraint, treating the
+violation as success. The constraint is composite so it remains valid if the log
+tables ever become TimescaleDB hypertables (unique indexes there must include the
+partitioning column) — and it works because retries reuse the capture-time timestamp.
+Logs without a `logId` (older sidecars) skip dedup and behave as before.
+
 ---
 
 ## Service Manager

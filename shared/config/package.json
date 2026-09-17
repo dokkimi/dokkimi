@@ -1,6 +1,6 @@
 {
   "name": "@dokkimi/config",
-  "version": "0.5.9",
+  "version": "0.5.10",
   "license": "Elastic-2.0",
   "description": "Centralized configuration for Dokkimi platform",
   "main": "dist/index.js",

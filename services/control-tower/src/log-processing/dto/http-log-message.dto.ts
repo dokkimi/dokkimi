@@ -1,6 +1,12 @@
 import { IsString, IsOptional, IsNumber, IsBoolean } from 'class-validator';
 
 export class HttpLogMessageDto {
+  // Delivery-dedup id stamped by the sidecar; persisted so the
+  // [logId, timestamp] unique constraint can dedup retried deliveries.
+  @IsOptional()
+  @IsString()
+  logId?: string;
+
   @IsString()
   instanceId!: string;
 

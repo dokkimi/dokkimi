@@ -3,6 +3,8 @@ package shared
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"log"
 	"net/http"
@@ -11,6 +13,7 @@ import (
 
 // DatabaseLogMessage represents the format expected by LPS POST /logs/database
 type DatabaseLogMessage struct {
+	LogID          string                   `json:"logId,omitempty"`
 	InstanceID     string                   `json:"instanceId"`
 	InstanceItemID string                   `json:"instanceItemId,omitempty"`
 	DatabaseType   string                   `json:"databaseType"`
@@ -57,6 +60,19 @@ func (l *QueryLogger) SetTestAgentURL(url string) {
 
 // Log queues a database log message for async delivery to LPS
 func (l *QueryLogger) Log(message DatabaseLogMessage) {
+	message.LogID = newLogID()
+
+	// Send the assertion-path copy immediately, decoupled from the LPS worker:
+	// a slow LPS upload ahead in the queue must never delay the log the
+	// test-agent is waiting on to validate the current step.
+	if l.testAgentURL != "" {
+		go func(msg DatabaseLogMessage) {
+			if body, err := json.Marshal(msg); err == nil {
+				l.sendToTestAgent(body)
+			}
+		}(message)
+	}
+
 	select {
 	case l.logChan <- message:
 		// Successfully queued
@@ -85,47 +101,86 @@ func (l *QueryLogger) sendLog(message DatabaseLogMessage) {
 		return
 	}
 
-	// Dual-write: send to test-agent in a separate goroutine (independent, fire-and-forget)
-	if l.testAgentURL != "" {
-		go l.sendToTestAgent(body)
-	}
-
+	// Retry transient failures — this write is the durable record. Runs on the
+	// sequential worker, so retries block the queue; the buffered channel
+	// absorbs the stall. The test-agent copy is sent at capture time, so this
+	// blocking can never delay assertion validation. A 4xx is deterministic
+	// (validation) — never retried.
 	url := l.logEndpointURL + "/logs/database"
-	req, err := http.NewRequest(http.MethodPost, url, bytes.NewBuffer(body))
-	if err != nil {
-		log.Printf("[QueryLogger] Failed to create request to %s: %v", url, err)
+	for attempt, backoff := 0, 250*time.Millisecond; attempt < 3; attempt, backoff = attempt+1, backoff*4 {
+		if attempt > 0 {
+			time.Sleep(backoff)
+		}
+		req, err := http.NewRequest(http.MethodPost, url, bytes.NewBuffer(body))
+		if err != nil {
+			log.Printf("[QueryLogger] Failed to create request to %s: %v", url, err)
+			return
+		}
+		req.Header.Set("Content-Type", "application/json")
+
+		resp, err := l.httpClient.Do(req)
+		if err != nil {
+			log.Printf("[QueryLogger] Failed to send log to %s (attempt %d/3): %v", url, attempt+1, err)
+			continue
+		}
+		status := resp.StatusCode
+		resp.Body.Close()
+		if status >= 200 && status < 300 {
+			return
+		}
+		if status >= 500 || status == http.StatusTooManyRequests {
+			log.Printf("[QueryLogger] LPS returned status %d for query: %.80s (attempt %d/3)", status, message.Query, attempt+1)
+			continue
+		}
+		log.Printf("[QueryLogger] LPS rejected log with status %d for query: %.80s — not retrying", status, message.Query)
 		return
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := l.httpClient.Do(req)
-	if err != nil {
-		log.Printf("[QueryLogger] Failed to send log to %s: %v", url, err)
-		return
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		log.Printf("[QueryLogger] LPS returned non-success status %d for query: %.80s", resp.StatusCode, message.Query)
 	}
 }
 
 // sendToTestAgent sends a copy of the log to the test-agent for inline validation.
+// Retries because these logs feed in-flight assertion validation — a dropped
+// POST loses the log for the current test window, unlike the LPS path where
+// the log is also persisted.
 func (l *QueryLogger) sendToTestAgent(body []byte) {
 	url := l.testAgentURL + "/logs/database"
-	req, err := http.NewRequest(http.MethodPost, url, bytes.NewBuffer(body))
-	if err != nil {
-		return
-	}
-	req.Header.Set("Content-Type", "application/json")
+	for attempt, backoff := 0, 250*time.Millisecond; attempt < 3; attempt, backoff = attempt+1, backoff*4 {
+		if attempt > 0 {
+			time.Sleep(backoff)
+		}
+		req, err := http.NewRequest(http.MethodPost, url, bytes.NewBuffer(body))
+		if err != nil {
+			return
+		}
+		req.Header.Set("Content-Type", "application/json")
 
-	resp, err := l.testAgentClient.Do(req)
-	if err != nil {
-		log.Printf("[QueryLogger] Failed to send log to test-agent: %v", err)
+		resp, err := l.testAgentClient.Do(req)
+		if err != nil {
+			log.Printf("[QueryLogger] Failed to send log to test-agent (attempt %d/3): %v", attempt+1, err)
+			continue
+		}
+		status := resp.StatusCode
+		resp.Body.Close()
+		if status >= 200 && status < 300 {
+			return
+		}
+		if status >= 500 || status == http.StatusTooManyRequests {
+			log.Printf("[QueryLogger] Test-agent returned status %d (attempt %d/3)", status, attempt+1)
+			continue
+		}
+		log.Printf("[QueryLogger] Test-agent rejected log with status %d — not retrying", status)
 		return
 	}
-	resp.Body.Close()
+}
+
+// newLogID returns a random 128-bit hex id. The test-agent uses it to
+// deduplicate retried log deliveries; empty (on entropy failure) just means
+// no dedup for that message.
+func newLogID() string {
+	b := make([]byte, 16)
+	if _, err := rand.Read(b); err != nil {
+		return ""
+	}
+	return hex.EncodeToString(b)
 }
 
 // Stop stops the logger worker and drains remaining logs

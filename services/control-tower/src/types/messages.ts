@@ -1,4 +1,5 @@
 export interface HttpLogMessage {
+  logId?: string; // Sidecar-stamped delivery-dedup id
   instanceId: string;
   instanceItemId?: string;
   method: string;

@@ -50,20 +50,39 @@ func (c *amqpConnection) relay() {
 	// Client → Upstream (intercept publishes)
 	go func() {
 		c.relayDirection(c.client, c.upstream, true)
+		// Propagate EOF via TCP half-close so the peer winds down naturally.
+		halfCloseWrite(c.upstream)
 		done <- struct{}{}
 	}()
 
 	// Upstream → Client (intercept delivers)
 	go func() {
 		c.relayDirection(c.upstream, c.client, false)
+		halfCloseWrite(c.client)
 		done <- struct{}{}
 	}()
 
-	// When either direction closes, shut down both
+	// Wait for BOTH directions to drain. Closing both sockets as soon as one
+	// direction ended (previous behavior) destroyed frames the other reader
+	// hadn't processed yet — publish logs vanished when a client published
+	// and disconnected quickly. The deadline bounds the drain in case the
+	// remaining peer never closes.
+	<-done
+	deadline := time.Now().Add(30 * time.Second)
+	c.client.SetReadDeadline(deadline)
+	c.upstream.SetReadDeadline(deadline)
 	<-done
 	c.client.Close()
 	c.upstream.Close()
-	<-done
+}
+
+// halfCloseWrite closes the write side of a TCP connection, sending FIN while
+// leaving the read side open for in-flight frames.
+func halfCloseWrite(conn net.Conn) {
+	type closeWriter interface{ CloseWrite() error }
+	if cw, ok := conn.(closeWriter); ok {
+		cw.CloseWrite()
+	}
 }
 
 func (c *amqpConnection) relayDirection(src, dst net.Conn, isClientToUpstream bool) {

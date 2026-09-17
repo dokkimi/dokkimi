@@ -7,6 +7,7 @@ import (
 
 // HttpLogMessage represents an HTTP traffic log from interceptors.
 type HttpLogMessage struct {
+	LogID              string                 `json:"logId,omitempty"`
 	InstanceID         string                 `json:"instanceId"`
 	Method             string                 `json:"method"`
 	URL                string                 `json:"url"`
@@ -27,6 +28,7 @@ type HttpLogMessage struct {
 
 // DatabaseLogMessage represents a database query log from db-proxies.
 type DatabaseLogMessage struct {
+	LogID          string                   `json:"logId,omitempty"`
 	InstanceID     string                   `json:"instanceId"`
 	InstanceItemID string                   `json:"instanceItemId,omitempty"`
 	DatabaseType   string                   `json:"databaseType"`
@@ -43,6 +45,7 @@ type DatabaseLogMessage struct {
 
 // MessageLogMessage represents a broker message log from broker-proxies.
 type MessageLogMessage struct {
+	LogID          string                 `json:"logId,omitempty"`
 	InstanceID     string                 `json:"instanceId"`
 	InstanceItemID string                 `json:"instanceItemId,omitempty"`
 	BrokerType     string                 `json:"brokerType"`
@@ -69,19 +72,39 @@ type StepLogBuffer struct {
 	dbLogs      []DatabaseLogMessage
 	messageLogs []MessageLogMessage
 	consoleLogs []ConsoleLogMessage
+	seenLogIds  map[string]struct{}
 	mu          sync.Mutex
 	lastLogTime time.Time
 }
 
 // NewStepLogBuffer creates a new empty step log buffer.
 func NewStepLogBuffer() *StepLogBuffer {
-	return &StepLogBuffer{}
+	return &StepLogBuffer{seenLogIds: make(map[string]struct{})}
+}
+
+// isDuplicate reports whether a logId has already been buffered this run
+// and records it otherwise. Sidecars retry test-agent delivery, so a lost
+// response can produce a second copy of the same log. The seen-set survives
+// window flushes — a retry can straddle a step boundary — and is bounded by
+// the run's total log count. Caller must hold b.mu.
+func (b *StepLogBuffer) isDuplicate(logID string) bool {
+	if logID == "" {
+		return false
+	}
+	if _, seen := b.seenLogIds[logID]; seen {
+		return true
+	}
+	b.seenLogIds[logID] = struct{}{}
+	return false
 }
 
 // AddHttpLog appends an HTTP log to the buffer.
 func (b *StepLogBuffer) AddHttpLog(log HttpLogMessage) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
+	if b.isDuplicate(log.LogID) {
+		return
+	}
 	b.httpLogs = append(b.httpLogs, log)
 	b.lastLogTime = time.Now()
 }
@@ -90,6 +113,9 @@ func (b *StepLogBuffer) AddHttpLog(log HttpLogMessage) {
 func (b *StepLogBuffer) AddDbLog(log DatabaseLogMessage) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
+	if b.isDuplicate(log.LogID) {
+		return
+	}
 	b.dbLogs = append(b.dbLogs, log)
 	b.lastLogTime = time.Now()
 }
@@ -98,6 +124,9 @@ func (b *StepLogBuffer) AddDbLog(log DatabaseLogMessage) {
 func (b *StepLogBuffer) AddMessageLog(log MessageLogMessage) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
+	if b.isDuplicate(log.LogID) {
+		return
+	}
 	b.messageLogs = append(b.messageLogs, log)
 	b.lastLogTime = time.Now()
 }
