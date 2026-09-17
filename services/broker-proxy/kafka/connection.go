@@ -11,6 +11,15 @@ import (
 	"github.com/dokkimi/dokkimi/services/broker-proxy/shared"
 )
 
+// halfCloseWrite closes the write side of a TCP connection, sending FIN while
+// leaving the read side open for in-flight frames.
+func halfCloseWrite(conn net.Conn) {
+	type closeWriter interface{ CloseWrite() error }
+	if cw, ok := conn.(closeWriter); ok {
+		cw.CloseWrite()
+	}
+}
+
 // pendingRequest tracks an in-flight request so we can match it to its response.
 type pendingRequest struct {
 	apiKey     int16
@@ -43,19 +52,30 @@ func (c *kafkaConnection) relay() {
 	// Client → Upstream: intercept Produce requests
 	go func() {
 		c.relayRequests()
+		// Propagate EOF via TCP half-close so the peer winds down naturally.
+		halfCloseWrite(c.upstream)
 		done <- struct{}{}
 	}()
 
 	// Upstream → Client: intercept Fetch responses
 	go func() {
 		c.relayResponses()
+		halfCloseWrite(c.client)
 		done <- struct{}{}
 	}()
 
+	// Wait for BOTH directions to drain. Closing both sockets as soon as one
+	// direction ended (previous behavior) destroyed frames the other reader
+	// hadn't processed yet — produce logs vanished when a client produced
+	// and disconnected quickly. The deadline bounds the drain in case the
+	// remaining peer never closes.
+	<-done
+	deadline := time.Now().Add(30 * time.Second)
+	c.client.SetReadDeadline(deadline)
+	c.upstream.SetReadDeadline(deadline)
 	<-done
 	c.client.Close()
 	c.upstream.Close()
-	<-done
 }
 
 func (c *kafkaConnection) relayRequests() {
