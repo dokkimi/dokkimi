@@ -79,6 +79,7 @@ CREATE TABLE public.instance_items (
 );
 CREATE TABLE public.http_logs (
     id text NOT NULL,
+    "logId" text,
     "instanceId" text,
     "instanceItemId" text,
     method text NOT NULL,
@@ -106,6 +107,7 @@ CREATE TABLE public.console_logs (
 );
 CREATE TABLE public.database_logs (
     id text NOT NULL,
+    "logId" text,
     "instanceId" text,
     "instanceItemId" text,
     "databaseType" text NOT NULL,
@@ -117,6 +119,19 @@ CREATE TABLE public.database_logs (
     "rowsAffected" integer,
     error text,
     duration integer,
+    "timestamp" timestamp(3) without time zone DEFAULT CURRENT_TIMESTAMP NOT NULL
+);
+CREATE TABLE public.message_logs (
+    id text NOT NULL,
+    "logId" text,
+    "instanceId" text,
+    "instanceItemId" text,
+    "brokerType" text NOT NULL,
+    "brokerName" text NOT NULL,
+    operation text NOT NULL,
+    body jsonb,
+    "contentType" text,
+    metadata jsonb,
     "timestamp" timestamp(3) without time zone DEFAULT CURRENT_TIMESTAMP NOT NULL
 );
 CREATE TABLE public.test_execution_logs (
@@ -177,6 +192,8 @@ ALTER TABLE ONLY public.console_logs
     ADD CONSTRAINT console_logs_pkey PRIMARY KEY (id);
 ALTER TABLE ONLY public.database_logs
     ADD CONSTRAINT database_logs_pkey PRIMARY KEY (id);
+ALTER TABLE ONLY public.message_logs
+    ADD CONSTRAINT message_logs_pkey PRIMARY KEY (id);
 ALTER TABLE ONLY public.test_execution_logs
     ADD CONSTRAINT test_execution_logs_pkey PRIMARY KEY (id);
 ALTER TABLE ONLY public.artifacts
@@ -213,12 +230,22 @@ CREATE INDEX "console_logs_instanceItemId_idx" ON public.console_logs USING btre
 CREATE INDEX console_logs_timestamp_idx ON public.console_logs USING btree ("timestamp");
 CREATE INDEX console_logs_level_idx ON public.console_logs USING btree (level);
 
+CREATE UNIQUE INDEX "http_logs_logId_timestamp_key" ON public.http_logs USING btree ("logId", "timestamp");
+
 -- Indexes: database_logs
 CREATE INDEX "database_logs_instanceId_idx" ON public.database_logs USING btree ("instanceId");
 CREATE INDEX "database_logs_instanceItemId_idx" ON public.database_logs USING btree ("instanceItemId");
 CREATE INDEX "database_logs_databaseName_idx" ON public.database_logs USING btree ("databaseName");
 CREATE INDEX database_logs_timestamp_idx ON public.database_logs USING btree ("timestamp");
 CREATE INDEX "database_logs_databaseType_idx" ON public.database_logs USING btree ("databaseType");
+CREATE UNIQUE INDEX "database_logs_logId_timestamp_key" ON public.database_logs USING btree ("logId", "timestamp");
+
+-- Indexes: message_logs
+CREATE INDEX "message_logs_instanceId_idx" ON public.message_logs USING btree ("instanceId");
+CREATE INDEX "message_logs_instanceItemId_idx" ON public.message_logs USING btree ("instanceItemId");
+CREATE INDEX "message_logs_brokerName_idx" ON public.message_logs USING btree ("brokerName");
+CREATE INDEX message_logs_timestamp_idx ON public.message_logs USING btree ("timestamp");
+CREATE UNIQUE INDEX "message_logs_logId_timestamp_key" ON public.message_logs USING btree ("logId", "timestamp");
 
 -- Indexes: test_execution_logs
 CREATE INDEX "test_execution_logs_instanceId_idx" ON public.test_execution_logs USING btree ("instanceId");
@@ -246,6 +273,8 @@ ALTER TABLE ONLY public.console_logs
     ADD CONSTRAINT "console_logs_instanceId_fkey" FOREIGN KEY ("instanceId") REFERENCES public.namespace_instances(id) ON UPDATE CASCADE ON DELETE CASCADE;
 ALTER TABLE ONLY public.database_logs
     ADD CONSTRAINT "database_logs_instanceId_fkey" FOREIGN KEY ("instanceId") REFERENCES public.namespace_instances(id) ON UPDATE CASCADE ON DELETE CASCADE;
+ALTER TABLE ONLY public.message_logs
+    ADD CONSTRAINT "message_logs_instanceId_fkey" FOREIGN KEY ("instanceId") REFERENCES public.namespace_instances(id) ON UPDATE CASCADE ON DELETE CASCADE;
 ALTER TABLE ONLY public.test_execution_logs
     ADD CONSTRAINT "test_execution_logs_instanceId_fkey" FOREIGN KEY ("instanceId") REFERENCES public.namespace_instances(id) ON UPDATE CASCADE ON DELETE CASCADE;
 ALTER TABLE ONLY public.artifacts
