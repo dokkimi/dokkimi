@@ -143,6 +143,9 @@ jobs:
       CONTROL_TOWER_HOST: 0.0.0.0
       DOKKIMI_MAX_CONCURRENT_NAMESPACES: 4
       DOKKIMI_MAX_BOOTING_NAMESPACES: 2
+      # CI must test the sidecar images built from this branch (tagged :latest
+      # locally), not the published release images the version pin would select.
+      APP_VERSION: latest
     steps:
       - uses: actions/checkout@v5
 

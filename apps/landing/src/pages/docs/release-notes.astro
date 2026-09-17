@@ -7,6 +7,18 @@ import CodeBlock from '../../components/CodeBlock.astro';
   <h1>Release Notes</h1>
   <p class="subtitle">What's new in each release.</p>
 
+  <h2>v0.5.10</h2>
+  <p><time datetime="2026-09-16">September 16, 2026</time></p>
+
+  <h3>Reliable log capture</h3>
+  <p>Captured traffic could occasionally go missing under load — an assertion would see 2 requests when your service made 3, or <code>dokkimi inspect</code> would show fewer queries than actually ran. This release makes capture delivery reliable end to end.</p>
+  <ul>
+    <li><strong>Log delivery now retries</strong> &mdash; Sidecars (interceptor, database proxies, broker proxies) previously sent each captured log exactly once, to both the assertion engine and stored history. A single dropped request under load meant the log silently vanished. Both paths now retry transient failures with backoff.</li>
+    <li><strong>Retries can't double-count</strong> &mdash; Every captured log carries a unique delivery id. The assertion engine and the database both deduplicate on it, so a retried delivery can never inflate a <code>count</code> assertion or duplicate an entry in your logs. The database migration runs automatically on your next <code>dokkimi run</code>.</li>
+    <li><strong>Sidecar images now match your CLI version</strong> &mdash; Sidecars previously resolved to <code>:latest</code> images, so a fresh machine could pair a newer sidecar with an older CLI. They are now pinned to the exact version you have installed and upgrade together with it. (Developers building sidecar images locally can override with <code>APP_VERSION=latest</code>.)</li>
+  </ul>
+  <p>If you ever saw an intermittent assertion failure claiming fewer requests, queries, or messages than your test actually produced &mdash; that was this, and it's fixed.</p>
+
   <h2>v0.5.9</h2>
   <p><time datetime="2026-09-16">September 16, 2026</time></p>
 
