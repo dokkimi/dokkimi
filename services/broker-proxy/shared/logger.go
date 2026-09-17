@@ -55,6 +55,18 @@ func (l *MessageLogger) SetTestAgentURL(url string) {
 
 func (l *MessageLogger) Log(message MessageLogMessage) {
 	message.LogID = newLogID()
+
+	// Send the assertion-path copy immediately, decoupled from the CT worker:
+	// a slow CT upload ahead in the queue must never delay the log the
+	// test-agent is waiting on to validate the current step.
+	if l.testAgentURL != "" {
+		go func(msg MessageLogMessage) {
+			if body, err := json.Marshal(msg); err == nil {
+				l.sendToTestAgent(body)
+			}
+		}(message)
+	}
+
 	select {
 	case l.logChan <- message:
 	default:
@@ -88,13 +100,11 @@ func (l *MessageLogger) sendLog(message MessageLogMessage) {
 		return
 	}
 
-	if l.testAgentURL != "" {
-		go l.sendToTestAgent(body)
-	}
-
 	// Retry transient failures — this write is the durable record. Runs on the
 	// sequential worker, so retries block the queue; the buffered channel
-	// absorbs the stall. A 4xx is deterministic (validation) — never retried.
+	// absorbs the stall. The test-agent copy is sent at capture time, so this
+	// blocking can never delay assertion validation. A 4xx is deterministic
+	// (validation) — never retried.
 	url := l.logEndpointURL + "/logs/message"
 	for attempt, backoff := 0, 250*time.Millisecond; attempt < 3; attempt, backoff = attempt+1, backoff*4 {
 		if attempt > 0 {

@@ -61,6 +61,18 @@ func (l *QueryLogger) SetTestAgentURL(url string) {
 // Log queues a database log message for async delivery to LPS
 func (l *QueryLogger) Log(message DatabaseLogMessage) {
 	message.LogID = newLogID()
+
+	// Send the assertion-path copy immediately, decoupled from the LPS worker:
+	// a slow LPS upload ahead in the queue must never delay the log the
+	// test-agent is waiting on to validate the current step.
+	if l.testAgentURL != "" {
+		go func(msg DatabaseLogMessage) {
+			if body, err := json.Marshal(msg); err == nil {
+				l.sendToTestAgent(body)
+			}
+		}(message)
+	}
+
 	select {
 	case l.logChan <- message:
 		// Successfully queued
@@ -89,14 +101,11 @@ func (l *QueryLogger) sendLog(message DatabaseLogMessage) {
 		return
 	}
 
-	// Dual-write: send to test-agent in a separate goroutine (independent, fire-and-forget)
-	if l.testAgentURL != "" {
-		go l.sendToTestAgent(body)
-	}
-
 	// Retry transient failures — this write is the durable record. Runs on the
 	// sequential worker, so retries block the queue; the buffered channel
-	// absorbs the stall. A 4xx is deterministic (validation) — never retried.
+	// absorbs the stall. The test-agent copy is sent at capture time, so this
+	// blocking can never delay assertion validation. A 4xx is deterministic
+	// (validation) — never retried.
 	url := l.logEndpointURL + "/logs/database"
 	for attempt, backoff := 0, 250*time.Millisecond; attempt < 3; attempt, backoff = attempt+1, backoff*4 {
 		if attempt > 0 {

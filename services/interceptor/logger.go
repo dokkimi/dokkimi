@@ -207,6 +207,17 @@ func (l *Logger) logResponseInternal(r *http.Request, statusCode int, isMocked b
 		ResponseReceivedAt: responseReceivedAtStr,
 	}
 
+	// Send the assertion-path copy immediately, decoupled from the CT worker:
+	// a slow CT upload ahead in the queue must never delay the log the
+	// test-agent is waiting on to validate the current step.
+	if l.testAgentURL != "" {
+		go func(msg HttpLogMessage) {
+			if body, err := json.Marshal(msg); err == nil {
+				l.sendToTestAgent(body, msg.InstanceID)
+			}
+		}(logMessage)
+	}
+
 	select {
 	case l.logChan <- logMessage:
 		// Successfully queued
@@ -236,14 +247,11 @@ func (l *Logger) sendLog(message HttpLogMessage) {
 		return // Drop log on marshal error
 	}
 
-	// Dual-write: send to test-agent in a separate goroutine (independent, fire-and-forget)
-	if l.testAgentURL != "" {
-		go l.sendToTestAgent(body, message.InstanceID)
-	}
-
 	// Retry transient failures — this write is the durable record. Runs on the
 	// sequential worker, so retries block the queue; the buffered channel
-	// absorbs the stall. A 4xx is deterministic (validation) — never retried.
+	// absorbs the stall. The test-agent copy is sent at capture time, so this
+	// blocking can never delay assertion validation. A 4xx is deterministic
+	// (validation) — never retried.
 	url := l.logEndpointURL + "/logs/http"
 	for attempt, backoff := 0, 250*time.Millisecond; attempt < 3; attempt, backoff = attempt+1, backoff*4 {
 		if attempt > 0 {
