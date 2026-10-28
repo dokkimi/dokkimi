@@ -1,6 +1,6 @@
 type: SERVICE
 name: minio
-image: quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z
+image: cgr.dev/chainguard/minio@sha256:e70b2b1e74d79457f808710483bd726ff364529ca30736eaa15a6ab547d3a5a7
 port: 9000
 healthCheck: /minio/health/live
 command: ['server', '/data']
