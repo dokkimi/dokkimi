@@ -153,13 +153,17 @@ export class DockerDatabaseGroupService {
     }
   }
 
+  // Internal ports must stay outside Linux's ephemeral range (32768-60999).
+  // The db-proxy polls localhost:<port> while the database boots; with the
+  // port inside the range, a poll can be assigned that same port as its
+  // source and self-connect, and the database then fails to bind it.
   private getDbInternalPort(databaseType: string): number {
     const dbType = databaseType.toLowerCase();
     if (dbType === 'postgres' || dbType === 'postgresql') {
-      return 55432;
+      return 15432;
     }
     if (dbType === 'mysql' || dbType === 'mariadb') {
-      return 33306;
+      return 13306;
     }
     if (dbType === 'redis') {
       return 63790;

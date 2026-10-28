@@ -27,7 +27,7 @@ jest.mock('@dokkimi/config', () => ({
   }),
   buildDbProxyEnvVars: jest.fn().mockReturnValue([
     { name: 'DATABASE_TYPE', value: 'postgres' },
-    { name: 'DATABASE_PORT', value: '55432' },
+    { name: 'DATABASE_PORT', value: '15432' },
     { name: 'CONTROL_TOWER_URL', value: 'http://host.docker.internal:19001' },
   ]),
   buildServiceUrl: jest
@@ -203,7 +203,7 @@ describe('DockerDatabaseGroupService', () => {
   });
 
   describe('port shifting', () => {
-    it('should shift postgres to internal port 55432', async () => {
+    it('should shift postgres to internal port 15432', async () => {
       await service.createDatabaseGroup(
         'dokkimi-run-inst1',
         'inst1',
@@ -214,13 +214,13 @@ describe('DockerDatabaseGroupService', () => {
 
       const proxyCall = mockDockerClient.runContainer.mock.calls[0][0];
       expect(proxyCall.exposedPorts).toContain(5432);
-      expect(proxyCall.exposedPorts).toContain(55432);
+      expect(proxyCall.exposedPorts).toContain(15432);
 
       const dbCall = mockDockerClient.runContainer.mock.calls[1][0];
-      expect(dbCall.env.PGPORT).toBe('55432');
+      expect(dbCall.env.PGPORT).toBe('15432');
     });
 
-    it('should shift mysql to internal port 33306', async () => {
+    it('should shift mysql to internal port 13306', async () => {
       mockDatabaseConfig.getConfig.mockReturnValue(mysqlConfig());
 
       await service.createDatabaseGroup(
@@ -232,7 +232,7 @@ describe('DockerDatabaseGroupService', () => {
       );
 
       const dbCall = mockDockerClient.runContainer.mock.calls[1][0];
-      expect(dbCall.env.MYSQL_TCP_PORT).toBe('33306');
+      expect(dbCall.env.MYSQL_TCP_PORT).toBe('13306');
     });
 
     it('should shift redis via command arg', async () => {
