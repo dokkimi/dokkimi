@@ -19,7 +19,6 @@ export const DOKKIMI_IMAGES = {
   // Pinned (not :latest) so visual regression baselines stay stable across
   // runs — anti-aliasing and font rendering shift between Chromium versions.
   chromiumHeadless: `chromedp/headless-shell:${DEFAULT_CHROME_VERSION}`,
-  initFetcher: 'busybox:1.37',
 };
 
 /**

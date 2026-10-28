@@ -52,7 +52,17 @@ export async function ensureServicesRunning(
   timeoutMs: number = 60000,
   signal?: AbortSignal,
 ): Promise<void> {
-  await ensureDockerRunning(120000, signal);
+  const { host } = config.services.controlTower;
+  const url = buildServiceUrl(config.services.controlTower);
+
+  // A healthy remote Control Tower (CONTROL_TOWER_HOST) owns its own Docker.
+  // A local one still needs local Docker, which may have been quit since it
+  // started, and its health check does not cover Docker.
+  const isLocal =
+    host === 'localhost' || host === '127.0.0.1' || host === '0.0.0.0';
+  if (isLocal || !(await checkHealth(url)).healthy) {
+    await ensureDockerRunning(120000, signal);
+  }
 
   const lockTimeoutMs = timeoutMs + 60000;
   const releaseLock = await acquireLock(lockTimeoutMs, signal);
@@ -63,7 +73,6 @@ export async function ensureServicesRunning(
     runPrismaMigrate(appRoot, config);
 
     const state = readDaemonState();
-    const url = buildServiceUrl(config.services.controlTower);
     const health = await checkHealth(url);
 
     if (health.healthy) {
