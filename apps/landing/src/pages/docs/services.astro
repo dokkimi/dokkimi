@@ -110,7 +110,7 @@ import CodeBlock from '../../components/CodeBlock.astro';
   <CodeBlock code={`{
   "type": "SERVICE",
   "name": "minio",
-  "image": "minio/minio:latest",
+  "image": "cgr.dev/chainguard/minio:latest",
   "port": 9000,
   "healthCheck": "/minio/health/live",
   "command": ["server", "/data"],
