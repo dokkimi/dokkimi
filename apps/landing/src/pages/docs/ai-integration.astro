@@ -95,6 +95,7 @@ import CodeBlock from '../../components/CodeBlock.astro';
     </tbody>
   </table>
   <p>The complete Dokkimi specification is written to <code>~/.dokkimi/dokkimi-instructions.md</code> and referenced from each tool's context. This means your agent knows the full definition format, all assertion operators, and every CLI command — without you pointing it to docs.</p>
+  <p>An existing <code>dokkimi</code> MCP entry is never overwritten, and a config file that can't be read as JSON is left untouched. Run <code>dokkimi doctor</code> to check registration.</p>
 
   <h2>Writing tests with AI</h2>
   <p>Just describe what you want to test. Your AI assistant already has the full Dokkimi spec in context:</p>

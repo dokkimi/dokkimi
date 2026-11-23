@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import { prompt } from '../lib/cli-utils';
+import { MCP_CONFIG_PATHS, removeMcpEntry } from '../lib/mcp-config';
 import { shutdownServices } from '@dokkimi/service-manager';
 import { trackEvent, shutdownTelemetry } from '@dokkimi/telemetry';
 import { execSilent } from '@dokkimi/platform';
@@ -194,25 +195,13 @@ function removeLlmConfigPointers(): void {
   }
 
   // Remove MCP server entries
-  for (const configPath of [
-    path.join(os.homedir(), '.claude.json'),
-    path.join(os.homedir(), '.cursor', 'mcp.json'),
-  ]) {
+  for (const configPath of MCP_CONFIG_PATHS) {
     try {
-      if (!fs.existsSync(configPath)) {
-        continue;
-      }
-      const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
-      if (config.mcpServers?.dokkimi) {
-        delete config.mcpServers.dokkimi;
-        fs.writeFileSync(
-          configPath,
-          JSON.stringify(config, null, 2) + '\n',
-          'utf-8',
-        );
-      }
-    } catch {
-      // Best-effort
+      removeMcpEntry(configPath);
+    } catch (err) {
+      console.log(
+        `       Skipped ${configPath}: ${(err as Error).message}. Remove any dokkimi entry manually.`,
+      );
     }
   }
 }

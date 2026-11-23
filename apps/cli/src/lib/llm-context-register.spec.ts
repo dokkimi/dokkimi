@@ -18,6 +18,7 @@ const mockWriteFileSync = jest.fn(
   },
 );
 const mockMkdirSync = jest.fn();
+const mockStatSync = jest.fn();
 
 jest.mock('fs', () => ({
   existsSync: (...args: unknown[]) => mockExistsSync(args[0] as string),
@@ -26,6 +27,7 @@ jest.mock('fs', () => ({
     mockWriteFileSync(args[0] as string, args[1] as string, args[2] as string),
   mkdirSync: (...args: unknown[]) =>
     mockMkdirSync(args[0] as string, args[1] as object),
+  statSync: (...args: unknown[]) => mockStatSync(args[0] as string),
 }));
 
 jest.mock('os', () => ({
@@ -35,6 +37,12 @@ jest.mock('os', () => ({
 const mockConfig = { DOKKIMI_VERSION: '1.2.3' };
 jest.mock('@dokkimi/config', () => mockConfig);
 
+jest.mock('./mcp-config', () => ({
+  MCP_CONFIG_PATHS: ['/mock-home/.claude.json', '/mock-home/.cursor/mcp.json'],
+  addMcpEntry: jest.fn(),
+}));
+
+import { addMcpEntry } from './mcp-config';
 import { registerLlmContext } from './llm-context-register';
 
 // ---------------------------------------------------------------------------
@@ -293,5 +301,81 @@ describe('registerLlmContext', () => {
 
     // Should not throw — errors are silently caught
     expect(() => registerLlmContext()).not.toThrow();
+  });
+
+  describe('MCP registration', () => {
+    const mockAddMcpEntry = addMcpEntry as jest.Mock;
+    const originalIsTTY = process.stderr.isTTY;
+    let errorSpy: jest.SpyInstance;
+
+    beforeEach(() => {
+      mockFs[INSTRUCTIONS_SOURCE] = '# Instructions';
+      mockAddMcpEntry.mockReset();
+      mockStatSync.mockReset();
+      mockStatSync.mockImplementation(() => {
+        throw new Error('ENOENT');
+      });
+      process.stderr.isTTY = true;
+      errorSpy = jest.spyOn(console, 'error').mockImplementation();
+    });
+
+    afterEach(() => {
+      process.stderr.isTTY = originalIsTTY;
+      errorSpy.mockRestore();
+    });
+
+    const failFirst = () =>
+      mockAddMcpEntry.mockImplementationOnce(() => {
+        throw new Error('is not valid JSON');
+      });
+
+    it.each(['1.2.3', '1.0.0'])(
+      'registers in every config file (stored version %s)',
+      (storedVersion) => {
+        mockFs[VERSION_PATH] = storedVersion;
+        registerLlmContext();
+        expect(mockAddMcpEntry.mock.calls.map((c) => c[0])).toEqual([
+          '/mock-home/.claude.json',
+          '/mock-home/.cursor/mcp.json',
+        ]);
+        expect(errorSpy).not.toHaveBeenCalled();
+      },
+    );
+
+    it('warns about an unusable file and still registers in the next', () => {
+      failFirst();
+      registerLlmContext();
+      expect(mockAddMcpEntry).toHaveBeenCalledTimes(2);
+      expect(errorSpy).toHaveBeenCalledWith(
+        expect.stringContaining('/mock-home/.claude.json is not valid JSON'),
+      );
+      expect(mockFs[path.join(DOKKIMI_DIR, '.mcp-warned')]).toBeDefined();
+    });
+
+    it('does not repeat the warning within a day', () => {
+      mockStatSync.mockReturnValue({ mtimeMs: Date.now() - 60_000 });
+      failFirst();
+      registerLlmContext();
+      expect(errorSpy).not.toHaveBeenCalled();
+    });
+
+    it('warns again after a day', () => {
+      mockStatSync.mockReturnValue({ mtimeMs: Date.now() - 25 * 3_600_000 });
+      failFirst();
+      registerLlmContext();
+      expect(errorSpy).toHaveBeenCalled();
+    });
+
+    it('stays silent, without using up the warning, when not a terminal', () => {
+      process.stderr.isTTY = false;
+      failFirst();
+      registerLlmContext();
+      expect(errorSpy).not.toHaveBeenCalled();
+      expect(mockWriteFileSync).not.toHaveBeenCalledWith(
+        path.join(DOKKIMI_DIR, '.mcp-warned'),
+        expect.anything(),
+        expect.anything(),
+      );
+    });
   });
 });

@@ -2,6 +2,7 @@ import * as path from 'path';
 import * as os from 'os';
 import { existsSync, readFileSync, readdirSync, statSync } from 'fs';
 import { PAD_LABEL } from '../lib/cli-utils';
+import { getMcpConfigProblem, MCP_CONFIG_PATHS } from '../lib/mcp-config';
 import { getUpdateStatus } from '../lib/update-check';
 import { loadConfig } from '@dokkimi/config';
 import { getServiceStatus } from '@dokkimi/service-manager';
@@ -250,6 +251,22 @@ function checkRunStorage(): Check {
   };
 }
 
+function checkMcpConfig(): Check {
+  const problems = MCP_CONFIG_PATHS.map(getMcpConfigProblem).filter(
+    (p) => p !== null,
+  );
+  if (problems.length === 0) {
+    return { name: 'MCP Config', pass: true, detail: 'registered' };
+  }
+  return {
+    name: 'MCP Config',
+    pass: false,
+    warning: true,
+    detail: problems.join('; '),
+    fix: 'Fix the file, then run any dokkimi command to register, or add a "dokkimi" MCP server manually: {"command": "dokkimi", "args": ["mcp"]}',
+  };
+}
+
 async function checkDokkimiServices(): Promise<Check> {
   try {
     const config = loadConfig();
@@ -335,6 +352,9 @@ export async function doctor(args: string[]): Promise<void> {
 
   // Dokkimi services
   checks.push(await checkDokkimiServices());
+
+  // MCP registration in AI tool configs (warning only)
+  checks.push(checkMcpConfig());
 
   // .dokkimi/ in CWD (warning only)
   const dokkimiDir = path.join(process.cwd(), '.dokkimi');

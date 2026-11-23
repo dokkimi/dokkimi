@@ -6,11 +6,17 @@ jest.mock('fs', () => {
     readFileSync: jest.fn(),
     writeFileSync: jest.fn(),
     rmSync: jest.fn(),
+    unlinkSync: jest.fn(),
   };
 });
 
 jest.mock('../lib/cli-utils', () => ({
   prompt: jest.fn(),
+}));
+
+jest.mock('../lib/mcp-config', () => ({
+  MCP_CONFIG_PATHS: ['/home/.claude.json', '/home/.cursor/mcp.json'],
+  removeMcpEntry: jest.fn(),
 }));
 
 jest.mock('@dokkimi/service-manager', () => ({
@@ -31,6 +37,7 @@ import { prompt } from '../lib/cli-utils';
 import { shutdownServices } from '@dokkimi/service-manager';
 import { trackEvent, shutdownTelemetry } from '@dokkimi/telemetry';
 import { execSilent } from '@dokkimi/platform';
+import { removeMcpEntry } from '../lib/mcp-config';
 import { uninstall } from './uninstall';
 
 const mockExistsSync = fs.existsSync as jest.Mock;
@@ -122,6 +129,23 @@ describe('uninstall', () => {
     expect(mockTrackEvent).toHaveBeenCalledWith(
       'cli_uninstall',
       expect.objectContaining({ confirmed: true }),
+    );
+  });
+
+  it('reports an unusable MCP config and continues with the next', async () => {
+    mockPrompt.mockResolvedValue('y');
+    (removeMcpEntry as jest.Mock).mockImplementationOnce(() => {
+      throw new Error('is not valid JSON');
+    });
+
+    await uninstall([]);
+
+    expect(removeMcpEntry).toHaveBeenCalledTimes(2);
+    expect(consoleLogSpy).toHaveBeenCalledWith(
+      expect.stringContaining('/home/.claude.json: is not valid JSON'),
+    );
+    expect(consoleLogSpy).toHaveBeenCalledWith(
+      expect.stringContaining('Dokkimi has been removed'),
     );
   });
 

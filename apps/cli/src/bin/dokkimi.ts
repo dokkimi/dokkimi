@@ -55,10 +55,14 @@ Run 'dokkimi <command> --help' for command-specific help.
 
 async function main() {
   initTelemetry({ showFirstRunNotice: true, detachedFlush: true });
-  registerLlmContext();
 
   const args = process.argv.slice(2);
   const command = args[0];
+
+  // Uninstall removes what this registers
+  if (command !== 'uninstall') {
+    registerLlmContext();
+  }
 
   if (
     !command ||

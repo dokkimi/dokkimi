@@ -2,10 +2,13 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import { DOKKIMI_VERSION } from '@dokkimi/config';
+import { addMcpEntry, MCP_CONFIG_PATHS } from './mcp-config';
 
 const DOKKIMI_DIR = path.join(os.homedir(), '.dokkimi');
 const INSTRUCTIONS_PATH = path.join(DOKKIMI_DIR, 'dokkimi-instructions.md');
 const VERSION_PATH = path.join(DOKKIMI_DIR, '.version');
+const MCP_WARNED_PATH = path.join(DOKKIMI_DIR, '.mcp-warned');
+const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 const DOKKIMI_MARKER = '<!-- dokkimi -->';
 
 const HINT = `When the user asks about Dokkimi, .dokkimi/ files, or writing test definitions for microservices, use the Dokkimi MCP tools (get_reference, validate_file, list_fragments, resolve_definition, run_tests, dump_results). Call get_reference first to look up the relevant spec section before writing or editing definition files. Do not guess field names, operators, or file structure.
@@ -80,46 +83,49 @@ function readInstructionsSource(): string | null {
 }
 
 /**
- * Ensures the MCP server is registered in global AI tool settings.
+ * Prints registration problems at most once a day, and only to a terminal, so
+ * MCP stdio, npm postinstall and scripted runs neither get the noise nor use up
+ * the day's warning. `dokkimi doctor` always reports them.
  */
-function registerMcpServer(): void {
-  const mcpConfig = { command: 'dokkimi', args: ['mcp'] };
-
-  // Claude Code: ~/.claude.json
+function warnOncePerDay(problems: string[]): void {
+  if (!process.stderr.isTTY) {
+    return;
+  }
   try {
-    const claudeConfig = path.join(os.homedir(), '.claude.json');
-    let config: Record<string, unknown> = {};
-    try {
-      config = JSON.parse(fs.readFileSync(claudeConfig, 'utf-8'));
-    } catch {
-      // File doesn't exist or is invalid — start fresh
+    if (Date.now() - fs.statSync(MCP_WARNED_PATH).mtimeMs < ONE_DAY_MS) {
+      return;
     }
-    if (!config.mcpServers || typeof config.mcpServers !== 'object') {
-      config.mcpServers = {};
-    }
-    (config.mcpServers as Record<string, unknown>).dokkimi = mcpConfig;
-    fs.writeFileSync(claudeConfig, JSON.stringify(config, null, 2) + '\n');
+  } catch {
+    // Not warned yet
+  }
+  for (const problem of problems) {
+    console.error(
+      `Warning: could not register the Dokkimi MCP server: ${problem}`,
+    );
+  }
+  console.error("Run 'dokkimi doctor' for details.");
+  try {
+    fs.mkdirSync(DOKKIMI_DIR, { recursive: true });
+    fs.writeFileSync(MCP_WARNED_PATH, new Date().toISOString(), 'utf-8');
   } catch {
     // silently skip
   }
+}
 
-  // Cursor: ~/.cursor/mcp.json
-  try {
-    const cursorMcp = path.join(os.homedir(), '.cursor', 'mcp.json');
-    fs.mkdirSync(path.dirname(cursorMcp), { recursive: true });
-    let config: Record<string, unknown> = {};
+/**
+ * Ensures the MCP server is registered in global AI tool settings.
+ */
+function registerMcpServer(): void {
+  const problems: string[] = [];
+  for (const configPath of MCP_CONFIG_PATHS) {
     try {
-      config = JSON.parse(fs.readFileSync(cursorMcp, 'utf-8'));
-    } catch {
-      // File doesn't exist or is invalid — start fresh
+      addMcpEntry(configPath);
+    } catch (err) {
+      problems.push(`${configPath} ${(err as Error).message}`);
     }
-    if (!config.mcpServers || typeof config.mcpServers !== 'object') {
-      config.mcpServers = {};
-    }
-    (config.mcpServers as Record<string, unknown>).dokkimi = mcpConfig;
-    fs.writeFileSync(cursorMcp, JSON.stringify(config, null, 2) + '\n');
-  } catch {
-    // silently skip
+  }
+  if (problems.length > 0) {
+    warnOncePerDay(problems);
   }
 }
 
