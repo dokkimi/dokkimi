@@ -221,8 +221,8 @@ Docker Network: dokkimi-run-{instanceId}
 │    Network alias: "service-b"
 │
 ├─ [postgres-db-group] (shared network namespace)
-│    ├─ db-proxy-postgres (primary, listens on 5432, proxies to localhost:55432)
-│    └─ postgres (shifted to port 55432 via PGPORT, only reachable via db-proxy)
+│    ├─ db-proxy-postgres (primary, listens on 5432, proxies to localhost:15432)
+│    └─ postgres (shifted to port 15432 via PGPORT, only reachable via db-proxy)
 │    Network alias: "postgres-db"
 │
 ├─ [test-agent]
@@ -364,8 +364,8 @@ This matches K8s exactly: the sending service's interceptor captures and logs th
 
 | Database   | Standard port (db-proxy listens) | Internal port (database listens) | Env var to shift     |
 | ---------- | -------------------------------- | -------------------------------- | -------------------- |
-| PostgreSQL | 5432                             | 55432                            | `PGPORT`             |
-| MySQL      | 3306                             | 33306                            | `MYSQL_TCP_PORT`     |
+| PostgreSQL | 5432                             | 15432                            | `PGPORT`             |
+| MySQL      | 3306                             | 13306                            | `MYSQL_TCP_PORT`     |
 | Redis      | 6379                             | 63790                            | `--port` command arg |
 | MongoDB    | 27017                            | 27018                            | `--port` command arg |
 

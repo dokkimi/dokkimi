@@ -455,8 +455,20 @@ export class DockerDeployerService {
         );
         if (crashedServices.length > 0) {
           this.clearCrashMonitor(instanceId);
-          const names = crashedServices.map((c) => c.name).join(', ');
-          const errorMsg = `Container(s) crashed: ${names}`;
+          const details = await Promise.all(
+            crashedServices.map(async (c) => {
+              const d = await this.dockerClient
+                .getExitDetails(c.id)
+                .catch(() => null);
+              if (!d) {
+                return c.name;
+              }
+              const oom = d.oomKilled ? ', OOM-killed' : '';
+              const tail = d.logTail.length ? `: ${d.logTail.join(' | ')}` : '';
+              return `${c.name} (exit ${d.exitCode}${oom})${tail}`;
+            }),
+          );
+          const errorMsg = `Container(s) crashed: ${details.join('; ')}`;
           this.logger.error(`${errorMsg} (instance ${instanceId})`);
 
           const current = await this.instanceService.findInstance(instanceId);
@@ -468,6 +480,7 @@ export class DockerDeployerService {
             await this.instanceService.updateInstanceStatus(
               instanceId,
               InstanceStatus.FAILED,
+              errorMsg,
             );
             await this.teardown(instanceId);
             if (onCrash) {

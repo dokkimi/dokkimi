@@ -54,11 +54,16 @@ export class NamespaceInstanceService {
   /**
    * Updates instance status
    */
-  async updateInstanceStatus(instanceId: string, status: InstanceStatus) {
+  async updateInstanceStatus(
+    instanceId: string,
+    status: InstanceStatus,
+    errorMessage?: string,
+  ) {
     return this.prisma.namespaceInstance.update({
       where: { id: instanceId },
       data: {
         status,
+        ...(errorMessage ? { errorMessage } : {}),
         ...(status === InstanceStatus.RUNNING ? { startedAt: new Date() } : {}),
         ...(status === InstanceStatus.STOPPED ||
         status === InstanceStatus.FAILED

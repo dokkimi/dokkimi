@@ -318,7 +318,7 @@ export class DockerClientService implements OnApplicationBootstrap {
 
   async getExitedContainers(
     instanceId: string,
-  ): Promise<Array<{ name: string; role: string }>> {
+  ): Promise<Array<{ id: string; name: string; role: string }>> {
     const containers = await this.docker.listContainers({
       all: true,
       filters: {
@@ -327,9 +327,42 @@ export class DockerClientService implements OnApplicationBootstrap {
       },
     });
     return containers.map((c) => ({
+      id: c.Id,
       name: c.Labels['io.dokkimi.item-name'] || c.Names[0]?.replace(/^\//, ''),
       role: c.Labels['io.dokkimi.role'] || 'unknown',
     }));
+  }
+
+  /** Exit code, OOM flag and last log lines of a stopped container. */
+  async getExitDetails(
+    nameOrId: string,
+    tailLines = 5,
+  ): Promise<{ exitCode: number; oomKilled: boolean; logTail: string[] }> {
+    const container = this.docker.getContainer(nameOrId);
+    const info = await container.inspect();
+    const raw = (await container.logs({
+      stdout: true,
+      stderr: true,
+      tail: tailLines,
+    })) as unknown as Buffer;
+
+    // Non-TTY logs are multiplexed: 8-byte frame header (stream type, 3 zero
+    // bytes, uint32 BE payload length) before each chunk.
+    let text = '';
+    for (let i = 0; i + 8 <= raw.length; ) {
+      const size = raw.readUInt32BE(i + 4);
+      text += raw.subarray(i + 8, i + 8 + size).toString('utf8');
+      i += 8 + size;
+    }
+
+    return {
+      exitCode: info.State?.ExitCode ?? -1,
+      oomKilled: info.State?.OOMKilled ?? false,
+      logTail: text
+        .split('\n')
+        .map((l) => l.trim())
+        .filter(Boolean),
+    };
   }
 
   // ============================================

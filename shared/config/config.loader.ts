@@ -119,7 +119,7 @@ export class ConfigLoader {
 
   /**
    * Apply environment variable overrides to the loaded config.
-   * Only HOST overrides are supported — port values come from the config file.
+   * Host and port of Control Tower are overridable; other ports come from the config file.
    */
   private applyEnvOverrides(config: DokkimiConfig): DokkimiConfig {
     if (process.env.DATABASE_URL) {
@@ -127,6 +127,11 @@ export class ConfigLoader {
     }
     if (process.env.CONTROL_TOWER_HOST) {
       config.services.controlTower.host = process.env.CONTROL_TOWER_HOST;
+    }
+    if (process.env.CONTROL_TOWER_PORT) {
+      config.services.controlTower.port = Number(
+        process.env.CONTROL_TOWER_PORT,
+      );
     }
     if (process.env.IDLE_POLL_INTERVAL_MS) {
       config.clusterWatcher.idlePollIntervalMs = Number(
