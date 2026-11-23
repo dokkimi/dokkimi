@@ -7,6 +7,20 @@ import CodeBlock from '../../components/CodeBlock.astro';
   <h1>Release Notes</h1>
   <p class="subtitle">What's new in each release.</p>
 
+  <h2>v0.5.11</h2>
+  <p><time datetime="2026-11-23">November 23, 2026</time></p>
+
+  <h3>AI tool configs are safe from overwrites</h3>
+  <p>Dokkimi registers its MCP server in <code>~/.claude.json</code> and <code>~/.cursor/mcp.json</code>. If one of those files couldn't be parsed, or several Dokkimi processes started at once, Dokkimi could replace it with a file containing only its own entry. This release fixes that.</p>
+  <ul>
+    <li><strong>Unusable files are left untouched</strong> &mdash; If a config file can't be read, parsed, or safely replaced, Dokkimi doesn't change it, and registers the next time you run a command after it's fixed.</li>
+    <li><strong>Existing entries are kept</strong> &mdash; A <code>dokkimi</code> MCP entry you already have, including a customized one, is never overwritten.</li>
+    <li><strong>Atomic updates</strong> &mdash; When Dokkimi does add or remove its entry, the file is replaced in one step, so another program never reads a half-written file. Permissions, ownership, and symlinks are preserved.</li>
+    <li><strong><code>dokkimi doctor</code> checks registration</strong> &mdash; A new <code>MCP Config</code> check explains why Dokkimi isn't registered, and a warning appears in your terminal at most once a day.</li>
+    <li><strong><code>dokkimi uninstall</code></strong> &mdash; No longer re-registers before removing its entries, and tells you about any file it skipped.</li>
+  </ul>
+  <p>If your other MCP servers or Claude Code settings disappeared unexpectedly, this may have been the cause. If your config file is bind-mounted (for example, into a dev container), add the <code>dokkimi</code> entry manually.</p>
+
   <h2>v0.5.10</h2>
   <p><time datetime="2026-09-16">September 16, 2026</time></p>
 
