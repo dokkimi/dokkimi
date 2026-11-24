@@ -1,10 +1,16 @@
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
+
+let mockRunsDir = '/tmp/mock-dokkimi/runs/test/project';
+
 jest.mock('@dokkimi/config', () => ({
   loadConfig: jest.fn(() => ({
     services: { controlTower: { host: 'localhost', port: 19001 } },
   })),
   buildServiceUrl: jest.fn(() => 'http://localhost:19001'),
   DOKKIMI_DIR: '/tmp/mock-dokkimi',
-  projectRunsDir: jest.fn(() => '/tmp/mock-dokkimi/runs/test/project'),
+  projectRunsDir: jest.fn(() => mockRunsDir),
 }));
 jest.mock('../lib/cli-utils', () => ({
   fetchJson: jest.fn(),
@@ -242,5 +248,28 @@ describe('clean', () => {
       expect.stringContaining('"success":false'),
     );
     expect(mockExecSilent).not.toHaveBeenCalled();
+  });
+
+  it("keeps the run data of projects nested in this one's folder", async () => {
+    mockRunsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'clean-'));
+    const own = path.join(mockRunsDir, '20261101-120000');
+    const nested = path.join(mockRunsDir, 'packages/api/20261101-120000');
+    fs.mkdirSync(own);
+    fs.mkdirSync(nested, { recursive: true });
+    mockCheckService.mockResolvedValue({
+      healthy: true,
+      name: 'ct',
+      url: 'http://localhost',
+    });
+    mockFetchJson.mockResolvedValue({
+      runId: 'run-1',
+      instances: [{ id: 'inst-1', name: 'test-1', status: 'STOPPED' }],
+    } as any);
+
+    await clean(['--force']);
+
+    expect(fs.existsSync(own)).toBe(false);
+    expect(fs.existsSync(nested)).toBe(true);
+    fs.rmSync(mockRunsDir, { recursive: true });
   });
 });

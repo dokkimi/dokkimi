@@ -426,7 +426,12 @@ function cleanupRunStorage(all: boolean): void {
   if (projectPath) {
     const dir = projectRunsDir(projectPath);
     try {
-      fs.rmSync(dir, { recursive: true });
+      // Only this project's runs: nested projects keep theirs in here too
+      for (const name of fs.readdirSync(dir)) {
+        if (/^\d{8}-\d{6}$/.test(name)) {
+          fs.rmSync(path.join(dir, name), { recursive: true });
+        }
+      }
     } catch (e: unknown) {
       if ((e as NodeJS.ErrnoException)?.code !== 'ENOENT') {
         console.warn(
