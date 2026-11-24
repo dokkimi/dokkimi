@@ -209,7 +209,7 @@ function removeLlmConfigPointers(): void {
 function findDokkimiContainers(): string[] {
   try {
     const output = execSilent(
-      'docker ps -a --filter "label=dokkimi" --format "{{.Names}}"',
+      'docker ps -a --filter "label=io.dokkimi.managed" --format "{{.Names}}"',
       { timeout: 10000 },
     );
     if (!output) {
@@ -224,7 +224,7 @@ function findDokkimiContainers(): string[] {
 function findDokkimiNetworks(): string[] {
   try {
     const output = execSilent(
-      'docker network ls --filter "label=dokkimi" --format "{{.Name}}"',
+      'docker network ls --filter "label=io.dokkimi.managed" --format "{{.Name}}"',
       { timeout: 10000 },
     );
     if (!output) {

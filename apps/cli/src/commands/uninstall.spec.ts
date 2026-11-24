@@ -166,4 +166,17 @@ describe('uninstall', () => {
       expect.stringContaining('Dokkimi has been removed'),
     );
   });
+
+  it('removes the containers and networks Control Tower labelled', async () => {
+    mockPrompt.mockResolvedValue('y');
+    mockExecSilent.mockImplementation((cmd: string) =>
+      cmd.includes('--filter "label=io.dokkimi.managed"') ? 'leftover' : '',
+    );
+
+    await uninstall([]);
+
+    for (const cmd of ['docker rm -f leftover', 'docker network rm leftover']) {
+      expect(mockExecSilent).toHaveBeenCalledWith(cmd, expect.anything());
+    }
+  });
 });

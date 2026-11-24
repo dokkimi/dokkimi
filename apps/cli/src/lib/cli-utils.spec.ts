@@ -225,6 +225,12 @@ describe('checkService', () => {
       detail: 'not reachable',
     });
   });
+
+  it('tells a slow service from one that is not running', async () => {
+    mockFetch.mockRejectedValue(new DOMException('', 'TimeoutError'));
+    const result = await checkService('ct', 'http://localhost:19001');
+    expect(result.detail).toBe('timed out');
+  });
 });
 
 // ---------------------------------------------------------------------------

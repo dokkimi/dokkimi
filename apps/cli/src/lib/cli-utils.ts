@@ -154,8 +154,14 @@ export async function checkService(
       return { name, url, healthy: true };
     }
     return { name, url, healthy: false, detail: `HTTP ${res.status}` };
-  } catch {
-    return { name, url, healthy: false, detail: 'not reachable' };
+  } catch (err) {
+    const timedOut = err instanceof DOMException && err.name === 'TimeoutError';
+    return {
+      name,
+      url,
+      healthy: false,
+      detail: timedOut ? 'timed out' : 'not reachable',
+    };
   }
 }
 

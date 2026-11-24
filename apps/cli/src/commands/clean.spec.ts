@@ -137,6 +137,7 @@ describe('clean', () => {
       healthy: false,
       name: 'ct',
       url: 'http://localhost',
+      detail: 'not reachable',
     });
     // 1. findDokkimiContainers in clean() -> container names
     // 2. findDokkimiContainers in cleanupDokkimiDockerResources -> container names
@@ -169,6 +170,7 @@ describe('clean', () => {
       healthy: false,
       name: 'ct',
       url: 'http://localhost',
+      detail: 'not reachable',
     });
     // findDokkimiContainers returns empty, findDokkimiNetworks returns empty
     mockExecSilent.mockReturnValue('');
@@ -179,5 +181,66 @@ describe('clean', () => {
     expect(consoleLogSpy).toHaveBeenCalledWith(
       expect.stringContaining('Nothing to clean'),
     );
+  });
+
+  describe('with containers of another project running', () => {
+    beforeEach(() => {
+      mockCheckService.mockResolvedValue({
+        healthy: true,
+        name: 'ct',
+        url: 'http://localhost',
+      });
+      mockExecSilent.mockImplementation((cmd: string) =>
+        cmd.includes('--filter "label=io.dokkimi.managed"') ? 'other' : '',
+      );
+    });
+
+    it('leaves them alone', async () => {
+      mockFetchJson.mockResolvedValue({
+        runId: 'run-1',
+        instances: [{ id: 'inst-1', name: 'test-1', status: 'STOPPED' }],
+      } as any);
+
+      await clean(['--force']);
+
+      expect(mockFetchAction).toHaveBeenCalledWith(
+        expect.stringContaining('/runs/all?projectPath='),
+        'DELETE',
+      );
+      expect(mockExecSilent).not.toHaveBeenCalled();
+    });
+
+    it('removes them with --all', async () => {
+      await clean(['--all', '--force']);
+
+      for (const cmd of ['docker rm -f other', 'docker network rm other']) {
+        expect(mockExecSilent).toHaveBeenCalledWith(cmd, expect.anything());
+      }
+    });
+  });
+
+  it('removes nothing when Dokkimi is running but not responding', async () => {
+    mockCheckService.mockResolvedValue({
+      healthy: false,
+      name: 'ct',
+      url: 'http://localhost',
+      detail: 'timed out',
+    });
+    const consoleErrorSpy = jest
+      .spyOn(console, 'error')
+      .mockImplementation(() => {});
+
+    await expect(clean(['--all', '--force'])).rejects.toThrow('process.exit');
+    expect(processExitSpy).toHaveBeenCalledWith(1);
+    expect(consoleErrorSpy).toHaveBeenCalledWith(
+      expect.stringContaining('not responding (timed out)'),
+    );
+    consoleErrorSpy.mockRestore();
+
+    await clean(['--json']);
+    expect(consoleLogSpy).toHaveBeenCalledWith(
+      expect.stringContaining('"success":false'),
+    );
+    expect(mockExecSilent).not.toHaveBeenCalled();
   });
 });
