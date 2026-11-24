@@ -21,10 +21,6 @@ jest.mock('@dokkimi/definition-resolver', () => ({
   resolveDefinitions: jest.fn(() => ({ definitions: [] })),
 }));
 
-jest.mock('../lib/editor', () => ({
-  stripIds: jest.fn((obj: unknown) => obj),
-}));
-
 jest.mock('fs', () => {
   const actual = jest.requireActual('fs');
   return {
@@ -235,5 +231,39 @@ describe('dump', () => {
     expect(parsed.instances[0]).toHaveProperty('httpLogs');
     expect(parsed.instances[0]).toHaveProperty('consoleLogs');
     expect(parsed.instances[0]).toHaveProperty('assertionResults');
+  });
+
+  it("removes Dokkimi's ids and keeps the user's", async () => {
+    const row = { id: 'x', instanceId: 'x', instanceItemId: 'x' };
+    const data = [{ id: 1, instanceId: 2, instanceItemId: 3 }];
+    const answers: Record<string, unknown> = {
+      '/runs/latest': mockLatestRun,
+      '/definition': { tests: data },
+      '/logs/http/': { logs: [{ ...row, responseBody: data }] },
+      '/logs/database/': { logs: [{ ...row, data }] },
+      '/logs/console/': { logs: [{ ...row, data }] },
+      '/logs/message/': { logs: [{ ...row, body: data }] },
+      '/logs/test-execution/': { logs: [{ ...row, variables: data }] },
+      '/logs/assertion-results/': [{ ...row, expected: data }],
+    };
+    mockFetchJson.mockImplementation(async (url: string) => {
+      const key = Object.keys(answers).find((k) => url.includes(k));
+      return (key ? answers[key] : null) as any;
+    });
+    const { stream, chunks } = makeMockStream();
+    mockCreateWriteStream.mockReturnValue(stream as unknown as fs.WriteStream);
+
+    await dump([]);
+
+    expect(JSON.parse(chunks.join('')).instances[0]).toMatchObject({
+      definition: { tests: data },
+      httpLogs: [{ responseBody: data }],
+      databaseLogs: [{ data }],
+      consoleLogs: [{ data }],
+      messageLogs: [{ body: data }],
+      testExecutionLogs: [{ variables: data }],
+      assertionResults: [{ expected: data }],
+    });
+    expect(chunks.join('')).not.toContain('"x"');
   });
 });

@@ -22,7 +22,6 @@ jest.mock('../lib/inspect-item-flow', () => ({
 }));
 
 jest.mock('../lib/editor', () => ({
-  stripIds: jest.fn((x: unknown) => x),
   openInEditor: jest.fn(),
   openFile: jest.fn(),
   formatTestExecutionLogs: jest.fn(() => 'formatted logs'),

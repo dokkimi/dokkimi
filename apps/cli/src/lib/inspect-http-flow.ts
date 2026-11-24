@@ -2,7 +2,7 @@ import { fetchJson } from '../lib/cli-utils';
 import { selectMenu, MenuItem } from '../lib/menu';
 import { waitForKey } from '../lib/terminal';
 import { formatLogLine, instanceStatusBadge } from '../lib/formatting';
-import { stripIds, formatHttpLog, openInEditor } from '../lib/editor';
+import { formatHttpLog, openInEditor } from '../lib/editor';
 import {
   InstanceMenuAction,
   buildInstanceMenuItems,
@@ -61,7 +61,7 @@ export async function showHttpLogsFlow(
 
     switch (picked.value.kind) {
       case 'raw': {
-        openInEditor(stripIds(definition), `${instance.name}-definition.json`);
+        openInEditor(definition, `${instance.name}-definition.json`);
         break;
       }
       case 'item': {

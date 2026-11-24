@@ -17,20 +17,11 @@ const POD_LOG_SEPARATOR = '='.repeat(60);
 
 const STRIP_KEYS = new Set(['id', 'instanceId', 'instanceItemId']);
 
-export function stripIds(obj: unknown): unknown {
-  if (Array.isArray(obj)) {
-    return obj.map(stripIds);
-  }
-  if (obj && typeof obj === 'object') {
-    const out: Record<string, unknown> = {};
-    for (const [k, v] of Object.entries(obj)) {
-      if (!STRIP_KEYS.has(k)) {
-        out[k] = stripIds(v);
-      }
-    }
-    return out;
-  }
-  return obj;
+/** Removes Dokkimi's own ids from a stored row. The user's data is inside it. */
+export function stripIds(row: object): Record<string, unknown> {
+  return Object.fromEntries(
+    Object.entries(row).filter(([key]) => !STRIP_KEYS.has(key)),
+  );
 }
 
 // ---------------------------------------------------------------------------

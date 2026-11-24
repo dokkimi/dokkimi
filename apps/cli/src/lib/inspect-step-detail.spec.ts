@@ -12,7 +12,6 @@ jest.mock('./terminal', () => ({
 jest.mock('./editor', () => ({
   openInEditor: jest.fn(),
   openFile: jest.fn(),
-  stripIds: jest.fn((v: unknown) => v),
   formatHttpLog: jest.fn(() => 'formatted-http'),
   formatDbLog: jest.fn(() => 'formatted-db'),
   formatTestExecutionLogs: jest.fn(() => 'formatted-exec-logs'),
@@ -39,7 +38,6 @@ import { fetchJson } from './cli-utils';
 import { selectMenu } from './menu';
 import {
   openInEditor,
-  stripIds,
   formatHttpLog,
   formatDbLog,
   formatConsoleLogs,
@@ -61,7 +59,6 @@ import type {
 const mockFetchJson = fetchJson as jest.Mock;
 const mockSelectMenu = selectMenu as jest.Mock;
 const mockOpenInEditor = openInEditor as jest.Mock;
-const mockStripIds = stripIds as jest.Mock;
 const mockFormatHttpLog = formatHttpLog as jest.Mock;
 const mockFormatDbLog = formatDbLog as jest.Mock;
 const mockFormatConsoleLogs = formatConsoleLogs as jest.Mock;
@@ -167,7 +164,6 @@ describe('showStepDetail', () => {
   });
 
   it('opens raw step JSON in editor', async () => {
-    mockStripIds.mockReturnValue({ name: 'call auth' });
     mockSelectMenu
       .mockResolvedValueOnce({ value: { kind: 'raw-step' }, index: 0 })
       .mockResolvedValueOnce(null);
@@ -188,9 +184,8 @@ describe('showStepDetail', () => {
       storageDir,
     );
 
-    expect(mockStripIds).toHaveBeenCalledWith(step);
     expect(mockOpenInEditor).toHaveBeenCalledWith(
-      { name: 'call auth' },
+      step,
       expect.stringContaining('-raw.json'),
     );
   });

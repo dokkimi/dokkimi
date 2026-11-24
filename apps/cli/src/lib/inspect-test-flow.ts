@@ -6,12 +6,7 @@ import {
   instanceStatusBadge,
   describeAction,
 } from '../lib/formatting';
-import {
-  stripIds,
-  openInEditor,
-  openFile,
-  formatTestExecutionLogs,
-} from '../lib/editor';
+import { openInEditor, openFile, formatTestExecutionLogs } from '../lib/editor';
 import {
   InstanceMenuAction,
   buildInstanceMenuItems,
@@ -190,7 +185,7 @@ export async function showTestStepsFlow(
 
     switch (picked.value.kind) {
       case 'raw': {
-        openInEditor(stripIds(definition), `${instance.name}-definition.json`);
+        openInEditor(definition, `${instance.name}-definition.json`);
         break;
       }
       case 'test-logs': {

@@ -1,11 +1,6 @@
 import { fetchJson } from '../lib/cli-utils';
 import { selectMenu, MenuItem } from '../lib/menu';
-import {
-  stripIds,
-  formatConsoleLogs,
-  formatPodLogs,
-  openInEditor,
-} from '../lib/editor';
+import { formatConsoleLogs, formatPodLogs, openInEditor } from '../lib/editor';
 import type {
   InstanceSummary,
   DefinitionSnapshotItem,
@@ -61,7 +56,7 @@ export async function showItemDetailFlow(
 
     switch (picked.value.kind) {
       case 'raw-item': {
-        openInEditor(stripIds(item), `${instance.name}-${item.name}.json`);
+        openInEditor(item, `${instance.name}-${item.name}.json`);
         break;
       }
       case 'console-logs': {
