@@ -335,6 +335,110 @@
           ]
         }
       ]
+    },
+    {
+      "name": "Traffic shows the scheme a service used: http",
+      "steps": [
+        {
+          "name": "Service-a calls a mocked API over http",
+          "action": {
+            "type": "httpRequest",
+            "method": "POST",
+            "url": "service-a/external-call",
+            "headers": { "Content-Type": "application/json" },
+            "body": {
+              "requests": [
+                {
+                  "baseURL": "http://api.example.com",
+                  "url": "/v1/data",
+                  "method": "GET"
+                }
+              ]
+            }
+          },
+          "assertions": [
+            {
+              "assertions": [
+                {
+                  "path": "$.response.body.results[0].id",
+                  "operator": "eq",
+                  "value": "ext-001"
+                }
+              ]
+            },
+            {
+              "match": {
+                "path": "$.traffic",
+                "where": [
+                  {
+                    "path": "$$.origin",
+                    "operator": "eq",
+                    "value": "service-a"
+                  },
+                  {
+                    "path": "$$.request.url",
+                    "operator": "eq",
+                    "value": "http://api.example.com/v1/data"
+                  }
+                ],
+                "count": 1
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Traffic shows the scheme a service used: https",
+      "steps": [
+        {
+          "name": "Service-a calls a mocked API over https",
+          "action": {
+            "type": "httpRequest",
+            "method": "POST",
+            "url": "service-a/external-call",
+            "headers": { "Content-Type": "application/json" },
+            "body": {
+              "requests": [
+                {
+                  "baseURL": "https://api.example.com",
+                  "url": "/v1/data",
+                  "method": "GET"
+                }
+              ]
+            }
+          },
+          "assertions": [
+            {
+              "assertions": [
+                {
+                  "path": "$.response.body.results[0].id",
+                  "operator": "eq",
+                  "value": "ext-001"
+                }
+              ]
+            },
+            {
+              "match": {
+                "path": "$.traffic",
+                "where": [
+                  {
+                    "path": "$$.origin",
+                    "operator": "eq",
+                    "value": "service-a"
+                  },
+                  {
+                    "path": "$$.request.url",
+                    "operator": "eq",
+                    "value": "https://api.example.com/v1/data"
+                  }
+                ],
+                "count": 1
+              }
+            }
+          ]
+        }
+      ]
     }
   ]
 }

@@ -22,7 +22,9 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/andybalholm/brotli"
 	"github.com/google/uuid"
+	"github.com/klauspost/compress/zstd"
 )
 
 // Version is set at build time via -ldflags "-X main.Version=..."
@@ -318,18 +320,9 @@ func handleRequest(w http.ResponseWriter, r *http.Request, proxy *ProxyService, 
 			http.Error(w, fmt.Sprintf("Error reading response: %v", err), http.StatusInternalServerError)
 			return
 		}
-		// Parse response body for logging — decompress if gzip-encoded
+		// Parse response body for logging — decompress if needed
 		if len(responseBodyBytes) > 0 {
-			loggableBytes := responseBodyBytes
-			if strings.EqualFold(resp.Header.Get("Content-Encoding"), "gzip") {
-				gr, gzErr := gzip.NewReader(bytes.NewReader(responseBodyBytes))
-				if gzErr == nil {
-					if decompressed, readErr := io.ReadAll(gr); readErr == nil {
-						loggableBytes = decompressed
-					}
-					gr.Close()
-				}
-			}
+			loggableBytes := decompress(responseBodyBytes, resp.Header.Get("Content-Encoding"))
 			var jsonBody interface{}
 			if err := json.Unmarshal(loggableBytes, &jsonBody); err == nil {
 				responseBody = jsonBody
@@ -366,6 +359,35 @@ func handleRequest(w http.ResponseWriter, r *http.Request, proxy *ProxyService, 
 	}
 
 	log.Printf("[Interceptor] Sent response to client: status=%d, bodySize=%d bytes", resp.StatusCode, len(responseBodyBytes))
+}
+
+// decompress returns body as it is if it isn't compressed or can't be decompressed.
+func decompress(body []byte, encoding string) []byte {
+	var reader io.Reader
+	switch strings.ToLower(encoding) {
+	case "gzip":
+		gr, err := gzip.NewReader(bytes.NewReader(body))
+		if err != nil {
+			return body
+		}
+		reader = gr
+	case "br":
+		reader = brotli.NewReader(bytes.NewReader(body))
+	case "zstd":
+		zr, err := zstd.NewReader(bytes.NewReader(body))
+		if err != nil {
+			return body
+		}
+		defer zr.Close()
+		reader = zr
+	default:
+		return body
+	}
+	decompressed, err := io.ReadAll(reader)
+	if err != nil {
+		return body
+	}
+	return decompressed
 }
 
 // loadCA reads and parses a CA certificate and private key from PEM files.

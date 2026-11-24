@@ -96,6 +96,9 @@ func (l *Logger) logResponseInternal(r *http.Request, statusCode int, isMocked b
 	// By this point, the proxy has already stripped the service prefix from r.URL.Path,
 	// so the path is the actual endpoint path (e.g., "/health" not "/service-name/health").
 	scheme := "http"
+	if r.TLS != nil {
+		scheme = "https"
+	}
 	host := targetServiceName
 	if host == "" {
 		// Fallback for external/unknown targets

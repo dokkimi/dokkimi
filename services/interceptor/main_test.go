@@ -3,11 +3,16 @@ package main
 import (
 	"bytes"
 	"compress/gzip"
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"testing"
 	"time"
+
+	"github.com/andybalholm/brotli"
+	"github.com/klauspost/compress/zstd"
 )
 
 func TestHandleRequest(t *testing.T) {
@@ -356,5 +361,109 @@ func TestHandleRequest_GzipResponseForwardsCompressedBytes(t *testing.T) {
 	}
 	if string(decompressed) != jsonPayload {
 		t.Errorf("Expected decompressed body %q, got %q", jsonPayload, string(decompressed))
+	}
+}
+
+// handleAndCapture sends a request through the interceptor and returns the
+// response and what was logged.
+func handleAndCapture(t *testing.T, url string, target http.Handler) (*httptest.ResponseRecorder, HttpLogMessage) {
+	t.Helper()
+	logged := make(chan HttpLogMessage, 1)
+	logServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var message HttpLogMessage
+		json.NewDecoder(r.Body).Decode(&message)
+		logged <- message
+	}))
+	defer logServer.Close()
+	targetServer := httptest.NewServer(target)
+	defer targetServer.Close()
+
+	cfg := &Config{RequestTimeout: 30 * time.Second, Namespace: "test-ns", Origin: "test-origin"}
+	cache := NewMockCache(5 * time.Minute)
+	cache.SetUrlMap(UrlMap{
+		"service-a": ServiceInfo{Scheme: "http", URL: targetServer.URL, Name: "service-a"},
+	})
+	body := `{"mocked":true}`
+	cache.SetMocks([]MockEndpoint{{Method: "GET", Target: "api.example.com", Path: "/v1", Origin: "*", ResponseBody: &body}})
+	proxyService := NewProxyService(cfg, NewMockManager(cache, nil, cfg.Origin, cache.GetUrlMap), cache.GetUrlMap)
+	logger := NewLogger(logServer.URL, 5*time.Second, nil)
+	defer logger.Stop()
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", url, nil)
+	r.Header.Set("Accept-Encoding", "gzip, br") // else Go's client decompresses gzip itself
+	handleRequest(w, r, proxyService, logger, nil, cache, cfg)
+	select {
+	case message := <-logged:
+		return w, message
+	case <-time.After(5 * time.Second):
+		t.Fatal("nothing was logged")
+		return nil, HttpLogMessage{}
+	}
+}
+
+func TestHandleRequest_LogsDecompressedBodies(t *testing.T) {
+	const body = `{"name":"Alice"}`
+	var gzipped, brotlied, zstded bytes.Buffer
+	gw := gzip.NewWriter(&gzipped)
+	gw.Write([]byte(body))
+	gw.Close()
+	bw := brotli.NewWriter(&brotlied)
+	bw.Write([]byte(body))
+	bw.Close()
+	zw, _ := zstd.NewWriter(&zstded)
+	zw.Write([]byte(body))
+	zw.Close()
+	decoded := map[string]interface{}{"name": "Alice"}
+
+	for _, tc := range []struct {
+		name, encoding string
+		sent           []byte
+		logged         interface{}
+	}{
+		{"none", "", []byte(body), decoded},
+		{"gzip", "gzip", gzipped.Bytes(), decoded},
+		{"brotli", "br", brotlied.Bytes(), decoded},
+		{"brotli, other case", "BR", brotlied.Bytes(), decoded},
+		{"brotli text", "br", func() []byte {
+			var b bytes.Buffer
+			w := brotli.NewWriter(&b)
+			w.Write([]byte("<html>"))
+			w.Close()
+			return b.Bytes()
+		}(), "<html>"},
+		{"not really brotli", "br", []byte("plain"), "plain"},
+		{"zstd", "zstd", zstded.Bytes(), decoded},
+		{"not really zstd", "zstd", []byte("plain"), "plain"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			w, message := handleAndCapture(t, "http://service-a/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if tc.encoding != "" {
+					w.Header().Set("Content-Encoding", tc.encoding)
+				}
+				w.Write(tc.sent)
+			}))
+			if !bytes.Equal(w.Body.Bytes(), tc.sent) {
+				t.Errorf("client got %q, want the body as sent", w.Body.Bytes())
+			}
+			if !reflect.DeepEqual(message.ResponseBody, tc.logged) {
+				t.Errorf("logged %#v, want %#v", message.ResponseBody, tc.logged)
+			}
+		})
+	}
+}
+
+func TestHandleRequest_LogsTheSchemeUsed(t *testing.T) {
+	ok := http.HandlerFunc(func(http.ResponseWriter, *http.Request) {})
+	for _, url := range []string{
+		"http://service-a/x?y=1",
+		"https://service-a/x?y=1",
+		"http://api.example.com/v1",
+		"https://api.example.com/v1",
+		"https://unmocked.invalid/x",
+	} {
+		if _, message := handleAndCapture(t, url, ok); message.URL != url {
+			t.Errorf("logged %s, want %s", message.URL, url)
+		}
 	}
 }

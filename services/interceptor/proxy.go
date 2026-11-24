@@ -218,11 +218,7 @@ func (p *ProxyService) getTargetURL(r *http.Request) string {
 		pathParts := strings.Split(strings.TrimPrefix(r.URL.Path, "/"), "/")
 		if len(pathParts) > 0 && (pathParts[0] == serviceName || normalizeForUrlMap(pathParts[0]) == serviceName) {
 			// Remove the raw path[0] from path for forwarding
-			if len(pathParts) > 1 {
-				r.URL.Path = "/" + strings.Join(pathParts[1:], "/")
-			} else {
-				r.URL.Path = "/"
-			}
+			stripFirstSegment(r.URL)
 		}
 	}
 
@@ -230,7 +226,7 @@ func (p *ProxyService) getTargetURL(r *http.Request) string {
 	if p.origin != "" && serviceName == p.origin {
 		if serviceInfo, exists := urlMap[p.origin]; exists {
 			baseURL := resolveBaseURL(serviceInfo)
-			return baseURL + r.URL.Path + "?" + r.URL.RawQuery
+			return baseURL + r.URL.RequestURI()
 		}
 	}
 
@@ -252,7 +248,7 @@ func (p *ProxyService) getTargetURL(r *http.Request) string {
 			baseURL = scheme + "://" + baseURL
 		}
 		baseURL = appendServicePort(baseURL, serviceInfo.Port)
-		return baseURL + r.URL.Path + "?" + r.URL.RawQuery
+		return baseURL + r.URL.RequestURI()
 	}
 
 	// If path[0] looks like an external hostname (has 2+ dots, e.g., "api.stripe.com"),
@@ -261,15 +257,9 @@ func (p *ProxyService) getTargetURL(r *http.Request) string {
 	// Requires 2+ dots to avoid false positives on paths like "/api.v2/resource".
 	pathParts := strings.Split(strings.TrimPrefix(r.URL.Path, "/"), "/")
 	if len(pathParts) > 0 && pathParts[0] != "" && strings.Count(pathParts[0], ".") >= 2 {
-		externalHost := pathParts[0]
-		remainingPath := "/"
-		if len(pathParts) > 1 {
-			remainingPath = "/" + strings.Join(pathParts[1:], "/")
-		}
-		externalURL := "https://" + externalHost + remainingPath
-		if r.URL.RawQuery != "" {
-			externalURL += "?" + r.URL.RawQuery
-		}
+		remaining := *r.URL
+		stripFirstSegment(&remaining)
+		externalURL := "https://" + pathParts[0] + remaining.RequestURI()
 		log.Printf("[Interceptor] External passthrough: routing to %s", externalURL)
 		return externalURL
 	}
@@ -279,7 +269,20 @@ func (p *ProxyService) getTargetURL(r *http.Request) string {
 	if scheme == "" {
 		scheme = "http"
 	}
-	return scheme + "://" + r.Host + r.URL.Path + "?" + r.URL.RawQuery
+	return scheme + "://" + r.Host + r.URL.RequestURI()
+}
+
+// stripFirstSegment removes the first segment of a URL's path, keeping how the
+// rest is encoded.
+func stripFirstSegment(u *url.URL) {
+	strip := func(path string) string {
+		_, rest, _ := strings.Cut(strings.TrimPrefix(path, "/"), "/")
+		return "/" + rest
+	}
+	u.Path = strip(u.Path)
+	if u.RawPath != "" {
+		u.RawPath = strip(u.RawPath)
+	}
 }
 
 // extractServiceName extracts the service name from a hostname
