@@ -102,6 +102,9 @@ jobs:
       - name: CLI unit tests
         run: yarn workspace @dokkimi/cli test
 
+      - name: MCP unit tests
+        run: yarn workspace @dokkimi/mcp test
+
       - name: Control Tower unit tests
         run: yarn workspace control-tower test
 
