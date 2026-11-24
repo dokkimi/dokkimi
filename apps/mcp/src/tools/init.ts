@@ -18,14 +18,14 @@ items:
 tests:
   - name: Health Check
     steps:
-      - - name: Verify service is healthy
-          action:
-            type: httpRequest
-            method: GET
-            url: my-service/health
-          assertions:
-            - assertions:
-                - { path: response.status, operator: eq, value: 200 }
+      - name: Verify service is healthy
+        action:
+          type: httpRequest
+          method: GET
+          url: my-service/health
+        assertions:
+          - assertions:
+              - { path: $.response.status, operator: eq, value: 200 }
 `;
 
 const EXAMPLE_FRAGMENT = `# Shared PostgreSQL database — reference with $ref from definitions
