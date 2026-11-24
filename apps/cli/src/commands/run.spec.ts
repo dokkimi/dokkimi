@@ -187,6 +187,7 @@ describe('run', () => {
     expect(mockLoadConfig).toHaveBeenCalled();
     expect(mockPollForCompletionCI).toHaveBeenCalled();
     expect(mockPollForCompletion).not.toHaveBeenCalled();
+    expect(logSpy).toHaveBeenCalledWith('[Dokkimi] Run run-1');
     // Exits 0 on passed
     expect(mockExit).toHaveBeenCalledWith(0);
   });
@@ -221,6 +222,10 @@ describe('run', () => {
 
     expect(mockFetchPostWithError).not.toHaveBeenCalled();
     expect(logSpy).toHaveBeenCalledWith('No valid definitions to run.');
+    expect(logSpy).toHaveBeenCalledWith('/project/.dokkimi/bad.yml:');
+    expect(logSpy).toHaveBeenCalledWith(
+      expect.stringContaining('syntax error'),
+    );
   });
 
   it('handles empty definitions', async () => {

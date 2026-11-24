@@ -69,6 +69,13 @@ export async function executeRun(
         `  \x1b[90m–\x1b[0m ${inst.name.padEnd(30)}  \x1b[90mSKIPPED\x1b[0m     \x1b[90mInvalid definition\x1b[0m`,
       );
     }
+    for (const { file, errors } of errorFiles) {
+      console.log('');
+      console.log(`${file}:`);
+      for (const message of errors) {
+        console.log(`  \x1b[31merror\x1b[0m  ${message}`);
+      }
+    }
     console.log('');
     return {
       passed: false,
@@ -141,6 +148,10 @@ export async function executeRun(
   const createRes = createResult.data;
 
   const { runId } = createRes;
+  if (ciMode) {
+    // The MCP server reads this line
+    console.log(`[Dokkimi] Run ${runId}`);
+  }
   const instanceMap = new Map<string, string>();
   for (const inst of createRes.instances) {
     instanceMap.set(inst.name, inst.id);
