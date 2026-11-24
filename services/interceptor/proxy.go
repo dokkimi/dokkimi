@@ -88,7 +88,7 @@ func (p *ProxyService) HandleRequest(r *http.Request) (*http.Response, error) {
 func (p *ProxyService) forwardRequest(r *http.Request) (*http.Response, error) {
 	// Extract target service name before getTargetURL modifies the path
 	urlMap := p.urlMap()
-	targetServiceName := extractServiceNameFromRequest(r, urlMap)
+	targetServiceName := extractServiceNameFromRequest(r, urlMap, p.origin)
 
 	// Determine target URL
 	targetURL := p.getTargetURL(r)
@@ -136,7 +136,10 @@ func (p *ProxyService) forwardRequest(r *http.Request) (*http.Response, error) {
 
 	log.Printf("[Interceptor] Received response from %s: status=%d", targetURL, resp.StatusCode)
 
-	p.rewriteLocationHeader(resp, targetServiceName)
+	// A redirect from an external host is its own business.
+	if targetServiceName != "" {
+		p.rewriteLocationHeader(resp, targetServiceName)
+	}
 
 	return resp, nil
 }
@@ -197,7 +200,17 @@ func (p *ProxyService) rewriteLocationHeader(resp *http.Response, targetServiceN
 func (p *ProxyService) getTargetURL(r *http.Request) string {
 	urlMap := p.urlMap()
 
-	serviceName := extractServiceNameFromRequest(r, urlMap)
+	serviceName := extractServiceNameFromRequest(r, urlMap, p.origin)
+
+	// A service, worker or browser called a host outside the environment: go to
+	// the real one, over the scheme the caller used.
+	if p.origin != "" && serviceName == "" {
+		scheme := "http"
+		if r.TLS != nil {
+			scheme = "https"
+		}
+		return scheme + "://" + r.Host + r.URL.RequestURI()
+	}
 
 	// If service name was found in path, remove the raw path[0] from the path for forwarding.
 	// The raw path[0] may differ from serviceName if normalization was applied (e.g., MY_SERVICE → my-service).
@@ -214,7 +227,7 @@ func (p *ProxyService) getTargetURL(r *http.Request) string {
 	}
 
 	// Per-service interceptor: if traffic is for our own service, use the urlMap URL.
-	if p.origin != "" && (serviceName == p.origin || serviceName == "") {
+	if p.origin != "" && serviceName == p.origin {
 		if serviceInfo, exists := urlMap[p.origin]; exists {
 			baseURL := resolveBaseURL(serviceInfo)
 			return baseURL + r.URL.Path + "?" + r.URL.RawQuery
@@ -282,7 +295,10 @@ func extractServiceName(hostname string) string {
 // extractServiceNameFromRequest extracts the target service name from a request
 // by checking the Host header first (for service-to-service calls), then the path.
 // Returns the service name if it exists in the urlMap, empty string otherwise.
-func extractServiceNameFromRequest(r *http.Request, urlMap UrlMap) string {
+//
+// With an origin (a per-service interceptor) only an exact Host counts, so that
+// api.stripe.com is not taken for a service named api.
+func extractServiceNameFromRequest(r *http.Request, urlMap UrlMap, origin string) string {
 	// First try Host header - this is what services use when calling each other
 	// e.g., http://traffic-tester-2/test -> Host: traffic-tester-2
 	if r.Host != "" {
@@ -294,14 +310,18 @@ func extractServiceNameFromRequest(r *http.Request, urlMap UrlMap) string {
 		// Also try extracting service name from FQDN
 		// e.g., "nginx-test.dokkimi-xxx.svc.cluster.local" -> "nginx-test"
 		serviceName := extractServiceName(hostname)
-		if serviceName != hostname {
+		if origin == "" && serviceName != hostname {
 			if _, exists := urlMap[serviceName]; exists {
 				return serviceName
 			}
 		}
 	}
 
-	// Fallback: try path (for browser/ingress requests where service name is in path)
+	if origin != "" {
+		return ""
+	}
+
+	// Fallback: try path (for test-agent requests where service name is in path)
 	pathParts := strings.Split(strings.TrimPrefix(r.URL.Path, "/"), "/")
 	if len(pathParts) > 0 && pathParts[0] != "" {
 		if _, exists := urlMap[pathParts[0]]; exists {

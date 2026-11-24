@@ -119,46 +119,7 @@ func main() {
 		}
 	}
 
-	// Determine if this is the global interceptor (no ORIGIN set) or a per-service interceptor
-	isGlobalInterceptor := cfg.Origin == ""
-
-	// Create HTTP handler with health check
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Global interceptor: proxy ALL requests, never respond with own health check
-		// This is because external requests come through ingress and we need to forward them
-		if isGlobalInterceptor {
-			handleRequest(w, r, proxyService, logger, testExecutionLogger, cache, cfg)
-			return
-		}
-
-		// Per-service interceptor: check if this is a health check for the interceptor itself
-		// or a request that should be proxied to the service
-		urlMap := cache.GetUrlMap()
-		isServiceRequest := false
-		if r.Host != "" {
-			hostname := stripPortFromHost(r.Host)
-			if _, exists := urlMap[hostname]; exists {
-				isServiceRequest = true
-			}
-			// Also try extracting service name from FQDN
-			// e.g., "traffic-tester-2.namespace.svc.cluster.local" -> "traffic-tester-2"
-			serviceName := extractServiceName(hostname)
-			if serviceName != hostname {
-				if _, exists := urlMap[serviceName]; exists {
-					isServiceRequest = true
-				}
-			}
-		}
-
-		// Health check endpoint - only handle if:
-		// 1. Path is exactly /health
-		// 2. NOT a request intended for a proxied service (Host not in urlMap)
-		if r.URL.Path == "/health" && !isServiceRequest {
-			handleHealthCheck(w, r, cache)
-			return
-		}
-
-		// All other requests go through proxy
 		handleRequest(w, r, proxyService, logger, testExecutionLogger, cache, cfg)
 	})
 
@@ -249,7 +210,7 @@ func handleRequest(w http.ResponseWriter, r *http.Request, proxy *ProxyService, 
 
 	// Extract target service name BEFORE proxy modifies the path
 	// This is needed because proxy.getTargetURL() modifies r.URL.Path
-	targetServiceName := extractServiceNameFromRequest(r, urlMap)
+	targetServiceName := extractServiceNameFromRequest(r, urlMap, cfg.Origin)
 
 	// Parse request body for logging (before it's consumed by proxy)
 	var requestBody interface{}
@@ -405,16 +366,6 @@ func handleRequest(w http.ResponseWriter, r *http.Request, proxy *ProxyService, 
 	}
 
 	log.Printf("[Interceptor] Sent response to client: status=%d, bodySize=%d bytes", resp.StatusCode, len(responseBodyBytes))
-}
-
-// handleHealthCheck handles health check requests
-func handleHealthCheck(w http.ResponseWriter, _ *http.Request, cache *MockCache) {
-	// Check if cache is initialized (basic health check)
-	_ = cache.GetMocks() // This will never fail, just ensures cache is accessible
-
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	w.Write([]byte(`{"status":"healthy"}`))
 }
 
 // loadCA reads and parses a CA certificate and private key from PEM files.

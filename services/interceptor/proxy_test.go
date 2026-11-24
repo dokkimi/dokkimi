@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"crypto/x509"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -392,6 +394,72 @@ func TestProxyService_getTargetURL(t *testing.T) {
 	}
 }
 
+// A service's own interceptor, with services whose names also appear in
+// external hosts and paths.
+func TestProxyService_getTargetURL_FromService(t *testing.T) {
+	urlMap := func() UrlMap {
+		return UrlMap{
+			"web": ServiceInfo{Scheme: "http", URL: "http://web", Name: "web", Port: 3000},
+			"api": ServiceInfo{Scheme: "http", URL: "http://api", Name: "api", Port: 4000},
+		}
+	}
+	cfg := &Config{Origin: "web"}
+	proxy := NewProxyService(cfg, NewMockManager(NewMockCache(time.Minute), nil, cfg.Origin, urlMap), urlMap)
+
+	for request, want := range map[string]string{
+		"http://example.com/":               "http://example.com/",
+		"https://example.com/":              "https://example.com/",
+		"http://example.com:8080/x?y=1":     "http://example.com:8080/x?y=1",
+		"https://example.com/a%2Fb?q=a%20b": "https://example.com/a%2Fb?q=a%20b",
+		"https://api.stripe.com/v1/charges": "https://api.stripe.com/v1/charges",
+		"https://example.com/api/9":         "https://example.com/api/9",
+		"https://example.com/pkg-1.2.3.tgz": "https://example.com/pkg-1.2.3.tgz",
+		"http://api/orders":                 "http://api:4000/orders?",
+		"http://web/self":                   "http://web:3000/self?",
+	} {
+		if got := proxy.getTargetURL(httptest.NewRequest("GET", request, nil)); got != want {
+			t.Errorf("%s: got %s, want %s", request, got, want)
+		}
+	}
+}
+
+func TestProxyService_forwardRequest_KeepsExternalRedirects(t *testing.T) {
+	location := "https://api-docs.example.com/"
+	external := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, location, http.StatusFound)
+	}))
+	defer external.Close()
+
+	urlMap := func() UrlMap {
+		return UrlMap{"api": ServiceInfo{Scheme: "http", URL: "http://api", Name: "api"}}
+	}
+	cfg := &Config{Origin: "web", RequestTimeout: 30 * time.Second}
+	proxy := NewProxyService(cfg, NewMockManager(NewMockCache(time.Minute), nil, cfg.Origin, urlMap), urlMap)
+
+	resp, err := proxy.forwardRequest(httptest.NewRequest("GET", external.URL+"/", nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := resp.Header.Get("Location"); got != location {
+		t.Errorf("Location = %s, want %s", got, location)
+	}
+}
+
+// A host's certificate is checked as the service itself would have done.
+func TestProxyService_forwardRequest_ChecksExternalCertificates(t *testing.T) {
+	external := httptest.NewTLSServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	defer external.Close()
+	urlMap := func() UrlMap { return UrlMap{} }
+	cfg := &Config{Origin: "web", RequestTimeout: 30 * time.Second}
+	proxy := NewProxyService(cfg, NewMockManager(NewMockCache(time.Minute), nil, cfg.Origin, urlMap), urlMap)
+
+	_, err := proxy.forwardRequest(httptest.NewRequest("GET", external.URL+"/", nil))
+	var unknownAuthority x509.UnknownAuthorityError
+	if !errors.As(err, &unknownAuthority) {
+		t.Errorf("got %v, want an unknown authority error", err)
+	}
+}
+
 func TestIsHopByHopHeader(t *testing.T) {
 	tests := []struct {
 		name string
@@ -598,7 +666,7 @@ func TestProxyService_forwardRequest_RewritesLocationInRedirect(t *testing.T) {
 	mockManager := NewMockManager(cache, nil, "test-origin", urlMapFunc)
 	proxy := NewProxyService(cfg, mockManager, urlMapFunc)
 
-	req := httptest.NewRequest("GET", targetServer.URL+"/login", nil)
+	req := httptest.NewRequest("GET", "http://my-app/login", nil)
 	resp, err := proxy.HandleRequest(req)
 	if err != nil {
 		t.Fatalf("HandleRequest() error = %v", err)

@@ -243,6 +243,98 @@
           ]
         }
       ]
+    },
+    {
+      "name": "Unmocked hosts go to the real host",
+      "steps": [
+        {
+          "name": "Service-a calls hosts that do not exist",
+          "action": {
+            "type": "httpRequest",
+            "method": "POST",
+            "url": "service-a/external-call",
+            "headers": { "Content-Type": "application/json" },
+            "body": {
+              "requests": [
+                {
+                  "baseURL": "http://unmocked.invalid",
+                  "url": "/",
+                  "method": "GET"
+                },
+                {
+                  "baseURL": "https://unmocked.invalid",
+                  "url": "/",
+                  "method": "GET"
+                },
+                {
+                  "baseURL": "http://unmocked.invalid",
+                  "url": "/health",
+                  "method": "GET"
+                },
+                {
+                  "baseURL": "http://unmocked.invalid",
+                  "url": "/service-b",
+                  "method": "GET"
+                },
+                {
+                  "baseURL": "http://service-b.invalid",
+                  "url": "/",
+                  "method": "GET"
+                }
+              ]
+            }
+          },
+          "assertions": [
+            {
+              "assertions": [
+                {
+                  "path": "$.response.body.results[0].status",
+                  "operator": "eq",
+                  "value": 502
+                },
+                {
+                  "path": "$.response.body.results[1].status",
+                  "operator": "eq",
+                  "value": 502
+                },
+                {
+                  "path": "$.response.body.results[2].status",
+                  "operator": "eq",
+                  "value": 502
+                },
+                {
+                  "path": "$.response.body.results[3].status",
+                  "operator": "eq",
+                  "value": 502
+                },
+                {
+                  "path": "$.response.body.results[4].status",
+                  "operator": "eq",
+                  "value": 502
+                }
+              ]
+            },
+            {
+              "match": {
+                "path": "$.traffic",
+                "where": [
+                  {
+                    "path": "$$.origin",
+                    "operator": "eq",
+                    "value": "service-a"
+                  },
+                  {
+                    "path": "$$.to",
+                    "operator": "eq",
+                    "value": "service-b.invalid"
+                  }
+                ],
+                "count": 1
+              }
+            }
+          ]
+        }
+      ]
     }
   ]
 }

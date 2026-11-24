@@ -129,7 +129,7 @@ func (l *Logger) logResponseInternal(r *http.Request, statusCode int, isMocked b
 	if targetServiceName != "" {
 		serviceName = targetServiceName
 	} else {
-		serviceName = extractServiceNameFromRequest(r, urlMap)
+		serviceName = extractServiceNameFromRequest(r, urlMap, origin)
 	}
 
 	// Check urlMap - if service is in map, it's an internal service
