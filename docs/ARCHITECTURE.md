@@ -40,7 +40,7 @@ CT's internal feature modules:
 
 | Service          | Responsibility                                                                                                                                                                                                                                                                                                                                             |
 | ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Interceptor**  | HTTP traffic interception, mock responses, log publishing to Control Tower. Two variants: shared (external traffic) and sidecar (service-to-service)                                                                                                                                                                                                       |
+| **Interceptor**  | HTTP traffic interception, mock responses, log publishing to Control Tower. Two variants: sidecar (requests made by a service, worker or browser) and global (requests made by test steps)                                                                                                                                                                 |
 | **Test Agent**   | Reads test config from bind-mounted config file, gates on staged health (waits for each stage to be healthy, then calls CT to deploy the next stage via `POST /instances/:id/run-stage`), executes test steps (HTTP, DB, UI, wait), validates assertions inline against in-memory logs, reports results to Control Tower, POSTs `/test-complete` when done |
 | **DB Proxy**     | Wire protocol proxy sidecar for databases. Transparent TCP proxy that parses each database's native wire protocol to extract and log queries without modifying traffic. Variants for PostgreSQL, MySQL, MongoDB, Redis                                                                                                                                     |
 | **Broker Proxy** | Wire protocol proxy sidecar for message brokers. Transparent TCP proxy that relays all frames unchanged while inspecting publish/deliver operations to log message metadata and bodies. Currently supports AMQP 0-9-1 (RabbitMQ)                                                                                                                           |
@@ -153,7 +153,7 @@ Each test run gets an isolated Docker network. Container topology:
 dokkimi-{run-id} (Docker network)
 │
 ├── interceptor (standalone container on network)
-│   └── interceptor (external traffic + mocks)
+│   └── interceptor (test-step requests + mocks)
 │
 ├── user-service group (shared network namespace)
 │   ├── user-service (primary container, network alias)
@@ -181,7 +181,7 @@ dokkimi-{run-id} (Docker network)
 
 Every user service gets two sidecars:
 
-1. **Sidecar Interceptor** — sits between the service and all outbound HTTP. Captures request/response pairs, POSTs them to Control Tower's `log-processing` module, and can serve mock responses based on config file rules.
+1. **Sidecar Interceptor** — sits between the service and all outbound HTTP. Captures request/response pairs, POSTs them to Control Tower's `log-processing` module, and can serve mock responses based on config file rules. Mocks are checked first, for every request. Then a request goes to the service whose name is exactly its host, or else to the real host, over the scheme the caller used. Test steps send the target as the first path segment; the global interceptor moves it to the host and applies the same rule.
 2. **DNSMasq** — rewrites DNS so service-to-service calls route through the interceptor. Joins the user container's network namespace.
 
 Console logs are collected via the Docker API (log streaming).
@@ -342,7 +342,7 @@ dokkimi/
 
 1. **Network-per-run isolation** — each test run gets its own Docker network. Services can't interfere with each other across runs.
 
-2. **Sidecar interceptors over shared proxy** — each service gets its own interceptor sidecar for service-to-service traffic. A shared interceptor handles external/mock traffic. This avoids a single point of failure and enables per-service traffic capture.
+2. **Sidecar interceptors over shared proxy** — each service gets its own interceptor sidecar, for service-to-service and external traffic. A global interceptor handles requests made by test steps. Mocks apply to both. This avoids a single point of failure and enables per-service traffic capture.
 
 3. **Separation of concerns via modules** — CT ships as one process, but log ingestion and test validation are isolated NestJS modules with narrow public surfaces. This keeps the code organized while avoiding inter-service HTTP overhead.
 

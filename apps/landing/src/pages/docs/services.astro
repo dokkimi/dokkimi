@@ -128,6 +128,9 @@ import CodeBlock from '../../components/CodeBlock.astro';
   <h2>DNS and inter-service communication</h2>
   <p>Service names are DNS hostnames within the Docker network. Use the <code>name</code> of another item as the hostname when one service connects to another. For example, if you have a database item named <code>postgres-db</code>, your service connects to it at <code>postgres-db:5432</code>.</p>
 
+  <h2>Hosts outside the environment</h2>
+  <p>A request to a host that isn't one of your services goes to a <a href="/docs/mocks">mock</a> that matches it, or else to the real host, over the scheme the caller used. For HTTPS, the host's certificate is checked; if that fails, or the host can't be reached, the caller gets a 502.</p>
+
   <h2>Workers</h2>
   <p>The <code>WORKER</code> item type is for background processes that don't serve HTTP — queue consumers, event processors, cron daemons. Workers get an interceptor for outbound traffic capture but no health check. They are marked ready immediately on container creation.</p>
   <table>

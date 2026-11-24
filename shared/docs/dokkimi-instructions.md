@@ -449,7 +449,7 @@ Redis:
 
 ### MOCK
 
-An HTTP mock that intercepts outbound requests from services and returns controlled responses. When a service tries to call an external API (e.g., Stripe, Twilio), the interceptor sidecar matches the request against defined mocks and returns the mock response instead. Mocks apply to every request: from services, workers, test steps and the UI test browser, to external hosts and to your own services. A request that no mock matches goes to its real destination.
+An HTTP mock that intercepts outbound requests from services and returns controlled responses. When a service tries to call an external API (e.g., Stripe, Twilio), the interceptor sidecar matches the request against defined mocks and returns the mock response instead. Mocks apply to every request: from services, workers, test steps and the UI test browser, to external hosts and to your own services. A request that no mock matches goes to its real destination, over the scheme the caller used and with its certificate checked. If it can't be reached, the caller gets a 502.
 
 **HTTP and HTTPS both work — no code changes needed.** The interceptor listens on port 80 for HTTP and on port 443 for HTTPS, terminating TLS with per-hostname certificates signed by a Dokkimi CA that is generated once per environment and automatically mounted into every service container (`NODE_EXTRA_CA_CERTS` for Node.js, `SSL_CERT_FILE` for Python/Go/curl/etc., and a Java truststore for JVM services). You write `mockTarget` exactly the same way for either protocol — `"api.stripe.com"` matches both `http://api.stripe.com` and `https://api.stripe.com`. Leave your service's code calling the real Auth0/Stripe/Twilio URLs as-is; DNS in the network routes the hostname to the interceptor, the interceptor presents a trusted cert, terminates TLS, matches the request against your mocks, and serves the response.
 
@@ -917,11 +917,13 @@ Tests are defined in the top-level `tests` array. Each test is independent and c
 | ------------- | --------------- | -------- | --------------------------------------------------------------------------------------------------------------------------- |
 | `type`        | `"httpRequest"` | Yes      | Action type                                                                                                                 |
 | `method`      | enum            | Yes      | `"GET"`, `"POST"`, `"PUT"`, `"DELETE"`, `"PATCH"`, `"HEAD"`, `"OPTIONS"`                                                    |
-| `url`         | string          | Yes      | `"service-name/path"` format — service name resolves to internal DNS                                                        |
+| `url`         | string          | Yes      | `"service-name/path"` — the name of a SERVICE item and a path                                                               |
 | `headers`     | object          | No       | Request headers (values support `{{variables}}`)                                                                            |
 | `body`        | any JSON        | No       | Request body (string values support `{{variables}}`)                                                                        |
 | `formData`    | object          | No       | Multipart/form-data fields. Cannot be combined with `body`. See below.                                                      |
 | `queryParams` | object          | No       | URL query parameters. String values sent as-is; array values send repeated keys. Values support `{{variables}}`. See below. |
+
+**Where the request goes:** it is checked against mocks first, like any other request. Then the first part of `url` decides: a SERVICE name goes to that service; another name with a dot, such as `api.stripe.com/v1/charges`, goes to that host over HTTPS; any other name gets a 502 response that says there is no such service.
 
 **formData (multipart/form-data uploads):**
 
@@ -1659,6 +1661,8 @@ Where entries support logical combinators — `or`, `and`, and `not` — for com
 }
 ```
 
+In `$.traffic`, `$$.to` is the destination service, or the hostname for a host outside the environment. `$$.request.url` is the full URL with the scheme the caller used. Gzip, Brotli and Zstandard response bodies are decompressed.
+
 **Console log assertion example:**
 
 ```json
@@ -2060,7 +2064,7 @@ The `dokkimi` CLI manages the full lifecycle: validate definitions, run tests, i
 | `dokkimi doctor`                | Run environment pre-flight checks                       |
 | `dokkimi stop`                  | Stop the current test run                               |
 | `dokkimi status`                | Show service and instance status                        |
-| `dokkimi clean`                 | Stop all instances and clean up resources               |
+| `dokkimi clean`                 | Stop this project's instances and delete its runs       |
 | `dokkimi reboot`                | Restart all Dokkimi services                            |
 | `dokkimi shutdown`              | Stop all running Dokkimi services                       |
 | `dokkimi config`                | View and edit Dokkimi settings (concurrency, telemetry) |
@@ -2090,6 +2094,7 @@ dokkimi run "auth.*service"          # Regex pattern
 # Options
 dokkimi run --watch                  # Re-run on file changes
 dokkimi run auth --watch             # Combine patterns with watch mode
+dokkimi run --ci                     # Plain output for CI; prints the run's ID
 ```
 
 **Watch mode** (`--watch` / `-w`):

@@ -21,6 +21,27 @@ import CodeBlock from '../../components/CodeBlock.astro';
   </ul>
   <p>If your other MCP servers or Claude Code settings disappeared unexpectedly, this may have been the cause. If your config file is bind-mounted (for example, into a dev container), add the <code>dokkimi</code> entry manually.</p>
 
+  <h3>Requests go where they should</h3>
+  <p>The interceptor now decides where a request goes the same way for services, workers, test steps, and the UI test browser: by its exact host.</p>
+  <ul>
+    <li><strong>Unmocked calls reach the real host</strong> &mdash; A service's call to a host with no mock was sent back to that service. A call to <code>api.stripe.com</code> went to your own service if it was named <code>api</code>, and a call to any external <code>/health</code> was answered by Dokkimi. They now go to the real host, over the scheme the service used, with its certificate checked.</li>
+    <li><strong>Mocks apply to every request</strong> &mdash; A test step's request skipped mocks. A mock without a <code>mockOrigin</code>, or with <code>*</code>, now applies to steps too, for external hosts and for your own services.</li>
+    <li><strong>URLs arrive as they were sent</strong> &mdash; Requests got a trailing <code>?</code>, encoded characters such as <code>%2F</code> were decoded, and a service calling <code>http://api/api/users</code> reached <code>/users</code>.</li>
+    <li><strong>A misspelled service name fails right away</strong> &mdash; A step calling a service that doesn't exist hung until the definition timed out. It now gets a 502 that says so.</li>
+    <li><strong>Captured traffic is accurate</strong> &mdash; Brotli and Zstandard response bodies are decompressed like gzip ones, <code>$$.request.url</code> has the scheme the caller used, and calls to external hosts are logged with that host.</li>
+  </ul>
+  <p>Tests that can change: suites with unmocked calls will reach the internet, mocks may now match a step's own request, and an assertion that expects <code>http://</code> in the URL of an HTTPS call needs <code>https://</code>.</p>
+
+  <h3>CLI and AI tools</h3>
+  <ul>
+    <li><strong><code>run_tests</code> reports the run it started</strong> &mdash; If no run started, for example because the definition was invalid, the MCP tool returned the previous run's results, often as a success. It now fails and returns the CLI's output.</li>
+    <li><strong><code>dokkimi run</code> says why definitions are invalid</strong> &mdash; When none of them can run, their errors are printed. With <code>--ci</code> it also prints the run's ID.</li>
+    <li><strong><code>dokkimi dump</code> and <code>dokkimi inspect</code> keep your ids</strong> &mdash; They removed every <code>id</code> from your data, so different values could look the same.</li>
+    <li><strong><code>dokkimi clean</code> keeps other projects' saved runs</strong> &mdash; Cleaning a project also deleted the saved runs of projects in its subfolders.</li>
+    <li><strong><code>dokkimi clean</code> and <code>dokkimi uninstall</code> remove leftover containers and networks</strong> &mdash; They looked for the wrong Docker label and found none. <code>clean</code> stops with an error if Dokkimi is running but not responding.</li>
+    <li><strong><code>dokkimi init</code> creates a valid example</strong> &mdash; The example definition failed validation.</li>
+  </ul>
+
   <h2>v0.5.10</h2>
   <p><time datetime="2026-09-16">September 16, 2026</time></p>
 

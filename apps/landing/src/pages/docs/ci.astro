@@ -106,7 +106,7 @@ jobs:
   <CodeBlock code={`docker build -t my-app:latest .`} lang="bash" />
 
   <h3>Step 3: Run tests</h3>
-  <p>The <code>--ci</code> flag enables CI-optimized output (no spinners, no interactive prompts):</p>
+  <p>The <code>--ci</code> flag enables CI-optimized output (no spinners, no interactive prompts). It also prints the run's ID, which <code>dokkimi dump --run &lt;id&gt;</code> accepts:</p>
 
   <CodeBlock code="dokkimi run .dokkimi/ --ci" lang="bash" />
 

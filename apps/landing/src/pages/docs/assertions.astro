@@ -198,14 +198,14 @@ $.response.headers.x-auth    // header lookup (case-insensitive)`} lang="text" /
     </thead>
     <tbody>
       <tr><td><code>$$.origin</code> / <code>$$.from</code></td><td>string</td><td>Service that sent the request</td></tr>
-      <tr><td><code>$$.to</code></td><td>string</td><td>Destination service</td></tr>
+      <tr><td><code>$$.to</code></td><td>string</td><td>Destination service, or the hostname for a host outside the environment</td></tr>
       <tr><td><code>$$.request.method</code></td><td>string</td><td>HTTP method</td></tr>
-      <tr><td><code>$$.request.url</code></td><td>string</td><td>Request URL</td></tr>
+      <tr><td><code>$$.request.url</code></td><td>string</td><td>Full URL, with the scheme the caller used, such as <code>https://api.stripe.com/v1/charges</code></td></tr>
       <tr><td><code>$$.request.headers</code></td><td>object</td><td>Request headers (lowercase keys)</td></tr>
       <tr><td><code>$$.request.body</code></td><td>any</td><td>Request body</td></tr>
       <tr><td><code>$$.response.status</code></td><td>number</td><td>HTTP status code</td></tr>
       <tr><td><code>$$.response.headers</code></td><td>object</td><td>Response headers (lowercase keys)</td></tr>
-      <tr><td><code>$$.response.body</code></td><td>any</td><td>Response body</td></tr>
+      <tr><td><code>$$.response.body</code></td><td>any</td><td>Response body. Gzip, Brotli, and Zstandard are decompressed.</td></tr>
       <tr><td><code>$$.responseTime</code></td><td>number</td><td>Response time in milliseconds</td></tr>
       <tr><td><code>$$.timestamp</code></td><td>string</td><td>When the request was captured</td></tr>
     </tbody>

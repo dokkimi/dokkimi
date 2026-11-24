@@ -142,7 +142,7 @@ Image tags and other values can be centralized in `.dokkimi/config.yaml` using `
 | `dokkimi dump`              | Export last run as JSON for AI-assisted debugging |
 | `dokkimi doctor`            | Check prerequisites and system health             |
 | `dokkimi status`            | Show whether Dokkimi is running                   |
-| `dokkimi clean`             | Stop all instances and clean up resources         |
+| `dokkimi clean`             | Stop this project's instances, delete its runs    |
 | `dokkimi config`            | View and edit Dokkimi settings                    |
 | `dokkimi reboot`            | Restart Dokkimi services                          |
 | `dokkimi uninstall`         | Remove Dokkimi from your system                   |

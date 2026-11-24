@@ -25,7 +25,7 @@ import CodeBlock from '../../components/CodeBlock.astro';
 
   <h2>Scaffold example definitions</h2>
   <CodeBlock code="dokkimi init" lang="bash" />
-  <p>This creates a <code>.dokkimi/</code> folder with an example topology — a simple API gateway, a backend service, and a Postgres database. See <a href="/docs/project-structure">Project Structure</a> for details on how this folder is organized.</p>
+  <p>This creates a <code>.dokkimi/</code> folder with an example definition (one service and a health check test), a shared Postgres fragment, and an init script. Replace <code>my-service:latest</code> in the example with your own image before you run it. See <a href="/docs/project-structure">Project Structure</a> for details on how this folder is organized.</p>
 
   <h2>Run your first test</h2>
   <CodeBlock code="dokkimi run" lang="bash" />
