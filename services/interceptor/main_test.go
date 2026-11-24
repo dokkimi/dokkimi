@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -366,7 +367,7 @@ func TestHandleRequest_GzipResponseForwardsCompressedBytes(t *testing.T) {
 
 // handleAndCapture sends a request through the interceptor and returns the
 // response and what was logged.
-func handleAndCapture(t *testing.T, url string, target http.Handler) (*httptest.ResponseRecorder, HttpLogMessage) {
+func handleAndCapture(t *testing.T, origin, url string, target http.Handler) (*httptest.ResponseRecorder, HttpLogMessage) {
 	t.Helper()
 	logged := make(chan HttpLogMessage, 1)
 	logServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -378,13 +379,17 @@ func handleAndCapture(t *testing.T, url string, target http.Handler) (*httptest.
 	targetServer := httptest.NewServer(target)
 	defer targetServer.Close()
 
-	cfg := &Config{RequestTimeout: 30 * time.Second, Namespace: "test-ns", Origin: "test-origin"}
+	cfg := &Config{RequestTimeout: 30 * time.Second, Namespace: "test-ns", Origin: origin}
 	cache := NewMockCache(5 * time.Minute)
 	cache.SetUrlMap(UrlMap{
 		"service-a": ServiceInfo{Scheme: "http", URL: targetServer.URL, Name: "service-a"},
 	})
 	body := `{"mocked":true}`
-	cache.SetMocks([]MockEndpoint{{Method: "GET", Target: "api.example.com", Path: "/v1", Origin: "*", ResponseBody: &body}})
+	cache.SetMocks([]MockEndpoint{
+		{Method: "GET", Target: "api.example.com", Path: "/v1", Origin: "*", ResponseBody: &body},
+		{Method: "GET", Target: "service-a", Path: "/mocked", Origin: "*", ResponseBody: &body},
+		{Method: "GET", Target: "*", Path: "/anywhere", Origin: "*", ResponseBody: &body},
+	})
 	proxyService := NewProxyService(cfg, NewMockManager(cache, nil, cfg.Origin, cache.GetUrlMap), cache.GetUrlMap)
 	logger := NewLogger(logServer.URL, 5*time.Second, nil)
 	defer logger.Stop()
@@ -437,7 +442,7 @@ func TestHandleRequest_LogsDecompressedBodies(t *testing.T) {
 		{"not really zstd", "zstd", []byte("plain"), "plain"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			w, message := handleAndCapture(t, "http://service-a/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w, message := handleAndCapture(t, "test-origin", "http://service-a/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				if tc.encoding != "" {
 					w.Header().Set("Content-Encoding", tc.encoding)
 				}
@@ -462,8 +467,49 @@ func TestHandleRequest_LogsTheSchemeUsed(t *testing.T) {
 		"https://api.example.com/v1",
 		"https://unmocked.invalid/x",
 	} {
-		if _, message := handleAndCapture(t, url, ok); message.URL != url {
+		if _, message := handleAndCapture(t, "test-origin", url, ok); message.URL != url {
 			t.Errorf("logged %s, want %s", message.URL, url)
 		}
+	}
+}
+
+// Mocks apply to every request, and every request is logged with its target.
+func TestHandleRequest_FromServiceAndStep(t *testing.T) {
+	target := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("real " + r.RequestURI))
+	})
+	for _, tc := range []struct{ host, path, url, body string }{
+		{"service-a", "/x", "http://service-a/x", "real /x"},
+		{"service-a", "/service-a/x?y=1", "http://service-a/service-a/x?y=1", "real /service-a/x?y=1"},
+		{"service-a", "/mocked", "http://service-a/mocked", `{"mocked":true}`},
+		{"service-a", "/anywhere", "http://service-a/anywhere", `{"mocked":true}`},
+		{"api.example.com", "/v1", "https://api.example.com/v1", `{"mocked":true}`},
+		{"unmocked.invalid", "/anywhere", "https://unmocked.invalid/anywhere", `{"mocked":true}`},
+	} {
+		for origin, url := range map[string]string{
+			"test-origin": tc.url,
+			"":            "http://interceptor-service/" + tc.host + tc.path,
+		} {
+			w, message := handleAndCapture(t, origin, url, target)
+			if w.Body.String() != tc.body {
+				t.Errorf("origin %q, %s%s: got %q, want %q", origin, tc.host, tc.path, w.Body.String(), tc.body)
+			}
+			if message.Target == nil || *message.Target != tc.host {
+				t.Errorf("origin %q, %s%s: logged target %v", origin, tc.host, tc.path, message.Target)
+			}
+			if message.URL != tc.url {
+				t.Errorf("origin %q, %s%s: logged %s, want %s", origin, tc.host, tc.path, message.URL, tc.url)
+			}
+		}
+	}
+}
+
+func TestHandleRequest_UnknownServiceInStep(t *testing.T) {
+	w, message := handleAndCapture(t, "", "http://interceptor-service/service-b/x", http.NotFoundHandler())
+	if w.Code != http.StatusBadGateway || !strings.Contains(w.Body.String(), `no service named "service-b"`) {
+		t.Errorf("got %d %q", w.Code, w.Body.String())
+	}
+	if message.URL != "http://service-b/x" || *message.StatusCode != http.StatusBadGateway {
+		t.Errorf("logged %s %d", message.URL, *message.StatusCode)
 	}
 }

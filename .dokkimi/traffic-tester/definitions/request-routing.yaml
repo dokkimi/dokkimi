@@ -1,0 +1,248 @@
+name: request-routing
+description: Requests from services and from steps reach their target, and mocks apply to both
+config:
+  timeoutSeconds: 120
+items:
+  - $ref: ../shared/service-a.yaml
+  # Answers with the URL it received
+  - type: SERVICE
+    name: api
+    image: ghcr.io/dokkimi/traffic-tester:0.1.0
+    port: 4000
+    healthCheck: /health
+    command:
+      - node
+      - -e
+      - |
+        require('http').createServer((req, res) => {
+          res.setHeader('Content-Type', 'application/json');
+          res.end(JSON.stringify({ url: req.url }));
+        }).listen(4000);
+  # Keeps calling a service, a mock, and hosts that don't exist
+  - type: WORKER
+    name: worker
+    image: ghcr.io/dokkimi/traffic-tester:0.1.0
+    command:
+      - node
+      - -e
+      - |
+        const urls = ['http://api/api/worker', 'https://mocked.example.com/v1/worker', 'http://api.invalid/worker', 'https://unmocked.invalid/api/worker'];
+        setInterval(() => urls.forEach((url) => fetch(url).catch(() => {})), 300);
+  - type: MOCK
+    name: mock-external
+    mockTarget: mocked.example.com
+    mockPath: /v1/*
+    mockResponseBody: { mocked: external }
+  - type: MOCK
+    name: mock-service
+    mockTarget: api
+    mockPath: /mocked
+    mockResponseBody: { mocked: service }
+  - type: MOCK
+    name: mock-any
+    mockTarget: '*'
+    mockPath: /anywhere
+    mockResponseBody: { mocked: any }
+tests:
+  - name: From a service
+    steps:
+      - name: Service-a calls api and mocks
+        action:
+          type: httpRequest
+          method: POST
+          url: service-a/call
+          headers: { Content-Type: application/json }
+          body:
+            requests:
+              - { method: GET, baseURL: 'http://api', url: /api/users }
+              - { method: GET, baseURL: 'http://api', url: /api }
+              - { method: GET, baseURL: 'http://api', url: /service-a/users }
+              - {
+                  method: GET,
+                  baseURL: 'https://mocked.example.com',
+                  url: /v1/x,
+                }
+              - { method: GET, baseURL: 'http://api', url: /mocked }
+              - { method: GET, baseURL: 'http://api', url: /anywhere }
+        assertions:
+          - assertions:
+              - {
+                  path: '$.response.body.results[0].url',
+                  operator: eq,
+                  value: /api/users,
+                }
+              - {
+                  path: '$.response.body.results[1].url',
+                  operator: eq,
+                  value: /api,
+                }
+              - {
+                  path: '$.response.body.results[2].url',
+                  operator: eq,
+                  value: /service-a/users,
+                }
+              - {
+                  path: '$.response.body.results[3].mocked',
+                  operator: eq,
+                  value: external,
+                }
+              - {
+                  path: '$.response.body.results[4].mocked',
+                  operator: eq,
+                  value: service,
+                }
+              - {
+                  path: '$.response.body.results[5].mocked',
+                  operator: eq,
+                  value: any,
+                }
+  - name: From a step
+    steps:
+      - name: Path that starts with the service's name
+        action: { type: httpRequest, method: GET, url: api/api/users }
+        assertions:
+          - assertions:
+              - { path: $.response.body.url, operator: eq, value: /api/users }
+      - name: Mocked external host
+        action: { type: httpRequest, method: GET, url: mocked.example.com/v1/x }
+        assertions:
+          - assertions:
+              - { path: $.response.body.mocked, operator: eq, value: external }
+          - match:
+              path: $.traffic
+              where:
+                - { path: $$.to, operator: eq, value: mocked.example.com }
+              count: 1
+      - name: Mocked service
+        action: { type: httpRequest, method: GET, url: api/mocked }
+        assertions:
+          - assertions:
+              - { path: $.response.body.mocked, operator: eq, value: service }
+      - name: Mock for any target
+        action: { type: httpRequest, method: GET, url: api/anywhere }
+        assertions:
+          - assertions:
+              - { path: $.response.body.mocked, operator: eq, value: any }
+      - name: Service that doesn't exist
+        action: { type: httpRequest, method: GET, url: apii/users }
+        assertions:
+          - assertions:
+              - { path: $.response.status, operator: eq, value: 502 }
+              - {
+                  path: $.response.body.error,
+                  operator: contains,
+                  value: no service named,
+                }
+  - name: From a worker
+    steps:
+      - name: Wait for its calls
+        action: { type: wait, durationMs: 2000 }
+        assertions:
+          - match:
+              path: $.traffic
+              where:
+                - { path: $$.origin, operator: eq, value: worker }
+                - { path: $$.to, operator: eq, value: api }
+                - {
+                    path: $$.request.url,
+                    operator: eq,
+                    value: 'http://api/api/worker',
+                  }
+                - { path: $$.response.status, operator: eq, value: 200 }
+              count: { operator: gte, value: 1 }
+          - match:
+              path: $.traffic
+              where:
+                - { path: $$.origin, operator: eq, value: worker }
+                - { path: $$.to, operator: eq, value: mocked.example.com }
+                - {
+                    path: $$.request.url,
+                    operator: eq,
+                    value: 'https://mocked.example.com/v1/worker',
+                  }
+                - { path: $$.response.status, operator: eq, value: 200 }
+              count: { operator: gte, value: 1 }
+          - match:
+              path: $.traffic
+              where:
+                - { path: $$.origin, operator: eq, value: worker }
+                - { path: $$.to, operator: eq, value: api.invalid }
+                - {
+                    path: $$.request.url,
+                    operator: eq,
+                    value: 'http://api.invalid/worker',
+                  }
+                - { path: $$.response.status, operator: eq, value: 502 }
+              count: { operator: gte, value: 1 }
+          - match:
+              path: $.traffic
+              where:
+                - { path: $$.origin, operator: eq, value: worker }
+                - { path: $$.to, operator: eq, value: unmocked.invalid }
+                - {
+                    path: $$.request.url,
+                    operator: eq,
+                    value: 'https://unmocked.invalid/api/worker',
+                  }
+                - { path: $$.response.status, operator: eq, value: 502 }
+              count: { operator: gte, value: 1 }
+  - name: From the browser
+    steps:
+      - name: Visit a service, a mock, and hosts that don't exist
+        action:
+          type: ui
+          target: api
+          steps:
+            - visit: /api/browser
+            - visit: https://mocked.example.com/v1/browser
+            - visit: http://api.invalid/browser
+            - visit: https://unmocked.invalid/api/browser
+        assertions:
+          - match:
+              path: $.traffic
+              where:
+                - { path: $$.origin, operator: eq, value: chromium }
+                - { path: $$.to, operator: eq, value: api }
+                - {
+                    path: $$.request.url,
+                    operator: eq,
+                    value: 'http://api/api/browser',
+                  }
+                - { path: $$.response.status, operator: eq, value: 200 }
+              count: { operator: gte, value: 1 }
+          - match:
+              path: $.traffic
+              where:
+                - { path: $$.origin, operator: eq, value: chromium }
+                - { path: $$.to, operator: eq, value: mocked.example.com }
+                - {
+                    path: $$.request.url,
+                    operator: eq,
+                    value: 'https://mocked.example.com/v1/browser',
+                  }
+                - { path: $$.response.status, operator: eq, value: 200 }
+              count: { operator: gte, value: 1 }
+          - match:
+              path: $.traffic
+              where:
+                - { path: $$.origin, operator: eq, value: chromium }
+                - { path: $$.to, operator: eq, value: api.invalid }
+                - {
+                    path: $$.request.url,
+                    operator: eq,
+                    value: 'http://api.invalid/browser',
+                  }
+                - { path: $$.response.status, operator: eq, value: 502 }
+              count: { operator: gte, value: 1 }
+          - match:
+              path: $.traffic
+              where:
+                - { path: $$.origin, operator: eq, value: chromium }
+                - { path: $$.to, operator: eq, value: unmocked.invalid }
+                - {
+                    path: $$.request.url,
+                    operator: eq,
+                    value: 'https://unmocked.invalid/api/browser',
+                  }
+                - { path: $$.response.status, operator: eq, value: 502 }
+              count: { operator: gte, value: 1 }

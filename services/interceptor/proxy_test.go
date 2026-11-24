@@ -218,49 +218,6 @@ func TestProxyService_forwardRequest(t *testing.T) {
 	}
 }
 
-func TestExtractServiceName(t *testing.T) {
-	tests := []struct {
-		name     string
-		hostname string
-		want     string
-	}{
-		{
-			name:     "FQDN with multiple dots",
-			hostname: "nginx-test.dokkimi-xxx.svc.cluster.local",
-			want:     "nginx-test",
-		},
-		{
-			name:     "simple hostname",
-			hostname: "nginx-test",
-			want:     "nginx-test",
-		},
-		{
-			name:     "FQDN with port (port should be stripped before calling extractServiceName)",
-			hostname: "nginx-test.dokkimi-xxx.svc.cluster.local",
-			want:     "nginx-test",
-		},
-		{
-			name:     "single dot",
-			hostname: "service.namespace",
-			want:     "service",
-		},
-		{
-			name:     "hostname without dots",
-			hostname: "nginx-test",
-			want:     "nginx-test",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := extractServiceName(tt.hostname)
-			if got != tt.want {
-				t.Errorf("extractServiceName(%q) = %v, want %v", tt.hostname, got, tt.want)
-			}
-		})
-	}
-}
-
 func TestProxyService_getTargetURL(t *testing.T) {
 	cfg := &Config{
 		RequestTimeout:  30 * time.Second,
@@ -310,35 +267,17 @@ func TestProxyService_getTargetURL(t *testing.T) {
 	}{
 		{
 			name:    "with URL mapping using service name",
-			request: httptest.NewRequest("GET", "http://example.com/path?query=1", nil),
+			request: httptest.NewRequest("GET", "http://example/path?query=1", nil),
 			want:    "https://target.example.com/path?query=1",
 		},
 		{
-			name: "with FQDN hostname, extracts service name",
-			request: func() *http.Request {
-				req := httptest.NewRequest("GET", "http://nginx-test.dokkimi-xxx.svc.cluster.local/path", nil)
-				req.Host = "nginx-test.dokkimi-xxx.svc.cluster.local"
-				return req
-			}(),
-			want: "http://nginx-test:80/path",
-		},
-		{
-			name: "with FQDN hostname and port, extracts service name",
-			request: func() *http.Request {
-				req := httptest.NewRequest("GET", "http://nginx-test.dokkimi-xxx.svc.cluster.local:8080/path", nil)
-				req.Host = "nginx-test.dokkimi-xxx.svc.cluster.local:8080"
-				return req
-			}(),
-			want: "http://nginx-test:80/path",
-		},
-		{
 			name:    "with URL mapping, empty URL uses host",
-			request: httptest.NewRequest("GET", "http://test.com/path", nil),
-			want:    "http://test.com/path",
+			request: httptest.NewRequest("GET", "http://test/path", nil),
+			want:    "http://test/path",
 		},
 		{
 			name:    "with URL mapping, empty scheme defaults to http",
-			request: httptest.NewRequest("GET", "http://empty.com/path", nil),
+			request: httptest.NewRequest("GET", "http://empty/path", nil),
 			want:    "http://empty.com/path",
 		},
 		{
@@ -358,8 +297,8 @@ func TestProxyService_getTargetURL(t *testing.T) {
 		{
 			name: "with URL mapping and port in Host header",
 			request: func() *http.Request {
-				req := httptest.NewRequest("GET", "http://example.com:8080/path", nil)
-				req.Host = "example.com:8080"
+				req := httptest.NewRequest("GET", "http://example:8080/path", nil)
+				req.Host = "example:8080"
 				return req
 			}(),
 			want: "https://target.example.com/path",
@@ -367,11 +306,11 @@ func TestProxyService_getTargetURL(t *testing.T) {
 		{
 			name: "with URL mapping, port stripped from hostname",
 			request: func() *http.Request {
-				req := httptest.NewRequest("GET", "http://test.com:9090/path", nil)
-				req.Host = "test.com:9090"
+				req := httptest.NewRequest("GET", "http://test:9090/path", nil)
+				req.Host = "test:9090"
 				return req
 			}(),
-			want: "http://test.com:9090/path", // When URL is empty, uses r.Host which includes port
+			want: "http://test:9090/path", // When URL is empty, uses r.Host which includes port
 		},
 		{
 			name: "with URL mapping and Port field, appends real port for forwarding",
@@ -411,9 +350,14 @@ func TestProxyService_getTargetURL_FromStep(t *testing.T) {
 		"/api/a%2Fb/100%25?q=a%20b":      "http://api:4000/a%2Fb/100%25?q=a%20b",
 		"/api.stripe.com/v1/a%2Fb":       "https://api.stripe.com/v1/a%2Fb",
 		"/api.stripe.com/v1/charges?x=1": "https://api.stripe.com/v1/charges?x=1",
+		"/api/api/users":                 "http://api:4000/api/users",
+		"/API/users":                     "http://api:4000/users",
+		"/example.com/x":                 "https://example.com/x",
 		"/api.stripe.com":                "https://api.stripe.com/",
 	} {
-		if got := proxy.getTargetURL(httptest.NewRequest("GET", "http://interceptor-service"+request, nil)); got != want {
+		r := httptest.NewRequest("GET", "http://interceptor-service"+request, nil)
+		takeTargetFromPath(r, urlMap())
+		if got := proxy.getTargetURL(r); got != want {
 			t.Errorf("%s: got %s, want %s", request, got, want)
 		}
 	}
@@ -432,16 +376,19 @@ func TestProxyService_getTargetURL_FromService(t *testing.T) {
 	proxy := NewProxyService(cfg, NewMockManager(NewMockCache(time.Minute), nil, cfg.Origin, urlMap), urlMap)
 
 	for request, want := range map[string]string{
-		"http://example.com/":               "http://example.com/",
-		"https://example.com/":              "https://example.com/",
-		"http://example.com:8080/x?y=1":     "http://example.com:8080/x?y=1",
-		"https://example.com/a%2Fb?q=a%20b": "https://example.com/a%2Fb?q=a%20b",
-		"https://api.stripe.com/v1/charges": "https://api.stripe.com/v1/charges",
-		"https://example.com/api/9":         "https://example.com/api/9",
-		"https://example.com/pkg-1.2.3.tgz": "https://example.com/pkg-1.2.3.tgz",
-		"http://api/orders":                 "http://api:4000/orders",
-		"http://api/a%2Fb/100%25?q=a%20b":   "http://api:4000/a%2Fb/100%25?q=a%20b",
-		"http://web/self":                   "http://web:3000/self",
+		"http://example.com/":                  "http://example.com/",
+		"https://example.com/":                 "https://example.com/",
+		"http://example.com:8080/x?y=1":        "http://example.com:8080/x?y=1",
+		"https://example.com/a%2Fb?q=a%20b":    "https://example.com/a%2Fb?q=a%20b",
+		"https://api.stripe.com/v1/charges":    "https://api.stripe.com/v1/charges",
+		"https://example.com/api/9":            "https://example.com/api/9",
+		"https://example.com/pkg-1.2.3.tgz":    "https://example.com/pkg-1.2.3.tgz",
+		"http://api/api/users":                 "http://api:4000/api/users",
+		"http://api/web/x":                     "http://api:4000/web/x",
+		"http://api/namespace-1/interceptor/x": "http://api:4000/namespace-1/interceptor/x",
+		"http://api/orders":                    "http://api:4000/orders",
+		"http://api/a%2Fb/100%25?q=a%20b":      "http://api:4000/a%2Fb/100%25?q=a%20b",
+		"http://web/self":                      "http://web:3000/self",
 	} {
 		if got := proxy.getTargetURL(httptest.NewRequest("GET", request, nil)); got != want {
 			t.Errorf("%s: got %s, want %s", request, got, want)

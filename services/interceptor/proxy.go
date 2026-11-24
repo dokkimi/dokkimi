@@ -86,9 +86,10 @@ func (p *ProxyService) HandleRequest(r *http.Request) (*http.Response, error) {
 
 // forwardRequest forwards the request to the target service
 func (p *ProxyService) forwardRequest(r *http.Request) (*http.Response, error) {
-	// Extract target service name before getTargetURL modifies the path
-	urlMap := p.urlMap()
-	targetServiceName := extractServiceNameFromRequest(r, urlMap, p.origin)
+	targetServiceName := targetService(r, p.urlMap())
+	if p.origin == "" && targetServiceName == "" && !strings.Contains(r.Host, ".") {
+		return nil, fmt.Errorf("no service named %q", r.Host)
+	}
 
 	// Determine target URL
 	targetURL := p.getTargetURL(r)
@@ -200,76 +201,54 @@ func (p *ProxyService) rewriteLocationHeader(resp *http.Response, targetServiceN
 func (p *ProxyService) getTargetURL(r *http.Request) string {
 	urlMap := p.urlMap()
 
-	serviceName := extractServiceNameFromRequest(r, urlMap, p.origin)
+	// A host outside the environment: go to the real one.
+	serviceInfo, exists := urlMap[targetService(r, urlMap)]
+	if !exists {
+		return schemeUsed(r) + "://" + r.Host + r.URL.RequestURI()
+	}
 
-	// A service, worker or browser called a host outside the environment: go to
-	// the real one, over the scheme the caller used.
-	if p.origin != "" && serviceName == "" {
-		scheme := "http"
-		if r.TLS != nil {
-			scheme = "https"
+	baseURL := serviceInfo.URL
+	if baseURL == "" {
+		baseURL = r.Host
+	}
+	if !strings.HasPrefix(baseURL, "http://") && !strings.HasPrefix(baseURL, "https://") {
+		scheme := serviceInfo.Scheme
+		if scheme == "" {
+			scheme = "http"
 		}
-		return scheme + "://" + r.Host + r.URL.RequestURI()
+		baseURL = scheme + "://" + baseURL
 	}
+	return appendServicePort(baseURL, serviceInfo.Port) + r.URL.RequestURI()
+}
 
-	// If service name was found in path, remove the raw path[0] from the path for forwarding.
-	// The raw path[0] may differ from serviceName if normalization was applied (e.g., MY_SERVICE → my-service).
-	if serviceName != "" {
-		pathParts := strings.Split(strings.TrimPrefix(r.URL.Path, "/"), "/")
-		if len(pathParts) > 0 && (pathParts[0] == serviceName || normalizeForUrlMap(pathParts[0]) == serviceName) {
-			// Remove the raw path[0] from path for forwarding
-			stripFirstSegment(r.URL)
-		}
+// takeTargetFromPath moves the target of a test step's request, which is the
+// first segment of its path, to where it is for any other request: the Host.
+func takeTargetFromPath(r *http.Request, urlMap UrlMap) {
+	r.Host, _, _ = strings.Cut(strings.TrimPrefix(r.URL.Path, "/"), "/")
+	stripFirstSegment(r.URL)
+	if targetService(r, urlMap) != "" {
+		return
 	}
+	if strings.Contains(r.Host, ".") {
+		r.URL.Scheme = "https" // a step doesn't say which scheme to use
+		return
+	}
+	// Accept other spellings of a service name (e.g., MY_SERVICE → my-service)
+	if name := normalizeForUrlMap(r.Host); urlMap[name].Name != "" {
+		r.Host = name
+	}
+}
 
-	// Per-service interceptor: if traffic is for our own service, use the urlMap URL.
-	if p.origin != "" && serviceName == p.origin {
-		if serviceInfo, exists := urlMap[p.origin]; exists {
-			baseURL := resolveBaseURL(serviceInfo)
-			return baseURL + r.URL.RequestURI()
-		}
+// schemeUsed returns the scheme of a request received or made up by the interceptor.
+func schemeUsed(r *http.Request) string {
+	switch {
+	case r.TLS != nil:
+		return "https"
+	case r.URL.Scheme != "":
+		return r.URL.Scheme
+	default:
+		return "http"
 	}
-
-	// Check if we have a URL mapping
-	if serviceInfo, exists := urlMap[serviceName]; exists {
-		baseURL := serviceInfo.URL
-		if baseURL == "" {
-			scheme := serviceInfo.Scheme
-			if scheme == "" {
-				scheme = "http"
-			}
-			baseURL = scheme + "://" + r.Host
-		}
-		if !strings.HasPrefix(baseURL, "http://") && !strings.HasPrefix(baseURL, "https://") {
-			scheme := serviceInfo.Scheme
-			if scheme == "" {
-				scheme = "http"
-			}
-			baseURL = scheme + "://" + baseURL
-		}
-		baseURL = appendServicePort(baseURL, serviceInfo.Port)
-		return baseURL + r.URL.RequestURI()
-	}
-
-	// If path[0] looks like an external hostname (has 2+ dots, e.g., "api.stripe.com"),
-	// treat it as an external passthrough: strip path[0] and forward to it directly.
-	// This handles the case where the test-agent sends interceptorURL + "/api.stripe.com/v1/charges".
-	// Requires 2+ dots to avoid false positives on paths like "/api.v2/resource".
-	pathParts := strings.Split(strings.TrimPrefix(r.URL.Path, "/"), "/")
-	if len(pathParts) > 0 && pathParts[0] != "" && strings.Count(pathParts[0], ".") >= 2 {
-		remaining := *r.URL
-		stripFirstSegment(&remaining)
-		externalURL := "https://" + pathParts[0] + remaining.RequestURI()
-		log.Printf("[Interceptor] External passthrough: routing to %s", externalURL)
-		return externalURL
-	}
-
-	// Default fallback: forward to the original host
-	scheme := r.URL.Scheme
-	if scheme == "" {
-		scheme = "http"
-	}
-	return scheme + "://" + r.Host + r.URL.RequestURI()
 }
 
 // stripFirstSegment removes the first segment of a URL's path, keeping how the
@@ -285,60 +264,13 @@ func stripFirstSegment(u *url.URL) {
 	}
 }
 
-// extractServiceName extracts the service name from a hostname
-// e.g., "nginx-test.dokkimi-xxx.svc.cluster.local" -> "nginx-test"
-// e.g., "nginx-test" -> "nginx-test"
-func extractServiceName(hostname string) string {
-	if idx := strings.Index(hostname, "."); idx != -1 {
-		return hostname[:idx]
+// targetService returns the service a request is for, or "" if its Host isn't
+// exactly the name of one.
+func targetService(r *http.Request, urlMap UrlMap) string {
+	name := stripPortFromHost(r.Host)
+	if _, exists := urlMap[name]; exists {
+		return name
 	}
-	return hostname
-}
-
-// extractServiceNameFromRequest extracts the target service name from a request
-// by checking the Host header first (for service-to-service calls), then the path.
-// Returns the service name if it exists in the urlMap, empty string otherwise.
-//
-// With an origin (a per-service interceptor) only an exact Host counts, so that
-// api.stripe.com is not taken for a service named api.
-func extractServiceNameFromRequest(r *http.Request, urlMap UrlMap, origin string) string {
-	// First try Host header - this is what services use when calling each other
-	// e.g., http://traffic-tester-2/test -> Host: traffic-tester-2
-	if r.Host != "" {
-		hostname := stripPortFromHost(r.Host)
-		// Look up directly in urlMap (hostname should match container name)
-		if _, exists := urlMap[hostname]; exists {
-			return hostname
-		}
-		// Also try extracting service name from FQDN
-		// e.g., "nginx-test.dokkimi-xxx.svc.cluster.local" -> "nginx-test"
-		serviceName := extractServiceName(hostname)
-		if origin == "" && serviceName != hostname {
-			if _, exists := urlMap[serviceName]; exists {
-				return serviceName
-			}
-		}
-	}
-
-	if origin != "" {
-		return ""
-	}
-
-	// Fallback: try path (for test-agent requests where service name is in path)
-	pathParts := strings.Split(strings.TrimPrefix(r.URL.Path, "/"), "/")
-	if len(pathParts) > 0 && pathParts[0] != "" {
-		if _, exists := urlMap[pathParts[0]]; exists {
-			return pathParts[0]
-		}
-		// Try normalized form (e.g., MY_SERVICE → my-service)
-		normalized := normalizeForUrlMap(pathParts[0])
-		if normalized != pathParts[0] {
-			if _, exists := urlMap[normalized]; exists {
-				return normalized
-			}
-		}
-	}
-
 	return ""
 }
 
@@ -399,18 +331,4 @@ func appendServicePort(baseURL string, port int) string {
 	}
 	parsed.Host = parsed.Hostname() + ":" + fmt.Sprintf("%d", port)
 	return parsed.String()
-}
-
-// resolveBaseURL normalizes a ServiceInfo into a full base URL with scheme and
-// real service port for forwarding.
-func resolveBaseURL(info ServiceInfo) string {
-	baseURL := info.URL
-	if !strings.HasPrefix(baseURL, "http://") && !strings.HasPrefix(baseURL, "https://") {
-		scheme := info.Scheme
-		if scheme == "" {
-			scheme = "http"
-		}
-		baseURL = scheme + "://" + baseURL
-	}
-	return appendServicePort(baseURL, info.Port)
 }

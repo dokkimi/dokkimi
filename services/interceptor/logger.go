@@ -93,12 +93,6 @@ func (l *Logger) LogError(r *http.Request, statusCode int, urlMap UrlMap, namesp
 // logResponseInternal is the internal implementation for logging
 func (l *Logger) logResponseInternal(r *http.Request, statusCode int, isMocked bool, responseHeaders map[string]interface{}, urlMap UrlMap, namespace, origin, originID, targetServiceName string, requestBody, responseBody interface{}, requestSentAt, responseReceivedAt *time.Time) {
 	// Build user-facing URL using the target service name (not the interceptor host).
-	// By this point, the proxy has already stripped the service prefix from r.URL.Path,
-	// so the path is the actual endpoint path (e.g., "/health" not "/service-name/health").
-	scheme := "http"
-	if r.TLS != nil {
-		scheme = "https"
-	}
 	host := targetServiceName
 	if host == "" {
 		// Fallback for external/unknown targets
@@ -107,7 +101,7 @@ func (l *Logger) logResponseInternal(r *http.Request, statusCode int, isMocked b
 			host = r.URL.Host
 		}
 	}
-	fullURL := scheme + "://" + host + r.URL.Path
+	fullURL := schemeUsed(r) + "://" + host + r.URL.Path
 	if r.URL.RawQuery != "" {
 		fullURL += "?" + r.URL.RawQuery
 	}
@@ -132,7 +126,7 @@ func (l *Logger) logResponseInternal(r *http.Request, statusCode int, isMocked b
 	if targetServiceName != "" {
 		serviceName = targetServiceName
 	} else {
-		serviceName = extractServiceNameFromRequest(r, urlMap, origin)
+		serviceName = targetService(r, urlMap)
 	}
 
 	// Check urlMap - if service is in map, it's an internal service

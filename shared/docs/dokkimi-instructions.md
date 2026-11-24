@@ -449,7 +449,7 @@ Redis:
 
 ### MOCK
 
-An HTTP mock that intercepts outbound requests from services and returns controlled responses. When a service tries to call an external API (e.g., Stripe, Twilio), the interceptor sidecar matches the request against defined mocks and returns the mock response instead.
+An HTTP mock that intercepts outbound requests from services and returns controlled responses. When a service tries to call an external API (e.g., Stripe, Twilio), the interceptor sidecar matches the request against defined mocks and returns the mock response instead. Mocks apply to every request: from services, workers, test steps and the UI test browser, to external hosts and to your own services. A request that no mock matches goes to its real destination.
 
 **HTTP and HTTPS both work — no code changes needed.** The interceptor listens on port 80 for HTTP and on port 443 for HTTPS, terminating TLS with per-hostname certificates signed by a Dokkimi CA that is generated once per environment and automatically mounted into every service container (`NODE_EXTRA_CA_CERTS` for Node.js, `SSL_CERT_FILE` for Python/Go/curl/etc., and a Java truststore for JVM services). You write `mockTarget` exactly the same way for either protocol — `"api.stripe.com"` matches both `http://api.stripe.com` and `https://api.stripe.com`. Leave your service's code calling the real Auth0/Stripe/Twilio URLs as-is; DNS in the network routes the hostname to the interceptor, the interceptor presents a trusted cert, terminates TLS, matches the request against your mocks, and serves the response.
 

@@ -7,7 +7,7 @@ import CodeBlock from '../../components/CodeBlock.astro';
   <h1>Mocks</h1>
   <p class="subtitle">Intercept outbound HTTP requests from your services and return controlled responses.</p>
 
-  <p>When a service makes an outbound HTTP request, the interceptor sidecar checks it against all MOCK items. If a mock matches, the mock response is returned. If no mock matches, the request passes through to its real destination.</p>
+  <p>When a service makes an outbound HTTP request, the interceptor sidecar checks it against all MOCK items. If a mock matches, the mock response is returned. If no mock matches, the request passes through to its real destination. Mocks apply to every request: from services, workers, test steps and the UI test browser, to external hosts and to your own services.</p>
 
   <h2>Required fields</h2>
   <table>

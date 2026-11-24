@@ -192,27 +192,11 @@ func handleRequest(w http.ResponseWriter, r *http.Request, proxy *ProxyService, 
 
 	log.Printf("[Interceptor] Received request: %s %s from %s (Host: %s)", r.Method, r.URL.Path, r.RemoteAddr, r.Host)
 
-	// If request came through Ingress, strip the /namespace-{id}/interceptor prefix
-	// Ingress path format: /namespace-{namespaceId}/interceptor{actualPath}
-	if strings.HasPrefix(r.URL.Path, "/namespace-") && strings.Contains(r.URL.Path, "/interceptor") {
-		// Find where /interceptor ends
-		interceptorIdx := strings.Index(r.URL.Path, "/interceptor")
-		if interceptorIdx != -1 {
-			// Strip everything up to and including /interceptor
-			actualPath := r.URL.Path[interceptorIdx+len("/interceptor"):]
-			if actualPath == "" {
-				actualPath = "/"
-			}
-			r.URL.Path = actualPath
-		}
-	}
-
-	// Get URL map for logging
 	urlMap := cache.GetUrlMap()
-
-	// Extract target service name BEFORE proxy modifies the path
-	// This is needed because proxy.getTargetURL() modifies r.URL.Path
-	targetServiceName := extractServiceNameFromRequest(r, urlMap, cfg.Origin)
+	if cfg.Origin == "" {
+		takeTargetFromPath(r, urlMap)
+	}
+	targetServiceName := targetService(r, urlMap)
 
 	// Parse request body for logging (before it's consumed by proxy)
 	var requestBody interface{}
@@ -278,7 +262,7 @@ func handleRequest(w http.ResponseWriter, r *http.Request, proxy *ProxyService, 
 	requestSentAt := time.Now()
 
 	// Log request started
-	targetURL := targetServiceName + r.URL.Path
+	targetURL := r.Host + r.URL.Path
 	if testLogger != nil {
 		testLogger.LogRequestStarted(r.Method, targetURL, cfg.Origin)
 	}
