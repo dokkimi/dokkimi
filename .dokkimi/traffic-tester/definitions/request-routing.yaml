@@ -111,7 +111,11 @@ tests:
           - match:
               path: $.traffic
               where:
-                - { path: $$.to, operator: eq, value: mocked.example.com }
+                - {
+                    path: $$.request.url,
+                    operator: eq,
+                    value: 'https://mocked.example.com/v1/x',
+                  }
               count: 1
       - name: Mocked service
         action: { type: httpRequest, method: GET, url: api/mocked }

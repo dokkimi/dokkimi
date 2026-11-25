@@ -13,12 +13,14 @@ export class BrokerConfigService {
   getConfig(brokerType: string, version?: string): BrokerConfig {
     const imgs = getConfig().images.brokers;
 
+    // Internal ports must stay outside Linux's ephemeral range (32768-60999):
+    // an outgoing connection can be given one before the broker uses it.
     const configs: Record<string, BrokerConfig> = {
       amqp: {
         image: version ? `rabbitmq:${version}` : imgs.amqp,
         environment: {},
         nativePort: 5672,
-        internalPort: 35672, // RABBITMQ_NODE_PORT; must be ≤ 45535 (Erlang dist = port + 20000)
+        internalPort: 10672, // RABBITMQ_NODE_PORT; Erlang's port is this + 20000
       },
       kafka: {
         image: version ? `apache/kafka:${version}` : imgs.kafka,
@@ -34,7 +36,7 @@ export class BrokerConfigService {
           KAFKA_LOG_DIRS: '/tmp/kraft-combined-logs',
         },
         nativePort: 9092,
-        internalPort: 39092,
+        internalPort: 19092,
       },
     };
 

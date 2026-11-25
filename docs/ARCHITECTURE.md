@@ -207,8 +207,8 @@ The broker proxy follows the same sidecar pattern as DB Proxy but for message br
 
 | Variant | Internal Port | Wire Protocol            | Logged Operations            | Health Check                        |
 | ------- | ------------- | ------------------------ | ---------------------------- | ----------------------------------- |
-| AMQP    | 35672         | AMQP 0-9-1 frame parsing | Basic.Publish, Basic.Deliver | TCP connect to upstream broker port |
-| Kafka   | 39092         | Kafka binary protocol    | Produce, Fetch               | TCP connect to upstream broker port |
+| AMQP    | 10672         | AMQP 0-9-1 frame parsing | Basic.Publish, Basic.Deliver | TCP connect to upstream broker port |
+| Kafka   | 19092         | Kafka binary protocol    | Produce, Fetch               | TCP connect to upstream broker port |
 
 The proxy forwards every message unchanged via raw TCP relay before inspecting it. Only produce/publish and deliver/fetch operations are parsed to extract message metadata and body. Message logs are POSTed to both Control Tower (`/logs/message`) and the test agent (`/logs/message`), following the same dual-delivery pattern as HTTP logs.
 

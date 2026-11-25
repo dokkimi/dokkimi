@@ -50,6 +50,11 @@ import CodeBlock from '../../components/CodeBlock.astro';
     <li><strong>The HTTP timeout setting works</strong> &mdash; <code>DOKKIMI_HTTP_TIMEOUT</code> and the GitHub Action's <code>timeout</code> did nothing. They now set how long a test step waits for a response, 30 seconds by default. A step's own <code>timeout</code> can also be longer than 30 seconds.</li>
   </ul>
 
+  <h3>Brokers</h3>
+  <ul>
+    <li><strong>Brokers no longer fail to start at random</strong> &mdash; RabbitMQ and Kafka ran on internal ports that another connection could be using, and the definition failed with &ldquo;not ready&rdquo;.</li>
+  </ul>
+
   <h3>CLI and AI tools</h3>
   <ul>
     <li><strong><code>run_tests</code> reports the run it started</strong> &mdash; If no run started, for example because the definition was invalid, the MCP tool returned the previous run's results, often as a success. It now fails and returns the CLI's output.</li>

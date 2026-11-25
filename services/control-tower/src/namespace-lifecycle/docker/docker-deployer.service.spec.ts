@@ -139,7 +139,7 @@ const mockBrokerConfig = {
   getConfig: jest.fn().mockReturnValue({
     image: 'rabbitmq:3',
     nativePort: 5672,
-    internalPort: 35672,
+    internalPort: 10672,
     environment: {},
   }),
 };
