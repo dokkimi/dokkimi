@@ -60,10 +60,9 @@ export function validateDefinition(
     validateItem(item, i, sourceFile, r, fs);
   }
 
-  validateMockOrigins(
-    resolvedItems.map(({ item }) => item),
-    r,
-  );
+  const items = resolvedItems.map(({ item }) => item);
+  validateMockOrigins(items, r);
+  validateMockTargets(items, r);
 
   validateVariablesField(parsed.variables, 'definition', filePath, r, fs);
 
@@ -98,6 +97,33 @@ function validateMockOrigins(
       err(
         r,
         `items[${i}] (${item.name}): mockOrigin "${origin}" is not the name of a SERVICE or WORKER`,
+      );
+    }
+  });
+}
+
+/** Steps accept other spellings of a service's name (MY_SERVICE), mocks don't. */
+function validateMockTargets(
+  items: Record<string, unknown>[],
+  r: ValidationResult,
+): void {
+  const services = new Set<unknown>(
+    items.filter((i) => i.type === 'SERVICE').map((i) => i.name),
+  );
+  items.forEach((item, i) => {
+    if (
+      item.type !== 'MOCK' ||
+      typeof item.mockTarget !== 'string' ||
+      item.mockTarget.includes('{{')
+    ) {
+      return;
+    }
+    const host = item.mockTarget.split(':')[0].toLowerCase();
+    const name = host.replace(/[^a-z0-9-]/g, '-').replace(/^-+|-+$/g, '');
+    if (!host.includes('.') && host !== name && services.has(name)) {
+      err(
+        r,
+        `items[${i}] (${item.name}): mockTarget "${item.mockTarget}" can't match — use the service's name, "${name}"`,
       );
     }
   });

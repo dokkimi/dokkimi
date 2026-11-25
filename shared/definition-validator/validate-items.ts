@@ -424,12 +424,11 @@ function validateMockPath(
     problem('it must start with "/"');
   } else if (path.includes('?')) {
     problem('query strings are ignored, so leave them out');
-  } else if (
-    path
-      .replace(/\{[^{}]+\}/g, '')
-      .slice(0, -1)
-      .includes('*')
-  ) {
+  } else if (/\/(\{|:)[^/]*=/.test(path)) {
+    problem(
+      '"=" isn\'t supported in a variable; to match the rest of a path, end it with "*"',
+    );
+  } else if (path.slice(0, -1).includes('*')) {
     problem('"*" only works at the end');
   } else {
     const segments = path.split('/');

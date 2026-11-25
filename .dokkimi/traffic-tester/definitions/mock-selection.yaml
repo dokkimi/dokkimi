@@ -95,6 +95,27 @@ items:
     mockTarget: case.example.COM
     mockPath: /users/:id/orders
     mockResponseBody: { mock: fewer-variables }
+  # Trailing and doubled slashes, and "=" next to a variable
+  - type: MOCK
+    name: variable
+    mockTarget: slash.example.com
+    mockPath: /users/{id}
+    mockResponseBody: { mock: variable }
+  - type: MOCK
+    name: variable-and-slash
+    mockTarget: slash.example.com
+    mockPath: /orders/:id/
+    mockResponseBody: { mock: variable-and-slash }
+  - type: MOCK
+    name: equals-sign
+    mockTarget: slash.example.com
+    mockPath: /a=b/{id}
+    mockResponseBody: { mock: equals-sign }
+  - type: MOCK
+    name: no-slash-match
+    mockTarget: slash.example.com
+    mockPath: /*
+    mockResponseBody: { mock: no-slash-match }
   # Encoded paths, ports and response headers
   - type: MOCK
     name: encoded-segment
@@ -346,6 +367,54 @@ tests:
                   operator: eq,
                   value: two-variables,
                 }
+  - name: Variables match whole segments
+    steps:
+      - name: Service-a calls a mocked host
+        action:
+          type: httpRequest
+          method: POST
+          url: service-a/call
+          headers: { Content-Type: application/json }
+          body:
+            requests:
+              - method: GET
+                baseURL: 'http://slash.example.com'
+                url: /users/1
+              - method: GET
+                baseURL: 'http://slash.example.com'
+                url: /users/1/
+              - method: GET
+                baseURL: 'http://slash.example.com'
+                url: /orders/1/
+              - method: GET
+                baseURL: 'http://slash.example.com'
+                url: /orders/1
+              - method: GET
+                baseURL: 'http://slash.example.com'
+                url: /users//1
+              - method: GET
+                baseURL: 'http://slash.example.com'
+                url: /a=b/1
+        assertions:
+          - assertions:
+              - path: '$.response.body.results[0].mock'
+                operator: eq
+                value: variable
+              - path: '$.response.body.results[1].mock'
+                operator: eq
+                value: no-slash-match
+              - path: '$.response.body.results[2].mock'
+                operator: eq
+                value: variable-and-slash
+              - path: '$.response.body.results[3].mock'
+                operator: eq
+                value: no-slash-match
+              - path: '$.response.body.results[4].mock'
+                operator: eq
+                value: no-slash-match
+              - path: '$.response.body.results[5].mock'
+                operator: eq
+                value: equals-sign
   - name: Encoded paths, ports and response headers
     steps:
       - name: Service-a calls an encoded path

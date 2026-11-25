@@ -17,7 +17,7 @@ import CodeBlock from '../../components/CodeBlock.astro';
     <tbody>
       <tr><td><code>type</code></td><td><code>"MOCK"</code></td><td>Item type</td></tr>
       <tr><td><code>name</code></td><td>string</td><td>Unique name (1-63 chars)</td></tr>
-      <tr><td><code>mockTarget</code></td><td>string</td><td>Target host, in any case (e.g., <code>api.stripe.com</code>), or <code>*</code> for any. Matches any port unless it includes one; <code>:443</code> and <code>:80</code> match calls that leave it out. Subdomain wildcards are not supported.</td></tr>
+      <tr><td><code>mockTarget</code></td><td>string</td><td>Target host, in any case (e.g., <code>api.stripe.com</code>), or the name of one of your services, or <code>*</code> for any. Matches any port unless it includes one; <code>:443</code> and <code>:80</code> match calls that leave it out. Subdomain wildcards are not supported.</td></tr>
       <tr><td><code>mockPath</code></td><td>string</td><td>URL path to match (e.g., <code>/v1/charges</code>, <code>/api/*</code>). Characters can be written encoded or not (<code>/a%20b</code> or <code>/a b</code>), but <code>%2F</code> is not a <code>/</code>.</td></tr>
     </tbody>
   </table>
@@ -35,7 +35,7 @@ import CodeBlock from '../../components/CodeBlock.astro';
       <tr><td><code>mockResponseStatus</code></td><td>integer</td><td>—</td><td>HTTP response status code (100-599)</td></tr>
       <tr><td><code>mockResponseHeaders</code></td><td>object</td><td>—</td><td>Response headers. A mock with a body has <code>Content-Type: application/json</code> unless set here.</td></tr>
       <tr><td><code>mockResponseBody</code></td><td>any JSON</td><td>—</td><td>Response body</td></tr>
-      <tr><td><code>mockRequestBodyContains</code></td><td>string</td><td>—</td><td>Match only requests whose body contains this text (case-insensitive). Cannot combine with <code>mockRequestBodyMatches</code>.</td></tr>
+      <tr><td><code>mockRequestBodyContains</code></td><td>string</td><td>—</td><td>Match only requests whose body contains this text (case-insensitive). Compressed bodies are decompressed first. Cannot combine with <code>mockRequestBodyMatches</code>.</td></tr>
       <tr><td><code>mockRequestBodyMatches</code></td><td>string</td><td>—</td><td>Match only requests whose body matches this Go regex. Case-sensitive; start with <code>(?i)</code> for case-insensitive. No lookaround or backreferences.</td></tr>
     </tbody>
   </table>
@@ -87,8 +87,8 @@ import CodeBlock from '../../components/CodeBlock.astro';
       <tr><td>Full wildcard</td><td><code>*</code></td><td>Any path</td></tr>
     </tbody>
   </table>
-  <p>Query strings are ignored during path matching. Wildcards in the middle of a path (e.g., <code>/api/*/posts</code>) are not supported — only trailing wildcards work — and neither are variables that are only part of a segment or combined with a wildcard. Those are validation errors.</p>
-  <p>A trailing slash matters: <code>/api/users</code> doesn't match <code>/api/users/</code>, and <code>/api/*</code> doesn't match <code>/api</code>.</p>
+  <p>Query strings are ignored during path matching. Wildcards in the middle of a path (e.g., <code>/api/*/posts</code>) are not supported — only trailing wildcards work — and neither are variables that are only part of a segment or combined with a wildcard. Those are validation errors, and so is a <code>=</code> in a variable (<code>&#123;name=**&#125;</code>).</p>
+  <p>A trailing slash matters: <code>/api/users</code> doesn't match <code>/api/users/</code>, <code>/api/users/:id</code> doesn't match <code>/api/users/1/</code>, and <code>/api/*</code> doesn't match <code>/api</code>.</p>
 
   <h2 id="precedence">Mock precedence</h2>
   <p>A mock matches a request only if its target, origin, path, method, and body conditions all match. When several mocks match, they are compared field by field, in this order. A field only matters if the mocks are equal in those before it:</p>

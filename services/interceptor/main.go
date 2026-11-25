@@ -2,7 +2,9 @@ package main
 
 import (
 	"bytes"
+	"compress/flate"
 	"compress/gzip"
+	"compress/zlib"
 	"context"
 	"crypto/rsa"
 	"crypto/tls"
@@ -203,12 +205,13 @@ func handleRequest(w http.ResponseWriter, r *http.Request, proxy *ProxyService, 
 	if r.Body != nil {
 		bodyBytes, err := io.ReadAll(r.Body)
 		if err == nil && len(bodyBytes) > 0 {
+			loggableBytes := decompress(bodyBytes, r.Header.Get("Content-Encoding"))
 			parsed := false
 			ct := r.Header.Get("Content-Type")
 			if strings.HasPrefix(ct, "multipart/form-data") {
 				if _, params, err := mime.ParseMediaType(ct); err == nil {
 					if boundary, ok := params["boundary"]; ok {
-						reader := multipart.NewReader(bytes.NewReader(bodyBytes), boundary)
+						reader := multipart.NewReader(bytes.NewReader(loggableBytes), boundary)
 						if form, err := reader.ReadForm(10 << 20); err == nil {
 							defer form.RemoveAll()
 							formMap := make(map[string]interface{}, len(form.Value)+len(form.File))
@@ -245,13 +248,13 @@ func handleRequest(w http.ResponseWriter, r *http.Request, proxy *ProxyService, 
 				}
 			} else {
 				var jsonBody interface{}
-				if err := json.Unmarshal(bodyBytes, &jsonBody); err == nil {
+				if err := json.Unmarshal(loggableBytes, &jsonBody); err == nil {
 					requestBody = jsonBody
 					parsed = true
 				}
 			}
 			if !parsed {
-				requestBody = string(bodyBytes)
+				requestBody = string(loggableBytes)
 			}
 			// Restore body for proxy
 			r.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
@@ -364,6 +367,17 @@ func decompress(body []byte, encoding string) []byte {
 			return body
 		}
 		reader = gr
+	case "deflate":
+		zr, err := zlib.NewReader(bytes.NewReader(body))
+		if err != nil {
+			// Some servers leave out the zlib header. Other bodies can look like the
+			// start of one without it, so it has to be complete.
+			if raw, err := io.ReadAll(flate.NewReader(bytes.NewReader(body))); err == nil {
+				return raw
+			}
+			return body
+		}
+		reader = zr
 	case "br":
 		reader = brotli.NewReader(bytes.NewReader(body))
 	case "zstd":

@@ -3,7 +3,9 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"compress/flate"
 	"compress/gzip"
+	"compress/zlib"
 	"context"
 	"encoding/json"
 	"errors"
@@ -351,6 +353,11 @@ func TestHandleRequest_GzipResponseForwardsCompressedBytes(t *testing.T) {
 // response and what was logged.
 func handleAndCapture(t *testing.T, origin, url string, target http.Handler) (*httptest.ResponseRecorder, HttpLogMessage) {
 	t.Helper()
+	return handleRequestAndCapture(t, origin, httptest.NewRequest("GET", url, nil), target)
+}
+
+func handleRequestAndCapture(t *testing.T, origin string, r *http.Request, target http.Handler) (*httptest.ResponseRecorder, HttpLogMessage) {
+	t.Helper()
 	logged := make(chan HttpLogMessage, 1)
 	logServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var message HttpLogMessage
@@ -377,7 +384,6 @@ func handleAndCapture(t *testing.T, origin, url string, target http.Handler) (*h
 	defer logger.Stop()
 
 	w := httptest.NewRecorder()
-	r := httptest.NewRequest("GET", url, nil)
 	handleRequest(w, r, proxyService, logger, nil, cache, cfg)
 	select {
 	case message := <-logged:
@@ -390,7 +396,13 @@ func handleAndCapture(t *testing.T, origin, url string, target http.Handler) (*h
 
 func TestHandleRequest_LogsDecompressedBodies(t *testing.T) {
 	const body = `{"name":"Alice"}`
-	var gzipped, brotlied, zstded bytes.Buffer
+	var gzipped, brotlied, zstded, zlibbed, deflated bytes.Buffer
+	lw := zlib.NewWriter(&zlibbed)
+	lw.Write([]byte(body))
+	lw.Close()
+	fw, _ := flate.NewWriter(&deflated, flate.DefaultCompression)
+	fw.Write([]byte(body))
+	fw.Close()
 	gw := gzip.NewWriter(&gzipped)
 	gw.Write([]byte(body))
 	gw.Close()
@@ -421,6 +433,11 @@ func TestHandleRequest_LogsDecompressedBodies(t *testing.T) {
 		{"not really brotli", "br", []byte("plain"), "plain"},
 		{"zstd", "zstd", zstded.Bytes(), decoded},
 		{"not really zstd", "zstd", []byte("plain"), "plain"},
+		{"deflate", "deflate", zlibbed.Bytes(), decoded},
+		{"deflate without zlib header", "deflate", deflated.Bytes(), decoded},
+		{"broken-off deflate", "deflate", zlibbed.Bytes()[:zlibbed.Len()-4], decoded},
+		{"not really deflate", "deflate", []byte("[1]"), []interface{}{1.0}},
+		{"not really deflate either", "deflate", []byte(body), decoded},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			w, message := handleAndCapture(t, "test-origin", "http://service-a/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -434,6 +451,19 @@ func TestHandleRequest_LogsDecompressedBodies(t *testing.T) {
 			}
 			if !reflect.DeepEqual(message.ResponseBody, tc.logged) {
 				t.Errorf("logged %#v, want %#v", message.ResponseBody, tc.logged)
+			}
+
+			var received []byte
+			r := httptest.NewRequest("POST", "http://service-a/", bytes.NewReader(tc.sent))
+			r.Header.Set("Content-Encoding", tc.encoding)
+			_, message = handleRequestAndCapture(t, "test-origin", r, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				received, _ = io.ReadAll(r.Body)
+			}))
+			if !bytes.Equal(received, tc.sent) {
+				t.Errorf("service got %q, want the body as sent", received)
+			}
+			if !reflect.DeepEqual(message.RequestBody, tc.logged) {
+				t.Errorf("logged request %#v, want %#v", message.RequestBody, tc.logged)
 			}
 		})
 	}

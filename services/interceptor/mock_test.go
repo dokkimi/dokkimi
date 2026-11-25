@@ -1,6 +1,8 @@
 package main
 
 import (
+	"bytes"
+	"compress/gzip"
 	"context"
 	"io"
 	"net/http"
@@ -42,6 +44,18 @@ func TestMockManager_pathMatches(t *testing.T) {
 		{"empty pattern", "", "/test", false},
 		{"empty path", "/test", "", false},
 		{"prefix with trailing slash", "/api/*", "/api/", true},
+		{"variable", "/users/{id}", "/users/1", true},
+		{"variable and extra trailing slash", "/users/{id}", "/users/1/", false},
+		{"variable and trailing slash", "/users/{id}/", "/users/1/", true},
+		{"variable and missing trailing slash", "/users/:id/", "/users/1", false},
+		{"variable before extra trailing slash", "/users/:id/orders", "/users/1/orders/", false},
+		{"variable and doubled slash", "/users/{id}", "/users//1", false},
+		{"variable and leading doubled slash", "/users/{id}", "//users/1", false},
+		{"variable and empty segment", "/users/{id}/orders", "/users//orders", false},
+		{"variable and equals sign", "/a=b/{id}", "/a=b/1", true},
+		{"equals sign after a variable", "/:id/a=b", "/1/a=b", true},
+		{"variable and extra segment", "/users/{id}", "/users/1/2", false},
+		{"variable and missing segment", "/users/{id}", "/users", false},
 	}
 
 	for _, tt := range tests {
@@ -932,7 +946,7 @@ func TestMockManager_PathMatchingEdgeCases(t *testing.T) {
 }
 
 // TestMockManager_PathVariables tests path variable matching (e.g., /api/users/:id, /api/users/{userId})
-// Path variables are NOW SUPPORTED using the pathmatch library
+// Path variables are supported
 func TestMockManager_PathVariables(t *testing.T) {
 	cache := NewMockCache(5 * time.Minute)
 	manager := NewMockManager(cache, "test-origin")
@@ -1405,6 +1419,26 @@ func TestMockManager_MatchesTheWholeBody(t *testing.T) {
 		cache.SetMocks([]MockEndpoint{mock})
 		if NewMockManager(cache, "svc").FindMatch(httptest.NewRequest("POST", "http://example.com/", strings.NewReader(body))) == nil {
 			t.Errorf("no match for %+v", mock)
+		}
+	}
+}
+
+func TestMockManager_MatchesCompressedBodies(t *testing.T) {
+	var body bytes.Buffer
+	w := gzip.NewWriter(&body)
+	w.Write([]byte(`{"q":"needle"}`))
+	w.Close()
+	for _, mock := range []MockEndpoint{{RequestBodyContains: stringPtr("needle")}, {RequestBodyMatches: stringPtr(`"q":\s*"needle"`)}} {
+		mock.Method, mock.Target, mock.Path = "*", "*", "*"
+		cache := NewMockCache(time.Minute)
+		cache.SetMocks([]MockEndpoint{mock})
+		r := httptest.NewRequest("POST", "http://example.com/", bytes.NewReader(body.Bytes()))
+		r.Header.Set("Content-Encoding", "gzip")
+		if NewMockManager(cache, "svc").FindMatch(r) == nil {
+			t.Errorf("no match for %+v", mock)
+		}
+		if left, _ := io.ReadAll(r.Body); !bytes.Equal(left, body.Bytes()) {
+			t.Errorf("body is now %q", left)
 		}
 	}
 }

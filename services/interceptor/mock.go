@@ -12,8 +12,6 @@ import (
 	"slices"
 	"strings"
 	"time"
-
-	"github.com/tsdkv/pathmatch"
 )
 
 // MockManager handles mock endpoint matching and response generation
@@ -53,6 +51,7 @@ func (m *MockManager) FindMatch(r *http.Request) *MockEndpoint {
 			return nil
 		}
 		r.Body = io.NopCloser(bytes.NewReader(bodyBytes))
+		bodyBytes = decompress(bodyBytes, r.Header.Get("Content-Encoding"))
 	}
 
 	var bestMatch *MockEndpoint
@@ -210,24 +209,15 @@ func (m *MockManager) pathMatches(pattern, path string) bool {
 		return strings.HasPrefix(path, canonicalPath(prefix))
 	}
 
-	// Path variable matching using pathmatch library
-	// First, normalize :variable syntax to {variable} syntax
-	normalizedPattern := canonicalPath(m.normalizePathVariableSyntax(pattern))
-
-	// Exact match
-	if normalizedPattern == path {
-		return true
-	}
-
-	// Check if the normalized pattern contains variables
-	if m.hasPathVariables(normalizedPattern) {
-		matched, _, err := pathmatch.CompileAndMatch(normalizedPattern, path)
-		if err == nil && matched {
-			return true
+	// Compare the segments. A variable matches any segment that isn't empty.
+	patternSegments := strings.Split(canonicalPath(m.normalizePathVariableSyntax(pattern)), "/")
+	pathSegments := strings.Split(path, "/")
+	return slices.EqualFunc(patternSegments, pathSegments, func(want, got string) bool {
+		if strings.HasPrefix(want, "{") {
+			return got != ""
 		}
-	}
-
-	return false
+		return want == got
+	})
 }
 
 // normalizePathVariableSyntax converts :variable syntax to {variable} syntax
@@ -248,22 +238,6 @@ func (m *MockManager) normalizePathVariableSyntax(pattern string) string {
 	}
 
 	return strings.Join(normalized, "/")
-}
-
-// hasPathVariables checks if a path pattern contains variable syntax
-func (m *MockManager) hasPathVariables(pattern string) bool {
-	// Check for {variable} syntax
-	if strings.Contains(pattern, "{") && strings.Contains(pattern, "}") {
-		return true
-	}
-	// Check for :variable syntax (colon at start of segment)
-	parts := strings.Split(pattern, "/")
-	for _, part := range parts {
-		if strings.HasPrefix(part, ":") && len(part) > 1 {
-			return true
-		}
-	}
-	return false
 }
 
 // ApplyMock applies mock configuration to response. The delay ends early if ctx
