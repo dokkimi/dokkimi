@@ -120,6 +120,7 @@ const mockInstanceService = {
   updateInstanceDockerNetwork: jest.fn().mockResolvedValue(undefined),
   findInstance: jest.fn(),
   failIfActive: jest.fn(),
+  markRunning: jest.fn(),
 };
 
 // Import the real extracted services so they wire through to mocked dependencies
@@ -232,6 +233,7 @@ describe('DockerDeployerService', () => {
       .mockReset()
       .mockResolvedValue({ status: 'RUNNING' });
     mockInstanceService.failIfActive.mockReset().mockResolvedValue(true);
+    mockInstanceService.markRunning.mockReset().mockResolvedValue(true);
 
     const deployConfig = new DockerDeployConfigService(mockDockerConfig as any);
     const serviceGroupSvc = new DockerServiceGroupService(
@@ -549,7 +551,8 @@ describe('DockerDeployerService', () => {
         .mockResolvedValueOnce('test-agent-id')
         .mockRejectedValueOnce(new Error('container start failed'));
 
-      await expect(service.deploy(buildCtx())).rejects.toThrow(
+      const onFailure = jest.fn();
+      await expect(service.deploy(buildCtx(), onFailure)).rejects.toThrow(
         'container start failed',
       );
 
@@ -562,10 +565,23 @@ describe('DockerDeployerService', () => {
       expect(mockDockerConfig.cleanupConfigDir).toHaveBeenCalledWith(
         'test-instance',
       );
-      expect(mockInstanceService.updateInstanceStatus).toHaveBeenCalledWith(
+      expect(mockInstanceService.failIfActive).toHaveBeenCalledWith(
         'test-instance',
-        'FAILED',
+        'container start failed',
       );
+      expect(onFailure).toHaveBeenCalledWith('test-instance');
+    });
+
+    it('should not fail an instance that was stopped during deployment', async () => {
+      const onFailure = jest.fn();
+      mockInstanceService.markRunning.mockResolvedValue(false);
+      mockInstanceService.failIfActive.mockResolvedValue(false);
+      await expect(service.deploy(buildCtx(), onFailure)).rejects.toThrow(
+        'stopped during deployment',
+      );
+      expect(mockDockerClient.removeNetwork).toHaveBeenCalled();
+      expect(onFailure).not.toHaveBeenCalled();
+      expect(mockInstanceService.updateInstanceStatus).not.toHaveBeenCalled();
     });
 
     it('should explain the error with a container that exited', async () => {
@@ -626,7 +642,7 @@ describe('DockerDeployerService', () => {
   });
 
   describe('crashed containers', () => {
-    const onCrash = jest.fn();
+    const onFailure = jest.fn();
     const check = () => jest.advanceTimersByTimeAsync(3000);
     const exited = (role: string, itemName?: string) =>
       mockDockerClient.getExitedContainers.mockResolvedValue([
@@ -635,7 +651,7 @@ describe('DockerDeployerService', () => {
 
     beforeEach(async () => {
       jest.useFakeTimers();
-      await service.deploy(buildCtx(), onCrash);
+      await service.deploy(buildCtx(), onFailure);
     });
 
     it.each([
@@ -659,7 +675,7 @@ describe('DockerDeployerService', () => {
         `Container(s) crashed: ${name} (exit 1): bad config`,
       );
       expect(mockDockerClient.removeNetwork).toHaveBeenCalledTimes(1);
-      expect(onCrash).toHaveBeenCalledTimes(1);
+      expect(onFailure).toHaveBeenCalledTimes(1);
 
       await check();
       expect(mockDockerClient.getExitedContainers).toHaveBeenCalledTimes(2);
@@ -687,11 +703,11 @@ describe('DockerDeployerService', () => {
         new Error('database is locked'),
       );
       await check();
-      expect(onCrash).not.toHaveBeenCalled();
+      expect(onFailure).not.toHaveBeenCalled();
 
       exited('service', 'api');
       await check();
-      expect(onCrash).toHaveBeenCalledTimes(1);
+      expect(onFailure).toHaveBeenCalledTimes(1);
     });
 
     it('does not start a check while one is running', async () => {
@@ -710,14 +726,14 @@ describe('DockerDeployerService', () => {
       await check();
       expect(mockInstanceService.failIfActive).toHaveBeenCalled();
       expect(mockDockerClient.removeNetwork).not.toHaveBeenCalled();
-      expect(onCrash).not.toHaveBeenCalled();
+      expect(onFailure).not.toHaveBeenCalled();
     });
 
     it('reports the crash when the teardown fails', async () => {
       mockDockerClient.removeNetwork.mockRejectedValue(new Error('busy'));
       exited('service', 'api');
       await check();
-      expect(onCrash).toHaveBeenCalledTimes(1);
+      expect(onFailure).toHaveBeenCalledTimes(1);
     });
 
     it.each([
@@ -745,13 +761,56 @@ describe('DockerDeployerService', () => {
       exited('service', 'api');
       await check();
       await check();
-      expect(onCrash).not.toHaveBeenCalled();
+      expect(onFailure).not.toHaveBeenCalled();
       expect(jest.getTimerCount()).toBe(0);
     });
   });
 
+  describe('waiting for stage 0', () => {
+    it('returns once the deployment is done', async () => {
+      let finish = (_: string) => {};
+      mockDockerClient.runContainer.mockImplementation(
+        (opts: { name: string }) =>
+          opts.name.includes('dnsmasq')
+            ? new Promise<string>((resolve) => (finish = resolve))
+            : Promise.resolve('container-id'),
+      );
+      const deployment = service.deploy(
+        buildCtx({
+          definition: {
+            name: 'test-def',
+            tests: [],
+            items: [{ name: 'api-gateway', type: 'SERVICE', image: 'i' }],
+          },
+        }),
+      );
+      const done = jest.fn();
+      const wait = service.deployStage('test-instance', 0).then(done);
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(done).not.toHaveBeenCalled();
+
+      finish('container-id');
+      await Promise.all([deployment, wait]);
+      expect(mockInstanceService.markRunning).toHaveBeenCalled();
+    });
+
+    it('fails with the deployment', async () => {
+      mockDockerClient.runContainer.mockRejectedValue(new Error('no space'));
+      const deployment = service.deploy(buildCtx());
+      const wait = service.deployStage('test-instance', 0);
+      await expect(deployment).rejects.toThrow('no space');
+      await expect(wait).rejects.toThrow('no space');
+    });
+
+    it('fails without a deployment', async () => {
+      await expect(service.deployStage('test-instance', 0)).rejects.toThrow(
+        'No deployment session',
+      );
+    });
+  });
+
   describe('failed stage', () => {
-    const onCrash = jest.fn();
+    const onFailure = jest.fn();
     const stagedCtx = () =>
       buildCtx({
         definition: {
@@ -778,7 +837,7 @@ describe('DockerDeployerService', () => {
       mockInstanceItemService.findInstanceItems.mockResolvedValue([
         { id: 'item-1', status: 'PENDING' },
       ]);
-      await service.deploy(stagedCtx(), onCrash);
+      await service.deploy(stagedCtx(), onFailure);
       mockDockerClient.runContainer.mockRejectedValue(new Error('no network'));
     });
 
@@ -789,7 +848,7 @@ describe('DockerDeployerService', () => {
         'no network',
       );
       expect(mockDockerClient.removeNetwork).toHaveBeenCalled();
-      expect(onCrash).toHaveBeenCalledWith('test-instance');
+      expect(onFailure).toHaveBeenCalledWith('test-instance');
     });
 
     it('explains the error with the container that exited', async () => {
@@ -819,7 +878,7 @@ describe('DockerDeployerService', () => {
       mockInstanceService.failIfActive.mockResolvedValue(false);
       expect(await deployStage()).not.toBeNull();
       expect(mockDockerClient.removeNetwork).toHaveBeenCalled();
-      expect(onCrash).not.toHaveBeenCalled();
+      expect(onFailure).not.toHaveBeenCalled();
     });
   });
 });

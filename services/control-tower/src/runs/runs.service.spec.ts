@@ -17,6 +17,7 @@ describe('RunsService', () => {
     namespaceInstance: {
       findUnique: jest.fn(),
       update: jest.fn(),
+      updateMany: jest.fn(),
       delete: jest.fn(),
     },
     instanceItem: {
@@ -418,17 +419,22 @@ describe('RunsService', () => {
 
   describe('handleValidationComplete', () => {
     beforeEach(() => {
-      mockPrisma.namespaceInstance.update.mockResolvedValue({
-        id: 'inst-1',
+      mockPrisma.namespaceInstance.updateMany.mockResolvedValue({ count: 1 });
+      mockPrisma.namespaceInstance.findUnique.mockResolvedValue({
         runId: 'run-1',
       });
+      mockLifecycle.stopInstance.mockClear().mockResolvedValue(undefined);
     });
 
     it('should update instance test status to PASSED', async () => {
       await service.handleValidationComplete('inst-1', true);
 
-      expect(mockPrisma.namespaceInstance.update).toHaveBeenCalledWith({
-        where: { id: 'inst-1' },
+      expect(mockPrisma.namespaceInstance.updateMany).toHaveBeenCalledWith({
+        where: {
+          id: 'inst-1',
+          status: { in: ['STARTING', 'RUNNING'] },
+          testStatus: null,
+        },
         data: {
           testStatus: 'PASSED',
           testCompletedAt: expect.any(Date),
@@ -444,8 +450,12 @@ describe('RunsService', () => {
         'assertion failed',
       );
 
-      expect(mockPrisma.namespaceInstance.update).toHaveBeenCalledWith({
-        where: { id: 'inst-1' },
+      expect(mockPrisma.namespaceInstance.updateMany).toHaveBeenCalledWith({
+        where: {
+          id: 'inst-1',
+          status: { in: ['STARTING', 'RUNNING'] },
+          testStatus: null,
+        },
         data: {
           testStatus: 'FAILED',
           testCompletedAt: expect.any(Date),
@@ -460,6 +470,14 @@ describe('RunsService', () => {
       await service.handleValidationComplete('inst-1', true);
 
       expect(mockLifecycle.stopInstance).toHaveBeenCalledWith('inst-1');
+    });
+
+    it('should ignore the result of an instance that is already over', async () => {
+      mockPrisma.namespaceInstance.updateMany.mockResolvedValue({ count: 0 });
+
+      await service.handleValidationComplete('inst-1', true);
+
+      expect(mockLifecycle.stopInstance).not.toHaveBeenCalled();
     });
   });
 

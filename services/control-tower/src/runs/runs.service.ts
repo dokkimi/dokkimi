@@ -544,19 +544,34 @@ export class RunsService implements OnApplicationBootstrap {
     passed: boolean,
     error?: string,
   ) {
-    const instance = await this.prisma.namespaceInstance.update({
-      where: { id: instanceId },
+    const { count } = await this.prisma.namespaceInstance.updateMany({
+      where: {
+        id: instanceId,
+        status: { in: [InstanceStatus.STARTING, InstanceStatus.RUNNING] },
+        testStatus: null,
+      },
       data: {
         testStatus: passed ? 'PASSED' : 'FAILED',
         testCompletedAt: new Date(),
         errorMessage: error ?? null,
       },
     });
+    if (count === 0) {
+      this.logger.warn(
+        `Ignoring the test result of instance ${instanceId}: it is already over`,
+      );
+      return;
+    }
+
+    const instance = await this.prisma.namespaceInstance.findUnique({
+      where: { id: instanceId },
+      select: { runId: true },
+    });
 
     this.lifecycle
       .stopInstance(instanceId)
       .then(() => {
-        if (instance.runId) {
+        if (instance?.runId) {
           return this.scheduler.handleInstancesStopped([instance.runId]);
         }
       })

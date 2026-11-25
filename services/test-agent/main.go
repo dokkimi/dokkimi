@@ -151,9 +151,27 @@ func main() {
 
 		if !healthChecked {
 			stages := configMapData.ExpectedItemStages
+			if len(stages) == 0 {
+				stages = [][]string{{}} // nothing to wait for but the deployment
+			}
 			deadline := time.Now().Add(timeout)
 
 			for stageIdx := range stages {
+				// CT answers once the stage is deployed. It starts stage 0 by itself.
+				log.Printf("Requesting CT to deploy stage %d", stageIdx)
+				if err := callCTRunStage(cfg.ControlTowerURL, instanceId, stageIdx, time.Until(deadline)); err != nil {
+					failureMessage := fmt.Sprintf("Failed to deploy stage %d: %v", stageIdx, err)
+					log.Printf("%s, aborting test execution", failureMessage)
+					testExecutionLogger.LogEvent("STAGE_DEPLOY_FAILED", failureMessage, nil, nil)
+					completionNotifier.NotifyCompletion(
+						req.TestRunID,
+						"failure",
+						failureMessage,
+						nil,
+					)
+					return
+				}
+
 				if stageIdx > 0 {
 					healthTracker.Reset(stages[stageIdx])
 				}
@@ -196,24 +214,6 @@ func main() {
 				}
 
 				log.Printf("Stage %d healthy", stageIdx)
-
-				// Call CT to deploy the next stage (unless this is the final stage)
-				if stageIdx < len(stages)-1 {
-					nextStage := stageIdx + 1
-					log.Printf("Requesting CT to deploy stage %d", nextStage)
-					if err := callCTRunStage(cfg.ControlTowerURL, instanceId, nextStage); err != nil {
-						failureMessage := fmt.Sprintf("Failed to deploy stage %d: %v", nextStage, err)
-						log.Printf("%s, aborting test execution", failureMessage)
-						testExecutionLogger.LogEvent("STAGE_DEPLOY_FAILED", failureMessage, nil, nil)
-						completionNotifier.NotifyCompletion(
-							req.TestRunID,
-							"failure",
-							failureMessage,
-							nil,
-						)
-						return
-					}
-				}
 			}
 
 			log.Printf("All stages healthy, all items reported ready")
@@ -501,12 +501,13 @@ func buildItemIdToNameMap(configMapData *ConfigMapData) map[string]string {
 	return m
 }
 
-// callCTRunStage tells Control Tower to deploy the next stage of items.
-func callCTRunStage(ctURL string, instanceId string, stage int) error {
+// callCTRunStage tells Control Tower to deploy a stage of items, and returns once
+// it is deployed.
+func callCTRunStage(ctURL string, instanceId string, stage int, timeout time.Duration) error {
 	body := fmt.Sprintf(`{"stage":%d}`, stage)
 	url := fmt.Sprintf("%s/instances/%s/run-stage", ctURL, instanceId)
 
-	client := &http.Client{Timeout: 30 * time.Second}
+	client := &http.Client{Timeout: max(timeout, time.Millisecond)}
 	resp, err := client.Post(url, "application/json", strings.NewReader(body))
 	if err != nil {
 		return fmt.Errorf("HTTP request failed: %w", err)

@@ -53,6 +53,7 @@ import CodeBlock from '../../components/CodeBlock.astro';
   <h3>Crashes</h3>
   <ul>
     <li><strong>Every container is watched</strong> &mdash; Only services, workers and databases were. If a broker crashed, the definition failed after its timeout with &ldquo;not ready&rdquo;, or with a confusing failure in a later step, and if Dokkimi's own test agent did, the run never ended. The definition now fails within seconds with the container's exit code and last log lines, even if no step uses it.</li>
+    <li><strong>Tests start after the deployment</strong> &mdash; A quick test could finish while a container was still being started, and then a run whose tests all passed failed.</li>
     <li><strong>A failed later stage ends the run</strong> &mdash; If a service of <code>stage: 1</code> or later couldn't be started, the run never ended and showed no reason.</li>
     <li><strong>A service that exits right away shows why</strong> &mdash; The error was &ldquo;cannot join network namespace of a non running container&rdquo;. It is now the service's exit code and last log lines.</li>
     <li><strong>One failed call to Docker doesn't end crash detection</strong> &mdash; After one, a definition could pass although a service had crashed.</li>

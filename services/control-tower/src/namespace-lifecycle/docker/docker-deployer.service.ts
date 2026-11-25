@@ -25,7 +25,7 @@ import {
 import { InstanceItemService } from '../../namespace/instance-item.service';
 import { NamespaceInstanceService } from '../../namespace/namespace-instance.service';
 import { hasUiSteps } from '../ui-step-detection';
-import { InstanceStatus, ItemStatus } from '@prisma/client';
+import { ItemStatus } from '@prisma/client';
 
 const CRASH_CHECK_INTERVAL_MS = 3000;
 
@@ -42,7 +42,7 @@ interface DeploymentSession {
   directDnsNames: string[];
   attachChromium: boolean;
   itemStages: DefinitionItem[][];
-  onCrash?: (instanceId: string) => void;
+  onFailure?: (instanceId: string) => void;
 }
 
 @Injectable()
@@ -50,6 +50,7 @@ export class DockerDeployerService {
   private readonly logger = new Logger(DockerDeployerService.name);
   private readonly crashMonitors = new Map<string, NodeJS.Timeout>();
   private readonly deploymentSessions = new Map<string, DeploymentSession>();
+  private readonly deployments = new Map<string, Promise<void>>();
 
   constructor(
     private readonly dockerClient: DockerClientService,
@@ -65,18 +66,27 @@ export class DockerDeployerService {
     private readonly instanceService: NamespaceInstanceService,
   ) {}
 
+  /**
+   * Deploys stage 0.
+   * @param onFailure called when the instance has failed, now or later
+   */
   async deploy(
     ctx: DeploymentContext,
-    onCrash?: (instanceId: string) => void,
+    onFailure?: (instanceId: string) => void,
+  ): Promise<void> {
+    const deployment = this.deployFirstStage(ctx, onFailure);
+    this.deployments.set(ctx.instanceId, deployment);
+    await deployment;
+  }
+
+  private async deployFirstStage(
+    ctx: DeploymentContext,
+    onFailure?: (instanceId: string) => void,
   ): Promise<void> {
     const instanceId = ctx.instanceId;
     const attachChromium = hasUiSteps(ctx.definition);
 
     try {
-      await this.instanceService.updateInstanceStatus(
-        instanceId,
-        InstanceStatus.STARTING,
-      );
       await this.instanceService.updateInstanceDockerNetwork(
         instanceId,
         `dokkimi-${instanceId}`,
@@ -141,7 +151,7 @@ export class DockerDeployerService {
         directDnsNames,
         attachChromium,
         itemStages,
-        onCrash,
+        onFailure,
       };
       this.deploymentSessions.set(instanceId, session);
 
@@ -150,35 +160,32 @@ export class DockerDeployerService {
       await this.deployStageItems(session, 0);
 
       if (isFinalStage) {
-        await this.instanceService.updateInstanceStatus(
-          instanceId,
-          InstanceStatus.RUNNING,
-        );
+        await this.markRunning(instanceId);
       }
 
-      this.monitorForCrashedContainers(instanceId, onCrash);
+      this.monitorForCrashedContainers(instanceId, onFailure);
 
       this.logger.log(
         `Docker deployment complete for instance ${instanceId} (stage 0/${itemStages.length - 1})`,
       );
     } catch (err) {
       this.logger.error(`Deployment failed for instance ${instanceId}:`, err);
-      const error = await this.explainDeployError(instanceId, err);
-      await this.teardownAfterFailure(instanceId);
-      await this.instanceService.updateInstanceStatus(
-        instanceId,
-        InstanceStatus.FAILED,
-      );
-      throw error;
+      throw await this.handleDeployError(instanceId, err, onFailure);
     }
   }
 
+  /** Deploys a stage, or waits until it is deployed if that's under way. */
   async deployStage(instanceId: string, stage: number): Promise<void> {
+    await this.deployments.get(instanceId);
     const session = this.deploymentSessions.get(instanceId);
     if (!session) {
       throw new BadRequestException(
         `No deployment session for instance ${instanceId}`,
       );
+    }
+
+    if (stage === 0) {
+      return;
     }
 
     const { ctx, itemStages } = session;
@@ -210,12 +217,8 @@ export class DockerDeployerService {
     try {
       await this.deployStageItems(session, stage);
 
-      // Set RUNNING on final stage
       if (stage === itemStages.length - 1) {
-        await this.instanceService.updateInstanceStatus(
-          instanceId,
-          InstanceStatus.RUNNING,
-        );
+        await this.markRunning(instanceId);
       }
 
       this.logger.log(`Stage ${stage} deployed for instance ${instanceId}`);
@@ -224,16 +227,7 @@ export class DockerDeployerService {
         `Stage ${stage} deployment failed for instance ${instanceId}:`,
         err,
       );
-      const error = await this.explainDeployError(instanceId, err);
-      const failed = await this.instanceService.failIfActive(
-        instanceId,
-        error.message,
-      );
-      await this.teardownAfterFailure(instanceId);
-      if (failed) {
-        session.onCrash?.(instanceId);
-      }
-      throw error;
+      throw await this.handleDeployError(instanceId, err, session.onFailure);
     }
   }
 
@@ -439,12 +433,12 @@ export class DockerDeployerService {
 
   private monitorForCrashedContainers(
     instanceId: string,
-    onCrash?: (instanceId: string) => void,
+    onFailure?: (instanceId: string) => void,
   ): void {
     const scheduleCheck = () => {
       const timer = setTimeout(async () => {
         try {
-          await this.checkForCrash(instanceId, onCrash);
+          await this.checkForCrash(instanceId, onFailure);
         } catch (err) {
           if (err instanceof NotFoundException) {
             this.clearCrashMonitor(instanceId);
@@ -466,7 +460,7 @@ export class DockerDeployerService {
 
   private async checkForCrash(
     instanceId: string,
-    onCrash?: (instanceId: string) => void,
+    onFailure?: (instanceId: string) => void,
   ): Promise<void> {
     const instance = await this.instanceService.findInstance(instanceId);
     if (instance.status === 'STOPPED' || instance.status === 'FAILED') {
@@ -482,7 +476,7 @@ export class DockerDeployerService {
     if (await this.instanceService.failIfActive(instanceId, message)) {
       this.logger.error(`${message} (instance ${instanceId})`);
       await this.teardownAfterFailure(instanceId);
-      onCrash?.(instanceId);
+      onFailure?.(instanceId);
     }
   }
 
@@ -514,6 +508,26 @@ export class DockerDeployerService {
       ),
     );
     return `Container(s) crashed: ${details.join('; ')}`;
+  }
+
+  private async markRunning(instanceId: string): Promise<void> {
+    if (!(await this.instanceService.markRunning(instanceId))) {
+      throw new Error('The instance was stopped during deployment');
+    }
+  }
+
+  /** Cleans up, and fails the instance unless it was stopped. */
+  private async handleDeployError(
+    instanceId: string,
+    err: unknown,
+    onFailure?: (instanceId: string) => void,
+  ): Promise<Error> {
+    const error = await this.explainDeployError(instanceId, err);
+    await this.teardownAfterFailure(instanceId);
+    if (await this.instanceService.failIfActive(instanceId, error.message)) {
+      onFailure?.(instanceId);
+    }
+    return error;
   }
 
   /**
@@ -553,6 +567,7 @@ export class DockerDeployerService {
   async teardown(instanceId: string): Promise<void> {
     this.clearCrashMonitor(instanceId);
     this.deploymentSessions.delete(instanceId);
+    this.deployments.delete(instanceId);
     this.logCollector.stopCollecting(instanceId);
     await this.dockerClient.removeNetwork(instanceId);
     this.dockerConfig.cleanupConfigDir(instanceId);

@@ -38,12 +38,12 @@ CT's internal feature modules:
 
 ### Go (run inside Docker containers as sidecars)
 
-| Service          | Responsibility                                                                                                                                                                                                                                                                                                                                             |
-| ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Interceptor**  | HTTP traffic interception, mock responses, log publishing to Control Tower. Two variants: sidecar (requests made by a service, worker or browser) and global (requests made by test steps)                                                                                                                                                                 |
-| **Test Agent**   | Reads test config from bind-mounted config file, gates on staged health (waits for each stage to be healthy, then calls CT to deploy the next stage via `POST /instances/:id/run-stage`), executes test steps (HTTP, DB, UI, wait), validates assertions inline against in-memory logs, reports results to Control Tower, POSTs `/test-complete` when done |
-| **DB Proxy**     | Wire protocol proxy sidecar for databases. Transparent TCP proxy that parses each database's native wire protocol to extract and log queries without modifying traffic. Variants for PostgreSQL, MySQL, MongoDB, Redis                                                                                                                                     |
-| **Broker Proxy** | Wire protocol proxy sidecar for message brokers. Transparent TCP proxy that relays all frames unchanged while inspecting publish/deliver operations to log message metadata and bodies. Currently supports AMQP 0-9-1 (RabbitMQ)                                                                                                                           |
+| Service          | Responsibility                                                                                                                                                                                                                                                                                                                                                                                                        |
+| ---------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Interceptor**  | HTTP traffic interception, mock responses, log publishing to Control Tower. Two variants: sidecar (requests made by a service, worker or browser) and global (requests made by test steps)                                                                                                                                                                                                                            |
+| **Test Agent**   | Reads test config from bind-mounted config file, gates on staged deployment and health (for each stage, calls `POST /instances/:id/run-stage`, which returns once CT has deployed it, then waits for it to be healthy; CT starts stage 0 by itself), executes test steps (HTTP, DB, UI, wait), validates assertions inline against in-memory logs, reports results to Control Tower, POSTs `/test-complete` when done |
+| **DB Proxy**     | Wire protocol proxy sidecar for databases. Transparent TCP proxy that parses each database's native wire protocol to extract and log queries without modifying traffic. Variants for PostgreSQL, MySQL, MongoDB, Redis                                                                                                                                                                                                |
+| **Broker Proxy** | Wire protocol proxy sidecar for message brokers. Transparent TCP proxy that relays all frames unchanged while inspecting publish/deliver operations to log message metadata and bodies. Currently supports AMQP 0-9-1 (RabbitMQ)                                                                                                                                                                                      |
 
 ### Applications
 
@@ -86,9 +86,9 @@ User runs: dokkimi run [target]
 │                                           │
 │  Test Agent staged health loop:           │
 │    For each stage:                        │
-│      - Wait for stage N items healthy     │
-│      - POST /instances/:id/run-stage to   │
-│        CT to deploy stage N+1             │
+│      - POST /instances/:id/run-stage,     │
+│        answered once CT has deployed it   │
+│      - Wait for its items to be healthy   │
 │    All stages healthy → run tests         │
 │                                           │
 │  Test Agent:                              │
@@ -143,6 +143,8 @@ User runs: dokkimi run [target]
 ```
 
 **Crashes:** from the deployment of stage 0 until teardown, CT asks Docker every 3 seconds for the instance's exited containers of any role (`DockerDeployerService.monitorForCrashedContainers`). If one has exited while the test is still going, the instance is marked `FAILED` with the exit code and last log lines, torn down, and the run continues or completes. A failed check is retried 3 seconds later.
+
+**Status changes** that can race check the current status in the same query: `markRunning` (only from `STARTING`), `failIfActive` and the test result (only while `STARTING` or `RUNNING`, and without a test result). So a finished test can't be marked as failed, and a crash message isn't lost.
 
 ---
 
@@ -247,7 +249,7 @@ Log ingestion is HTTP-only — interceptors, DB Proxy, and Broker Proxy POST to 
 | Sidecars        | Control Tower `/health/status`           | HTTP POST            | Readiness updates                                                                      |
 | Interceptors    | Test Agent `/logs/http`                  | HTTP POST            | HTTP traffic logs (test-agent buffers in memory for inline validation)                 |
 | Console logs    | Test Agent (GELF UDP :12201)             | GELF UDP             | Console logs forwarded to test-agent for inline assertion validation                   |
-| Test Agent      | Control Tower `/instances/:id/run-stage` | HTTP POST            | Deploy next stage (staged bootup coordination)                                         |
+| Test Agent      | Control Tower `/instances/:id/run-stage` | HTTP POST            | Deploy a stage, or wait for stage 0                                                    |
 | Test Agent      | Control Tower `/logs/test-validation`    | HTTP POST            | Assertion results (validated inline by test-agent, stored by CT)                       |
 | Test Agent      | Control Tower `/test-complete`           | HTTP POST            | Test completion notification                                                           |
 | CT modules      | DB                                       | Prisma               | Store logs and assertion results                                                       |

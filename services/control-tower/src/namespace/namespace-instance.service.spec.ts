@@ -105,6 +105,24 @@ describe('NamespaceInstanceService', () => {
     });
   });
 
+  describe('markRunning', () => {
+    it.each([
+      [1, true],
+      [0, false],
+    ])('with %i matching instances returns %s', async (count, running) => {
+      mockPrismaService.namespaceInstance.updateMany.mockResolvedValue({
+        count,
+      });
+      expect(await service.markRunning('instance-1')).toBe(running);
+      expect(
+        mockPrismaService.namespaceInstance.updateMany,
+      ).toHaveBeenCalledWith({
+        where: { id: 'instance-1', status: 'STARTING' },
+        data: { status: 'RUNNING', startedAt: expect.any(Date) },
+      });
+    });
+  });
+
   describe('failIfActive', () => {
     it.each([
       [1, true],
