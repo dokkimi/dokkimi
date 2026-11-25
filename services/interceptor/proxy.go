@@ -50,10 +50,11 @@ func NewProxyService(cfg *Config, mockManager *MockManager, urlMap func() UrlMap
 	}
 
 	transport := &http.Transport{
-		DialContext:         dialer.DialContext,
-		MaxIdleConns:        cfg.MaxIdleConns,
-		MaxIdleConnsPerHost: 10,
-		IdleConnTimeout:     cfg.IdleConnTimeout,
+		DialContext: dialer.DialContext,
+		// Negative: every request gets a new connection. A reused one may be closed
+		// by the service as a request is sent, which fails a POST. Unlike
+		// DisableKeepAlives, this doesn't add a "Connection: close" header.
+		MaxIdleConnsPerHost: -1,
 	}
 
 	// No timeout: once connected, a response may take as long as the caller waits

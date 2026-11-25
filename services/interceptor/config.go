@@ -29,9 +29,7 @@ type Config struct {
 	LogActions bool
 
 	// HTTP Client
-	LoggingTimeout  time.Duration
-	MaxIdleConns    int
-	IdleConnTimeout time.Duration
+	LoggingTimeout time.Duration
 
 	// Cache
 	MockCacheTTL      time.Duration
@@ -68,8 +66,6 @@ func LoadConfig() (*Config, error) {
 
 		// HTTP client settings (hardcoded constants - not configurable)
 		LoggingTimeout:    5 * time.Second,
-		MaxIdleConns:      100,
-		IdleConnTimeout:   90 * time.Second,
 		MockCacheTTL:      5 * time.Minute,
 		MockRefreshPeriod: 1 * time.Minute,
 

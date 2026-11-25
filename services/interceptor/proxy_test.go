@@ -8,15 +8,13 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
 
 func TestNewProxyService(t *testing.T) {
-	cfg := &Config{
-		MaxIdleConns:    100,
-		IdleConnTimeout: 90 * time.Second,
-	}
+	cfg := &Config{}
 	cache := NewMockCache(5 * time.Minute)
 	urlMapFunc := func() UrlMap { return make(UrlMap) }
 	mockManager := NewMockManager(cache, "test-origin")
@@ -37,10 +35,7 @@ func TestNewProxyService(t *testing.T) {
 }
 
 func TestProxyService_HandleRequest_WithMock(t *testing.T) {
-	cfg := &Config{
-		MaxIdleConns:    100,
-		IdleConnTimeout: 90 * time.Second,
-	}
+	cfg := &Config{}
 	cache := NewMockCache(5 * time.Minute)
 	urlMapFunc := func() UrlMap { return make(UrlMap) }
 	mockManager := NewMockManager(cache, "test-origin")
@@ -85,10 +80,7 @@ func TestProxyService_HandleRequest_Forward(t *testing.T) {
 	}))
 	defer targetServer.Close()
 
-	cfg := &Config{
-		MaxIdleConns:    100,
-		IdleConnTimeout: 90 * time.Second,
-	}
+	cfg := &Config{}
 	cache := NewMockCache(5 * time.Minute)
 	urlMapFunc := func() UrlMap { return make(UrlMap) }
 	mockManager := NewMockManager(cache, "test-origin")
@@ -135,10 +127,7 @@ func TestProxyService_HandleRequest_PassesRedirectThrough(t *testing.T) {
 	}))
 	defer targetServer.Close()
 
-	cfg := &Config{
-		MaxIdleConns:    100,
-		IdleConnTimeout: 90 * time.Second,
-	}
+	cfg := &Config{}
 	cache := NewMockCache(5 * time.Minute)
 	urlMapFunc := func() UrlMap { return make(UrlMap) }
 	mockManager := NewMockManager(cache, "test-origin")
@@ -178,10 +167,7 @@ func TestProxyService_forwardRequest(t *testing.T) {
 	}))
 	defer targetServer.Close()
 
-	cfg := &Config{
-		MaxIdleConns:    100,
-		IdleConnTimeout: 90 * time.Second,
-	}
+	cfg := &Config{}
 	cache := NewMockCache(5 * time.Minute)
 	urlMapFunc := func() UrlMap { return make(UrlMap) }
 	mockManager := NewMockManager(cache, "test-origin")
@@ -218,10 +204,7 @@ func TestProxyService_forwardRequest(t *testing.T) {
 }
 
 func TestProxyService_getTargetURL(t *testing.T) {
-	cfg := &Config{
-		MaxIdleConns:    100,
-		IdleConnTimeout: 90 * time.Second,
-	}
+	cfg := &Config{}
 	cache := NewMockCache(5 * time.Minute)
 
 	urlMap := UrlMap{
@@ -463,10 +446,7 @@ func TestIsHopByHopHeader(t *testing.T) {
 }
 
 func TestProxyService_forwardRequest_ErrorHandling(t *testing.T) {
-	cfg := &Config{
-		MaxIdleConns:    100,
-		IdleConnTimeout: 90 * time.Second,
-	}
+	cfg := &Config{}
 	cache := NewMockCache(5 * time.Minute)
 	urlMapFunc := func() UrlMap { return make(UrlMap) }
 	mockManager := NewMockManager(cache, "test-origin")
@@ -485,10 +465,7 @@ func TestProxyService_forwardRequest_ErrorHandling(t *testing.T) {
 }
 
 func TestProxyService_forwardRequest_BodyReadError(t *testing.T) {
-	cfg := &Config{
-		MaxIdleConns:    100,
-		IdleConnTimeout: 90 * time.Second,
-	}
+	cfg := &Config{}
 	cache := NewMockCache(5 * time.Minute)
 	urlMapFunc := func() UrlMap { return make(UrlMap) }
 	mockManager := NewMockManager(cache, "test-origin")
@@ -505,10 +482,7 @@ func TestProxyService_forwardRequest_BodyReadError(t *testing.T) {
 }
 
 func TestProxyService_forwardRequest_InvalidURL(t *testing.T) {
-	cfg := &Config{
-		MaxIdleConns:    100,
-		IdleConnTimeout: 90 * time.Second,
-	}
+	cfg := &Config{}
 	cache := NewMockCache(5 * time.Minute)
 
 	// URL map with invalid URL
@@ -532,10 +506,7 @@ func TestProxyService_forwardRequest_InvalidURL(t *testing.T) {
 }
 
 func TestProxyService_rewriteLocationHeader(t *testing.T) {
-	cfg := &Config{
-		MaxIdleConns:    100,
-		IdleConnTimeout: 90 * time.Second,
-	}
+	cfg := &Config{}
 	cache := NewMockCache(5 * time.Minute)
 
 	urlMap := UrlMap{
@@ -618,10 +589,7 @@ func TestProxyService_forwardRequest_RewritesLocationInRedirect(t *testing.T) {
 	}))
 	defer targetServer.Close()
 
-	cfg := &Config{
-		MaxIdleConns:    100,
-		IdleConnTimeout: 90 * time.Second,
-	}
+	cfg := &Config{}
 	cache := NewMockCache(5 * time.Minute)
 	urlMap := UrlMap{
 		"my-app": ServiceInfo{
@@ -650,10 +618,7 @@ func TestProxyService_forwardRequest_RewritesLocationInRedirect(t *testing.T) {
 }
 
 func TestProxyService_forwardRequest_RequestCreationError(t *testing.T) {
-	cfg := &Config{
-		MaxIdleConns:    100,
-		IdleConnTimeout: 90 * time.Second,
-	}
+	cfg := &Config{}
 	cache := NewMockCache(5 * time.Minute)
 	urlMapFunc := func() UrlMap { return make(UrlMap) }
 	mockManager := NewMockManager(cache, "test-origin")
@@ -673,4 +638,61 @@ func TestProxyService_forwardRequest_RequestCreationError(t *testing.T) {
 	_, err := proxy.forwardRequest(req)
 	// May or may not error, but should not panic
 	_ = err
+}
+
+func TestProxyService_NewConnectionForEveryRequest(t *testing.T) {
+	// Like a service that closes an idle connection as a request arrives
+	used := make(map[string]bool)
+	var mu sync.Mutex
+	var connectionHeaders []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		reused := used[r.RemoteAddr]
+		used[r.RemoteAddr] = true
+		connectionHeaders = append(connectionHeaders, r.Header["Connection"]...)
+		mu.Unlock()
+		if reused {
+			panic(http.ErrAbortHandler)
+		}
+		w.Header().Set("Connection", "keep-alive")
+		w.Write([]byte("ok"))
+	}))
+	defer server.Close()
+
+	target := strings.TrimPrefix(server.URL, "http://")
+	urlMap := UrlMap{"service": ServiceInfo{Name: "service", URL: server.URL}}
+	proxy := NewProxyService(&Config{Origin: "caller"}, NewMockManager(NewMockCache(0), "caller"), func() UrlMap { return urlMap })
+
+	send := func(host string) {
+		resp, _, err := proxy.HandleRequest(httptest.NewRequest("POST", "http://"+host+"/x", strings.NewReader("{}")))
+		if err != nil {
+			t.Errorf("%s: %v", host, err)
+			return
+		}
+		defer resp.Body.Close()
+		if body, err := io.ReadAll(resp.Body); err != nil || string(body) != "ok" {
+			t.Errorf("%s: body %q, err %v", host, body, err)
+		}
+		if got := resp.Header.Get("Connection"); got != "keep-alive" {
+			t.Errorf("%s: the service's Connection header became %q", host, got)
+		}
+	}
+
+	for i := 0; i < 5; i++ {
+		send("service")
+		send(target) // not a service
+	}
+	var wg sync.WaitGroup
+	for i := 0; i < 50; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			send("service")
+		}()
+	}
+	wg.Wait()
+
+	if len(connectionHeaders) > 0 {
+		t.Errorf("Connection headers were added to requests: %v", connectionHeaders)
+	}
 }

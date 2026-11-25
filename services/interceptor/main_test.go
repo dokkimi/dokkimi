@@ -26,11 +26,9 @@ func TestHandleRequest(t *testing.T) {
 	defer targetServer.Close()
 
 	cfg := &Config{
-		MaxIdleConns:    100,
-		IdleConnTimeout: 90 * time.Second,
-		Namespace:       "test-ns",
-		Origin:          "test-origin",
-		LogActions:      true,
+		Namespace:  "test-ns",
+		Origin:     "test-origin",
+		LogActions: true,
 	}
 	cache := NewMockCache(5 * time.Minute)
 	urlMapFunc := func() UrlMap { return make(UrlMap) }
@@ -116,11 +114,9 @@ func TestHandleRequest_WithoutLogger(t *testing.T) {
 	defer targetServer.Close()
 
 	cfg := &Config{
-		MaxIdleConns:    100,
-		IdleConnTimeout: 90 * time.Second,
-		Namespace:       "test-ns",
-		Origin:          "test-origin",
-		LogActions:      false, // Logger disabled
+		Namespace:  "test-ns",
+		Origin:     "test-origin",
+		LogActions: false, // Logger disabled
 	}
 	cache := NewMockCache(5 * time.Minute)
 	urlMapFunc := func() UrlMap { return make(UrlMap) }
@@ -141,11 +137,9 @@ func TestHandleRequest_WithoutLogger(t *testing.T) {
 func TestHandleRequest_ResponseBodyError(t *testing.T) {
 	// Create a response with a body that will error on read
 	cfg := &Config{
-		MaxIdleConns:    100,
-		IdleConnTimeout: 90 * time.Second,
-		Namespace:       "test-ns",
-		Origin:          "test-origin",
-		LogActions:      false,
+		Namespace:  "test-ns",
+		Origin:     "test-origin",
+		LogActions: false,
 	}
 	cache := NewMockCache(5 * time.Minute)
 	urlMapFunc := func() UrlMap { return make(UrlMap) }
@@ -180,11 +174,9 @@ func TestHandleRequest_ResponseBodyError(t *testing.T) {
 func TestHandleRequest_ResponseBodyBuffering(t *testing.T) {
 	// Test that response body is buffered and can be used for both logging and copying
 	cfg := &Config{
-		MaxIdleConns:    100,
-		IdleConnTimeout: 90 * time.Second,
-		Namespace:       "test-ns",
-		Origin:          "test-origin",
-		LogActions:      true,
+		Namespace:  "test-ns",
+		Origin:     "test-origin",
+		LogActions: true,
 	}
 	cache := NewMockCache(5 * time.Minute)
 	urlMapFunc := func() UrlMap { return make(UrlMap) }
@@ -226,11 +218,9 @@ func TestHandleRequest_ResponseBodyBuffering(t *testing.T) {
 
 func TestHandleRequest_NilBody(t *testing.T) {
 	cfg := &Config{
-		MaxIdleConns:    100,
-		IdleConnTimeout: 90 * time.Second,
-		Namespace:       "test-ns",
-		Origin:          "test-origin",
-		LogActions:      false,
+		Namespace:  "test-ns",
+		Origin:     "test-origin",
+		LogActions: false,
 	}
 	cache := NewMockCache(5 * time.Minute)
 	urlMapFunc := func() UrlMap { return make(UrlMap) }
@@ -306,11 +296,9 @@ func TestHandleRequest_GzipResponseForwardsCompressedBytes(t *testing.T) {
 	defer targetServer.Close()
 
 	cfg := &Config{
-		MaxIdleConns:    100,
-		IdleConnTimeout: 90 * time.Second,
-		Namespace:       "test-ns",
-		Origin:          "test-origin",
-		LogActions:      true,
+		Namespace:  "test-ns",
+		Origin:     "test-origin",
+		LogActions: true,
 	}
 	cache := NewMockCache(5 * time.Minute)
 	urlMapFunc := func() UrlMap { return make(UrlMap) }

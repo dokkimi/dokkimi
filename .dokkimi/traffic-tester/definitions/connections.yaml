@@ -1,0 +1,100 @@
+name: connections
+description: A service that closes a connection on its second request gets every request on a new one
+config:
+  timeoutSeconds: 120
+items:
+  - $ref: ../shared/service-a.yaml
+  # Answers with the Connection header it received
+  - type: SERVICE
+    name: closer
+    image: ghcr.io/dokkimi/traffic-tester:0.1.0
+    port: 4000
+    healthCheck: /health
+    command:
+      - node
+      - -e
+      - |
+        require('http').createServer((req, res) => {
+          if (req.url !== '/health') {
+            if (req.socket.used) {
+              return req.socket.destroy();
+            }
+            req.socket.used = true;
+          }
+          res.setHeader('Content-Type', 'application/json');
+          res.end(JSON.stringify({ connection: req.headers.connection ?? 'none' }));
+        }).listen(4000);
+tests:
+  - name: Between services
+    steps:
+      - name: Service-a calls closer, call 1
+        action:
+          type: httpRequest
+          method: POST
+          url: service-a/call
+          headers: { Content-Type: application/json }
+          body:
+            requests:
+              - { method: POST, baseURL: 'http://closer', url: /1 }
+        assertions:
+          - match:
+              path: $.traffic
+              where:
+                - { path: $$.to, operator: eq, value: closer }
+                - { path: $$.response.status, operator: eq, value: 200 }
+                - {
+                    path: $$.response.body.connection,
+                    operator: eq,
+                    value: none,
+                  }
+                - {
+                    path: $$.response.headers.connection,
+                    operator: eq,
+                    value: keep-alive,
+                  }
+              count: 1
+      - name: Service-a calls closer, call 2
+        action:
+          type: httpRequest
+          method: POST
+          url: service-a/call
+          headers: { Content-Type: application/json }
+          body:
+            requests:
+              - { method: POST, baseURL: 'http://closer', url: /2 }
+        assertions:
+          - match:
+              path: $.traffic
+              where:
+                - { path: $$.to, operator: eq, value: closer }
+                - { path: $$.response.status, operator: eq, value: 200 }
+                - {
+                    path: $$.response.body.connection,
+                    operator: eq,
+                    value: none,
+                  }
+                - {
+                    path: $$.response.headers.connection,
+                    operator: eq,
+                    value: keep-alive,
+                  }
+              count: 1
+  - name: From steps
+    steps:
+      - name: First call
+        action: { type: httpRequest, method: POST, url: closer/1 }
+        assertions:
+          - assertions:
+              - { path: $.response.status, operator: eq, value: 200 }
+      - name: Second call
+        action: { type: httpRequest, method: POST, url: closer/2 }
+        assertions:
+          - assertions:
+              - { path: $.response.status, operator: eq, value: 200 }
+              - { path: $.response.body.connection, operator: eq, value: none }
+          - match:
+              path: $.traffic
+              where:
+                - { path: $$.to, operator: eq, value: closer }
+                - { path: $$.response.status, operator: eq, value: 502 }
+              count: 0
