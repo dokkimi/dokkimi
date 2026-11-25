@@ -5,6 +5,8 @@ import (
 	"compress/gzip"
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -276,8 +278,6 @@ func TestHandleRequest_HealthIsForwarded(t *testing.T) {
 }
 
 func TestHandleRequest_GzipResponseForwardsCompressedBytes(t *testing.T) {
-	// When the original caller sends Accept-Encoding: gzip, Go's transport
-	// passes the compressed response through without auto-decompressing.
 	// The interceptor must forward the compressed bytes unchanged while
 	// decompressing a copy for logging.
 	jsonPayload := `{"status":"green","cluster_name":"docker-cluster"}`
@@ -307,7 +307,6 @@ func TestHandleRequest_GzipResponseForwardsCompressedBytes(t *testing.T) {
 	logger := NewLogger("http://localhost:5000", 5*time.Second, nil)
 	defer logger.Stop()
 
-	// The caller explicitly requests gzip — Go's transport won't auto-decompress
 	req := httptest.NewRequest("GET", targetServer.URL+"/test", nil)
 	req.Header.Set("Accept-Encoding", "gzip")
 	w := httptest.NewRecorder()
@@ -376,7 +375,6 @@ func handleAndCapture(t *testing.T, origin, url string, target http.Handler) (*h
 
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("GET", url, nil)
-	r.Header.Set("Accept-Encoding", "gzip, br") // else Go's client decompresses gzip itself
 	handleRequest(w, r, proxyService, logger, nil, cache, cfg)
 	select {
 	case message := <-logged:
@@ -521,5 +519,98 @@ func TestHandleRequest_MockDelayEndsWithTheCaller(t *testing.T) {
 	_, isMocked, err := proxyService.HandleRequest(httptest.NewRequest("GET", "http://example.com/", nil).WithContext(ctx))
 	if err != nil || !isMocked || time.Since(start) > 5*time.Second {
 		t.Errorf("mocked %v, err %v after %s", isMocked, err, time.Since(start))
+	}
+}
+
+func TestHandleRequest_ResponseBreaksOff(t *testing.T) {
+	var gzipped bytes.Buffer
+	gw := gzip.NewWriter(&gzipped)
+	gw.Write([]byte(strings.Repeat("partial ", 10)))
+	gw.Flush()
+
+	for _, tc := range []struct {
+		name          string
+		contentLength string // "" is chunked
+		encoding      string
+		sent          []byte
+		logged        interface{}
+	}{
+		{"with a length", "1000", "", []byte(`{"partial":`), `{"partial":`},
+		{"chunked", "", "", []byte(`{"partial":`), `{"partial":`},
+		{"complete JSON so far", "1000", "", []byte(`{"a":1}`), map[string]interface{}{"a": float64(1)}},
+		{"nothing but headers", "1000", "", nil, nil},
+		{"gzip", "1000", "gzip", gzipped.Bytes(), strings.Repeat("partial ", 10)},
+	} {
+		for _, gaveUp := range []bool{false, true} { // the caller, instead of the service
+			t.Run(fmt.Sprintf("%s, caller gave up: %v", tc.name, gaveUp), func(t *testing.T) {
+				ctx, cancel := context.WithCancel(context.Background())
+				defer cancel()
+				service := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					w.Header().Set("X-From", "service")
+					if tc.contentLength != "" {
+						w.Header().Set("Content-Length", tc.contentLength)
+					}
+					if tc.encoding != "" {
+						w.Header().Set("Content-Encoding", tc.encoding)
+					}
+					w.WriteHeader(201)
+					w.Write(tc.sent)
+					w.(http.Flusher).Flush()
+					if gaveUp {
+						time.Sleep(100 * time.Millisecond)
+						cancel()
+						<-r.Context().Done()
+					}
+					panic(http.ErrAbortHandler)
+				}))
+				defer service.Close()
+				logged := make(chan HttpLogMessage, 1)
+				logServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					var message HttpLogMessage
+					json.NewDecoder(r.Body).Decode(&message)
+					logged <- message
+				}))
+				defer logServer.Close()
+
+				cfg := &Config{Namespace: "test-ns", Origin: "test-origin"}
+				cache := NewMockCache(5 * time.Minute)
+				cache.SetUrlMap(UrlMap{"service-a": ServiceInfo{URL: service.URL, Name: "service-a"}})
+				proxyService := NewProxyService(cfg, NewMockManager(cache, cfg.Origin), cache.GetUrlMap)
+				logger := NewLogger(logServer.URL, 5*time.Second, nil)
+				defer logger.Stop()
+				interceptor := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					handleRequest(w, r, proxyService, logger, nil, cache, cfg)
+				}))
+				defer interceptor.Close()
+
+				req, _ := http.NewRequestWithContext(ctx, "POST", interceptor.URL+"/x", strings.NewReader("{}"))
+				req.Host = "service-a"
+				req.Header.Set("Accept-Encoding", "gzip") // else this client decompresses it
+				resp, err := http.DefaultClient.Do(req)
+				if gaveUp {
+					if err == nil {
+						resp.Body.Close()
+						t.Error("the caller got a response")
+					}
+				} else if err != nil {
+					t.Errorf("no response: %v", err)
+				} else {
+					defer resp.Body.Close()
+					body, err := io.ReadAll(resp.Body)
+					if resp.StatusCode != 201 || resp.Header.Get("X-From") != "service" || !bytes.Equal(body, tc.sent) || !errors.Is(err, io.ErrUnexpectedEOF) {
+						t.Errorf("got status %d, headers %v, body %q, err %v", resp.StatusCode, resp.Header, body, err)
+					}
+				}
+
+				select {
+				case message := <-logged:
+					if *message.StatusCode != 201 || message.ResponseHeaders["X-From"] != "service" || !reflect.DeepEqual(message.ResponseBody, tc.logged) {
+						t.Errorf("logged status %d, headers %v, body %#v", *message.StatusCode, message.ResponseHeaders, message.ResponseBody)
+					}
+				case <-time.After(5 * time.Second):
+					t.Error("nothing was logged")
+				}
+			})
+		}
 	}
 }

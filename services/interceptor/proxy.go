@@ -55,6 +55,8 @@ func NewProxyService(cfg *Config, mockManager *MockManager, urlMap func() UrlMap
 		// by the service as a request is sent, which fails a POST. Unlike
 		// DisableKeepAlives, this doesn't add a "Connection: close" header.
 		MaxIdleConnsPerHost: -1,
+		// Don't ask for compression unless the caller does
+		DisableCompression: true,
 	}
 
 	// No timeout: once connected, a response may take as long as the caller waits
@@ -126,6 +128,11 @@ func (p *ProxyService) forwardRequest(r *http.Request) (*http.Response, error) {
 				req.Header.Add(key, value)
 			}
 		}
+	}
+
+	// Keep Go from adding a User-Agent if the caller didn't send one
+	if _, sent := r.Header["User-Agent"]; !sent {
+		req.Header.Set("User-Agent", "")
 	}
 
 	// Set Host to the target URL's host so downstream interceptors can

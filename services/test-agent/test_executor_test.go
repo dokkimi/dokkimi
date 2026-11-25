@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -355,6 +356,35 @@ func TestTestExecutor_TimeoutOfActionOverDefault(t *testing.T) {
 		action := StepAction{Type: "httpRequest", Method: "GET", URL: "service/x", Timeout: tt.actionTimeoutMs}
 		if _, err := executor.doAPIRequest(context.Background(), action, server.URL+"/service/x"); (err != nil) != tt.wantErr {
 			t.Errorf("%s: err %v", tt.name, err)
+		}
+	}
+}
+
+func TestTestExecutor_ResponseBreaksOff(t *testing.T) {
+	var requests atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests.Add(1)
+		w.Header().Set("Content-Length", "1000")
+		w.Write([]byte(`{"partial":`))
+		w.(http.Flusher).Flush()
+		if r.URL.Path == "/service/hangs" {
+			<-r.Context().Done()
+		}
+		panic(http.ErrAbortHandler)
+	}))
+	defer server.Close()
+
+	for path, cause := range map[string]string{"/crashes": "unexpected EOF", "/hangs": "context deadline exceeded"} {
+		requests.Store(0)
+		executor := NewTestExecutor(server.URL, 200*time.Millisecond, nil, nil)
+		step := TestStep{Action: StepAction{Type: "httpRequest", Method: "POST", URL: "service" + path}}
+		_, err := executor.executeStep(context.Background(), step, 0)
+		want := "POST service" + path + " failed: the response broke off after status 200: " + cause
+		if err == nil || err.Error() != want {
+			t.Errorf("got error %v, want %q", err, want)
+		}
+		if requests.Load() != 1 {
+			t.Errorf("%s: the request was sent %d times", path, requests.Load())
 		}
 	}
 }

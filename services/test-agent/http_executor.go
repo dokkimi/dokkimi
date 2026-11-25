@@ -44,6 +44,10 @@ func (e *TestExecutor) executeAPIStep(ctx context.Context, action StepAction, st
 		}
 
 		resp, err := e.doAPIRequest(ctx, action, fullURL)
+		if err != nil && resp != nil {
+			// The request arrived and was being answered, so don't send it again
+			return nil, fmt.Errorf("%s %s failed: %w", action.Method, action.URL, err)
+		}
 		if err != nil {
 			lastErr = err
 			lastResp = nil
@@ -202,7 +206,8 @@ func buildFormDataBody(formData map[string]interface{}) (io.Reader, string, erro
 	return &buf, writer.FormDataContentType(), nil
 }
 
-// doAPIRequest performs a single HTTP request attempt and returns the full response
+// doAPIRequest performs a single HTTP request attempt and returns the full
+// response, or an error and what arrived of it if it broke off.
 func (e *TestExecutor) doAPIRequest(ctx context.Context, action StepAction, fullURL string) (*APIResponse, error) {
 	var bodyReader io.Reader
 	var contentType string
@@ -265,21 +270,19 @@ func (e *TestExecutor) doAPIRequest(ctx context.Context, action StepAction, full
 
 	bodyBytes, err := io.ReadAll(resp.Body)
 	if err != nil {
-		log.Printf("Warning: failed to read response body: %v", err)
-		bodyBytes = nil
-	} else {
-		bodyStr := string(bodyBytes)
-		if len(bodyStr) > 500 {
-			bodyStr = bodyStr[:500] + "... (truncated)"
-		}
-		log.Printf("Response status: %d, body: %s", resp.StatusCode, bodyStr)
+		err = fmt.Errorf("the response broke off after status %d: %w", resp.StatusCode, err)
 	}
+	bodyStr := string(bodyBytes)
+	if len(bodyStr) > 500 {
+		bodyStr = bodyStr[:500] + "... (truncated)"
+	}
+	log.Printf("Response status: %d, body: %s", resp.StatusCode, bodyStr)
 
 	return &APIResponse{
 		StatusCode: resp.StatusCode,
 		Body:       bodyBytes,
 		Headers:    resp.Header,
-	}, nil
+	}, err
 }
 
 // executeDbQueryStep executes a database query action and returns the result

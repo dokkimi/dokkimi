@@ -1,0 +1,62 @@
+name: broken-responses
+description: A response that breaks off reaches the caller the same way, and what arrived is captured
+config:
+  timeoutSeconds: 120
+items:
+  # Promises 1000 bytes, sends a few, then closes the connection
+  - type: SERVICE
+    name: breaker
+    image: ghcr.io/dokkimi/traffic-tester:0.1.0
+    port: 4000
+    healthCheck: /health
+    command:
+      - node
+      - -e
+      - |
+        require('http').createServer((req, res) => {
+          if (req.url === '/health') {
+            return res.end('ok');
+          }
+          res.writeHead(201, { 'Content-Length': '1000', 'X-From': 'breaker' });
+          res.write('partial');
+          setTimeout(() => res.destroy(), 100);
+        }).listen(4000);
+  # Calls breaker and answers with what it saw
+  - type: SERVICE
+    name: caller
+    image: ghcr.io/dokkimi/traffic-tester:0.1.0
+    port: 4000
+    healthCheck: /health
+    command:
+      - node
+      - -e
+      - |
+        require('http').createServer(async (req, res) => {
+          const seen = {};
+          if (req.url !== '/health') {
+            const response = await fetch('http://breaker/x', { method: 'POST' });
+            seen.status = response.status;
+            seen.from = response.headers.get('x-from');
+            seen.error = await response.text().then(() => 'none', () => 'broke off');
+          }
+          res.setHeader('Content-Type', 'application/json');
+          res.end(JSON.stringify(seen));
+        }).listen(4000);
+tests:
+  - name: Between services
+    steps:
+      - name: Caller calls breaker
+        action: { type: httpRequest, method: GET, url: caller/x }
+        assertions:
+          - assertions:
+              - { path: $.response.body.status, operator: eq, value: 201 }
+              - { path: $.response.body.from, operator: eq, value: breaker }
+              - { path: $.response.body.error, operator: eq, value: broke off }
+          - match:
+              path: $.traffic
+              where:
+                - { path: $$.origin, operator: eq, value: caller }
+                - { path: $$.to, operator: eq, value: breaker }
+                - { path: $$.response.status, operator: eq, value: 201 }
+                - { path: $$.response.body, operator: eq, value: partial }
+              count: 1

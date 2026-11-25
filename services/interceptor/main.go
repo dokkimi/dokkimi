@@ -294,13 +294,9 @@ func handleRequest(w http.ResponseWriter, r *http.Request, proxy *ProxyService, 
 	// Read response body into buffer so we can use it for both logging and copying
 	var responseBodyBytes []byte
 	var responseBody interface{}
+	var brokeOff error // the response ended before it was complete
 	if resp.Body != nil {
-		responseBodyBytes, err = io.ReadAll(resp.Body)
-		if err != nil {
-			log.Printf("Error reading response body: %v", err)
-			http.Error(w, fmt.Sprintf("Error reading response: %v", err), http.StatusInternalServerError)
-			return
-		}
+		responseBodyBytes, brokeOff = io.ReadAll(resp.Body)
 		// Parse response body for logging — decompress if needed
 		if len(responseBodyBytes) > 0 {
 			loggableBytes := decompress(responseBodyBytes, resp.Header.Get("Content-Encoding"))
@@ -318,7 +314,7 @@ func handleRequest(w http.ResponseWriter, r *http.Request, proxy *ProxyService, 
 		logger.LogResponse(r, actionID, resp, isMocked, urlMap, cfg.Namespace, cfg.Origin, cfg.NamespaceItemID, targetServiceName, requestBody, responseBody, &requestSentAt, &responseReceivedAt)
 	}
 	if testLogger != nil {
-		testLogger.LogRequestCompleted(r.Method, targetURL, cfg.Origin, resp.StatusCode, durationMs, nil)
+		testLogger.LogRequestCompleted(r.Method, targetURL, cfg.Origin, resp.StatusCode, durationMs, brokeOff)
 	}
 
 	// Copy response headers
@@ -337,6 +333,12 @@ func handleRequest(w http.ResponseWriter, r *http.Request, proxy *ProxyService, 
 			log.Printf("[Interceptor] Error writing response body to client: %v", err)
 			return
 		}
+	}
+
+	if brokeOff != nil {
+		log.Printf("[Interceptor] Response of %s %s broke off: %v", r.Method, targetURL, brokeOff)
+		_ = http.NewResponseController(w).Flush()
+		panic(http.ErrAbortHandler) // closes the caller's connection
 	}
 
 	log.Printf("[Interceptor] Sent response to client: status=%d, bodySize=%d bytes", resp.StatusCode, len(responseBodyBytes))
@@ -365,10 +367,10 @@ func decompress(body []byte, encoding string) []byte {
 		return body
 	}
 	decompressed, err := io.ReadAll(reader)
-	if err != nil {
+	if err != nil && len(decompressed) == 0 {
 		return body
 	}
-	return decompressed
+	return decompressed // all of it, or the part that arrived
 }
 
 // loadCA reads and parses a CA certificate and private key from PEM files.

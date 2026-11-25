@@ -911,7 +911,7 @@ Tests are defined in the top-level `tests` array. Each test is independent and c
 | `queryParams` | object          | No       | URL query parameters. String values sent as-is; array values send repeated keys. Values support `{{variables}}`. See below. |
 | `timeout`     | integer         | No       | How long to wait for the response, in milliseconds. Default `30000`, or the `DOKKIMI_HTTP_TIMEOUT` environment variable.    |
 
-**Where the request goes:** it is checked against mocks first, like any other request. Then the first part of `url` decides: a SERVICE name goes to that service; another name with a dot, such as `api.stripe.com/v1/charges`, goes to that host over HTTPS; any other name gets a 502 response that says there is no such service.
+**Where the request goes:** it is checked against mocks first, like any other request. Then the first part of `url` decides: a SERVICE name goes to that service; another name with a dot, such as `api.stripe.com/v1/charges`, goes to that host over HTTPS; any other name gets a 502 response that says there is no such service. If the response breaks off before it is complete, the step fails.
 
 **formData (multipart/form-data uploads):**
 

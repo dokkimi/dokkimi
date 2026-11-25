@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -694,5 +695,45 @@ func TestProxyService_NewConnectionForEveryRequest(t *testing.T) {
 
 	if len(connectionHeaders) > 0 {
 		t.Errorf("Connection headers were added to requests: %v", connectionHeaders)
+	}
+}
+
+func TestProxyService_AddsNoRequestHeaders(t *testing.T) {
+	var received http.Header
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		received = r.Header
+		if strings.Contains(r.Header.Get("Accept-Encoding"), "gzip") {
+			w.Header().Set("Content-Encoding", "gzip")
+		}
+		w.Write([]byte("as sent"))
+	}))
+	defer server.Close()
+
+	urlMap := UrlMap{"service": ServiceInfo{Name: "service", URL: server.URL}}
+	for _, sent := range []http.Header{
+		{},
+		{"X-A": {"1", "2"}},
+		{"User-Agent": {"test"}},
+		{"Accept-Encoding": {"gzip"}},
+		{"Accept-Encoding": {"identity"}},
+		{"Accept-Encoding": {"br"}, "User-Agent": {"curl/8.0"}, "X-A": {"1"}},
+	} {
+		for _, origin := range []string{"caller", ""} {
+			proxy := NewProxyService(&Config{Origin: origin}, NewMockManager(NewMockCache(0), origin), func() UrlMap { return urlMap })
+			r := httptest.NewRequest("GET", "http://service/x", nil)
+			r.Header = sent.Clone()
+			resp, _, err := proxy.HandleRequest(r)
+			if err != nil {
+				t.Fatal(err)
+			}
+			body, err := io.ReadAll(resp.Body)
+			resp.Body.Close()
+			if !reflect.DeepEqual(received, sent) {
+				t.Errorf("sent %v, the service received %v", sent, received)
+			}
+			if err != nil || string(body) != "as sent" || resp.Header.Get("Content-Length") != "7" {
+				t.Errorf("sent %v: body %q, err %v, headers %v", sent, body, err, resp.Header)
+			}
+		}
 	}
 }

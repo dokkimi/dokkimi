@@ -51,6 +51,7 @@ import CodeBlock from '../../components/CodeBlock.astro';
 // Wrong — don't include ports or protocols
 "url": "http://api-gateway:3000/api/users"`} lang="javascript" />
   <p>The request is checked against your <a href="/docs/mocks">mocks</a> first, like any other. A name with a dot that isn't one of your services, such as <code>api.stripe.com/v1/charges</code>, goes to that host over HTTPS. Any other unknown name gets a 502 response.</p>
+  <p>If the response breaks off before it is complete, the step fails.</p>
 
   <h3>Form data (file uploads)</h3>
   <p>Use <code>formData</code> instead of <code>body</code> when the API expects <code>multipart/form-data</code> (e.g., file uploads). The <code>Content-Type</code> header is set automatically.</p>
