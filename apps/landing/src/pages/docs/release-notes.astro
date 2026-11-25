@@ -30,7 +30,16 @@ import CodeBlock from '../../components/CodeBlock.astro';
     <li><strong>A misspelled service name fails right away</strong> &mdash; A step calling a service that doesn't exist hung until the definition timed out. It now gets a 502 that says so.</li>
     <li><strong>Captured traffic is accurate</strong> &mdash; Brotli and Zstandard response bodies are decompressed like gzip ones, <code>$$.request.url</code> has the scheme the caller used, and calls to external hosts are logged with that host.</li>
   </ul>
-  <p>Tests that can change: suites with unmocked calls will reach the internet, mocks may now match a step's own request, and an assertion that expects <code>http://</code> in the URL of an HTTPS call needs <code>https://</code>.</p>
+  <p>Tests that can change: suites with unmocked calls will reach the internet, mocks may now match a step's own request, a different mock may win, and an assertion that expects <code>http://</code> in the URL of an HTTPS call needs <code>https://</code>.</p>
+
+  <h3>Mocks</h3>
+  <ul>
+    <li><strong>The most specific mock wins</strong> &mdash; Mocks were ranked by points that added up, so unrelated fields could tie, an omitted <code>mockOrigin</code> counted as a specific one, and a longer prefix didn't win. They are now compared by target, then origin, path, method, and body. See <a href="/docs/mocks#precedence">Mock precedence</a>.</li>
+    <li><strong><code>mockOrigin</code> can name a worker</strong> &mdash; It never matched one. <code>chromium</code> names the UI test browser.</li>
+    <li><strong>Regexes are checked as Go regexes</strong> &mdash; <code>(?i)</code> was rejected, and a <code>mockRequestBodyMatches</code> with lookaround was accepted but made its mock match every body. Lookaround and backreferences are now validation errors there and in <code>extract</code> patterns.</li>
+    <li><strong>Mocks that can't work are errors</strong> &mdash; Such as a URL or <code>*.example.com</code> as the target, a wildcard in the middle of a path, a <code>mockOrigin</code> that isn't in the definition, or a fractional <code>mockDelayMs</code>. They were accepted and never matched, or stopped the interceptor from starting. So is the top-level <code>mocks</code> array, which never did anything: use MOCK items.</li>
+    <li><strong>Also fixed</strong> &mdash; Hosts are matched in any case, request bodies are matched in full instead of the first 1&nbsp;MB, delays can be longer than 30 seconds, and mocked responses no longer carry an <code>X-Mocked</code> header.</li>
+  </ul>
 
   <h3>CLI and AI tools</h3>
   <ul>

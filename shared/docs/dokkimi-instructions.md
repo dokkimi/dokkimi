@@ -455,26 +455,26 @@ An HTTP mock that intercepts outbound requests from services and returns control
 
 **Required fields:**
 
-| Field        | Type     | Description                                                                  |
-| ------------ | -------- | ---------------------------------------------------------------------------- |
-| `type`       | `"MOCK"` | Item type                                                                    |
-| `name`       | string   | Unique name (1-63 chars)                                                     |
-| `mockTarget` | string   | Target hostname to intercept (e.g., `"api.stripe.com"`, `"hooks.slack.com"`) |
-| `mockPath`   | string   | URL path to match (e.g., `"/v1/charges"`, `"/api/*"`)                        |
+| Field        | Type     | Description                                                                                                                                                                                                                |
+| ------------ | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `type`       | `"MOCK"` | Item type                                                                                                                                                                                                                  |
+| `name`       | string   | Unique name (1-63 chars)                                                                                                                                                                                                   |
+| `mockTarget` | string   | Target host, in any case (e.g., `"api.stripe.com"`), or `"*"` for any. Matches any port unless it includes one. No subdomain wildcards                                                                                     |
+| `mockPath`   | string   | URL path to match: exact (`"/v1/charges"`), trailing wildcard (`"/api/*"`), whole-segment variables (`"/users/{id}"` or `"/users/:id"`, not combined with a wildcard), or `"*"`. No query string. A trailing slash matters |
 
 **Optional fields:**
 
-| Field                     | Type              | Default | Description                                                                                                                                                                                     |
-| ------------------------- | ----------------- | ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `description`             | string            | —       | Human-readable description (max 500 chars)                                                                                                                                                      |
-| `mockMethod`              | enum              | `"*"`   | HTTP method: `"GET"`, `"POST"`, `"PUT"`, `"DELETE"`, `"PATCH"`, `"HEAD"`, `"OPTIONS"`, or `"*"` (any)                                                                                           |
-| `mockOrigin`              | string            | —       | Service name that makes the request, `"*"` for any service, or omit for any service (default behavior)                                                                                          |
-| `mockDelayMs`             | integer (≥ 0)     | —       | Artificial response delay in milliseconds                                                                                                                                                       |
-| `mockResponseStatus`      | integer (100-599) | —       | HTTP response status code                                                                                                                                                                       |
-| `mockResponseHeaders`     | object            | —       | Response headers: `{ "Content-Type": "application/json" }`                                                                                                                                      |
-| `mockResponseBody`        | any JSON          | —       | Response body (object, array, string, number, boolean, or null)                                                                                                                                 |
-| `mockRequestBodyContains` | string            | —       | Substring match against the serialized request body (case-insensitive). Must be non-empty. Mutually exclusive with `mockRequestBodyMatches`.                                                    |
-| `mockRequestBodyMatches`  | string            | —       | Regex match against the serialized request body (case-sensitive; use `(?i)` flag for case-insensitive). Must be non-empty and a valid regex. Mutually exclusive with `mockRequestBodyContains`. |
+| Field                     | Type              | Default | Description                                                                                                                                                                                              |
+| ------------------------- | ----------------- | ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `description`             | string            | —       | Human-readable description (max 500 chars)                                                                                                                                                               |
+| `mockMethod`              | enum              | `"*"`   | HTTP method: `"GET"`, `"POST"`, `"PUT"`, `"DELETE"`, `"PATCH"`, `"HEAD"`, `"OPTIONS"`, or `"*"` (any)                                                                                                    |
+| `mockOrigin`              | string            | —       | Name of the SERVICE or WORKER that makes the request. Omit it, or use `"*"`, for any caller, including test steps. `"chromium"` is the UI test browser                                                   |
+| `mockDelayMs`             | integer (≥ 0)     | —       | Artificial response delay in milliseconds                                                                                                                                                                |
+| `mockResponseStatus`      | integer (100-599) | —       | HTTP response status code                                                                                                                                                                                |
+| `mockResponseHeaders`     | object            | —       | Response headers: `{ "Content-Type": "application/json" }`                                                                                                                                               |
+| `mockResponseBody`        | any JSON          | —       | Response body (object, array, string, number, boolean, or null)                                                                                                                                          |
+| `mockRequestBodyContains` | string            | —       | Substring match against the serialized request body (case-insensitive). Must be non-empty. Mutually exclusive with `mockRequestBodyMatches`.                                                             |
+| `mockRequestBodyMatches`  | string            | —       | Go regex match against the request body (case-sensitive; start with `(?i)` for case-insensitive; no lookaround or backreferences). Must be non-empty. Mutually exclusive with `mockRequestBodyContains`. |
 
 **Full example — mocking Stripe:**
 
@@ -515,9 +515,19 @@ An HTTP mock that intercepts outbound requests from services and returns control
 }
 ```
 
+**Precedence.** A mock matches only if its target, origin, path, method and body conditions all match. When several match, they are compared field by field; a field only matters if the mocks are equal in those before it:
+
+1. Target: host and port, then host, then `*`
+2. Origin: named, then omitted or `*`
+3. Path: exact, then with variables (fewer first), then the longer prefix, then `*`
+4. Method: named, then omitted or `*`
+5. Body: a body match, then none
+
+If they are still equal, the one defined first wins.
+
 **Example — body matching for LLM prompt routing:**
 
-When multiple calls hit the same endpoint with different payloads (LLM APIs, GraphQL, RPC-style APIs), use body matching to return different responses based on request content. A mock with a body match has higher specificity than one without, so catch-all fallbacks still work.
+When multiple calls hit the same endpoint with different payloads (LLM APIs, GraphQL, RPC-style APIs), use body matching to return different responses based on request content. Give them the same target, path and method, and add one without a body match as the fallback.
 
 ```json
 [
@@ -582,29 +592,6 @@ When multiple calls hit the same endpoint with different payloads (LLM APIs, Gra
   }
 ]
 ```
-
-**Alternative: top-level `mocks` array.** Mocks can also be defined in a top-level `mocks` array with slightly different field names:
-
-```json
-{
-  "name": "my-definition",
-  "items": [ ... ],
-  "mocks": [
-    {
-      "name": "Stripe Create Charge",
-      "method": "POST",
-      "origin": "payment-service",
-      "target": "api.stripe.com",
-      "path": "/v1/charges",
-      "responseStatus": 200,
-      "responseHeaders": { "Content-Type": "application/json" },
-      "responseBody": { "id": "ch_test", "status": "succeeded" }
-    }
-  ]
-}
-```
-
-Field name mapping: `mockMethod` → `method`, `mockOrigin` → `origin`, `mockTarget` → `target`, `mockPath` → `path`, `mockDelayMs` → `delayMs`, `mockResponseStatus` → `responseStatus`, `mockResponseHeaders` → `responseHeaders`, `mockResponseBody` → `responseBody`, `mockRequestBodyContains` → `requestBodyContains`, `mockRequestBodyMatches` → `requestBodyMatches`.
 
 ---
 
@@ -1260,11 +1247,11 @@ Each extract rule can be a **simple JSONPath string** or a **regex extract objec
 
 **Regex form** (object):
 
-| Field     | Type   | Required | Description                                                |
-| --------- | ------ | -------- | ---------------------------------------------------------- |
-| `path`    | string | Yes      | JSONPath to the source value                               |
-| `pattern` | string | Yes      | Regex pattern (with capture groups)                        |
-| `group`   | number | No       | Capture group index (default: `1`; use `0` for full match) |
+| Field     | Type   | Required | Description                                                   |
+| --------- | ------ | -------- | ------------------------------------------------------------- |
+| `path`    | string | Yes      | JSONPath to the source value                                  |
+| `pattern` | string | Yes      | Go regex with capture groups; no lookaround or backreferences |
+| `group`   | number | No       | Capture group index (default: `1`; use `0` for full match)    |
 
 The JSONPath is resolved first, the result is coerced to a string, then the regex is applied. An error is raised if the path doesn't exist, the pattern doesn't match, or the capture group is out of range.
 

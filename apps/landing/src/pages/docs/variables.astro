@@ -99,7 +99,7 @@ import CodeBlock from '../../components/CodeBlock.astro';
     </thead>
     <tbody>
       <tr><td><code>path</code></td><td>string</td><td>Yes</td><td>JSONPath to the source value</td></tr>
-      <tr><td><code>pattern</code></td><td>string</td><td>Yes</td><td>Regex pattern (with capture groups)</td></tr>
+      <tr><td><code>pattern</code></td><td>string</td><td>Yes</td><td>Go regex with capture groups; no lookaround or backreferences. <code>(?i)</code> ignores case.</td></tr>
       <tr><td><code>group</code></td><td>number</td><td>No</td><td>Capture group index (default: <code>1</code>; use <code>0</code> for full match)</td></tr>
     </tbody>
   </table>

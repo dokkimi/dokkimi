@@ -2,11 +2,13 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
@@ -17,25 +19,21 @@ import (
 type MockManager struct {
 	cache  *MockCache
 	origin string
-	urlMap func() UrlMap
 }
 
 // NewMockManager creates a new mock manager
-func NewMockManager(cache *MockCache, _ interface{}, origin string, urlMap func() UrlMap) *MockManager {
+func NewMockManager(cache *MockCache, origin string) *MockManager {
 	return &MockManager{
 		cache:  cache,
 		origin: origin,
-		urlMap: urlMap,
 	}
 }
 
 // FindMatch finds a matching mock endpoint for the request
-// Returns the most specific match (specificity-based priority)
-// When scores are equal, exact path matches are preferred over path variable matches
+// Returns the most specific match, or the first of equally specific ones
 func (m *MockManager) FindMatch(r *http.Request) *MockEndpoint {
 	// Cache is automatically updated by ConfigMap watcher, no need to refresh
 	mocks := m.cache.GetMocks()
-	urlMap := m.urlMap()
 
 	// Buffer body once if any mock uses body matching
 	var bodyBytes []byte
@@ -54,23 +52,16 @@ func (m *MockManager) FindMatch(r *http.Request) *MockEndpoint {
 			return nil
 		}
 		r.Body = io.NopCloser(bytes.NewReader(bodyBytes))
-		// Cap matching input at 1MB to avoid excessive memory use
-		const maxMatchBytes = 1 << 20
-		if len(bodyBytes) > maxMatchBytes {
-			bodyBytes = bodyBytes[:maxMatchBytes]
-		}
 	}
 
 	var bestMatch *MockEndpoint
-	bestScore := -1
+	var best []int
 
 	for i := range mocks {
 		mock := &mocks[i]
-		if m.matches(mock, r, urlMap, bodyBytes) {
-			score := m.calculateSpecificity(mock, r, urlMap)
-			// If scores are equal, prefer exact matches over path variable matches
-			if score > bestScore || (score == bestScore && bestMatch != nil && mock.Path == r.URL.Path && bestMatch.Path != r.URL.Path) {
-				bestScore = score
+		if m.matches(mock, r, bodyBytes) {
+			if s := m.specificity(mock, r); slices.Compare(s, best) > 0 {
+				best = s
 				bestMatch = mock
 			}
 		}
@@ -79,71 +70,52 @@ func (m *MockManager) FindMatch(r *http.Request) *MockEndpoint {
 	return bestMatch
 }
 
-// calculateSpecificity calculates a specificity score for a mock match
-// Higher score = more specific match
-// Scoring:
-//   - Origin: specific (1) vs wildcard (0)
-//   - Target: specific (1) vs wildcard (0)
-//   - Method: specific (1) vs wildcard (0)
-//   - Path: exact (2) vs variable (2) vs prefix (1) vs wildcard (0)
-//
-// Note: Path variables score 2 (same as exact) but exact matches are checked first in pathMatches
-// Total possible score: 6 (was 5 before body matching)
-func (m *MockManager) calculateSpecificity(mock *MockEndpoint, r *http.Request, _ UrlMap) int {
-	score := 0
-
-	// Origin specificity (0 or 1)
-	if mock.Origin != "*" {
-		score += 1
+// specificity ranks a mock among those that match the same request. The values
+// are compared in order, so each one only decides between mocks that are equal
+// in those before it.
+func (m *MockManager) specificity(mock *MockEndpoint, r *http.Request) []int {
+	target := 1
+	if mock.Target == "*" {
+		target = 0
+	} else if strings.Contains(mock.Target, ":") {
+		target = 2 // host and port
 	}
 
-	// Target specificity (0 or 1)
-	if mock.Target != "*" {
-		score += 1
+	origin := 0
+	if mock.Origin != "*" && mock.Origin != "" {
+		origin = 1
 	}
 
-	// Method specificity (0 or 1)
+	path, detail := 0, 0
+	switch {
+	case mock.Path == "*":
+	case mock.Path == r.URL.Path:
+		path = 3
+	case strings.HasSuffix(mock.Path, "*"):
+		path, detail = 1, len(mock.Path) // longer prefix first
+	default:
+		path, detail = 2, -strings.Count(m.normalizePathVariableSyntax(mock.Path), "{") // fewer variables first
+	}
+
+	method := 0
 	if mock.Method != "*" {
-		score += 1
+		method = 1
 	}
 
-	// Path specificity (0, 1, or 2)
-	// Exact match = 2, Path variable = 2 (treated as equally specific), Prefix wildcard = 1, Full wildcard = 0
-	if mock.Path == "*" {
-		score += 0 // Full wildcard
-	} else if mock.Path == r.URL.Path {
-		score += 2 // Exact match
-	} else if m.hasPathVariables(mock.Path) && m.pathMatches(mock.Path, r.URL.Path) {
-		// Path variable match (e.g., /api/users/{id} matches /api/users/123)
-		// Score: 2 (treated as equally specific as exact match for simplicity)
-		// In practice, exact matches will be checked first, so exact > variable
-		score += 2
-	} else if strings.HasSuffix(mock.Path, "*") && m.pathMatches(mock.Path, r.URL.Path) {
-		score += 1 // Prefix match
-	}
-
-	// Body specificity (0 or 1)
+	body := 0
 	if mock.RequestBodyContains != nil || mock.RequestBodyMatches != nil {
-		score += 1
+		body = 1
 	}
 
-	return score
+	return []int{target, origin, path, detail, method, body}
 }
 
 // matches checks if a mock endpoint matches the request
-func (m *MockManager) matches(mock *MockEndpoint, r *http.Request, urlMap UrlMap, bodyBytes []byte) bool {
-	// Check origin:
-	//   mock.Origin == "*" or "" → matches any interceptor (no origin restriction)
-	//   mock.Origin == "service-key" → matches only that service's interceptor (via urlMap)
-	if mock.Origin != "*" && mock.Origin != "" {
-		if m.origin == "" {
-			// Shared interceptor doesn't match service-specific mocks
-			return false
-		}
-		serviceInfo, exists := urlMap[mock.Origin]
-		if !exists || serviceInfo.Name != m.origin {
-			return false
-		}
+func (m *MockManager) matches(mock *MockEndpoint, r *http.Request, bodyBytes []byte) bool {
+	// Check origin: "*" or "" matches any caller, anything else only the one
+	// with that name.
+	if mock.Origin != "*" && mock.Origin != "" && mock.Origin != m.origin {
+		return false
 	}
 
 	// Check target. If the mock's Target includes a port, match the Host header
@@ -156,7 +128,7 @@ func (m *MockManager) matches(mock *MockEndpoint, r *http.Request, urlMap UrlMap
 				host = host[:idx]
 			}
 		}
-		if mock.Target != host {
+		if !strings.EqualFold(mock.Target, host) {
 			return false
 		}
 	}
@@ -180,8 +152,8 @@ func (m *MockManager) matches(mock *MockEndpoint, r *http.Request, urlMap UrlMap
 			return false
 		}
 	}
-	if mock.compiledBodyRegex != nil {
-		if bodyBytes == nil {
+	if mock.RequestBodyMatches != nil {
+		if bodyBytes == nil || mock.compiledBodyRegex == nil {
 			return false
 		}
 		if !mock.compiledBodyRegex.Match(bodyBytes) {
@@ -267,11 +239,14 @@ func (m *MockManager) hasPathVariables(pattern string) bool {
 	return false
 }
 
-// ApplyMock applies mock configuration to response
-func (m *MockManager) ApplyMock(mock *MockEndpoint) (*http.Response, error) {
-	// Apply delay if specified
+// ApplyMock applies mock configuration to response. The delay ends early if ctx
+// does, because the caller is gone.
+func (m *MockManager) ApplyMock(ctx context.Context, mock *MockEndpoint) (*http.Response, error) {
 	if mock.DelayMS != nil {
-		time.Sleep(time.Duration(*mock.DelayMS) * time.Millisecond)
+		select {
+		case <-time.After(time.Duration(*mock.DelayMS) * time.Millisecond):
+		case <-ctx.Done():
+		}
 	}
 
 	// Create mock response
@@ -285,9 +260,6 @@ func (m *MockManager) ApplyMock(mock *MockEndpoint) (*http.Response, error) {
 		Header:     make(http.Header),
 		Body:       http.NoBody,
 	}
-
-	// Mark as mocked
-	response.Header.Set("X-Mocked", "true")
 
 	// Set response body
 	if mock.ResponseBody != nil {

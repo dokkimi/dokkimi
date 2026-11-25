@@ -73,15 +73,18 @@ func NewProxyService(cfg *Config, mockManager *MockManager, urlMap func() UrlMap
 	}
 }
 
-// HandleRequest processes an incoming HTTP request
-func (p *ProxyService) HandleRequest(r *http.Request) (*http.Response, error) {
+// HandleRequest processes an incoming HTTP request, and reports whether a mock
+// answered it.
+func (p *ProxyService) HandleRequest(r *http.Request) (*http.Response, bool, error) {
 	// Check for mock first
 	if mock := p.mockManager.FindMatch(r); mock != nil {
-		return p.mockManager.ApplyMock(mock)
+		resp, err := p.mockManager.ApplyMock(r.Context(), mock)
+		return resp, true, err
 	}
 
 	// Forward request to target
-	return p.forwardRequest(r)
+	resp, err := p.forwardRequest(r)
+	return resp, false, err
 }
 
 // forwardRequest forwards the request to the target service

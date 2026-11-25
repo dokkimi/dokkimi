@@ -25,7 +25,11 @@ export function validateDefinition(
   r: ValidationResult,
   fs: FileSystem,
 ): void {
-  checkUnknownKeys(parsed, VALID_DEFINITION_KEYS, 'definition', r);
+  const { mocks, ...known } = parsed;
+  checkUnknownKeys(known, VALID_DEFINITION_KEYS, 'definition', r);
+  if (mocks !== undefined) {
+    err(r, '"mocks" is not supported — use items with "type": "MOCK"');
+  }
 
   if (typeof parsed.name !== 'string' || parsed.name.length === 0) {
     err(r, 'missing or empty "name"');
@@ -56,6 +60,11 @@ export function validateDefinition(
     validateItem(item, i, sourceFile, r, fs);
   }
 
+  validateMockOrigins(
+    resolvedItems.map(({ item }) => item),
+    r,
+  );
+
   validateVariablesField(parsed.variables, 'definition', filePath, r, fs);
 
   if (parsed.tests !== undefined) {
@@ -65,6 +74,33 @@ export function validateDefinition(
   if (parsed.config !== undefined) {
     validateConfig(parsed.config, r);
   }
+}
+
+/** A mock's origin must be something in the definition that makes requests. */
+function validateMockOrigins(
+  items: Record<string, unknown>[],
+  r: ValidationResult,
+): void {
+  const callers = new Set<unknown>(
+    items
+      .filter((i) => i.type === 'SERVICE' || i.type === 'WORKER')
+      .map((i) => i.name),
+  );
+  items.forEach((item, i) => {
+    const origin = item.mockOrigin;
+    if (
+      item.type === 'MOCK' &&
+      typeof origin === 'string' &&
+      !['', '*', 'chromium'].includes(origin) &&
+      !origin.includes('{{') &&
+      !callers.has(origin)
+    ) {
+      err(
+        r,
+        `items[${i}] (${item.name}): mockOrigin "${origin}" is not the name of a SERVICE or WORKER`,
+      );
+    }
+  });
 }
 
 // ---------------------------------------------------------------------------

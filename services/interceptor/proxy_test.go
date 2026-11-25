@@ -20,7 +20,7 @@ func TestNewProxyService(t *testing.T) {
 	}
 	cache := NewMockCache(5 * time.Minute)
 	urlMapFunc := func() UrlMap { return make(UrlMap) }
-	mockManager := NewMockManager(cache, nil, "test-origin", urlMapFunc)
+	mockManager := NewMockManager(cache, "test-origin")
 
 	proxy := NewProxyService(cfg, mockManager, urlMapFunc)
 
@@ -41,7 +41,7 @@ func TestProxyService_HandleRequest_WithMock(t *testing.T) {
 	}
 	cache := NewMockCache(5 * time.Minute)
 	urlMapFunc := func() UrlMap { return make(UrlMap) }
-	mockManager := NewMockManager(cache, nil, "test-origin", urlMapFunc)
+	mockManager := NewMockManager(cache, "test-origin")
 
 	// Set up a mock
 	mocks := []MockEndpoint{
@@ -59,7 +59,7 @@ func TestProxyService_HandleRequest_WithMock(t *testing.T) {
 	proxy := NewProxyService(cfg, mockManager, urlMapFunc)
 
 	req := httptest.NewRequest("GET", "http://example.com/test", nil)
-	resp, err := proxy.HandleRequest(req)
+	resp, isMocked, err := proxy.HandleRequest(req)
 
 	if err != nil {
 		t.Fatalf("HandleRequest() error = %v", err)
@@ -70,8 +70,8 @@ func TestProxyService_HandleRequest_WithMock(t *testing.T) {
 		t.Errorf("Expected status 201, got %d", resp.StatusCode)
 	}
 
-	if resp.Header.Get("X-Mocked") != "true" {
-		t.Error("Expected X-Mocked header")
+	if !isMocked {
+		t.Error("Expected a mocked response")
 	}
 }
 
@@ -90,12 +90,12 @@ func TestProxyService_HandleRequest_Forward(t *testing.T) {
 	}
 	cache := NewMockCache(5 * time.Minute)
 	urlMapFunc := func() UrlMap { return make(UrlMap) }
-	mockManager := NewMockManager(cache, nil, "test-origin", urlMapFunc)
+	mockManager := NewMockManager(cache, "test-origin")
 
 	proxy := NewProxyService(cfg, mockManager, urlMapFunc)
 
 	req := httptest.NewRequest("GET", targetServer.URL+"/path", nil)
-	resp, err := proxy.HandleRequest(req)
+	resp, _, err := proxy.HandleRequest(req)
 
 	if err != nil {
 		t.Fatalf("HandleRequest() error = %v", err)
@@ -141,12 +141,12 @@ func TestProxyService_HandleRequest_PassesRedirectThrough(t *testing.T) {
 	}
 	cache := NewMockCache(5 * time.Minute)
 	urlMapFunc := func() UrlMap { return make(UrlMap) }
-	mockManager := NewMockManager(cache, nil, "test-origin", urlMapFunc)
+	mockManager := NewMockManager(cache, "test-origin")
 
 	proxy := NewProxyService(cfg, mockManager, urlMapFunc)
 
 	req := httptest.NewRequest("GET", targetServer.URL+"/start", nil)
-	resp, err := proxy.HandleRequest(req)
+	resp, _, err := proxy.HandleRequest(req)
 	if err != nil {
 		t.Fatalf("HandleRequest() error = %v", err)
 	}
@@ -185,7 +185,7 @@ func TestProxyService_forwardRequest(t *testing.T) {
 	}
 	cache := NewMockCache(5 * time.Minute)
 	urlMapFunc := func() UrlMap { return make(UrlMap) }
-	mockManager := NewMockManager(cache, nil, "test-origin", urlMapFunc)
+	mockManager := NewMockManager(cache, "test-origin")
 
 	proxy := NewProxyService(cfg, mockManager, urlMapFunc)
 
@@ -257,7 +257,7 @@ func TestProxyService_getTargetURL(t *testing.T) {
 	}
 
 	urlMapFunc := func() UrlMap { return urlMap }
-	mockManager := NewMockManager(cache, nil, "test-origin", urlMapFunc)
+	mockManager := NewMockManager(cache, "test-origin")
 	proxy := NewProxyService(cfg, mockManager, urlMapFunc)
 
 	tests := []struct {
@@ -339,7 +339,7 @@ func TestProxyService_getTargetURL_FromStep(t *testing.T) {
 	urlMap := func() UrlMap {
 		return UrlMap{"api": ServiceInfo{Scheme: "http", URL: "http://api", Name: "api", Port: 4000}}
 	}
-	proxy := NewProxyService(&Config{}, NewMockManager(NewMockCache(time.Minute), nil, "", urlMap), urlMap)
+	proxy := NewProxyService(&Config{}, NewMockManager(NewMockCache(time.Minute), ""), urlMap)
 
 	for request, want := range map[string]string{
 		"/api":                           "http://api:4000/",
@@ -373,7 +373,7 @@ func TestProxyService_getTargetURL_FromService(t *testing.T) {
 		}
 	}
 	cfg := &Config{Origin: "web"}
-	proxy := NewProxyService(cfg, NewMockManager(NewMockCache(time.Minute), nil, cfg.Origin, urlMap), urlMap)
+	proxy := NewProxyService(cfg, NewMockManager(NewMockCache(time.Minute), cfg.Origin), urlMap)
 
 	for request, want := range map[string]string{
 		"http://example.com/":                  "http://example.com/",
@@ -407,7 +407,7 @@ func TestProxyService_forwardRequest_KeepsExternalRedirects(t *testing.T) {
 		return UrlMap{"api": ServiceInfo{Scheme: "http", URL: "http://api", Name: "api"}}
 	}
 	cfg := &Config{Origin: "web", RequestTimeout: 30 * time.Second}
-	proxy := NewProxyService(cfg, NewMockManager(NewMockCache(time.Minute), nil, cfg.Origin, urlMap), urlMap)
+	proxy := NewProxyService(cfg, NewMockManager(NewMockCache(time.Minute), cfg.Origin), urlMap)
 
 	resp, err := proxy.forwardRequest(httptest.NewRequest("GET", external.URL+"/", nil))
 	if err != nil {
@@ -424,7 +424,7 @@ func TestProxyService_forwardRequest_ChecksExternalCertificates(t *testing.T) {
 	defer external.Close()
 	urlMap := func() UrlMap { return UrlMap{} }
 	cfg := &Config{Origin: "web", RequestTimeout: 30 * time.Second}
-	proxy := NewProxyService(cfg, NewMockManager(NewMockCache(time.Minute), nil, cfg.Origin, urlMap), urlMap)
+	proxy := NewProxyService(cfg, NewMockManager(NewMockCache(time.Minute), cfg.Origin), urlMap)
 
 	_, err := proxy.forwardRequest(httptest.NewRequest("GET", external.URL+"/", nil))
 	var unknownAuthority x509.UnknownAuthorityError
@@ -472,7 +472,7 @@ func TestProxyService_forwardRequest_ErrorHandling(t *testing.T) {
 	}
 	cache := NewMockCache(5 * time.Minute)
 	urlMapFunc := func() UrlMap { return make(UrlMap) }
-	mockManager := NewMockManager(cache, nil, "test-origin", urlMapFunc)
+	mockManager := NewMockManager(cache, "test-origin")
 
 	proxy := NewProxyService(cfg, mockManager, urlMapFunc)
 
@@ -493,7 +493,7 @@ func TestProxyService_forwardRequest_BodyReadError(t *testing.T) {
 	}
 	cache := NewMockCache(5 * time.Minute)
 	urlMapFunc := func() UrlMap { return make(UrlMap) }
-	mockManager := NewMockManager(cache, nil, "test-origin", urlMapFunc)
+	mockManager := NewMockManager(cache, "test-origin")
 
 	proxy := NewProxyService(cfg, mockManager, urlMapFunc)
 
@@ -523,7 +523,7 @@ func TestProxyService_forwardRequest_InvalidURL(t *testing.T) {
 		},
 	}
 	urlMapFunc := func() UrlMap { return urlMap }
-	mockManager := NewMockManager(cache, nil, "test-origin", urlMapFunc)
+	mockManager := NewMockManager(cache, "test-origin")
 
 	proxy := NewProxyService(cfg, mockManager, urlMapFunc)
 
@@ -555,7 +555,7 @@ func TestProxyService_rewriteLocationHeader(t *testing.T) {
 		},
 	}
 	urlMapFunc := func() UrlMap { return urlMap }
-	mockManager := NewMockManager(cache, nil, "test-origin", urlMapFunc)
+	mockManager := NewMockManager(cache, "test-origin")
 	proxy := NewProxyService(cfg, mockManager, urlMapFunc)
 
 	tests := []struct {
@@ -636,11 +636,11 @@ func TestProxyService_forwardRequest_RewritesLocationInRedirect(t *testing.T) {
 		},
 	}
 	urlMapFunc := func() UrlMap { return urlMap }
-	mockManager := NewMockManager(cache, nil, "test-origin", urlMapFunc)
+	mockManager := NewMockManager(cache, "test-origin")
 	proxy := NewProxyService(cfg, mockManager, urlMapFunc)
 
 	req := httptest.NewRequest("GET", "http://my-app/login", nil)
-	resp, err := proxy.HandleRequest(req)
+	resp, _, err := proxy.HandleRequest(req)
 	if err != nil {
 		t.Fatalf("HandleRequest() error = %v", err)
 	}
@@ -662,7 +662,7 @@ func TestProxyService_forwardRequest_RequestCreationError(t *testing.T) {
 	}
 	cache := NewMockCache(5 * time.Minute)
 	urlMapFunc := func() UrlMap { return make(UrlMap) }
-	mockManager := NewMockManager(cache, nil, "test-origin", urlMapFunc)
+	mockManager := NewMockManager(cache, "test-origin")
 
 	proxy := NewProxyService(cfg, mockManager, urlMapFunc)
 

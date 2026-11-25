@@ -12,6 +12,7 @@ import {
   warn,
   checkUnknownKeys,
 } from './validate-helpers';
+import { goRegexProblem } from './go-regex';
 
 // ---------------------------------------------------------------------------
 // Per-kind validators
@@ -427,10 +428,9 @@ function validateExtractSource(
   if (obj.pattern !== undefined && typeof obj.pattern !== 'string') {
     err(r, `${ctx}: "pattern" must be a string regex when provided`);
   } else if (typeof obj.pattern === 'string') {
-    try {
-      new RegExp(obj.pattern);
-    } catch {
-      err(r, `${ctx}: "pattern" is not a valid regex`);
+    const problem = goRegexProblem(obj.pattern);
+    if (problem) {
+      err(r, `${ctx}: "pattern" is not a valid regex: ${problem}`);
     }
   }
 

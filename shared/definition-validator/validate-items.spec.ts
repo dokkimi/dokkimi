@@ -1263,6 +1263,27 @@ describe('validateItem', () => {
       ).toBe(true);
     });
 
+    it.each([
+      ['(?i)hello', 0],
+      ['foo(?=bar)', 1],
+    ])('checks mockRequestBodyMatches %s as Go would', (pattern, errors) => {
+      const r = makeResult();
+      validateItem(
+        {
+          type: 'MOCK',
+          name: 'mock-llm',
+          mockTarget: 'api.openai.com',
+          mockPath: '/',
+          mockRequestBodyMatches: pattern,
+        },
+        0,
+        '/f.json',
+        r,
+        fs,
+      );
+      expect(r.errors).toHaveLength(errors);
+    });
+
     it('errors when both mockRequestBodyContains and mockRequestBodyMatches are present', () => {
       const r = makeResult();
       validateItem(

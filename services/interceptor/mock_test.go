@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -11,9 +12,8 @@ import (
 
 func TestNewMockManager(t *testing.T) {
 	cache := NewMockCache(5 * time.Minute)
-	urlMapFunc := func() UrlMap { return make(UrlMap) }
 
-	manager := NewMockManager(cache, nil, "test-origin", urlMapFunc)
+	manager := NewMockManager(cache, "test-origin")
 
 	if manager == nil {
 		t.Fatal("NewMockManager() returned nil")
@@ -56,13 +56,7 @@ func TestMockManager_pathMatches(t *testing.T) {
 func TestMockManager_matches(t *testing.T) {
 	cache := NewMockCache(5 * time.Minute)
 
-	urlMap := UrlMap{
-		"origin.com": ServiceInfo{Name: "test-origin"},
-		"other.com":  ServiceInfo{Name: "other-origin"},
-	}
-
-	urlMapFunc := func() UrlMap { return urlMap }
-	manager := NewMockManager(cache, nil, "test-origin", urlMapFunc)
+	manager := NewMockManager(cache, "test-origin")
 
 	tests := []struct {
 		name    string
@@ -84,7 +78,7 @@ func TestMockManager_matches(t *testing.T) {
 		{
 			name: "specific origin match",
 			mock: MockEndpoint{
-				Origin: "origin.com",
+				Origin: "test-origin",
 				Target: "*",
 				Method: "GET",
 				Path:   "/test",
@@ -184,7 +178,7 @@ func TestMockManager_matches(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := manager.matches(&tt.mock, tt.request, urlMap, nil)
+			got := manager.matches(&tt.mock, tt.request, nil)
 			if got != tt.want {
 				t.Errorf("matches() = %v, want %v", got, tt.want)
 			}
@@ -194,8 +188,7 @@ func TestMockManager_matches(t *testing.T) {
 
 func TestMockManager_FindMatch(t *testing.T) {
 	cache := NewMockCache(5 * time.Minute)
-	urlMapFunc := func() UrlMap { return make(UrlMap) }
-	manager := NewMockManager(cache, nil, "test-origin", urlMapFunc)
+	manager := NewMockManager(cache, "test-origin")
 
 	// Set up mocks in cache
 	mocks := []MockEndpoint{
@@ -244,12 +237,7 @@ func TestMockManager_FindMatch(t *testing.T) {
 
 func TestMockManager_FindMatch_Specificity(t *testing.T) {
 	cache := NewMockCache(5 * time.Minute)
-	urlMap := UrlMap{
-		"payment-service": ServiceInfo{Name: "payment-service"},
-		"api.stripe.com":  ServiceInfo{Name: "api.stripe.com"},
-	}
-	urlMapFunc := func() UrlMap { return urlMap }
-	manager := NewMockManager(cache, nil, "payment-service", urlMapFunc)
+	manager := NewMockManager(cache, "payment-service")
 
 	tests := []struct {
 		name    string
@@ -344,9 +332,6 @@ func TestMockManager_ApplyMock(t *testing.T) {
 				}
 				if resp.StatusCode != 404 {
 					t.Errorf("Expected status 404, got %d", resp.StatusCode)
-				}
-				if resp.Header.Get("X-Mocked") != "true" {
-					t.Error("Expected X-Mocked header")
 				}
 			},
 		},
@@ -474,7 +459,7 @@ func TestMockManager_ApplyMock(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			resp, err := manager.ApplyMock(&tt.mock)
+			resp, err := manager.ApplyMock(context.Background(), &tt.mock)
 			tt.validate(t, resp, err)
 			if resp != nil {
 				resp.Body.Close()
@@ -486,12 +471,6 @@ func TestMockManager_ApplyMock(t *testing.T) {
 // TestMockManager_WildcardEdgeCases tests comprehensive wildcard matching scenarios
 func TestMockManager_WildcardEdgeCases(t *testing.T) {
 	cache := NewMockCache(5 * time.Minute)
-	urlMap := UrlMap{
-		"payment-service": ServiceInfo{Name: "Payment Service"},
-		"user-service":    ServiceInfo{Name: "User Service"},
-		"api.stripe.com":  ServiceInfo{Name: "Stripe API"},
-	}
-	urlMapFunc := func() UrlMap { return urlMap }
 
 	tests := []struct {
 		name              string
@@ -503,7 +482,7 @@ func TestMockManager_WildcardEdgeCases(t *testing.T) {
 	}{
 		{
 			name:              "all wildcards match everything",
-			interceptorOrigin: "Payment Service",
+			interceptorOrigin: "payment-service",
 			mocks: []MockEndpoint{
 				{Method: "*", Origin: "*", Target: "*", Path: "*", ResponseStatus: intPtr(200)},
 			},
@@ -513,7 +492,7 @@ func TestMockManager_WildcardEdgeCases(t *testing.T) {
 		},
 		{
 			name:              "wildcard origin matches any service",
-			interceptorOrigin: "Payment Service",
+			interceptorOrigin: "payment-service",
 			mocks: []MockEndpoint{
 				{Method: "GET", Origin: "*", Target: "api.stripe.com", Path: "/charges", ResponseStatus: intPtr(200)},
 			},
@@ -523,7 +502,7 @@ func TestMockManager_WildcardEdgeCases(t *testing.T) {
 		},
 		{
 			name:              "wildcard target matches any host",
-			interceptorOrigin: "Payment Service",
+			interceptorOrigin: "payment-service",
 			mocks: []MockEndpoint{
 				{Method: "POST", Origin: "payment-service", Target: "*", Path: "/payments", ResponseStatus: intPtr(201)},
 			},
@@ -533,7 +512,7 @@ func TestMockManager_WildcardEdgeCases(t *testing.T) {
 		},
 		{
 			name:              "wildcard method matches any HTTP method",
-			interceptorOrigin: "Payment Service",
+			interceptorOrigin: "payment-service",
 			mocks: []MockEndpoint{
 				{Method: "*", Origin: "payment-service", Target: "api.stripe.com", Path: "/webhook", ResponseStatus: intPtr(200)},
 			},
@@ -543,7 +522,7 @@ func TestMockManager_WildcardEdgeCases(t *testing.T) {
 		},
 		{
 			name:              "wildcard path matches any path",
-			interceptorOrigin: "Payment Service",
+			interceptorOrigin: "payment-service",
 			mocks: []MockEndpoint{
 				{Method: "GET", Origin: "payment-service", Target: "api.stripe.com", Path: "*", ResponseStatus: intPtr(200)},
 			},
@@ -553,7 +532,7 @@ func TestMockManager_WildcardEdgeCases(t *testing.T) {
 		},
 		{
 			name:              "path prefix wildcard matches nested paths",
-			interceptorOrigin: "User Service",
+			interceptorOrigin: "user-service",
 			mocks: []MockEndpoint{
 				{Method: "GET", Origin: "*", Target: "*", Path: "/api/users/*", ResponseStatus: intPtr(200)},
 			},
@@ -563,7 +542,7 @@ func TestMockManager_WildcardEdgeCases(t *testing.T) {
 		},
 		{
 			name:              "path prefix wildcard matches root path",
-			interceptorOrigin: "Payment Service",
+			interceptorOrigin: "payment-service",
 			mocks: []MockEndpoint{
 				{Method: "GET", Origin: "*", Target: "*", Path: "/api/*", ResponseStatus: intPtr(200)},
 			},
@@ -594,7 +573,7 @@ func TestMockManager_WildcardEdgeCases(t *testing.T) {
 		},
 		{
 			name:              "service-specific interceptor matches empty-origin mock (empty == wildcard)",
-			interceptorOrigin: "Payment Service",
+			interceptorOrigin: "payment-service",
 			mocks: []MockEndpoint{
 				{Method: "GET", Origin: "", Target: "*", Path: "/test", ResponseStatus: intPtr(200)},
 			},
@@ -604,7 +583,7 @@ func TestMockManager_WildcardEdgeCases(t *testing.T) {
 		},
 		{
 			name:              "target with port number matches",
-			interceptorOrigin: "Payment Service",
+			interceptorOrigin: "payment-service",
 			mocks: []MockEndpoint{
 				{Method: "GET", Origin: "*", Target: "api.example.com:8080", Path: "/test", ResponseStatus: intPtr(200)},
 			},
@@ -614,7 +593,7 @@ func TestMockManager_WildcardEdgeCases(t *testing.T) {
 		},
 		{
 			name:              "target without port does not match target with port",
-			interceptorOrigin: "Payment Service",
+			interceptorOrigin: "payment-service",
 			mocks: []MockEndpoint{
 				{Method: "GET", Origin: "*", Target: "api.example.com:8080", Path: "/test", ResponseStatus: intPtr(200)},
 			},
@@ -624,7 +603,7 @@ func TestMockManager_WildcardEdgeCases(t *testing.T) {
 		},
 		{
 			name:              "multiple overlapping wildcards - most specific wins",
-			interceptorOrigin: "Payment Service",
+			interceptorOrigin: "payment-service",
 			mocks: []MockEndpoint{
 				{Method: "*", Origin: "*", Target: "*", Path: "*", ResponseStatus: intPtr(500)},                                      // Score: 0
 				{Method: "POST", Origin: "*", Target: "*", Path: "*", ResponseStatus: intPtr(400)},                                   // Score: 1
@@ -638,7 +617,7 @@ func TestMockManager_WildcardEdgeCases(t *testing.T) {
 		},
 		{
 			name:              "same specificity - first match wins",
-			interceptorOrigin: "Payment Service",
+			interceptorOrigin: "payment-service",
 			mocks: []MockEndpoint{
 				{Method: "GET", Origin: "*", Target: "api.stripe.com", Path: "/test", ResponseStatus: intPtr(200)},
 				{Method: "GET", Origin: "*", Target: "api.stripe.com", Path: "/test", ResponseStatus: intPtr(201)},
@@ -649,7 +628,7 @@ func TestMockManager_WildcardEdgeCases(t *testing.T) {
 		},
 		{
 			name:              "path prefix wildcard specificity - exact beats prefix",
-			interceptorOrigin: "User Service",
+			interceptorOrigin: "user-service",
 			mocks: []MockEndpoint{
 				{Method: "GET", Origin: "*", Target: "*", Path: "/api/users/*", ResponseStatus: intPtr(404)},
 				{Method: "GET", Origin: "*", Target: "*", Path: "/api/users/123", ResponseStatus: intPtr(200)},
@@ -660,7 +639,7 @@ func TestMockManager_WildcardEdgeCases(t *testing.T) {
 		},
 		{
 			name:              "path variable specificity - exact beats variable, variable beats prefix",
-			interceptorOrigin: "User Service",
+			interceptorOrigin: "user-service",
 			mocks: []MockEndpoint{
 				{Method: "GET", Origin: "*", Target: "*", Path: "/api/users/*", ResponseStatus: intPtr(404)},        // Prefix wildcard
 				{Method: "GET", Origin: "*", Target: "*", Path: "/api/users/{userId}", ResponseStatus: intPtr(300)}, // Variable
@@ -672,7 +651,7 @@ func TestMockManager_WildcardEdgeCases(t *testing.T) {
 		},
 		{
 			name:              "path variable specificity - variable beats prefix wildcard",
-			interceptorOrigin: "User Service",
+			interceptorOrigin: "user-service",
 			mocks: []MockEndpoint{
 				{Method: "GET", Origin: "*", Target: "*", Path: "/api/users/*", ResponseStatus: intPtr(404)},        // Prefix wildcard (score +1)
 				{Method: "GET", Origin: "*", Target: "*", Path: "/api/users/{userId}", ResponseStatus: intPtr(200)}, // Variable (score +2)
@@ -683,7 +662,7 @@ func TestMockManager_WildcardEdgeCases(t *testing.T) {
 		},
 		{
 			name:              "case insensitive method matching",
-			interceptorOrigin: "Payment Service",
+			interceptorOrigin: "payment-service",
 			mocks: []MockEndpoint{
 				{Method: "post", Origin: "*", Target: "*", Path: "/test", ResponseStatus: intPtr(200)},
 				{Method: "PUT", Origin: "*", Target: "*", Path: "/test", ResponseStatus: intPtr(201)},
@@ -695,7 +674,7 @@ func TestMockManager_WildcardEdgeCases(t *testing.T) {
 		},
 		{
 			name:              "root path matching",
-			interceptorOrigin: "Payment Service",
+			interceptorOrigin: "payment-service",
 			mocks: []MockEndpoint{
 				{Method: "GET", Origin: "*", Target: "*", Path: "/", ResponseStatus: intPtr(200)},
 				{Method: "GET", Origin: "*", Target: "*", Path: "/*", ResponseStatus: intPtr(201)},
@@ -706,7 +685,7 @@ func TestMockManager_WildcardEdgeCases(t *testing.T) {
 		},
 		{
 			name:              "empty path edge case",
-			interceptorOrigin: "Payment Service",
+			interceptorOrigin: "payment-service",
 			mocks: []MockEndpoint{
 				{Method: "GET", Origin: "*", Target: "*", Path: "", ResponseStatus: intPtr(200)},
 			},
@@ -716,7 +695,7 @@ func TestMockManager_WildcardEdgeCases(t *testing.T) {
 		},
 		{
 			name:              "path with query string - path matching ignores query",
-			interceptorOrigin: "Payment Service",
+			interceptorOrigin: "payment-service",
 			mocks: []MockEndpoint{
 				{Method: "GET", Origin: "*", Target: "*", Path: "/api/users", ResponseStatus: intPtr(200)},
 			},
@@ -726,7 +705,7 @@ func TestMockManager_WildcardEdgeCases(t *testing.T) {
 		},
 		{
 			name:              "origin not in urlMap should not match",
-			interceptorOrigin: "Payment Service",
+			interceptorOrigin: "payment-service",
 			mocks: []MockEndpoint{
 				{Method: "GET", Origin: "non-existent-service", Target: "*", Path: "/test", ResponseStatus: intPtr(200)},
 			},
@@ -736,7 +715,7 @@ func TestMockManager_WildcardEdgeCases(t *testing.T) {
 		},
 		{
 			name:              "origin in urlMap but name mismatch should not match",
-			interceptorOrigin: "Payment Service",
+			interceptorOrigin: "payment-service",
 			mocks: []MockEndpoint{
 				{Method: "GET", Origin: "user-service", Target: "*", Path: "/test", ResponseStatus: intPtr(200)},
 			},
@@ -749,7 +728,7 @@ func TestMockManager_WildcardEdgeCases(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cache.SetMocks(tt.mocks)
-			manager := NewMockManager(cache, nil, tt.interceptorOrigin, urlMapFunc)
+			manager := NewMockManager(cache, tt.interceptorOrigin)
 			got := manager.FindMatch(tt.request)
 
 			if tt.expectedMock == nil {
@@ -830,8 +809,7 @@ func TestMockManager_PathMatchingEdgeCases(t *testing.T) {
 // Path variables are NOW SUPPORTED using the pathmatch library
 func TestMockManager_PathVariables(t *testing.T) {
 	cache := NewMockCache(5 * time.Minute)
-	urlMapFunc := func() UrlMap { return make(UrlMap) }
-	manager := NewMockManager(cache, nil, "test-origin", urlMapFunc)
+	manager := NewMockManager(cache, "test-origin")
 
 	tests := []struct {
 		name        string
@@ -1020,8 +998,7 @@ func TestMockManager_PathVariables(t *testing.T) {
 // TestMockManager_BodyMatching tests request body substring and regex matching
 func TestMockManager_BodyMatching(t *testing.T) {
 	cache := NewMockCache(5 * time.Minute)
-	urlMapFunc := func() UrlMap { return make(UrlMap) }
-	manager := NewMockManager(cache, nil, "test-origin", urlMapFunc)
+	manager := NewMockManager(cache, "test-origin")
 
 	t.Run("substring match", func(t *testing.T) {
 		cache.SetMocks([]MockEndpoint{
@@ -1100,23 +1077,98 @@ func TestMockManager_BodyMatching(t *testing.T) {
 		}
 	})
 
-	t.Run("invalid regex disabled at load time", func(t *testing.T) {
+	t.Run("invalid regex never matches", func(t *testing.T) {
 		cache.SetMocks([]MockEndpoint{
-			{Method: "POST", Origin: "*", Target: "*", Path: "/api", RequestBodyMatches: stringPtr(`[invalid`), ResponseStatus: intPtr(200)},
+			{Method: "POST", Origin: "*", Target: "*", Path: "/api", RequestBodyMatches: stringPtr(`foo(?=bar)`), ResponseStatus: intPtr(200)},
 		})
-		// SetMocks should have cleared the invalid regex
-		mocks := cache.GetMocks()
-		if mocks[0].RequestBodyMatches != nil {
-			t.Fatal("expected invalid regex to be cleared by SetMocks")
+		req := httptest.NewRequest("POST", "http://example.com/api", strings.NewReader("foobar"))
+		if got := manager.FindMatch(req); got != nil {
+			t.Fatalf("expected no match, got %+v", got)
 		}
 	})
+}
+
+// TestMockManager_Precedence checks which of two matching mocks wins, in both
+// orders. The order of the fields is target, origin, path, method, body.
+func TestMockManager_Precedence(t *testing.T) {
+	const url = "http://example.com:8080/api/users/1"
+	const any = "*"
+	body := stringPtr("classify")
+	for _, tc := range []struct {
+		name          string
+		winner, loser MockEndpoint
+	}{
+		// Within one field
+		{"target: host and port over host", MockEndpoint{Target: "example.com:8080"}, MockEndpoint{Target: "example.com"}},
+		{"target: host over any", MockEndpoint{Target: "example.com"}, MockEndpoint{}},
+		{"origin: named over any", MockEndpoint{Origin: "svc"}, MockEndpoint{}},
+		{"path: exact over variables", MockEndpoint{Path: "/api/users/1"}, MockEndpoint{Path: "/api/users/{id}"}},
+		{"path: colon variables over prefix", MockEndpoint{Path: "/api/users/:id"}, MockEndpoint{Path: "/api/users/*"}},
+		{"path: longer prefix over shorter", MockEndpoint{Path: "/api/users/*"}, MockEndpoint{Path: "/api/*"}},
+		{"path: fewer variables first", MockEndpoint{Path: "/api/{x}/1"}, MockEndpoint{Path: "/api/:x/:y"}},
+		{"path: prefix over any", MockEndpoint{Path: "/*"}, MockEndpoint{}},
+		{"method: named over any", MockEndpoint{Method: "GET"}, MockEndpoint{}},
+		{"body: contains over none", MockEndpoint{RequestBodyContains: body}, MockEndpoint{}},
+		{"body: matches over none", MockEndpoint{RequestBodyMatches: stringPtr("^classify")}, MockEndpoint{}},
+
+		// A field outranks all those after it combined
+		{"target first", MockEndpoint{Target: "example.com"}, MockEndpoint{Origin: "svc", Path: "/api/users/1", Method: "GET", RequestBodyContains: body}},
+		{"then origin", MockEndpoint{Origin: "svc"}, MockEndpoint{Path: "/api/users/1", Method: "GET", RequestBodyContains: body}},
+		{"then path", MockEndpoint{Path: "/*"}, MockEndpoint{Method: "GET", RequestBodyContains: body}},
+		{"then method", MockEndpoint{Method: "GET"}, MockEndpoint{RequestBodyContains: body}},
+		{"an omitted origin is a wildcard", MockEndpoint{Method: "GET"}, MockEndpoint{Origin: "omitted"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			for _, mock := range []*MockEndpoint{&tc.winner, &tc.loser} {
+				for _, field := range []*string{&mock.Target, &mock.Origin, &mock.Path, &mock.Method} {
+					if *field == "" {
+						*field = any
+					}
+				}
+				if mock.Origin == "omitted" {
+					mock.Origin = ""
+				}
+			}
+			tc.winner.ResponseStatus, tc.loser.ResponseStatus = intPtr(200), intPtr(500)
+			for _, mocks := range [][]MockEndpoint{{tc.winner, tc.loser}, {tc.loser, tc.winner}} {
+				cache := NewMockCache(time.Minute)
+				cache.SetMocks(mocks)
+				got := NewMockManager(cache, "svc").FindMatch(httptest.NewRequest("GET", url, strings.NewReader("classify this")))
+				if got == nil || *got.ResponseStatus != 200 {
+					t.Errorf("wrong mock: %+v", got)
+				}
+			}
+		})
+	}
+
+	t.Run("equal: defined first", func(t *testing.T) {
+		cache := NewMockCache(time.Minute)
+		cache.SetMocks([]MockEndpoint{
+			{Method: any, Origin: any, Target: any, Path: "/api/*", ResponseStatus: intPtr(200)},
+			{Method: any, Origin: "", Target: any, Path: "/api/*", ResponseStatus: intPtr(500)},
+		})
+		if got := NewMockManager(cache, "svc").FindMatch(httptest.NewRequest("GET", url, nil)); *got.ResponseStatus != 200 {
+			t.Errorf("wrong mock: %+v", got)
+		}
+	})
+}
+
+// A mock's origin is the name of the service, worker or browser that calls.
+func TestMockManager_OriginIsTheCaller(t *testing.T) {
+	cache := NewMockCache(time.Minute) // no services: a worker isn't in the URL map
+	cache.SetMocks([]MockEndpoint{{Method: "*", Origin: "worker", Target: "*", Path: "*"}})
+	for origin, want := range map[string]bool{"worker": true, "chromium": false, "": false} {
+		got := NewMockManager(cache, origin).FindMatch(httptest.NewRequest("GET", "http://example.com/", nil)) != nil
+		if got != want {
+			t.Errorf("caller %q: matched = %v, want %v", origin, got, want)
+		}
+	}
 }
 
 // TestMockManager_BodyMatchingSpecificity tests that body-matching mocks score higher
 func TestMockManager_BodyMatchingSpecificity(t *testing.T) {
 	cache := NewMockCache(5 * time.Minute)
-	urlMapFunc := func() UrlMap { return make(UrlMap) }
-	manager := NewMockManager(cache, nil, "test-origin", urlMapFunc)
+	manager := NewMockManager(cache, "test-origin")
 
 	t.Run("body match wins over no body match", func(t *testing.T) {
 		cache.SetMocks([]MockEndpoint{
@@ -1167,27 +1219,12 @@ func TestMockManager_BodyMatchingSpecificity(t *testing.T) {
 			t.Fatal("expected fallback mock (500)")
 		}
 	})
-
-	t.Run("max specificity score is 7", func(t *testing.T) {
-		urlMap := UrlMap{"svc": ServiceInfo{Name: "test-origin"}}
-		manager := NewMockManager(cache, nil, "test-origin", func() UrlMap { return urlMap })
-		mock := MockEndpoint{
-			Method: "POST", Origin: "svc", Target: "api.example.com",
-			Path: "/exact", RequestBodyContains: stringPtr("test"),
-		}
-		req := httptest.NewRequest("POST", "http://api.example.com/exact", nil)
-		score := manager.calculateSpecificity(&mock, req, urlMap)
-		if score != 6 {
-			t.Errorf("expected max specificity 6, got %d", score)
-		}
-	})
 }
 
 // TestMockManager_BodyBuffering tests that request body remains readable after FindMatch
 func TestMockManager_BodyBuffering(t *testing.T) {
 	cache := NewMockCache(5 * time.Minute)
-	urlMapFunc := func() UrlMap { return make(UrlMap) }
-	manager := NewMockManager(cache, nil, "test-origin", urlMapFunc)
+	manager := NewMockManager(cache, "test-origin")
 
 	t.Run("body readable after FindMatch", func(t *testing.T) {
 		cache.SetMocks([]MockEndpoint{
@@ -1222,4 +1259,26 @@ func TestMockManager_BodyBuffering(t *testing.T) {
 			t.Errorf("body = %q, want %q", string(remaining), body)
 		}
 	})
+}
+
+func TestMockManager_HostCase(t *testing.T) {
+	cache := NewMockCache(time.Minute)
+	cache.SetMocks([]MockEndpoint{{Method: "*", Target: "API.example.com", Path: "*"}})
+	for _, host := range []string{"api.example.com", "Api.Example.Com:8080"} {
+		if NewMockManager(cache, "svc").FindMatch(httptest.NewRequest("GET", "http://"+host+"/", nil)) == nil {
+			t.Errorf("%s: no match", host)
+		}
+	}
+}
+
+func TestMockManager_MatchesTheWholeBody(t *testing.T) {
+	body := strings.Repeat("x", 3<<20) + "needle"
+	for _, mock := range []MockEndpoint{{RequestBodyContains: stringPtr("needle")}, {RequestBodyMatches: stringPtr("needle$")}} {
+		mock.Method, mock.Target, mock.Path = "*", "*", "*"
+		cache := NewMockCache(time.Minute)
+		cache.SetMocks([]MockEndpoint{mock})
+		if NewMockManager(cache, "svc").FindMatch(httptest.NewRequest("POST", "http://example.com/", strings.NewReader(body))) == nil {
+			t.Errorf("no match for %+v", mock)
+		}
+	}
 }

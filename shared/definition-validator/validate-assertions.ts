@@ -21,6 +21,7 @@ import {
   checkUnknownKeys,
   validatePathFormat,
 } from './validate-helpers';
+import { goRegexProblem } from './go-regex';
 
 // ---------------------------------------------------------------------------
 // Count assertion
@@ -277,10 +278,9 @@ export function validateExtractRules(
         if (typeof rule.pattern !== 'string' || !rule.pattern) {
           err(r, `${eCtx}: "pattern" must be a non-empty string`);
         } else {
-          try {
-            new RegExp(rule.pattern);
-          } catch {
-            err(r, `${eCtx}: "pattern" is not a valid regex`);
+          const problem = goRegexProblem(rule.pattern);
+          if (problem) {
+            err(r, `${eCtx}: "pattern" is not a valid regex: ${problem}`);
           }
         }
         if (rule.group !== undefined) {

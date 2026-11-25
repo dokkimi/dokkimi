@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"compress/gzip"
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -34,7 +35,7 @@ func TestHandleRequest(t *testing.T) {
 	}
 	cache := NewMockCache(5 * time.Minute)
 	urlMapFunc := func() UrlMap { return make(UrlMap) }
-	mockManager := NewMockManager(cache, nil, "test-origin", urlMapFunc)
+	mockManager := NewMockManager(cache, "test-origin")
 	proxyService := NewProxyService(cfg, mockManager, urlMapFunc)
 	logger := NewLogger("http://localhost:5000", 5*time.Second, nil)
 	defer logger.Stop()
@@ -67,9 +68,6 @@ func TestHandleRequest(t *testing.T) {
 			validateResponse: func(t *testing.T, w *httptest.ResponseRecorder) {
 				if w.Code != 201 {
 					t.Errorf("Expected status 201, got %d", w.Code)
-				}
-				if w.Header().Get("X-Mocked") != "true" {
-					t.Error("Expected X-Mocked header")
 				}
 			},
 		},
@@ -128,7 +126,7 @@ func TestHandleRequest_WithoutLogger(t *testing.T) {
 	}
 	cache := NewMockCache(5 * time.Minute)
 	urlMapFunc := func() UrlMap { return make(UrlMap) }
-	mockManager := NewMockManager(cache, nil, "test-origin", urlMapFunc)
+	mockManager := NewMockManager(cache, "test-origin")
 	proxyService := NewProxyService(cfg, mockManager, urlMapFunc)
 
 	req := httptest.NewRequest("GET", targetServer.URL+"/test", nil)
@@ -154,7 +152,7 @@ func TestHandleRequest_ResponseBodyError(t *testing.T) {
 	}
 	cache := NewMockCache(5 * time.Minute)
 	urlMapFunc := func() UrlMap { return make(UrlMap) }
-	mockManager := NewMockManager(cache, nil, "test-origin", urlMapFunc)
+	mockManager := NewMockManager(cache, "test-origin")
 
 	// Create a mock that returns a response
 	mocks := []MockEndpoint{
@@ -194,7 +192,7 @@ func TestHandleRequest_ResponseBodyBuffering(t *testing.T) {
 	}
 	cache := NewMockCache(5 * time.Minute)
 	urlMapFunc := func() UrlMap { return make(UrlMap) }
-	mockManager := NewMockManager(cache, nil, "test-origin", urlMapFunc)
+	mockManager := NewMockManager(cache, "test-origin")
 
 	// Create a mock that returns a JSON response
 	responseBody := `{"id": 123, "name": "test"}`
@@ -241,7 +239,7 @@ func TestHandleRequest_NilBody(t *testing.T) {
 	}
 	cache := NewMockCache(5 * time.Minute)
 	urlMapFunc := func() UrlMap { return make(UrlMap) }
-	mockManager := NewMockManager(cache, nil, "test-origin", urlMapFunc)
+	mockManager := NewMockManager(cache, "test-origin")
 
 	// Create a mock with no body
 	mocks := []MockEndpoint{
@@ -281,7 +279,7 @@ func TestHandleRequest_HealthIsForwarded(t *testing.T) {
 	cache.SetUrlMap(UrlMap{
 		"service-a": ServiceInfo{Scheme: "http", URL: targetServer.URL, Name: "service-a"},
 	})
-	proxyService := NewProxyService(cfg, NewMockManager(cache, nil, cfg.Origin, cache.GetUrlMap), cache.GetUrlMap)
+	proxyService := NewProxyService(cfg, NewMockManager(cache, cfg.Origin), cache.GetUrlMap)
 
 	for _, url := range []string{"http://service-a/health", targetServer.URL + "/health"} {
 		w := httptest.NewRecorder()
@@ -322,7 +320,7 @@ func TestHandleRequest_GzipResponseForwardsCompressedBytes(t *testing.T) {
 	}
 	cache := NewMockCache(5 * time.Minute)
 	urlMapFunc := func() UrlMap { return make(UrlMap) }
-	mockManager := NewMockManager(cache, nil, "test-origin", urlMapFunc)
+	mockManager := NewMockManager(cache, "test-origin")
 	proxyService := NewProxyService(cfg, mockManager, urlMapFunc)
 	logger := NewLogger("http://localhost:5000", 5*time.Second, nil)
 	defer logger.Stop()
@@ -390,7 +388,7 @@ func handleAndCapture(t *testing.T, origin, url string, target http.Handler) (*h
 		{Method: "GET", Target: "service-a", Path: "/mocked", Origin: "*", ResponseBody: &body},
 		{Method: "GET", Target: "*", Path: "/anywhere", Origin: "*", ResponseBody: &body},
 	})
-	proxyService := NewProxyService(cfg, NewMockManager(cache, nil, cfg.Origin, cache.GetUrlMap), cache.GetUrlMap)
+	proxyService := NewProxyService(cfg, NewMockManager(cache, cfg.Origin), cache.GetUrlMap)
 	logger := NewLogger(logServer.URL, 5*time.Second, nil)
 	defer logger.Stop()
 
@@ -511,5 +509,35 @@ func TestHandleRequest_UnknownServiceInStep(t *testing.T) {
 	}
 	if message.URL != "http://service-b/x" || *message.StatusCode != http.StatusBadGateway {
 		t.Errorf("logged %s %d", message.URL, *message.StatusCode)
+	}
+}
+
+func TestHandleRequest_LogsWhetherAMockAnswered(t *testing.T) {
+	target := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Mocked", "true") // means nothing to the interceptor
+	})
+	for url, mocked := range map[string]bool{"http://service-a/mocked": true, "http://service-a/real": false} {
+		w, message := handleAndCapture(t, "test-origin", url, target)
+		if *message.IsMocked != mocked {
+			t.Errorf("%s: logged isMocked %v", url, *message.IsMocked)
+		}
+		if got := w.Header().Get("X-Mocked"); (got == "") != mocked {
+			t.Errorf("%s: X-Mocked = %q", url, got)
+		}
+	}
+}
+
+func TestHandleRequest_MockDelayEndsWithTheCaller(t *testing.T) {
+	delay := 60000
+	cache := NewMockCache(time.Minute)
+	cache.SetMocks([]MockEndpoint{{Method: "*", Target: "*", Path: "*", DelayMS: &delay}})
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	proxyService := NewProxyService(&Config{Origin: "svc"}, NewMockManager(cache, "svc"), cache.GetUrlMap)
+
+	start := time.Now()
+	_, isMocked, err := proxyService.HandleRequest(httptest.NewRequest("GET", "http://example.com/", nil).WithContext(ctx))
+	if err != nil || !isMocked || time.Since(start) > 5*time.Second {
+		t.Errorf("mocked %v, err %v after %s", isMocked, err, time.Since(start))
 	}
 }

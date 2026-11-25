@@ -592,6 +592,21 @@ describe('extract sub-step', () => {
     expect(r.errors.some((e) => e.includes('not a valid regex'))).toBe(true);
   });
 
+  it.each([
+    ['(?i)order #(\\S+)', 0],
+    ['order #(?!0)', 1],
+  ])('checks regex pattern %s as Go would', (pattern, errors) => {
+    const r = makeResult();
+    validateStep(
+      stepWith([
+        { extract: { id: { from: 'text', selector: 'h1', pattern } } },
+      ]),
+      'ctx',
+      r,
+    );
+    expect(r.errors).toHaveLength(errors);
+  });
+
   it('warns when group is set without pattern', () => {
     const r = makeResult();
     validateStep(

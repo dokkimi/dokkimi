@@ -22,6 +22,7 @@ import {
   warn,
   checkUnknownKeys,
 } from './validate-helpers';
+import { goRegexProblem } from './go-regex';
 
 // ---------------------------------------------------------------------------
 // Reusable field validators
@@ -383,6 +384,64 @@ function validateBrokerItem(
   }
 }
 
+// Variables are filled in after validation
+function isLiteral(value: unknown): value is string {
+  return typeof value === 'string' && !value.includes('{{');
+}
+
+function validateMockTarget(
+  target: string,
+  label: string,
+  r: ValidationResult,
+): void {
+  if (target === '*') {
+    return;
+  }
+  if (target.includes('*')) {
+    err(
+      r,
+      `${label}: mockTarget "${target}" can't match — "*" only works on its own`,
+    );
+  } else if (target.includes('/')) {
+    err(
+      r,
+      `${label}: mockTarget "${target}" can't match — use only a host, such as "api.example.com"; the path goes in mockPath`,
+    );
+  }
+}
+
+function validateMockPath(
+  path: string,
+  label: string,
+  r: ValidationResult,
+): void {
+  if (path === '*') {
+    return;
+  }
+  const problem = (why: string) =>
+    err(r, `${label}: mockPath "${path}" can't match — ${why}`);
+  if (!path.startsWith('/')) {
+    problem('it must start with "/"');
+  } else if (path.includes('?')) {
+    problem('query strings are ignored, so leave them out');
+  } else if (
+    path
+      .replace(/\{[^{}]+\}/g, '')
+      .slice(0, -1)
+      .includes('*')
+  ) {
+    problem('"*" only works at the end');
+  } else {
+    const segments = path.split('/');
+    const isVariable = (s: string) => /^(:.+|\{[^{}]+\})$/.test(s);
+    if (segments.some((s) => /[{}]/.test(s) && !isVariable(s))) {
+      problem('a variable must be a whole segment, such as "/users/{id}"');
+    } else if (path.endsWith('*') && segments.some(isVariable)) {
+      problem('variables and a trailing "*" can\'t be combined');
+    }
+  }
+}
+
 function validateMockItem(
   item: Record<string, unknown>,
   label: string,
@@ -390,9 +449,47 @@ function validateMockItem(
 ): void {
   if (!item.mockTarget || typeof item.mockTarget !== 'string') {
     err(r, `${label}: MOCK requires "mockTarget" (string)`);
+  } else if (isLiteral(item.mockTarget)) {
+    validateMockTarget(item.mockTarget, label, r);
   }
   if (!item.mockPath || typeof item.mockPath !== 'string') {
     err(r, `${label}: MOCK requires "mockPath" (string)`);
+  } else if (isLiteral(item.mockPath)) {
+    validateMockPath(item.mockPath, label, r);
+  }
+  if (item.mockOrigin !== undefined && typeof item.mockOrigin !== 'string') {
+    err(r, `${label}: mockOrigin must be a string`);
+  }
+  if (
+    item.mockTarget === '*' &&
+    ['*', '/*'].includes(item.mockPath as string) &&
+    [undefined, '*'].includes(item.mockMethod as string) &&
+    [undefined, '', '*'].includes(item.mockOrigin as string) &&
+    item.mockRequestBodyContains === undefined &&
+    item.mockRequestBodyMatches === undefined
+  ) {
+    warn(
+      r,
+      `${label}: this mock matches every request, so it replaces all your services, for test steps too`,
+    );
+  }
+  if (item.mockResponseHeaders !== undefined) {
+    const headers = item.mockResponseHeaders;
+    if (
+      !headers ||
+      typeof headers !== 'object' ||
+      Array.isArray(headers) ||
+      !Object.values(headers).every((v) =>
+        [v]
+          .flat()
+          .every((x) => ['string', 'number', 'boolean'].includes(typeof x)),
+      )
+    ) {
+      err(
+        r,
+        `${label}: mockResponseHeaders must be an object of header values, such as { "X-Request-Id": "abc" }`,
+      );
+    }
   }
   if (item.mockMethod !== undefined) {
     const m = item.mockMethod as string;
@@ -417,8 +514,12 @@ function validateMockItem(
     }
   }
   if (item.mockDelayMs !== undefined) {
-    if (typeof item.mockDelayMs !== 'number' || item.mockDelayMs < 0) {
-      err(r, `${label}: mockDelayMs must be a non-negative number`);
+    if (
+      typeof item.mockDelayMs !== 'number' ||
+      !Number.isInteger(item.mockDelayMs) ||
+      item.mockDelayMs < 0
+    ) {
+      err(r, `${label}: mockDelayMs must be a non-negative integer`);
     }
   }
   if (item.mockRequestBodyContains !== undefined) {
@@ -434,10 +535,12 @@ function validateMockItem(
     } else if (item.mockRequestBodyMatches.length === 0) {
       err(r, `${label}: mockRequestBodyMatches must be non-empty`);
     } else {
-      try {
-        new RegExp(item.mockRequestBodyMatches as string);
-      } catch {
-        err(r, `${label}: mockRequestBodyMatches is not a valid regex`);
+      const problem = goRegexProblem(item.mockRequestBodyMatches);
+      if (problem) {
+        err(
+          r,
+          `${label}: mockRequestBodyMatches is not a valid regex: ${problem}`,
+        );
       }
     }
   }

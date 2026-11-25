@@ -191,6 +191,19 @@ describe('validateExtractRules', () => {
       ).toBe(true);
     });
 
+    it.each([
+      ['(?i)order-(\\d+)', 0],
+      ['order-(?=\\d)', 1],
+    ])('checks pattern %s as Go would', (pattern, errors) => {
+      const r = makeResult();
+      validateExtractRules(
+        { x: { path: '$.response.body.id', pattern } },
+        'ctx',
+        r,
+      );
+      expect(r.errors).toHaveLength(errors);
+    });
+
     it('errors when group is negative', () => {
       const r = makeResult();
       validateExtractRules(

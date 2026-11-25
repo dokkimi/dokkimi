@@ -60,7 +60,7 @@ func main() {
 		return cache.GetUrlMap()
 	}
 
-	mockManager := NewMockManager(cache, nil, cfg.Origin, getUrlMap)
+	mockManager := NewMockManager(cache, cfg.Origin)
 	proxyService := NewProxyService(cfg, mockManager, getUrlMap)
 
 	// Initialize logger (only if logging is enabled)
@@ -127,11 +127,11 @@ func main() {
 
 	// Create server
 	server := &http.Server{
-		Addr:         ":" + cfg.Port,
-		Handler:      handler,
-		ReadTimeout:  30 * time.Second,
-		WriteTimeout: 30 * time.Second,
-		IdleTimeout:  120 * time.Second,
+		Addr:    ":" + cfg.Port,
+		Handler: handler,
+		// No read or write timeout: a mock's delay may be as long as the caller waits
+		ReadHeaderTimeout: 30 * time.Second,
+		IdleTimeout:       120 * time.Second,
 	}
 
 	// Start server in goroutine
@@ -268,7 +268,7 @@ func handleRequest(w http.ResponseWriter, r *http.Request, proxy *ProxyService, 
 	}
 
 	// Handle request
-	resp, err := proxy.HandleRequest(r)
+	resp, isMocked, err := proxy.HandleRequest(r)
 
 	// Capture response received time
 	responseReceivedAt := time.Now()
@@ -290,9 +290,6 @@ func handleRequest(w http.ResponseWriter, r *http.Request, proxy *ProxyService, 
 		return
 	}
 	defer resp.Body.Close()
-
-	// Determine if response was mocked
-	isMocked := resp.Header.Get("X-Mocked") == "true"
 
 	// Read response body into buffer so we can use it for both logging and copying
 	var responseBodyBytes []byte
