@@ -8,6 +8,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"slices"
 	"strings"
 	"time"
@@ -89,7 +90,7 @@ func (m *MockManager) specificity(mock *MockEndpoint, r *http.Request) []int {
 	path, detail := 0, 0
 	switch {
 	case mock.Path == "*":
-	case mock.Path == r.URL.Path:
+	case canonicalPath(mock.Path) == canonicalPath(r.URL.EscapedPath()):
 		path = 3
 	case strings.HasSuffix(mock.Path, "*"):
 		path, detail = 1, len(mock.Path) // longer prefix first
@@ -118,15 +119,12 @@ func (m *MockManager) matches(mock *MockEndpoint, r *http.Request, bodyBytes []b
 		return false
 	}
 
-	// Check target. If the mock's Target includes a port, match the Host header
-	// verbatim (including port). Otherwise strip any port from Host so
+	// Check target. A port only counts if the mock's Target includes one, so
 	// "api.example.com" matches "api.example.com:8080".
 	if mock.Target != "*" {
-		host := r.Host
-		if !strings.Contains(mock.Target, ":") {
-			if idx := strings.LastIndex(host, ":"); idx != -1 {
-				host = host[:idx]
-			}
+		host := stripPortFromHost(r.Host)
+		if strings.Contains(mock.Target, ":") {
+			host = hostWithPort(r)
 		}
 		if !strings.EqualFold(mock.Target, host) {
 			return false
@@ -138,8 +136,7 @@ func (m *MockManager) matches(mock *MockEndpoint, r *http.Request, bodyBytes []b
 		return false
 	}
 
-	// Check path (simple prefix match for now, can be enhanced)
-	if !m.pathMatches(mock.Path, r.URL.Path) {
+	if !m.pathMatches(mock.Path, r.URL.EscapedPath()) {
 		return false
 	}
 
@@ -164,7 +161,36 @@ func (m *MockManager) matches(mock *MockEndpoint, r *http.Request, bodyBytes []b
 	return true
 }
 
-// pathMatches checks if path matches the pattern
+// hostWithPort returns the host and port a request is for. Clients leave a
+// scheme's usual port out of the Host header.
+func hostWithPort(r *http.Request) string {
+	if strings.Contains(r.Host, ":") {
+		return r.Host
+	}
+	if schemeUsed(r) == "https" {
+		return r.Host + ":443"
+	}
+	return r.Host + ":80"
+}
+
+// canonicalPath returns a path with every segment encoded the same way, however
+// it was written ("/a b" and "/a%20b"), and an encoded "/" still encoded.
+// Variables are left alone.
+func canonicalPath(path string) string {
+	segments := strings.Split(path, "/")
+	for i, segment := range segments {
+		if strings.HasPrefix(segment, "{") {
+			continue
+		}
+		if decoded, err := url.PathUnescape(segment); err == nil {
+			segment = decoded
+		}
+		segments[i] = url.PathEscape(segment)
+	}
+	return strings.Join(segments, "/")
+}
+
+// pathMatches checks if an encoded path matches the pattern
 // Supports:
 //   - Exact matches: "/api/users" == "/api/users"
 //   - Full wildcard: "*" matches anything
@@ -177,20 +203,21 @@ func (m *MockManager) pathMatches(pattern, path string) bool {
 		return true
 	}
 
-	// Exact match
-	if pattern == path {
-		return true
-	}
+	path = canonicalPath(path)
 
 	// Prefix wildcard match (e.g., "/api/*")
-	if strings.HasSuffix(pattern, "*") {
-		prefix := strings.TrimSuffix(pattern, "*")
-		return strings.HasPrefix(path, prefix)
+	if prefix, ok := strings.CutSuffix(pattern, "*"); ok {
+		return strings.HasPrefix(path, canonicalPath(prefix))
 	}
 
 	// Path variable matching using pathmatch library
 	// First, normalize :variable syntax to {variable} syntax
-	normalizedPattern := m.normalizePathVariableSyntax(pattern)
+	normalizedPattern := canonicalPath(m.normalizePathVariableSyntax(pattern))
+
+	// Exact match
+	if normalizedPattern == path {
+		return true
+	}
 
 	// Check if the normalized pattern contains variables
 	if m.hasPathVariables(normalizedPattern) {
@@ -272,19 +299,17 @@ func (m *MockManager) ApplyMock(ctx context.Context, mock *MockEndpoint) (*http.
 	// Set response headers
 	if mock.ResponseHeaders != nil {
 		var headers map[string]interface{}
-		if err := json.Unmarshal([]byte(*mock.ResponseHeaders), &headers); err == nil {
+		decoder := json.NewDecoder(strings.NewReader(*mock.ResponseHeaders))
+		decoder.UseNumber() // keeps numbers as they were written
+		if err := decoder.Decode(&headers); err == nil {
 			for key, value := range headers {
-				switch v := value.(type) {
-				case string:
-					response.Header.Set(key, v)
-				case []interface{}:
-					for _, val := range v {
-						if valStr, ok := val.(string); ok {
-							response.Header.Add(key, valStr)
-						}
-					}
-				default:
-					response.Header.Set(key, fmt.Sprintf("%v", v))
+				values, isList := value.([]interface{})
+				if !isList {
+					values = []interface{}{value}
+				}
+				response.Header.Del(key)
+				for _, v := range values {
+					response.Header.Add(key, fmt.Sprint(v))
 				}
 			}
 		}

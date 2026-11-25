@@ -170,9 +170,11 @@ func NewTLSServer(addr string, caCert *x509.Certificate, caKey *rsa.PrivateKey, 
 	}
 
 	server := &http.Server{
-		Addr:      addr,
-		Handler:   handler,
-		TLSConfig: tlsConfig,
+		Addr:              addr,
+		Handler:           handler,
+		TLSConfig:         tlsConfig,
+		ReadHeaderTimeout: 30 * time.Second,
+		IdleTimeout:       120 * time.Second,
 	}
 
 	return server, cache

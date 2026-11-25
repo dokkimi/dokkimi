@@ -455,12 +455,12 @@ An HTTP mock that intercepts outbound requests from services and returns control
 
 **Required fields:**
 
-| Field        | Type     | Description                                                                                                                                                                                                                |
-| ------------ | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `type`       | `"MOCK"` | Item type                                                                                                                                                                                                                  |
-| `name`       | string   | Unique name (1-63 chars)                                                                                                                                                                                                   |
-| `mockTarget` | string   | Target host, in any case (e.g., `"api.stripe.com"`), or `"*"` for any. Matches any port unless it includes one. No subdomain wildcards                                                                                     |
-| `mockPath`   | string   | URL path to match: exact (`"/v1/charges"`), trailing wildcard (`"/api/*"`), whole-segment variables (`"/users/{id}"` or `"/users/:id"`, not combined with a wildcard), or `"*"`. No query string. A trailing slash matters |
+| Field        | Type     | Description                                                                                                                                                                                                                                                                                               |
+| ------------ | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `type`       | `"MOCK"` | Item type                                                                                                                                                                                                                                                                                                 |
+| `name`       | string   | Unique name (1-63 chars)                                                                                                                                                                                                                                                                                  |
+| `mockTarget` | string   | Target host, in any case (e.g., `"api.stripe.com"`), or `"*"` for any. Matches any port unless it includes one; `:443` and `:80` match calls that leave it out. No subdomain wildcards                                                                                                                    |
+| `mockPath`   | string   | URL path to match: exact (`"/v1/charges"`), trailing wildcard (`"/api/*"`), whole-segment variables (`"/users/{id}"` or `"/users/:id"`, not combined with a wildcard), or `"*"`. No query string. A trailing slash matters. Characters can be encoded or not (`/a%20b` or `/a b`), but `%2F` is not a `/` |
 
 **Optional fields:**
 
@@ -469,7 +469,7 @@ An HTTP mock that intercepts outbound requests from services and returns control
 | `description`             | string            | —       | Human-readable description (max 500 chars)                                                                                                                                                               |
 | `mockMethod`              | enum              | `"*"`   | HTTP method: `"GET"`, `"POST"`, `"PUT"`, `"DELETE"`, `"PATCH"`, `"HEAD"`, `"OPTIONS"`, or `"*"` (any)                                                                                                    |
 | `mockOrigin`              | string            | —       | Name of the SERVICE or WORKER that makes the request. Omit it, or use `"*"`, for any caller, including test steps. `"chromium"` is the UI test browser                                                   |
-| `mockDelayMs`             | integer (≥ 0)     | —       | Artificial response delay in milliseconds                                                                                                                                                                |
+| `mockDelayMs`             | integer (≥ 0)     | —       | Artificial response delay in milliseconds. Over 30 seconds, give a test step that waits for it a longer `timeout`                                                                                        |
 | `mockResponseStatus`      | integer (100-599) | —       | HTTP response status code                                                                                                                                                                                |
 | `mockResponseHeaders`     | object            | —       | Response headers: `{ "Content-Type": "application/json" }`                                                                                                                                               |
 | `mockResponseBody`        | any JSON          | —       | Response body (object, array, string, number, boolean, or null)                                                                                                                                          |
@@ -909,6 +909,7 @@ Tests are defined in the top-level `tests` array. Each test is independent and c
 | `body`        | any JSON        | No       | Request body (string values support `{{variables}}`)                                                                        |
 | `formData`    | object          | No       | Multipart/form-data fields. Cannot be combined with `body`. See below.                                                      |
 | `queryParams` | object          | No       | URL query parameters. String values sent as-is; array values send repeated keys. Values support `{{variables}}`. See below. |
+| `timeout`     | integer         | No       | How long to wait for the response, in milliseconds. Default `30000`, or the `DOKKIMI_HTTP_TIMEOUT` environment variable.    |
 
 **Where the request goes:** it is checked against mocks first, like any other request. Then the first part of `url` decides: a SERVICE name goes to that service; another name with a dot, such as `api.stripe.com/v1/charges`, goes to that host over HTTPS; any other name gets a 502 response that says there is no such service.
 

@@ -3,7 +3,6 @@ package main
 import (
 	"os"
 	"testing"
-	"time"
 )
 
 func TestLoadConfig(t *testing.T) {
@@ -52,9 +51,6 @@ func TestLoadConfig(t *testing.T) {
 				}
 				if cfg.Port != "80" {
 					t.Errorf("Expected Port to be 80, got %s", cfg.Port)
-				}
-				if cfg.RequestTimeout != 30*time.Second {
-					t.Errorf("Expected RequestTimeout to be 30s, got %v", cfg.RequestTimeout)
 				}
 			},
 		},

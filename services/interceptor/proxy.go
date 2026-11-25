@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 )
 
 // ProxyService handles HTTP proxying
@@ -21,6 +22,9 @@ type ProxyService struct {
 	servicePort string // port the local service listens on (e.g. "4000")
 }
 
+// connectTimeout is how long connecting to a host may take.
+const connectTimeout = 30 * time.Second
+
 // NewProxyService creates a new proxy service
 func NewProxyService(cfg *Config, mockManager *MockManager, urlMap func() UrlMap) *ProxyService {
 	// Create a custom dialer that bypasses dnsmasq by using Docker DNS directly
@@ -30,6 +34,7 @@ func NewProxyService(cfg *Config, mockManager *MockManager, urlMap func() UrlMap
 	if cfg.DNSIP != "" {
 		log.Printf("[Interceptor] Using custom DNS resolver: %s:53 (bypassing dnsmasq)", cfg.DNSIP)
 		dialer = &net.Dialer{
+			Timeout: connectTimeout,
 			Resolver: &net.Resolver{
 				PreferGo: true,
 				Dial: func(ctx context.Context, network, address string) (net.Conn, error) {
@@ -41,7 +46,7 @@ func NewProxyService(cfg *Config, mockManager *MockManager, urlMap func() UrlMap
 		}
 	} else {
 		log.Printf("[Interceptor] DNS IP not set, using system DNS resolver")
-		dialer = &net.Dialer{}
+		dialer = &net.Dialer{Timeout: connectTimeout}
 	}
 
 	transport := &http.Transport{
@@ -51,8 +56,8 @@ func NewProxyService(cfg *Config, mockManager *MockManager, urlMap func() UrlMap
 		IdleConnTimeout:     cfg.IdleConnTimeout,
 	}
 
+	// No timeout: once connected, a response may take as long as the caller waits
 	client := &http.Client{
-		Timeout:   cfg.RequestTimeout,
 		Transport: transport,
 		// Do not follow redirects inside the proxy. A transparent forwarding
 		// proxy must hand 3xx responses back to the caller so the caller's

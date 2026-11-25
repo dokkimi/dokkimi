@@ -248,13 +248,13 @@ func (e *TestExecutor) doAPIRequest(ctx context.Context, action StepAction, full
 		req.Header.Set(key, value)
 	}
 
-	reqCtx := ctx
+	timeout := e.requestTimeout
 	if action.Timeout > 0 {
-		var cancel context.CancelFunc
-		reqCtx, cancel = context.WithTimeout(ctx, time.Duration(action.Timeout)*time.Millisecond)
-		defer cancel()
-		req = req.WithContext(reqCtx)
+		timeout = time.Duration(action.Timeout) * time.Millisecond
 	}
+	reqCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	req = req.WithContext(reqCtx)
 
 	log.Printf("Executing request: %s %s", action.Method, fullURL)
 	resp, err := e.httpClient.Do(req)

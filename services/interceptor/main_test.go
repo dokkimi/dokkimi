@@ -26,7 +26,6 @@ func TestHandleRequest(t *testing.T) {
 	defer targetServer.Close()
 
 	cfg := &Config{
-		RequestTimeout:  30 * time.Second,
 		MaxIdleConns:    100,
 		IdleConnTimeout: 90 * time.Second,
 		Namespace:       "test-ns",
@@ -117,7 +116,6 @@ func TestHandleRequest_WithoutLogger(t *testing.T) {
 	defer targetServer.Close()
 
 	cfg := &Config{
-		RequestTimeout:  30 * time.Second,
 		MaxIdleConns:    100,
 		IdleConnTimeout: 90 * time.Second,
 		Namespace:       "test-ns",
@@ -143,7 +141,6 @@ func TestHandleRequest_WithoutLogger(t *testing.T) {
 func TestHandleRequest_ResponseBodyError(t *testing.T) {
 	// Create a response with a body that will error on read
 	cfg := &Config{
-		RequestTimeout:  30 * time.Second,
 		MaxIdleConns:    100,
 		IdleConnTimeout: 90 * time.Second,
 		Namespace:       "test-ns",
@@ -183,7 +180,6 @@ func TestHandleRequest_ResponseBodyError(t *testing.T) {
 func TestHandleRequest_ResponseBodyBuffering(t *testing.T) {
 	// Test that response body is buffered and can be used for both logging and copying
 	cfg := &Config{
-		RequestTimeout:  30 * time.Second,
 		MaxIdleConns:    100,
 		IdleConnTimeout: 90 * time.Second,
 		Namespace:       "test-ns",
@@ -230,7 +226,6 @@ func TestHandleRequest_ResponseBodyBuffering(t *testing.T) {
 
 func TestHandleRequest_NilBody(t *testing.T) {
 	cfg := &Config{
-		RequestTimeout:  30 * time.Second,
 		MaxIdleConns:    100,
 		IdleConnTimeout: 90 * time.Second,
 		Namespace:       "test-ns",
@@ -274,7 +269,7 @@ func TestHandleRequest_HealthIsForwarded(t *testing.T) {
 	}))
 	defer targetServer.Close()
 
-	cfg := &Config{RequestTimeout: 30 * time.Second, Namespace: "test-ns", Origin: "test-origin"}
+	cfg := &Config{Namespace: "test-ns", Origin: "test-origin"}
 	cache := NewMockCache(5 * time.Minute)
 	cache.SetUrlMap(UrlMap{
 		"service-a": ServiceInfo{Scheme: "http", URL: targetServer.URL, Name: "service-a"},
@@ -311,7 +306,6 @@ func TestHandleRequest_GzipResponseForwardsCompressedBytes(t *testing.T) {
 	defer targetServer.Close()
 
 	cfg := &Config{
-		RequestTimeout:  30 * time.Second,
 		MaxIdleConns:    100,
 		IdleConnTimeout: 90 * time.Second,
 		Namespace:       "test-ns",
@@ -377,7 +371,7 @@ func handleAndCapture(t *testing.T, origin, url string, target http.Handler) (*h
 	targetServer := httptest.NewServer(target)
 	defer targetServer.Close()
 
-	cfg := &Config{RequestTimeout: 30 * time.Second, Namespace: "test-ns", Origin: origin}
+	cfg := &Config{Namespace: "test-ns", Origin: origin}
 	cache := NewMockCache(5 * time.Minute)
 	cache.SetUrlMap(UrlMap{
 		"service-a": ServiceInfo{Scheme: "http", URL: targetServer.URL, Name: "service-a"},

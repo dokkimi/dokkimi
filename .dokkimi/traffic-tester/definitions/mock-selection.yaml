@@ -95,6 +95,18 @@ items:
     mockTarget: case.example.COM
     mockPath: /users/:id/orders
     mockResponseBody: { mock: fewer-variables }
+  # Encoded paths, ports and response headers
+  - type: MOCK
+    name: encoded-segment
+    mockTarget: encoded.example.com
+    mockPath: /a%20b/{id}
+    mockResponseBody: { mock: encoded-segment }
+  - type: MOCK
+    name: port-and-headers
+    mockTarget: port.example.com:443
+    mockPath: /x
+    mockResponseHeaders: { X-Number: 1234567, Content-Type: [text/plain] }
+    mockResponseBody: port-and-headers
   # Regex
   - type: MOCK
     name: regex
@@ -334,3 +346,50 @@ tests:
                   operator: eq,
                   value: two-variables,
                 }
+  - name: Encoded paths, ports and response headers
+    steps:
+      - name: Service-a calls an encoded path
+        action:
+          type: httpRequest
+          method: POST
+          url: service-a/call
+          headers: { Content-Type: application/json }
+          body:
+            requests:
+              - method: GET
+                baseURL: 'https://encoded.example.com'
+                url: /a%20b/1%2F2
+        assertions:
+          - assertions:
+              - path: '$.response.body.results[0].mock'
+                operator: eq
+                value: encoded-segment
+      - name: A step calls a target with the usual port
+        action: { type: httpRequest, method: GET, url: port.example.com/x }
+        assertions:
+          - assertions:
+              - path: $.response.body
+                operator: eq
+                value: port-and-headers
+              - path: $.response.headers.x-number
+                operator: eq
+                value: '1234567'
+              - path: $.response.headers.content-type
+                operator: eq
+                value: text/plain
+      - name: Service-a calls it too
+        action:
+          type: httpRequest
+          method: POST
+          url: service-a/call
+          headers: { Content-Type: application/json }
+          body:
+            requests:
+              - method: GET
+                baseURL: 'https://port.example.com'
+                url: /x
+        assertions:
+          - assertions:
+              - path: '$.response.body.results[0]'
+                operator: eq
+                value: port-and-headers

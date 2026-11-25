@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -312,6 +313,96 @@ func TestMockManager_FindMatch_Specificity(t *testing.T) {
 	}
 }
 
+func TestMockManager_FindMatch_EncodedPaths(t *testing.T) {
+	tests := []struct {
+		path, request string
+		want          bool
+	}{
+		{"/users/{id}", "/users/a%2Fb", true},
+		{"/users/:id", "/users/a%2Fb", true},
+		{"/users/{id}/files/{file}", "/users/a%2Fb/files/c%20d", true},
+		{"/users/{id}", "/users/a%2fb", true},
+		{"/users/{id}", "/users/a/b", false},
+		{"/users/a/b", "/users/a%2Fb", false},
+		{"/users/a%2Fb", "/users/a%2Fb", true},
+		{"/users/a%2Fb", "/users/a/b", false},
+		{"/a%20b", "/a%20b", true},
+		{"/a b", "/a%20b", true},
+		{"/caf%C3%A9/{id}", "/caf%c3%a9/1", true},
+		{"/café/{id}", "/caf%C3%A9/1", true},
+		{"/a%20b/*", "/a%20b/c", true},
+		{"/a b*", "/a%20bc", true},
+		{"/a%2Fb*", "/a/b", false},
+		{"/100%", "/100%25", true},
+		{"/a+b:run/{id}", "/a+b:run/1", true},
+		{"/a+b", "/a%20b", false},
+		{"/*", "/a%2Fb", true},
+		{"*", "/a%2Fb", true},
+	}
+	for _, tt := range tests {
+		cache := NewMockCache(0)
+		cache.SetMocks([]MockEndpoint{{Method: "*", Target: "*", Path: tt.path}})
+		for _, step := range []bool{false, true} {
+			r := httptest.NewRequest("GET", "http://example.com"+tt.request, nil)
+			origin := "caller"
+			if step {
+				origin = ""
+				r = httptest.NewRequest("GET", "http://interceptor/example.com"+tt.request, nil)
+				takeTargetFromPath(r, UrlMap{})
+			}
+			if got := NewMockManager(cache, origin).FindMatch(r) != nil; got != tt.want {
+				t.Errorf("mock %q, request %q (step: %v): matched %v", tt.path, tt.request, step, got)
+			}
+		}
+	}
+
+	// Encoded differently, but still an exact path
+	cache := NewMockCache(0)
+	cache.SetMocks([]MockEndpoint{
+		{Method: "*", Target: "*", Path: "/{id}/x"},
+		{Method: "*", Target: "*", Path: "/a b/x"},
+	})
+	if got := NewMockManager(cache, "caller").FindMatch(httptest.NewRequest("GET", "http://example.com/a%20b/x", nil)); got == nil || got.Path != "/a b/x" {
+		t.Errorf("FindMatch() = %+v, want the exact path", got)
+	}
+}
+
+func TestMockManager_FindMatch_TargetPort(t *testing.T) {
+	tests := []struct {
+		target, url string
+		want        bool
+	}{
+		{"example.com:443", "https://example.com/", true},
+		{"example.com:443", "https://example.com:443/", true},
+		{"example.com:443", "http://example.com/", false},
+		{"example.com:80", "http://example.com/", true},
+		{"example.com:80", "http://example.com:80/", true},
+		{"example.com:80", "https://example.com/", false},
+		{"example.com:8080", "http://example.com:8080/", true},
+		{"example.com:8080", "http://example.com/", false},
+		{"EXAMPLE.com:443", "https://example.com/", true},
+		{"example.com", "https://example.com/", true},
+		{"example.com", "http://example.com:8080/", true},
+	}
+	for _, tt := range tests {
+		cache := NewMockCache(0)
+		cache.SetMocks([]MockEndpoint{{Method: "*", Target: tt.target, Path: "*"}})
+		r := httptest.NewRequest("GET", tt.url, nil) // sets r.TLS for https
+		if got := NewMockManager(cache, "caller").FindMatch(r) != nil; got != tt.want {
+			t.Errorf("mock %q, request %q: matched %v", tt.target, tt.url, got)
+		}
+	}
+
+	// A step calls other hosts over HTTPS
+	cache := NewMockCache(0)
+	cache.SetMocks([]MockEndpoint{{Method: "*", Target: "example.com:443", Path: "/x"}})
+	r := httptest.NewRequest("GET", "http://interceptor/example.com/x", nil)
+	takeTargetFromPath(r, UrlMap{})
+	if NewMockManager(cache, "").FindMatch(r) == nil {
+		t.Error("a step's request to example.com didn't match example.com:443")
+	}
+}
+
 func TestMockManager_ApplyMock(t *testing.T) {
 	manager := &MockManager{}
 
@@ -424,7 +515,42 @@ func TestMockManager_ApplyMock(t *testing.T) {
 					t.Errorf("ApplyMock() error = %v", err)
 					return
 				}
-				// Non-string values should be skipped
+				if got := resp.Header.Values("X-Multi"); !slices.Equal(got, []string{"123", "456"}) {
+					t.Errorf("Expected both numbers, got %v", got)
+				}
+			},
+		},
+		{
+			name: "mock with large numeric header values",
+			mock: MockEndpoint{
+				ResponseHeaders: stringPtr(`{"X-Number": 1234567, "X-Decimal": 0.5, "X-Multi": [12345678901234567]}`),
+			},
+			validate: func(t *testing.T, resp *http.Response, err error) {
+				if err != nil {
+					t.Errorf("ApplyMock() error = %v", err)
+					return
+				}
+				for key, want := range map[string]string{"X-Number": "1234567", "X-Decimal": "0.5", "X-Multi": "12345678901234567"} {
+					if got := resp.Header.Get(key); got != want {
+						t.Errorf("%s = %q, want %q", key, got, want)
+					}
+				}
+			},
+		},
+		{
+			name: "mock with a list of Content-Types",
+			mock: MockEndpoint{
+				ResponseBody:    stringPtr("hi"),
+				ResponseHeaders: stringPtr(`{"Content-Type": ["text/plain"]}`),
+			},
+			validate: func(t *testing.T, resp *http.Response, err error) {
+				if err != nil {
+					t.Errorf("ApplyMock() error = %v", err)
+					return
+				}
+				if got := resp.Header.Values("Content-Type"); !slices.Equal(got, []string{"text/plain"}) {
+					t.Errorf("Content-Type = %v", got)
+				}
 			},
 		},
 		{

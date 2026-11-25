@@ -331,6 +331,34 @@ func TestTestExecutor_RequestTimeout(t *testing.T) {
 	}
 }
 
+func TestTestExecutor_TimeoutOfActionOverDefault(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case <-time.After(300 * time.Millisecond):
+		case <-r.Context().Done():
+		}
+	}))
+	defer server.Close()
+
+	for _, tt := range []struct {
+		name            string
+		defaultTimeout  time.Duration
+		actionTimeoutMs int
+		wantErr         bool
+	}{
+		{"default long enough", 5 * time.Second, 0, false},
+		{"default too short", 50 * time.Millisecond, 0, true},
+		{"action longer than the default", 50 * time.Millisecond, 5000, false},
+		{"action shorter than the default", 5 * time.Second, 50, true},
+	} {
+		executor := NewTestExecutor(server.URL, tt.defaultTimeout, nil, nil)
+		action := StepAction{Type: "httpRequest", Method: "GET", URL: "service/x", Timeout: tt.actionTimeoutMs}
+		if _, err := executor.doAPIRequest(context.Background(), action, server.URL+"/service/x"); (err != nil) != tt.wantErr {
+			t.Errorf("%s: err %v", tt.name, err)
+		}
+	}
+}
+
 // ── Audit finding #2: test-level loop + startAtStep skipping step 0 prevents variable setup ──
 
 func TestTestExecutor_TestVarsNotSeededWhenStartAtStepSkipsStepZero(t *testing.T) {

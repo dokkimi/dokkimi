@@ -261,6 +261,14 @@ export function validateStep(
     ) {
       err(r, `${ctx}.action: "queryParams" must be an object`);
     }
+    if (
+      action.timeout !== undefined &&
+      (typeof action.timeout !== 'number' ||
+        !Number.isInteger(action.timeout) ||
+        action.timeout <= 0)
+    ) {
+      err(r, `${ctx}.action: "timeout" must be a positive integer (ms)`);
+    }
   } else if (action.type === 'dbQuery') {
     checkUnknownKeys(action, VALID_ACTION_KEYS.dbQuery, `${ctx}.action`, r);
     if (typeof action.database !== 'string') {

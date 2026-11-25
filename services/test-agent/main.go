@@ -90,7 +90,7 @@ func main() {
 	// runs don't need this; if a UI step arrives and the executor is unset, the
 	// test-agent fails that step loudly with a clear message.
 	if cfg.BrowserURL != "" {
-		artifactUploader := NewArtifactUploader(cfg.ControlTowerURL, instanceId, cfg.RequestTimeout)
+		artifactUploader := NewArtifactUploader(cfg.ControlTowerURL, instanceId, 30*time.Second)
 		visualMatcher := NewVisualMatcher(cfg.BaselinesPath)
 		uiExecutor := NewUIStepExecutor(
 			cfg.BrowserURL,

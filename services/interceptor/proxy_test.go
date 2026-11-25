@@ -14,7 +14,6 @@ import (
 
 func TestNewProxyService(t *testing.T) {
 	cfg := &Config{
-		RequestTimeout:  30 * time.Second,
 		MaxIdleConns:    100,
 		IdleConnTimeout: 90 * time.Second,
 	}
@@ -28,6 +27,10 @@ func TestNewProxyService(t *testing.T) {
 		t.Fatal("NewProxyService() returned nil")
 	}
 
+	if proxy.client.Timeout != 0 {
+		t.Errorf("Expected no limit on how long a response may take, got %s", proxy.client.Timeout)
+	}
+
 	if proxy.client == nil {
 		t.Error("Expected HTTP client to be initialized")
 	}
@@ -35,7 +38,6 @@ func TestNewProxyService(t *testing.T) {
 
 func TestProxyService_HandleRequest_WithMock(t *testing.T) {
 	cfg := &Config{
-		RequestTimeout:  30 * time.Second,
 		MaxIdleConns:    100,
 		IdleConnTimeout: 90 * time.Second,
 	}
@@ -84,7 +86,6 @@ func TestProxyService_HandleRequest_Forward(t *testing.T) {
 	defer targetServer.Close()
 
 	cfg := &Config{
-		RequestTimeout:  30 * time.Second,
 		MaxIdleConns:    100,
 		IdleConnTimeout: 90 * time.Second,
 	}
@@ -135,7 +136,6 @@ func TestProxyService_HandleRequest_PassesRedirectThrough(t *testing.T) {
 	defer targetServer.Close()
 
 	cfg := &Config{
-		RequestTimeout:  30 * time.Second,
 		MaxIdleConns:    100,
 		IdleConnTimeout: 90 * time.Second,
 	}
@@ -179,7 +179,6 @@ func TestProxyService_forwardRequest(t *testing.T) {
 	defer targetServer.Close()
 
 	cfg := &Config{
-		RequestTimeout:  30 * time.Second,
 		MaxIdleConns:    100,
 		IdleConnTimeout: 90 * time.Second,
 	}
@@ -220,7 +219,6 @@ func TestProxyService_forwardRequest(t *testing.T) {
 
 func TestProxyService_getTargetURL(t *testing.T) {
 	cfg := &Config{
-		RequestTimeout:  30 * time.Second,
 		MaxIdleConns:    100,
 		IdleConnTimeout: 90 * time.Second,
 	}
@@ -406,7 +404,7 @@ func TestProxyService_forwardRequest_KeepsExternalRedirects(t *testing.T) {
 	urlMap := func() UrlMap {
 		return UrlMap{"api": ServiceInfo{Scheme: "http", URL: "http://api", Name: "api"}}
 	}
-	cfg := &Config{Origin: "web", RequestTimeout: 30 * time.Second}
+	cfg := &Config{Origin: "web"}
 	proxy := NewProxyService(cfg, NewMockManager(NewMockCache(time.Minute), cfg.Origin), urlMap)
 
 	resp, err := proxy.forwardRequest(httptest.NewRequest("GET", external.URL+"/", nil))
@@ -423,7 +421,7 @@ func TestProxyService_forwardRequest_ChecksExternalCertificates(t *testing.T) {
 	external := httptest.NewTLSServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
 	defer external.Close()
 	urlMap := func() UrlMap { return UrlMap{} }
-	cfg := &Config{Origin: "web", RequestTimeout: 30 * time.Second}
+	cfg := &Config{Origin: "web"}
 	proxy := NewProxyService(cfg, NewMockManager(NewMockCache(time.Minute), cfg.Origin), urlMap)
 
 	_, err := proxy.forwardRequest(httptest.NewRequest("GET", external.URL+"/", nil))
@@ -466,7 +464,6 @@ func TestIsHopByHopHeader(t *testing.T) {
 
 func TestProxyService_forwardRequest_ErrorHandling(t *testing.T) {
 	cfg := &Config{
-		RequestTimeout:  1 * time.Millisecond, // Very short timeout
 		MaxIdleConns:    100,
 		IdleConnTimeout: 90 * time.Second,
 	}
@@ -476,8 +473,10 @@ func TestProxyService_forwardRequest_ErrorHandling(t *testing.T) {
 
 	proxy := NewProxyService(cfg, mockManager, urlMapFunc)
 
-	// Request to non-existent server (will timeout)
-	req := httptest.NewRequest("GET", "http://192.0.2.1:9999/test", nil)
+	// Request to non-existent server, from a caller that gives up
+	ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond)
+	defer cancel()
+	req := httptest.NewRequest("GET", "http://192.0.2.1:9999/test", nil).WithContext(ctx)
 	_, err := proxy.forwardRequest(req)
 
 	if err == nil {
@@ -487,7 +486,6 @@ func TestProxyService_forwardRequest_ErrorHandling(t *testing.T) {
 
 func TestProxyService_forwardRequest_BodyReadError(t *testing.T) {
 	cfg := &Config{
-		RequestTimeout:  30 * time.Second,
 		MaxIdleConns:    100,
 		IdleConnTimeout: 90 * time.Second,
 	}
@@ -508,7 +506,6 @@ func TestProxyService_forwardRequest_BodyReadError(t *testing.T) {
 
 func TestProxyService_forwardRequest_InvalidURL(t *testing.T) {
 	cfg := &Config{
-		RequestTimeout:  30 * time.Second,
 		MaxIdleConns:    100,
 		IdleConnTimeout: 90 * time.Second,
 	}
@@ -536,7 +533,6 @@ func TestProxyService_forwardRequest_InvalidURL(t *testing.T) {
 
 func TestProxyService_rewriteLocationHeader(t *testing.T) {
 	cfg := &Config{
-		RequestTimeout:  30 * time.Second,
 		MaxIdleConns:    100,
 		IdleConnTimeout: 90 * time.Second,
 	}
@@ -623,7 +619,6 @@ func TestProxyService_forwardRequest_RewritesLocationInRedirect(t *testing.T) {
 	defer targetServer.Close()
 
 	cfg := &Config{
-		RequestTimeout:  30 * time.Second,
 		MaxIdleConns:    100,
 		IdleConnTimeout: 90 * time.Second,
 	}
@@ -656,7 +651,6 @@ func TestProxyService_forwardRequest_RewritesLocationInRedirect(t *testing.T) {
 
 func TestProxyService_forwardRequest_RequestCreationError(t *testing.T) {
 	cfg := &Config{
-		RequestTimeout:  30 * time.Second,
 		MaxIdleConns:    100,
 		IdleConnTimeout: 90 * time.Second,
 	}

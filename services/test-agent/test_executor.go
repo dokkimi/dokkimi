@@ -32,6 +32,7 @@ type APIResponse struct {
 type TestExecutor struct {
 	httpClient            *http.Client
 	interceptorURL        string
+	requestTimeout        time.Duration // unless the action has its own
 	databaseQueryExecutor *DatabaseQueryExecutor
 	testExecutionLogger   *TestExecutionLogger
 	varCtx                *VariableContext
@@ -59,13 +60,13 @@ func NewTestExecutor(interceptorURL string, timeout time.Duration, databaseQuery
 
 	return &TestExecutor{
 		httpClient: &http.Client{
-			Timeout:   timeout,
 			Transport: transport,
 			CheckRedirect: func(req *http.Request, via []*http.Request) error {
 				return http.ErrUseLastResponse
 			},
 		},
 		interceptorURL:        interceptorURL,
+		requestTimeout:        timeout,
 		databaseQueryExecutor: databaseQueryExecutor,
 		testExecutionLogger:   testExecutionLogger,
 		varCtx:                varCtx,

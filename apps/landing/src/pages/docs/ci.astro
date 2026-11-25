@@ -49,7 +49,7 @@ jobs:
       <tr><td><code>tests</code></td><td><em>required</em></td><td>Path to <code>.dokkimi/</code> directory or a specific definition file</td></tr>
       <tr><td><code>max-parallel</code></td><td><code>6</code></td><td>Maximum concurrent test environments</td></tr>
       <tr><td><code>max-booting</code></td><td><code>2</code></td><td>Maximum environments booting simultaneously</td></tr>
-      <tr><td><code>timeout</code></td><td><code>30000</code></td><td>HTTP request timeout in milliseconds</td></tr>
+      <tr><td><code>timeout</code></td><td><code>30000</code></td><td>How long a test step waits for an HTTP response, in milliseconds. A step's own <code>timeout</code> wins.</td></tr>
       <tr><td><code>viewport-width</code></td><td><code>1280</code></td><td>Default browser viewport width for UI tests</td></tr>
       <tr><td><code>viewport-height</code></td><td><code>720</code></td><td>Default browser viewport height for UI tests</td></tr>
       <tr><td><code>dump-retention-days</code></td><td><code>1</code></td><td>Days to retain the failed-run dump artifact (0 to disable)</td></tr>
@@ -123,7 +123,7 @@ jobs:
       <tr><td><code>CONTROL_TOWER_HOST</code></td><td><code>localhost</code></td><td>Host IP that containers use to reach Control Tower</td></tr>
       <tr><td><code>DOKKIMI_MAX_CONCURRENT_NAMESPACES</code></td><td><code>6</code></td><td>Max parallel test environments</td></tr>
       <tr><td><code>DOKKIMI_MAX_BOOTING_NAMESPACES</code></td><td><code>2</code></td><td>Max environments booting at once</td></tr>
-      <tr><td><code>DOKKIMI_HTTP_TIMEOUT</code></td><td><code>30000</code></td><td>HTTP request timeout (ms)</td></tr>
+      <tr><td><code>DOKKIMI_HTTP_TIMEOUT</code></td><td><code>30000</code></td><td>How long a test step waits for an HTTP response (ms). A step's own <code>timeout</code> wins.</td></tr>
       <tr><td><code>DOKKIMI_DEFAULT_VIEWPORT_WIDTH</code></td><td><code>1280</code></td><td>Default browser viewport width for UI tests</td></tr>
       <tr><td><code>DOKKIMI_DEFAULT_VIEWPORT_HEIGHT</code></td><td><code>720</code></td><td>Default browser viewport height for UI tests</td></tr>
     </tbody>

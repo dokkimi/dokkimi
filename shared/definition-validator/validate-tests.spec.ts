@@ -1163,3 +1163,27 @@ describe('resolveVariablesRef', () => {
     });
   });
 });
+
+describe('httpRequest timeout', () => {
+  const errors = (timeout: unknown) => {
+    const r = makeResult();
+    validateStep(
+      {
+        action: { type: 'httpRequest', method: 'GET', url: 'api/x', timeout },
+      },
+      'step',
+      r,
+    );
+    return r.errors;
+  };
+
+  it('accepts a positive integer', () => {
+    expect(errors(60000)).toEqual([]);
+  });
+
+  it.each([0, -1, 1.5, '60s', null])('rejects %p', (timeout) => {
+    expect(errors(timeout)).toEqual([
+      'step.action: "timeout" must be a positive integer (ms)',
+    ]);
+  });
+});

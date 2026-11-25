@@ -155,6 +155,14 @@ export class ConfigLoader {
     }
     if (process.env.DOKKIMI_HTTP_TIMEOUT) {
       config.timeouts.httpRequest = Number(process.env.DOKKIMI_HTTP_TIMEOUT);
+      if (
+        !Number.isInteger(config.timeouts.httpRequest) ||
+        config.timeouts.httpRequest <= 0
+      ) {
+        throw new Error(
+          `DOKKIMI_HTTP_TIMEOUT must be a positive integer (milliseconds), got "${process.env.DOKKIMI_HTTP_TIMEOUT}"`,
+        );
+      }
     }
     if (process.env.DOKKIMI_POSTHOG_API_KEY) {
       if (!config.telemetry) {

@@ -38,7 +38,13 @@ import CodeBlock from '../../components/CodeBlock.astro';
     <li><strong><code>mockOrigin</code> can name a worker</strong> &mdash; It never matched one. <code>chromium</code> names the UI test browser.</li>
     <li><strong>Regexes are checked as Go regexes</strong> &mdash; <code>(?i)</code> was rejected, and a <code>mockRequestBodyMatches</code> with lookaround was accepted but made its mock match every body. Lookaround and backreferences are now validation errors there and in <code>extract</code> patterns.</li>
     <li><strong>Mocks that can't work are errors</strong> &mdash; Such as a URL or <code>*.example.com</code> as the target, a wildcard in the middle of a path, a <code>mockOrigin</code> that isn't in the definition, or a fractional <code>mockDelayMs</code>. They were accepted and never matched, or stopped the interceptor from starting. So is the top-level <code>mocks</code> array, which never did anything: use MOCK items.</li>
-    <li><strong>Also fixed</strong> &mdash; Hosts are matched in any case, request bodies are matched in full instead of the first 1&nbsp;MB, delays can be longer than 30 seconds, and mocked responses no longer carry an <code>X-Mocked</code> header.</li>
+    <li><strong>Also fixed</strong> &mdash; Hosts are matched in any case, request bodies are matched in full instead of the first 1&nbsp;MB, paths match however they are encoded, a target can include <code>:443</code> or <code>:80</code>, response header numbers and lists are sent as written, and mocked responses no longer carry an <code>X-Mocked</code> header.</li>
+  </ul>
+
+  <h3>Timeouts</h3>
+  <ul>
+    <li><strong>Slow responses are no longer cut off</strong> &mdash; The interceptor ended every call after 30 seconds, and mocks with longer delays never answered. A response can now take as long as the caller waits for it.</li>
+    <li><strong>The HTTP timeout setting works</strong> &mdash; <code>DOKKIMI_HTTP_TIMEOUT</code> and the GitHub Action's <code>timeout</code> did nothing. They now set how long a test step waits for a response, 30 seconds by default. A step's own <code>timeout</code> can also be longer than 30 seconds.</li>
   </ul>
 
   <h3>CLI and AI tools</h3>

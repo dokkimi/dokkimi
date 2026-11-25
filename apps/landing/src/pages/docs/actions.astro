@@ -36,6 +36,7 @@ import CodeBlock from '../../components/CodeBlock.astro';
       <tr><td><code>body</code></td><td>any JSON</td><td>No</td><td>Request body (string values support <code>&#123;&#123;variables&#125;&#125;</code>)</td></tr>
       <tr><td><code>formData</code></td><td>object</td><td>No</td><td>Multipart/form-data fields for file uploads. Cannot be combined with <code>body</code>.</td></tr>
       <tr><td><code>queryParams</code></td><td>object</td><td>No</td><td>URL query parameters. String values sent as-is; array values send repeated keys. Values support <code>&#123;&#123;variables&#125;&#125;</code>.</td></tr>
+      <tr><td><code>timeout</code></td><td>integer</td><td>No</td><td>How long to wait for the response, in milliseconds. Default <code>30000</code>, or <a href="/docs/ci">DOKKIMI_HTTP_TIMEOUT</a>.</td></tr>
     </tbody>
   </table>
 

@@ -29,7 +29,6 @@ type Config struct {
 	LogActions bool
 
 	// HTTP Client
-	RequestTimeout  time.Duration
 	LoggingTimeout  time.Duration
 	MaxIdleConns    int
 	IdleConnTimeout time.Duration
@@ -68,7 +67,6 @@ func LoadConfig() (*Config, error) {
 		LogActions:     os.Getenv("LOG_ACTIONS") != "false", // Default to true if not set
 
 		// HTTP client settings (hardcoded constants - not configurable)
-		RequestTimeout:    30 * time.Second,
 		LoggingTimeout:    5 * time.Second,
 		MaxIdleConns:      100,
 		IdleConnTimeout:   90 * time.Second,

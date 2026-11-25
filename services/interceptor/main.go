@@ -129,7 +129,7 @@ func main() {
 	server := &http.Server{
 		Addr:    ":" + cfg.Port,
 		Handler: handler,
-		// No read or write timeout: a mock's delay may be as long as the caller waits
+		// No read or write timeout: a response may take as long as the caller waits
 		ReadHeaderTimeout: 30 * time.Second,
 		IdleTimeout:       120 * time.Second,
 	}

@@ -1127,6 +1127,11 @@
                   ]
                 }
               },
+              "timeout": {
+                "type": "integer",
+                "minimum": 1,
+                "description": "How long to wait for the response, in milliseconds (default 30000)."
+              },
               "formData": {
                 "type": "object",
                 "description": "Multipart/form-data fields. String/number values become plain fields. Objects with filename+content become file parts.",
