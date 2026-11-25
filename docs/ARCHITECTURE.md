@@ -131,10 +131,9 @@ User runs: dokkimi run [target]
 ┌─ Cleanup ─────────────────────────────────┐
 │ CT runs: stops instance (Docker container │
 │          removal + network cleanup)       │
-│ Container exit monitoring detects         │
-│   containers have stopped, calls          │
-│   RunsService.handleInstancesStopped      │
-│   in-process                              │
+│ Then calls handleInstancesStopped, which  │
+│   completes the run or deploys pending    │
+│   instances                               │
 └───────────────┬───────────────────────────┘
                 │
                 ▼
@@ -142,6 +141,8 @@ User runs: dokkimi run [target]
 │ Polls CT for results → displays to user   │
 └───────────────────────────────────────────┘
 ```
+
+**Crashes:** from the deployment of stage 0 until teardown, CT asks Docker every 3 seconds for the instance's exited containers of any role (`DockerDeployerService.monitorForCrashedContainers`). If one has exited while the test is still going, the instance is marked `FAILED` with the exit code and last log lines, torn down, and the run continues or completes. A failed check is retried 3 seconds later.
 
 ---
 

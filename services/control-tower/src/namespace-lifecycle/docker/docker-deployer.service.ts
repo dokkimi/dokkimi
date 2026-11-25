@@ -1,4 +1,9 @@
-import { BadRequestException, Injectable, Logger } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import { DockerClientService } from './docker-client.service';
 import {
   DockerConfigService,
@@ -21,6 +26,11 @@ import { InstanceItemService } from '../../namespace/instance-item.service';
 import { NamespaceInstanceService } from '../../namespace/namespace-instance.service';
 import { hasUiSteps } from '../ui-step-detection';
 import { InstanceStatus, ItemStatus } from '@prisma/client';
+
+const CRASH_CHECK_INTERVAL_MS = 3000;
+
+/** The containers that run what the user defined. The others are Dokkimi's. */
+const USER_CONTAINER_ROLES = ['service', 'worker', 'database', 'broker'];
 
 interface DeploymentSession {
   ctx: DeploymentContext;
@@ -153,16 +163,13 @@ export class DockerDeployerService {
       );
     } catch (err) {
       this.logger.error(`Deployment failed for instance ${instanceId}:`, err);
-      try {
-        await this.teardown(instanceId);
-      } catch (cleanupErr) {
-        this.logger.warn(`Teardown after failed deploy:`, cleanupErr);
-      }
+      const error = await this.explainDeployError(instanceId, err);
+      await this.teardownAfterFailure(instanceId);
       await this.instanceService.updateInstanceStatus(
         instanceId,
         InstanceStatus.FAILED,
       );
-      throw err;
+      throw error;
     }
   }
 
@@ -217,16 +224,16 @@ export class DockerDeployerService {
         `Stage ${stage} deployment failed for instance ${instanceId}:`,
         err,
       );
-      try {
-        await this.teardown(instanceId);
-      } catch (cleanupErr) {
-        this.logger.warn(`Teardown after failed stage deploy:`, cleanupErr);
-      }
-      await this.instanceService.updateInstanceStatus(
+      const error = await this.explainDeployError(instanceId, err);
+      const failed = await this.instanceService.failIfActive(
         instanceId,
-        InstanceStatus.FAILED,
+        error.message,
       );
-      throw err;
+      await this.teardownAfterFailure(instanceId);
+      if (failed) {
+        session.onCrash?.(instanceId);
+      }
+      throw error;
     }
   }
 
@@ -434,73 +441,113 @@ export class DockerDeployerService {
     instanceId: string,
     onCrash?: (instanceId: string) => void,
   ): void {
-    const checkInterval = setInterval(async () => {
-      try {
-        const instance = await this.instanceService.findInstance(instanceId);
-        if (
-          !instance ||
-          instance.status === 'STOPPED' ||
-          instance.status === 'FAILED'
-        ) {
-          this.clearCrashMonitor(instanceId);
-          return;
-        }
-
-        const exited = await this.dockerClient.getExitedContainers(instanceId);
-        const crashedServices = exited.filter(
-          (c) =>
-            c.role === 'service' ||
-            c.role === 'worker' ||
-            c.role === 'database',
-        );
-        if (crashedServices.length > 0) {
-          this.clearCrashMonitor(instanceId);
-          const details = await Promise.all(
-            crashedServices.map(async (c) => {
-              const d = await this.dockerClient
-                .getExitDetails(c.id)
-                .catch(() => null);
-              if (!d) {
-                return c.name;
-              }
-              const oom = d.oomKilled ? ', OOM-killed' : '';
-              const tail = d.logTail.length ? `: ${d.logTail.join(' | ')}` : '';
-              return `${c.name} (exit ${d.exitCode}${oom})${tail}`;
-            }),
-          );
-          const errorMsg = `Container(s) crashed: ${details.join('; ')}`;
-          this.logger.error(`${errorMsg} (instance ${instanceId})`);
-
-          const current = await this.instanceService.findInstance(instanceId);
-          if (
-            current &&
-            current.status !== 'STOPPED' &&
-            current.status !== 'FAILED'
-          ) {
-            await this.instanceService.updateInstanceStatus(
-              instanceId,
-              InstanceStatus.FAILED,
-              errorMsg,
+    const scheduleCheck = () => {
+      const timer = setTimeout(async () => {
+        try {
+          await this.checkForCrash(instanceId, onCrash);
+        } catch (err) {
+          if (err instanceof NotFoundException) {
+            this.clearCrashMonitor(instanceId);
+          } else {
+            this.logger.warn(
+              `Crash check failed for instance ${instanceId}, trying again:`,
+              err,
             );
-            await this.teardown(instanceId);
-            if (onCrash) {
-              onCrash(instanceId);
-            }
           }
         }
-      } catch {
-        this.clearCrashMonitor(instanceId);
-      }
-    }, 3000);
-    this.crashMonitors.set(instanceId, checkInterval);
+        if (this.crashMonitors.has(instanceId)) {
+          scheduleCheck();
+        }
+      }, CRASH_CHECK_INTERVAL_MS);
+      this.crashMonitors.set(instanceId, timer);
+    };
+    scheduleCheck();
+  }
+
+  private async checkForCrash(
+    instanceId: string,
+    onCrash?: (instanceId: string) => void,
+  ): Promise<void> {
+    const instance = await this.instanceService.findInstance(instanceId);
+    if (instance.status === 'STOPPED' || instance.status === 'FAILED') {
+      this.clearCrashMonitor(instanceId);
+      return;
+    }
+
+    const message = await this.describeCrash(instanceId);
+    if (!message) {
+      return;
+    }
+    // The containers also exit when the instance is being stopped
+    if (await this.instanceService.failIfActive(instanceId, message)) {
+      this.logger.error(`${message} (instance ${instanceId})`);
+      await this.teardownAfterFailure(instanceId);
+      onCrash?.(instanceId);
+    }
+  }
+
+  /** Describes the instance's exited containers, the user's own first. */
+  private async describeCrash(instanceId: string): Promise<string | null> {
+    const exited = await this.dockerClient.getExitedContainers(instanceId);
+    if (exited.length === 0) {
+      return null;
+    }
+    const isUsers = (c: { role: string }) =>
+      USER_CONTAINER_ROLES.includes(c.role);
+    const details = await Promise.all(
+      [...exited.filter(isUsers), ...exited.filter((c) => !isUsers(c))].map(
+        async (c) => {
+          const itemName = c.itemName ?? '';
+          const name = isUsers(c)
+            ? itemName
+            : `Dokkimi's ${c.role.replace(/-/g, ' ')}${itemName && ` for ${itemName}`}`;
+          const d = await this.dockerClient
+            .getExitDetails(c.id)
+            .catch(() => null);
+          if (!d) {
+            return name;
+          }
+          const oom = d.oomKilled ? ', OOM-killed' : '';
+          const tail = d.logTail.length ? `: ${d.logTail.join(' | ')}` : '';
+          return `${name} (exit ${d.exitCode}${oom})${tail}`;
+        },
+      ),
+    );
+    return `Container(s) crashed: ${details.join('; ')}`;
+  }
+
+  /**
+   * A container that exits right away makes the deployment fail with an error
+   * about joining its network, so the crash is the better explanation. Docker
+   * can take a moment to list the container as exited.
+   */
+  private async explainDeployError(
+    instanceId: string,
+    err: unknown,
+  ): Promise<Error> {
+    const findCrash = () => this.describeCrash(instanceId).catch(() => null);
+    let crash = await findCrash();
+    if (!crash) {
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+      crash = await findCrash();
+    }
+    if (crash) {
+      return new Error(crash);
+    }
+    return err instanceof Error ? err : new Error(String(err));
+  }
+
+  private async teardownAfterFailure(instanceId: string): Promise<void> {
+    try {
+      await this.teardown(instanceId);
+    } catch (err) {
+      this.logger.warn(`Teardown of failed instance ${instanceId}:`, err);
+    }
   }
 
   private clearCrashMonitor(instanceId: string): void {
-    const interval = this.crashMonitors.get(instanceId);
-    if (interval) {
-      clearInterval(interval);
-      this.crashMonitors.delete(instanceId);
-    }
+    clearTimeout(this.crashMonitors.get(instanceId));
+    this.crashMonitors.delete(instanceId);
   }
 
   async teardown(instanceId: string): Promise<void> {

@@ -12,6 +12,7 @@ describe('NamespaceInstanceService', () => {
       findMany: jest.fn(),
       findUnique: jest.fn(),
       update: jest.fn(),
+      updateMany: jest.fn(),
     },
   };
 
@@ -101,6 +102,32 @@ describe('NamespaceInstanceService', () => {
       await expect(service.findInstance('instance-1')).rejects.toThrow(
         NotFoundException,
       );
+    });
+  });
+
+  describe('failIfActive', () => {
+    it.each([
+      [1, true],
+      [0, false],
+    ])('with %i matching instances returns %s', async (count, failed) => {
+      mockPrismaService.namespaceInstance.updateMany.mockResolvedValue({
+        count,
+      });
+      expect(await service.failIfActive('instance-1', 'crashed')).toBe(failed);
+      expect(
+        mockPrismaService.namespaceInstance.updateMany,
+      ).toHaveBeenCalledWith({
+        where: {
+          id: 'instance-1',
+          status: { in: ['STARTING', 'RUNNING'] },
+          testStatus: null,
+        },
+        data: {
+          status: 'FAILED',
+          errorMessage: 'crashed',
+          stoppedAt: expect.any(Date),
+        },
+      });
     });
   });
 

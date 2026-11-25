@@ -1,0 +1,25 @@
+name: crash-in-later-stage
+description: A service of a later stage exits right away, so the run ends and shows its logs
+config:
+  timeoutSeconds: 30
+items:
+  - type: SERVICE
+    name: first
+    image: node:20-alpine
+    port: 3000
+    healthCheck: /
+    command:
+      - node
+      - -e
+      - require('http').createServer((req, res) => res.end()).listen(3000)
+  - type: SERVICE
+    name: second
+    stage: 1
+    image: node:20-alpine
+    port: 3000
+    healthCheck: /
+    command: [node, -e, "throw new Error('missing setting')"]
+tests:
+  - name: Should never run
+    steps:
+      - action: { type: httpRequest, method: GET, url: second/ }

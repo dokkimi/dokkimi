@@ -258,6 +258,38 @@ describe('DockerClientService', () => {
     });
   });
 
+  describe('getExitDetails', () => {
+    it('should return the exit code and the last 20 log lines', async () => {
+      const frame = (text: string) => {
+        const header = Buffer.alloc(8);
+        header.writeUInt32BE(Buffer.byteLength(text), 4);
+        return Buffer.concat([header, Buffer.from(text)]);
+      };
+      const logs = jest
+        .fn()
+        .mockResolvedValue(
+          Buffer.concat([frame('Error: missing setting\n'), frame('  at x\n')]),
+        );
+      mockDocker.getContainer.mockReturnValueOnce({
+        inspect: jest
+          .fn()
+          .mockResolvedValue({ State: { ExitCode: 1, OOMKilled: false } }),
+        logs,
+      });
+
+      expect(await service.getExitDetails('c1')).toEqual({
+        exitCode: 1,
+        oomKilled: false,
+        logTail: ['Error: missing setting', 'at x'],
+      });
+      expect(logs).toHaveBeenCalledWith({
+        stdout: true,
+        stderr: true,
+        tail: 20,
+      });
+    });
+  });
+
   describe('cleanupOrphanedResources', () => {
     it('should remove all containers and networks with dokkimi label', async () => {
       mockDocker.listNetworks.mockResolvedValue([

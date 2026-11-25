@@ -318,7 +318,7 @@ export class DockerClientService implements OnApplicationBootstrap {
 
   async getExitedContainers(
     instanceId: string,
-  ): Promise<Array<{ id: string; name: string; role: string }>> {
+  ): Promise<Array<{ id: string; itemName?: string; role: string }>> {
     const containers = await this.docker.listContainers({
       all: true,
       filters: {
@@ -328,7 +328,7 @@ export class DockerClientService implements OnApplicationBootstrap {
     });
     return containers.map((c) => ({
       id: c.Id,
-      name: c.Labels['io.dokkimi.item-name'] || c.Names[0]?.replace(/^\//, ''),
+      itemName: c.Labels['io.dokkimi.item-name'],
       role: c.Labels['io.dokkimi.role'] || 'unknown',
     }));
   }
@@ -336,7 +336,7 @@ export class DockerClientService implements OnApplicationBootstrap {
   /** Exit code, OOM flag and last log lines of a stopped container. */
   async getExitDetails(
     nameOrId: string,
-    tailLines = 5,
+    tailLines = 20,
   ): Promise<{ exitCode: number; oomKilled: boolean; logTail: string[] }> {
     const container = this.docker.getContainer(nameOrId);
     const info = await container.inspect();

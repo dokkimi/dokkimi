@@ -50,6 +50,14 @@ import CodeBlock from '../../components/CodeBlock.astro';
     <li><strong>The HTTP timeout setting works</strong> &mdash; <code>DOKKIMI_HTTP_TIMEOUT</code> and the GitHub Action's <code>timeout</code> did nothing. They now set how long a test step waits for a response, 30 seconds by default. A step's own <code>timeout</code> can also be longer than 30 seconds.</li>
   </ul>
 
+  <h3>Crashes</h3>
+  <ul>
+    <li><strong>Every container is watched</strong> &mdash; Only services, workers and databases were. If a broker crashed, the definition failed after its timeout with &ldquo;not ready&rdquo;, or with a confusing failure in a later step, and if Dokkimi's own test agent did, the run never ended. The definition now fails within seconds with the container's exit code and last log lines, even if no step uses it.</li>
+    <li><strong>A failed later stage ends the run</strong> &mdash; If a service of <code>stage: 1</code> or later couldn't be started, the run never ended and showed no reason.</li>
+    <li><strong>A service that exits right away shows why</strong> &mdash; The error was &ldquo;cannot join network namespace of a non running container&rdquo;. It is now the service's exit code and last log lines.</li>
+    <li><strong>One failed call to Docker doesn't end crash detection</strong> &mdash; After one, a definition could pass although a service had crashed.</li>
+  </ul>
+
   <h3>Brokers</h3>
   <ul>
     <li><strong>Brokers no longer fail to start at random</strong> &mdash; RabbitMQ and Kafka ran on internal ports that another connection could be using, and the definition failed with &ldquo;not ready&rdquo;.</li>
