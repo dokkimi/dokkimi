@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"compress/gzip"
 	"context"
@@ -8,9 +9,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -612,5 +615,78 @@ func TestHandleRequest_ResponseBreaksOff(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+func TestHandleRequest_AddsNoResponseHeaders(t *testing.T) {
+	long := strings.Repeat("a", 5000)
+	for _, tc := range []struct {
+		name, sent string
+		mock       *MockEndpoint
+		want       []string // headers
+		body       string
+	}{
+		{"length", "HTTP/1.1 200 OK\r\nContent-Length: 8\r\n\r\n<html>hi", nil, []string{"Content-Length: 8"}, "<html>hi"},
+		{"chunked", "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n8\r\n<html>hi\r\n0\r\n\r\n", nil, []string{"Transfer-Encoding: chunked"}, "<html>hi"},
+		{"long and chunked", "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n1388\r\n" + long + "\r\n0\r\n\r\n", nil, []string{"Transfer-Encoding: chunked"}, long},
+		{"empty", "HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n", nil, []string{"Content-Length: 0"}, ""},
+		{"no content", "HTTP/1.1 204 No Content\r\n\r\n", nil, nil, ""},
+		{"not modified", "HTTP/1.1 304 Not Modified\r\nEtag: x\r\n\r\n", nil, []string{"Etag: x"}, ""},
+		{"its own", "HTTP/1.1 200 OK\r\nContent-Length: 2\r\nContent-Type: text/csv\r\nDate: Wed, 25 Nov 2026 07:00:00 GMT\r\n\r\nhi", nil,
+			[]string{"Content-Length: 2", "Content-Type: text/csv", "Date: Wed, 25 Nov 2026 07:00:00 GMT"}, "hi"},
+		{"empty Content-Type", "HTTP/1.1 200 OK\r\nContent-Length: 2\r\nContent-Type:\r\n\r\nhi", nil, []string{"Content-Length: 2", "Content-Type: "}, "hi"},
+		{"mock", "", &MockEndpoint{Method: "*", Target: "*", Path: "*", ResponseBody: stringPtr("{}")}, []string{"Content-Length: 2", "Content-Type: application/json"}, "{}"},
+		{"mock without a body", "", &MockEndpoint{Method: "*", Target: "*", Path: "*"}, []string{"Content-Length: 0"}, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			listener, err := net.Listen("tcp", "127.0.0.1:0")
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer listener.Close()
+			go func() {
+				conn, err := listener.Accept()
+				if err != nil {
+					return
+				}
+				defer conn.Close()
+				http.ReadRequest(bufio.NewReader(conn))
+				io.WriteString(conn, tc.sent)
+			}()
+
+			cfg := &Config{Origin: "caller"}
+			cache := NewMockCache(0)
+			cache.SetUrlMap(UrlMap{"service": ServiceInfo{Name: "service", URL: "http://" + listener.Addr().String()}})
+			if tc.mock != nil {
+				cache.SetMocks([]MockEndpoint{*tc.mock})
+			}
+			proxyService := NewProxyService(cfg, NewMockManager(cache, cfg.Origin), cache.GetUrlMap)
+			interceptor := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				handleRequest(w, r, proxyService, nil, nil, cache, cfg)
+			}))
+			defer interceptor.Close()
+
+			conn, err := net.Dial("tcp", interceptor.Listener.Addr().String())
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer conn.Close()
+			io.WriteString(conn, "GET /x HTTP/1.1\r\nHost: service\r\n\r\n")
+			var raw bytes.Buffer
+			resp, err := http.ReadResponse(bufio.NewReader(io.TeeReader(conn, &raw)), nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			body, err := io.ReadAll(resp.Body)
+			if err != nil || string(body) != tc.body {
+				t.Errorf("body %q, err %v", body, err)
+			}
+			head, _, _ := strings.Cut(raw.String(), "\r\n\r\n")
+			got := strings.Split(head, "\r\n")[1:]
+			slices.Sort(got)
+			if !slices.Equal(got, tc.want) {
+				t.Errorf("got headers %q, want %q", got, tc.want)
+			}
+		})
 	}
 }

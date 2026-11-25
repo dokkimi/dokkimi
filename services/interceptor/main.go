@@ -324,8 +324,18 @@ func handleRequest(w http.ResponseWriter, r *http.Request, proxy *ProxyService, 
 		}
 	}
 
+	// Keep Go from adding headers the response doesn't have
+	for _, key := range []string{"Content-Type", "Date"} {
+		if _, sent := resp.Header[key]; !sent {
+			w.Header()[key] = nil
+		}
+	}
+
 	// Set status code
 	w.WriteHeader(resp.StatusCode)
+	if resp.ContentLength < 0 {
+		_ = http.NewResponseController(w).Flush() // keeps Go from adding a Content-Length
+	}
 
 	// Copy response body from buffer
 	if len(responseBodyBytes) > 0 {
