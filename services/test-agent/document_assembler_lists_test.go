@@ -447,3 +447,52 @@ func TestAnnotateTimelineIndices(t *testing.T) {
 		}
 	})
 }
+
+// Logs arrive in any order (each is sent in its own goroutine), so every
+// list is in the order the entries happened, and $.match is the earliest.
+func TestAssembledListsAreInTimeOrder(t *testing.T) {
+	exec := stepExecWindow("2024-01-01T00:00:00.000Z", "2024-01-01T00:00:05.000Z")
+	firstOf := func(list []interface{}, key string) interface{} {
+		return list[0].(map[string]interface{})[key]
+	}
+
+	traffic, timeline := assembleTrafficList([]HttpLogMessage{
+		{Method: "GET", URL: "/second", Timestamp: "2024-01-01T00:00:02.000Z"},
+		{Method: "GET", URL: "/first", Timestamp: "2024-01-01T00:00:01.000Z"},
+	}, exec)
+	if url := firstOf(traffic, "request").(map[string]interface{})["url"]; url != "/first" {
+		t.Errorf("traffic[0] = %v, want /first", url)
+	}
+	for _, e := range timeline {
+		entry := e.entry
+		idx := int(entry["trafficIndex"].(float64))
+		got := traffic[idx].(map[string]interface{})["request"].(map[string]interface{})["url"]
+		if got != entry["url"] {
+			t.Errorf("timeline entry for %v points at traffic[%d] = %v", entry["url"], idx, got)
+		}
+	}
+
+	console, _ := assembleConsoleLogList([]ConsoleLogMessage{
+		{Message: "second", Timestamp: 1704067202},
+		{Message: "first", Timestamp: 1704067201},
+	}, exec)
+	if m := firstOf(console, "message"); m != "first" {
+		t.Errorf("consoleLogs[0] = %v, want first", m)
+	}
+
+	dbLogs, _ := assembleDbLogList([]DatabaseLogMessage{
+		{Query: "SELECT 2", Timestamp: "2024-01-01T00:00:02.000Z"},
+		{Query: "SELECT 1", Timestamp: "2024-01-01T00:00:01.000Z"},
+	}, exec)
+	if q := firstOf(dbLogs, "query"); q != "SELECT 1" {
+		t.Errorf("dbLogs[0] = %v, want SELECT 1", q)
+	}
+
+	msgs, _ := assembleMessageLogList([]MessageLogMessage{
+		{Operation: "publish", Body: "second", Timestamp: "2024-01-01T00:00:02.000Z"},
+		{Operation: "publish", Body: "first", Timestamp: "2024-01-01T00:00:01.000Z"},
+	}, exec)
+	if b := firstOf(msgs, "body"); b != "first" {
+		t.Errorf("messageLogs[0] = %v, want first", b)
+	}
+}

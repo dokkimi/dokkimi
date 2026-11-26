@@ -73,12 +73,13 @@ User runs: dokkimi run [target]
 │ 1. Create Run record (PENDING → RUNNING)  │
 │ 2. Create Docker network                  │
 │ 3. Group items by stage property          │
-│ 4. Deploy stage 0 containers + sidecars:  │
+│ 4. Start global interceptor + Test Agent  │
+│    - Bind-mount config file (test config) │
+│ 5. Deploy stage 0 containers + sidecars:  │
 │      * Sidecar Interceptor (HTTP logging) │
 │      * DNSMasq (service discovery)        │
 │      * DB Proxy (for databases)           │
-│    - Bind-mount config file (test config) │
-│ 5. Start Test Agent container             │
+│      * Broker Proxy (for brokers)         │
 └───────────────┬───────────────────────────┘
                 │
                 ▼
@@ -103,9 +104,10 @@ User runs: dokkimi run [target]
 │    6. POSTs /test-complete to CT          │
 │                                           │
 │  Interceptors  → POST /logs/http → TA + CT  │
-│  Docker API   → GELF UDP → Test Agent       │
-│               → console log streaming → CT  │
-│  DB Proxy     → POST /logs/database → CT    │
+│  Services, workers → GELF UDP → Test Agent  │
+│               → POST /logs/console → CT     │
+│  DBs, brokers → Docker log stream → CT      │
+│  DB Proxy     → POST /logs/database → TA+CT │
 │  Broker Proxy → POST /logs/message → TA + CT│
 └───────────────┬───────────────────────────┘
                 │
@@ -142,7 +144,7 @@ User runs: dokkimi run [target]
 └───────────────────────────────────────────┘
 ```
 
-**Crashes:** from the deployment of stage 0 until teardown, CT asks Docker every 3 seconds for the instance's exited containers of any role (`DockerDeployerService.monitorForCrashedContainers`). If one has exited while the test is still going, the instance is marked `FAILED` with the exit code and last log lines, torn down, and the run continues or completes. A failed check is retried 3 seconds later.
+**Crashes:** from the deployment of stage 0 until teardown, CT asks Docker every 3 seconds for the instance's exited containers of any role (`DockerDeployerService.monitorForCrashedContainers`). If one has exited while the test is still going, the instance is marked `FAILED` with the exit code and last log lines, torn down, and the run continues or completes. A failed check is retried 3 seconds later. When a container exits right away and the deployment fails, the error shows that container's exit code and logs. A stage that fails to deploy, at any stage, fails the instance with its error (`DockerDeployerService` handles it for every stage).
 
 **Status changes** that can race check the current status in the same query: `markRunning` (only from `STARTING`), `failIfActive` and the test result (only while `STARTING` or `RUNNING`, and without a test result). So a finished test can't be marked as failed, and a crash message isn't lost.
 
@@ -180,14 +182,16 @@ dokkimi-{run-id} (Docker network)
     └── databaseMap (database connection info)
 ```
 
+An item's `maxCpu` and `maxMemory` become Docker's CPU and memory limits (`NanoCpus`, `Memory`) on its own container: the service, worker, database or broker. Sidecars aren't limited.
+
 ### Sidecar Pattern
 
 Every user service gets two sidecars:
 
-1. **Sidecar Interceptor** — sits between the service and all outbound HTTP. Captures request/response pairs, POSTs them to Control Tower's `log-processing` module, and can serve mock responses based on config file rules. Mocks are checked first, for every request. Then a request goes to the service whose name is exactly its host, or else to the real host, over the scheme the caller used. Test steps send the target as the first path segment; the global interceptor moves it to the host and applies the same rule.
+1. **Sidecar Interceptor** — sits between the service and all outbound HTTP. Captures request/response pairs, POSTs them to Control Tower's `log-processing` module, and can serve mock responses based on config file rules. Mocks are checked first, for every request. Then a request goes to the service whose name is exactly its host, or else to the real host, over the scheme the caller used. Test steps send the target as the first path segment; the global interceptor moves it to the host and applies the same rule. Each forwarded request uses a new connection, and the interceptor adds no headers to the requests and responses it forwards. When it can't deliver a test step's request, its 502 carries `X-Dokkimi-Error`, so the test agent fails the step instead of treating it as the service's answer (the header name is defined in both the interceptor and the test agent).
 2. **DNSMasq** — rewrites DNS so service-to-service calls route through the interceptor. Joins the user container's network namespace.
 
-Console logs are collected via the Docker API (log streaming).
+Console logs of services and workers go through Docker's GELF log driver to the test agent, which forwards them to Control Tower (`POST /logs/console`). Console logs of databases and brokers are streamed from the Docker API to Control Tower.
 
 Databases additionally get a **DB Proxy** sidecar — a transparent wire protocol proxy that sits between the application and the database. Client connections hit the proxy port, which forwards traffic to the real database while parsing the native wire protocol (MongoDB OP_MSG, PostgreSQL frontend/backend messages, MySQL packet protocol, Redis RESP) to extract queries and results for logging. The proxy also runs adaptive health checks (500ms polling while booting, 20s once healthy) and reports readiness to Control Tower. MongoDB uses a sentinel document written by the final init script to ensure health checks don't pass before database initialization completes.
 
@@ -232,28 +236,30 @@ Infrastructure lives in `services/broker-proxy/`:
 
 SQLite, single file at `~/.dokkimi/dokkimi.db`. A PostgreSQL Prisma schema also exists for when Control Tower runs inside a Docker image (tested by Dokkimi's own definitions), but normal usage is always SQLite.
 
-Log ingestion is HTTP-only — interceptors, DB Proxy, and Broker Proxy POST to Control Tower. Console logs are collected via Docker API log streaming.
+Log ingestion is HTTP-only — interceptors, DB Proxy, Broker Proxy and the test agent (for GELF console logs) POST to Control Tower. Console logs of databases and brokers are streamed from the Docker API.
 
 ---
 
 ## Communication Patterns
 
-| From            | To                                       | Method               | Purpose                                                                                |
-| --------------- | ---------------------------------------- | -------------------- | -------------------------------------------------------------------------------------- |
-| CLI             | Control Tower                            | HTTP REST            | Create runs, submit definitions, poll results                                          |
-| Control Tower   | Docker API                               | dockerode            | Create/delete networks, start/stop containers, stream logs                             |
-| Test Agent      | Interceptor                              | HTTP                 | Test step execution — requests route through the interceptor, enabling traffic capture |
-| Interceptor     | Control Tower `/logs/*`                  | HTTP POST            | HTTP traffic logs                                                                      |
-| Docker API      | Control Tower `/logs/console`            | Log streaming        | Console logs (collected via Docker API)                                                |
-| DB Proxy        | Control Tower `/logs/database`           | HTTP POST            | Database logs                                                                          |
-| Sidecars        | Control Tower `/health/status`           | HTTP POST            | Readiness updates                                                                      |
-| Interceptors    | Test Agent `/logs/http`                  | HTTP POST            | HTTP traffic logs (test-agent buffers in memory for inline validation)                 |
-| Console logs    | Test Agent (GELF UDP :12201)             | GELF UDP             | Console logs forwarded to test-agent for inline assertion validation                   |
-| Test Agent      | Control Tower `/instances/:id/run-stage` | HTTP POST            | Deploy a stage, or wait for stage 0                                                    |
-| Test Agent      | Control Tower `/logs/test-validation`    | HTTP POST            | Assertion results (validated inline by test-agent, stored by CT)                       |
-| Test Agent      | Control Tower `/test-complete`           | HTTP POST            | Test completion notification                                                           |
-| CT modules      | DB                                       | Prisma               | Store logs and assertion results                                                       |
-| test-validation | RunsService (in-process)                 | direct injected call | Signal validation complete → CT updates run status                                     |
+| From            | To                                            | Method               | Purpose                                                                                |
+| --------------- | --------------------------------------------- | -------------------- | -------------------------------------------------------------------------------------- |
+| CLI             | Control Tower                                 | HTTP REST            | Create runs, submit definitions, poll results                                          |
+| Control Tower   | Docker API                                    | dockerode            | Create/delete networks, start/stop containers, stream logs                             |
+| Test Agent      | Interceptor                                   | HTTP                 | Test step execution — requests route through the interceptor, enabling traffic capture |
+| Interceptor     | Control Tower `/logs/*`                       | HTTP POST            | HTTP traffic logs                                                                      |
+| Docker API      | Control Tower `/logs/console`                 | Log streaming        | Console logs of databases and brokers                                                  |
+| Test Agent      | Control Tower `/logs/console`                 | HTTP POST            | Console logs of services and workers, received over GELF                               |
+| DB Proxy        | Control Tower and Test Agent `/logs/database` | HTTP POST            | Database logs                                                                          |
+| Broker Proxy    | Control Tower and Test Agent `/logs/message`  | HTTP POST            | Broker message logs                                                                    |
+| Sidecars        | Control Tower `/health/status`                | HTTP POST            | Readiness updates                                                                      |
+| Interceptors    | Test Agent `/logs/http`                       | HTTP POST            | HTTP traffic logs (test-agent buffers in memory for inline validation)                 |
+| Docker (GELF)   | Test Agent (GELF UDP :12201)                  | GELF UDP             | Console logs of services and workers, for inline assertion validation                  |
+| Test Agent      | Control Tower `/instances/:id/run-stage`      | HTTP POST            | Deploy a stage, or wait for stage 0                                                    |
+| Test Agent      | Control Tower `/logs/test-validation`         | HTTP POST            | Assertion results (validated inline by test-agent, stored by CT)                       |
+| Test Agent      | Control Tower `/test-complete`                | HTTP POST            | Test completion notification                                                           |
+| CT modules      | DB                                            | Prisma               | Store logs and assertion results                                                       |
+| test-validation | RunsService (in-process)                      | direct injected call | Signal validation complete → CT updates run status                                     |
 
 ### Log delivery reliability ("captured means observable")
 
@@ -307,7 +313,7 @@ Before any run, the CLI resolves `.dokkimi/` definition files:
 
 ## Config
 
-Configuration lives in `config/environments/desktop.yaml` (or `cloud.yaml`). Loaded at startup by `@dokkimi/config`. Services read their port, database URL, timeouts, and feature flags from this config.
+Configuration lives in `config/config.yaml`. Loaded at startup by `@dokkimi/config` (`CONFIG_PATH` overrides the location). Services read their port, database URL, timeouts, and feature flags from this config.
 
 User-level project config lives in `.dokkimi/config.yaml`:
 
@@ -334,8 +340,8 @@ dokkimi/
 │   ├── config/dist/          # Config loader
 │   ├── prisma/               # Schema + migrations
 │   └── ...                   # Other shared packages
-├── config/environments/
-│   └── desktop.yaml          # Runtime config
+├── config/
+│   └── config.yaml           # Runtime config
 └── node_modules/             # Production dependencies
 ```
 
@@ -351,7 +357,7 @@ dokkimi/
 
 4. **File-driven test execution** — test steps are written to bind-mounted config files that the test-agent reads. This decouples test configuration from the agent binary.
 
-5. **Dual-path log ingestion** — interceptor sidecars post HTTP logs to both Control Tower (for storage/inspection) and the test-agent (for inline validation). DB Proxy posts to Control Tower. Console logs are collected via Docker API log streaming to CT and via GELF UDP to the test-agent.
+5. **Dual-path log ingestion** — interceptor sidecars post HTTP logs to both Control Tower (for storage/inspection) and the test-agent (for inline validation). DB and broker proxies do the same. Console logs of services and workers go via GELF UDP to the test-agent, which forwards them to CT; databases' and brokers' are streamed from the Docker API to CT.
 
 6. **Wire protocol proxies over query-execution endpoints** — DB Proxy variants parse each database's native wire protocol (MongoDB OP_MSG, PostgreSQL messages, MySQL packets, Redis RESP) to transparently intercept and log queries. This means applications connect normally to the proxy port with no driver changes, and the proxy forwards traffic unmodified while extracting query text, results, duration, and errors for logging.
 
@@ -372,9 +378,12 @@ The test-agent's assertion engine validates all assertions against a unified **r
   traffic,         // array of all captured HTTP traffic entries
   consoleLogs,     // array of all console log entries
   dbLogs,          // array of all database log entries
+  messageLogs,     // array of all broker message entries
   timeline         // ordered array of all events (traffic + logs)
 }
 ```
+
+The arrays hold what was captured during the step, in the order it happened (logs arrive in any order and are sorted by time): entries from the step's start until 500 ms after it ended (`timestampBufferMs`). A `wait` step starts its window at the start of the step before it, so it can assert on traffic that step caused.
 
 ### Unified match system
 
@@ -383,6 +392,10 @@ All log types (traffic, console, DB) are asserted through the same generic match
 ### StepValidator and retry
 
 `StepValidator` owns the validation loop. After executing a step, it validates immediately. If the result looks like logs haven't arrived yet (a "retryable" failure — e.g., zero matches when expecting some, or a pending action log), it polls every 100ms up to a 5-second deadline. This handles the inherent async delay between interceptor log delivery and assertion evaluation.
+
+### Step outcomes
+
+A step fails when an assertion fails, when its request couldn't be delivered (`X-Dokkimi-Error`), or when a `dbQuery` fails, unless the step asserts on `$.response.success` or `$.response.error` to test the failure (inside `parallel` a failed query always fails). With `stopOnFailure: false` (on the step, or as the test's default), the failure is recorded, the next steps and tests run, and the test fails at the end. Otherwise the test stops, and so do the tests after it. Waits and loop delays end at the run's deadline (`config.timeoutSeconds`); a loop takes the deadline through its context.
 
 ### MatchStack
 

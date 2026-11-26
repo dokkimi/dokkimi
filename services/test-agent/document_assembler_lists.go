@@ -6,6 +6,38 @@ import (
 	"time"
 )
 
+// sortedByTime returns a copy of logs in the order the entries happened.
+// Sidecars send each log on its own, so they arrive in any order; sorting
+// before the lists are built keeps $.match the earliest entry and keeps
+// timeline indices pointing at the right list entry.
+func sortedByTime[T any](logs []T, timeOf func(*T) time.Time) []T {
+	type keyed struct {
+		t time.Time
+		v T
+	}
+	k := make([]keyed, len(logs))
+	for i := range logs {
+		k[i] = keyed{timeOf(&logs[i]), logs[i]}
+	}
+	sort.SliceStable(k, func(i, j int) bool { return k[i].t.Before(k[j].t) })
+	out := make([]T, len(k))
+	for i := range k {
+		out[i] = k[i].v
+	}
+	return out
+}
+
+func httpLogTime(l *HttpLogMessage) time.Time {
+	if l.RequestSentAt != nil {
+		return parseLogTimestamp(*l.RequestSentAt)
+	}
+	return parseLogTimestamp(l.Timestamp)
+}
+
+func consoleLogTime(l *ConsoleLogMessage) time.Time {
+	return time.Unix(int64(l.Timestamp), int64((l.Timestamp-float64(int64(l.Timestamp)))*1e9))
+}
+
 func computeResponseTime(l *HttpLogMessage) interface{} {
 	if l.RequestSentAt != nil && l.ResponseReceivedAt != nil {
 		sentAt, err1 := time.Parse(time.RFC3339Nano, *l.RequestSentAt)
@@ -28,6 +60,7 @@ func assembleTrafficList(httpLogs []HttpLogMessage, stepExec StepExecution) ([]i
 		log.Printf("assembleTrafficList: %v", err)
 		return []interface{}{}, nil
 	}
+	httpLogs = sortedByTime(httpLogs, httpLogTime)
 	var traffic []interface{}
 	var timeline []timelineEntry
 	for i := range httpLogs {
@@ -36,7 +69,7 @@ func assembleTrafficList(httpLogs []HttpLogMessage, stepExec StepExecution) ([]i
 		if l.RequestSentAt != nil {
 			ts = *l.RequestSentAt
 		}
-		logTime := parseLogTimestamp(ts)
+		logTime := httpLogTime(l)
 		if logTime.Before(startTime) || logTime.After(endTime) {
 			continue
 		}
@@ -118,8 +151,8 @@ func assembleConsoleLogList(consoleLogs []ConsoleLogMessage, stepExec StepExecut
 	}
 	var result []interface{}
 	var timeline []timelineEntry
-	for _, l := range consoleLogs {
-		logTime := time.Unix(int64(l.Timestamp), int64((l.Timestamp-float64(int64(l.Timestamp)))*1e9))
+	for _, l := range sortedByTime(consoleLogs, consoleLogTime) {
+		logTime := consoleLogTime(&l)
 		if logTime.Before(startTime) || logTime.After(endTime) {
 			continue
 		}
@@ -155,7 +188,7 @@ func assembleDbLogList(dbLogs []DatabaseLogMessage, stepExec StepExecution) ([]i
 	}
 	var result []interface{}
 	var timeline []timelineEntry
-	for _, l := range dbLogs {
+	for _, l := range sortedByTime(dbLogs, func(l *DatabaseLogMessage) time.Time { return parseLogTimestamp(l.Timestamp) }) {
 		logTime := parseLogTimestamp(l.Timestamp)
 		if logTime.Before(startTime) || logTime.After(endTime) {
 			continue
@@ -201,7 +234,7 @@ func assembleMessageLogList(msgLogs []MessageLogMessage, stepExec StepExecution)
 	}
 	var result []interface{}
 	var timeline []timelineEntry
-	for _, l := range msgLogs {
+	for _, l := range sortedByTime(msgLogs, func(l *MessageLogMessage) time.Time { return parseLogTimestamp(l.Timestamp) }) {
 		logTime := parseLogTimestamp(l.Timestamp)
 		if logTime.Before(startTime) || logTime.After(endTime) {
 			continue
