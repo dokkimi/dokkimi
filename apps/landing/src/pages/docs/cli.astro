@@ -81,7 +81,7 @@ dokkimi run auth --watch`} lang="bash" />
   <p>After a run completes (TTY only, non-watch), the CLI prompts: <code>Press i to inspect results, or any other key to exit...</code>. In CI/non-TTY environments, this is skipped.</p>
 
   <h2>dokkimi inspect</h2>
-  <p>Full-screen interactive TUI for drilling into test results and traffic logs. Uses the terminal's alternate screen buffer.</p>
+  <p>Full-screen interactive TUI for drilling into test results and traffic logs. Uses the terminal's alternate screen buffer. Use <code>--run</code> to pick an earlier run from the history instead of the latest.</p>
 
   <h3>Navigation</h3>
   <ul>
@@ -111,7 +111,7 @@ dokkimi run auth --watch`} lang="bash" />
   <p>Selecting a log item opens it as a temp file in your <code>$EDITOR</code> (defaults to <code>code</code>).</p>
 
   <h2>dokkimi baselines</h2>
-  <p>Interactive TUI for reviewing and approving pending visual baselines from the last run. Uses the alternate screen buffer.</p>
+  <p>Interactive TUI for reviewing and approving pending visual baselines from the last run. Uses the alternate screen buffer. Use <code>--run</code> to pick an earlier run from the history.</p>
   <p>When a test definition includes <code>screenshot</code> sub-steps with <code>match: true</code>, Dokkimi compares captures against baselines stored in <code>.dokkimi/&lt;project&gt;/baselines/</code>. New captures (no baseline yet) and failed diffs appear as pending baselines.</p>
 
   <h3>Navigation</h3>
@@ -128,11 +128,12 @@ dokkimi run auth --watch`} lang="bash" />
   <p>Also accessible via the <code>b</code> key after a run completes (when pending baselines are detected).</p>
 
   <h2>dokkimi dump</h2>
-  <p>Outputs a complete JSON data dump of the last run — designed for piping to LLMs or scripts.</p>
-  <CodeBlock code={`dokkimi dump                             # Output to stdout
-dokkimi dump -o run-dump.json            # Write to file (streams, low memory)
+  <p>Writes a complete JSON data dump of the last run to a file — designed for LLMs or scripts. By default the file is <code>~/.dokkimi/runs/&lt;project path&gt;/&lt;timestamp&gt;/dump.json</code> (<code>dump_failed.json</code> with <code>--failed</code>), and the command prints its path.</p>
+  <CodeBlock code={`dokkimi dump                             # Write to the run's folder
+dokkimi dump -o run-dump.json            # Write to this file (streams, low memory)
 dokkimi dump --failed -o failures.json   # Only failed instances
-dokkimi dump .dokkimi/auth.json -o out.json  # Specific definitions only`} lang="bash" />
+dokkimi dump .dokkimi/auth.json          # Specific definitions only
+dokkimi dump --run                       # Pick a run from the history`} lang="bash" />
 
   <h3>Options</h3>
   <table>
@@ -140,8 +141,10 @@ dokkimi dump .dokkimi/auth.json -o out.json  # Specific definitions only`} lang=
       <tr><th>Option</th><th>Description</th></tr>
     </thead>
     <tbody>
-      <tr><td><code>-o, --output &lt;file&gt;</code></td><td>Write to file instead of stdout (streams instance-by-instance)</td></tr>
+      <tr><td><code>-o, --output &lt;file&gt;</code></td><td>Write to this file instead of the run's folder (streams instance-by-instance). A directory gets <code>dump.json</code> inside it</td></tr>
       <tr><td><code>--failed</code></td><td>Only include instances that failed</td></tr>
+      <tr><td><code>--run [runId]</code></td><td>Dump a specific run by ID, or pick one from the run history when no ID is given</td></tr>
+      <tr><td><code>--inline-artifacts</code></td><td>Embed text artifacts (HTML) in the JSON, for when the reader can't open file paths. PNG artifacts stay as paths</td></tr>
       <tr><td><code>[path]</code></td><td>Filter to definitions matching a file or folder</td></tr>
     </tbody>
   </table>
@@ -164,7 +167,9 @@ dokkimi dump .dokkimi/auth.json -o out.json  # Specific definitions only`} lang=
       "assertionResults": [ ... ],
       "httpLogs": [ ... ],
       "databaseLogs": [ ... ],
-      "consoleLogs": [ ... ]
+      "consoleLogs": [ ... ],
+      "messageLogs": [ ... ],
+      "artifacts": [ ... ]
     }
   ]
 }`} lang="json" />
@@ -209,7 +214,7 @@ dokkimi junit --summary                    # Markdown summary instead of XML`} l
     <li>Dokkimi internal components are deployed</li>
     <li>The MCP server is registered with your AI tools</li>
   </ul>
-  <p>Each check reports pass, warn, or fail with a fix suggestion.</p>
+  <p>Each check reports pass, warn, or fail with a fix suggestion. Use <code>--json</code> for machine-readable output.</p>
 
   <h2>dokkimi validate</h2>
   <CodeBlock code={`dokkimi validate                  # Validate all definitions
@@ -219,16 +224,16 @@ dokkimi validate .dokkimi/auth.json  # Validate a specific file`} lang="bash" />
   <h2>Other commands</h2>
 
   <h3>dokkimi init</h3>
-  <p>Scaffolds a <code>.dokkimi/</code> folder with an example definition, a shared Postgres fragment, and an init script.</p>
+  <p>Scaffolds a <code>.dokkimi/</code> folder with a <code>config.yaml</code>, an example definition, a shared Postgres fragment, and an init script.</p>
 
   <h3>dokkimi stop</h3>
-  <p>Stops the current test run without cleaning up resources or history. If no run is active, reports that there is nothing to stop.</p>
+  <p>Stops the current test run without cleaning up resources or history. If no run is active, reports that there is nothing to stop. Use <code>--json</code> for machine-readable output.</p>
 
   <h3>dokkimi status</h3>
-  <p>Shows the current state of Dokkimi services and any running test instances.</p>
+  <p>Shows the current state of Dokkimi services and any running test instances. Use <code>--json</code> for machine-readable output.</p>
 
   <h3>dokkimi clean</h3>
-  <p>Stops this project's running instances, removes their Docker networks and containers, and deletes the project's runs. Other projects are not touched. Use <code>--all</code> to clean every project.</p>
+  <p>Stops this project's running instances, removes their Docker networks and containers, and deletes the project's runs. Other projects are not touched. Use <code>--all</code> to clean every project, <code>--force</code> (<code>-f</code>) to skip the confirmation prompt, and <code>--json</code> for machine-readable output (implies <code>--force</code>).</p>
   <p>If Dokkimi isn't running, its containers can't be matched to a project, so <code>clean</code> removes all leftover Dokkimi containers and networks. If Dokkimi is running but not responding, <code>clean</code> stops with an error: try again, or run <code>dokkimi reboot</code>.</p>
 
   <h3>dokkimi reboot</h3>
@@ -241,7 +246,7 @@ dokkimi validate .dokkimi/auth.json  # Validate a specific file`} lang="bash" />
   <p>Interactive settings editor. Opens a full-screen menu with categories for concurrency (max parallel environments, max booting environments) and telemetry. Settings are saved to <code>~/.dokkimi/config.json</code>.</p>
 
   <h3>dokkimi mcp</h3>
-  <p>Starts the MCP server in stdio mode for AI tool integration. This is registered automatically on install for Claude Code, Cursor, and Copilot — you typically only need this command to manually restart the server if it stops responding.</p>
+  <p>Starts the MCP server in stdio mode for AI tool integration. This is registered automatically on install for Claude Code and Cursor — you typically only need this command to manually restart the server if it stops responding.</p>
 
   <h3>dokkimi uninstall</h3>
   <p>Fully removes Dokkimi: stops services, removes Docker containers/networks/images, deletes <code>~/.dokkimi/</code>, and removes AI tool configuration entries.</p>

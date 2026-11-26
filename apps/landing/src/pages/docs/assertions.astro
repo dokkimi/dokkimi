@@ -220,7 +220,7 @@ $.response.headers.x-auth    // header lookup (case-insensitive)`} lang="text" /
   </table>
 
   <h3>Console logs (<code>$.consoleLogs</code>)</h3>
-  <p>Console output from services, captured by the interceptor sidecar:</p>
+  <p>Console output (stdout and stderr) from containers, sent by Docker's GELF log driver to the test agent:</p>
 
   <CodeBlock code={`{
   "match": {
@@ -417,7 +417,7 @@ $.response.headers.x-auth    // header lookup (case-insensitive)`} lang="text" /
       <tr><td><code>gte</code></td><td>Yes</td><td>number</td><td>Greater than or equal</td></tr>
       <tr><td><code>lt</code></td><td>Yes</td><td>number</td><td>Less than</td></tr>
       <tr><td><code>lte</code></td><td>Yes</td><td>number</td><td>Less than or equal</td></tr>
-      <tr><td><code>contains</code></td><td>Yes</td><td>any</td><td>Substring match for strings, element check for arrays, key check for objects (case-sensitive)</td></tr>
+      <tr><td><code>contains</code></td><td>Yes</td><td>any</td><td>Substring match for strings, element check for arrays, key check for objects (case-sensitive). Array elements must match exactly, without the conversion <code>eq</code> does: <code>[1, 2]</code> doesn't contain <code>"1"</code></td></tr>
       <tr><td><code>notContains</code></td><td>Yes</td><td>any</td><td>Inverse of <code>contains</code> (case-sensitive)</td></tr>
       <tr><td><code>containsIgnoreCase</code></td><td>Yes</td><td>string</td><td>Substring match (case-insensitive)</td></tr>
       <tr><td><code>notContainsIgnoreCase</code></td><td>Yes</td><td>string</td><td>Substring does NOT match (case-insensitive)</td></tr>

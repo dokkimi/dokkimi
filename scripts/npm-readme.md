@@ -151,7 +151,7 @@ env:
   - name: DATABASE_URL
     value: postgresql://dokkimi:dokkimi@postgres-db:5432/dokkimi
   - name: USER_SERVICE_URL
-    value: http://user-service:3000
+    value: http://user-service
 ```
 
 Image tags and other values can be centralized in `.dokkimi/config.yaml` using `${{VAR}}` syntax — change once, apply everywhere. Definition-level `variables` can also be used in item fields with `{{VAR}}` syntax, letting you share passwords, hostnames, and other values across items without duplication.

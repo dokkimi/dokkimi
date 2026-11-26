@@ -27,7 +27,7 @@ jobs:
         with:
           tests: .dokkimi/`} lang="yaml" />
 
-  <p>That's it. The action installs the Dokkimi CLI, pulls sidecar images, runs your tests, and uploads a dump artifact on failure. Results stream to the GitHub Actions log.</p>
+  <p>That's it. The action installs the Dokkimi CLI, runs your tests (the CLI pulls the sidecar images it needs), and uploads a dump artifact on failure. Results stream to the GitHub Actions log.</p>
 
   <h3>Configuration</h3>
   <p>Override defaults with <code>with:</code> inputs — no config files needed:</p>
@@ -52,6 +52,8 @@ jobs:
       <tr><td><code>timeout</code></td><td><code>30000</code></td><td>How long a test step waits for an HTTP response, in milliseconds. A step's own <code>timeout</code> wins.</td></tr>
       <tr><td><code>viewport-width</code></td><td><code>1280</code></td><td>Default browser viewport width for UI tests</td></tr>
       <tr><td><code>viewport-height</code></td><td><code>720</code></td><td>Default browser viewport height for UI tests</td></tr>
+      <tr><td><code>junit-dir</code></td><td><code>dokkimi-junit-reports</code></td><td>Directory to accumulate JUnit XML reports</td></tr>
+      <tr><td><code>report</code></td><td><code>true</code></td><td>Post the test summary to the job summary and as a PR comment. Set to <code>false</code> for intermediate runs in multi-project setups</td></tr>
       <tr><td><code>dump-retention-days</code></td><td><code>1</code></td><td>Days to retain the failed-run dump artifact (0 to disable)</td></tr>
       <tr><td><code>dokkimi-version</code></td><td><code>latest</code></td><td>Dokkimi CLI version to install</td></tr>
     </tbody>
@@ -272,9 +274,11 @@ dokkimi junit --summary                 # Markdown summary instead of XML`} lang
   <p>The CLI pulls sidecar images automatically, but pre-pulling avoids delays during the first test run. Add this step before <code>dokkimi run</code>:</p>
   <CodeBlock code={`- name: Pre-pull sidecar images
   run: |
+    V=$(dokkimi version | sed 's/^v//')
     docker pull andyshinn/dnsmasq:2.83
-    docker pull ghcr.io/dokkimi/interceptor:latest
-    docker pull ghcr.io/dokkimi/test-agent:latest`} lang="bash" />
+    docker pull ghcr.io/dokkimi/interceptor:$V
+    docker pull ghcr.io/dokkimi/test-agent:$V`} lang="bash" />
+  <p>Sidecar images are tagged with the CLI's version, so pull that tag (not <code>:latest</code>), after the CLI is installed.</p>
   <p>Only <code>dnsmasq</code>, <code>interceptor</code>, and <code>test-agent</code> are needed for every run. DB proxy images (<code>db-proxy-postgres</code>, <code>db-proxy-mysql</code>, etc.) are only needed if your definitions include databases.</p>
 
   <h3>UI test viewport</h3>

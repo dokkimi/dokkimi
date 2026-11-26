@@ -112,7 +112,7 @@ import CodeBlock from '../../components/CodeBlock.astro';
     ]
   }
 }`} lang="json" />
-  <p>All actions within <code>parallel</code> fire at the same time. Use this to test concurrent access patterns or to speed up independent setup steps. See <a href="/docs/tests-and-steps">Tests &amp; Steps</a> for more on parallel vs sequential execution.</p>
+  <p>Each entry in <code>actions</code> is an <code>httpRequest</code> or <code>dbQuery</code>; <code>wait</code> and <code>ui</code> go in their own steps. All actions within <code>parallel</code> fire at the same time. Use this to test concurrent access patterns or to speed up independent setup steps. See <a href="/docs/tests-and-steps">Tests &amp; Steps</a> for more on parallel vs sequential execution.</p>
 
   <h2>Database Query</h2>
 
@@ -124,6 +124,17 @@ import CodeBlock from '../../components/CodeBlock.astro';
     "query": "SELECT * FROM users WHERE email = '{{email}}'"
   }
 }`} lang="json" />
+
+  <p>To bind values instead of writing them into the SQL, use placeholders and <code>params</code>. Postgres uses <code>$1</code>, <code>$2</code>, &hellip;; MySQL uses <code>?</code>, filled in order. Keys are the placeholder numbers as strings:</p>
+  <CodeBlock code={`{
+  "action": {
+    "type": "dbQuery",
+    "database": "postgres-db",
+    "query": "SELECT * FROM users WHERE id = $1 AND status = $2",
+    "params": { "1": "{{userId}}", "2": "active" }
+  }
+}`} lang="json" />
+  <p>For MySQL, each <code>?</code> takes the next number, so <code>WHERE a = ? OR b = ?</code> needs both <code>"1"</code> and <code>"2"</code> even if the value is the same.</p>
 
   <h3>MongoDB</h3>
   <p>For MongoDB, the <code>query</code> field must be a JSON string with a specific structure:</p>
@@ -149,6 +160,17 @@ import CodeBlock from '../../components/CodeBlock.astro';
     </tbody>
   </table>
 
+  <h3>Redis</h3>
+  <p>For Redis, <code>query</code> is a Redis command, split on spaces. Wrap an argument that contains spaces in double quotes:</p>
+  <CodeBlock code={`{
+  "action": {
+    "type": "dbQuery",
+    "database": "redis-cache",
+    "query": "SET session:{{userId}} \\"logged in\\""
+  }
+}`} lang="json" />
+  <p>Each value in the reply becomes a row <code>&#123; "value": ... &#125;</code> in <code>$.response.data</code> (so <code>GET</code> gives one row, <code>LRANGE</code> one per element). <code>HGETALL</code> gives one row with the hash's fields. A missing key gives no rows.</p>
+
   <table>
     <thead>
       <tr><th>Field</th><th>Type</th><th>Required</th><th>Description</th></tr>
@@ -156,7 +178,8 @@ import CodeBlock from '../../components/CodeBlock.astro';
     <tbody>
       <tr><td><code>type</code></td><td><code>"dbQuery"</code></td><td>Yes</td><td>Action type</td></tr>
       <tr><td><code>database</code></td><td>string</td><td>Yes</td><td>Name of a DATABASE item in the definition</td></tr>
-      <tr><td><code>query</code></td><td>string</td><td>Yes</td><td>SQL query or MongoDB command JSON (supports <code>&#123;&#123;variables&#125;&#125;</code>)</td></tr>
+      <tr><td><code>query</code></td><td>string</td><td>Yes</td><td>SQL query, MongoDB command JSON, or Redis command (supports <code>&#123;&#123;variables&#125;&#125;</code>)</td></tr>
+      <tr><td><code>params</code></td><td>object</td><td>No</td><td>Values for SQL placeholders, keyed <code>"1"</code>, <code>"2"</code>, &hellip; (string values support <code>&#123;&#123;variables&#125;&#125;</code>)</td></tr>
     </tbody>
   </table>
   <p>A query that fails fails the step, unless the step asserts on <code>$.response.success</code> or <code>$.response.error</code> to test the failure. Inside <code>parallel</code>, it always fails the step.</p>
@@ -185,7 +208,7 @@ import CodeBlock from '../../components/CodeBlock.astro';
     </thead>
     <tbody>
       <tr><td><code>type</code></td><td><code>"ui"</code></td><td>Yes</td><td>Action type</td></tr>
-      <tr><td><code>target</code></td><td>string</td><td>Yes</td><td>Name of a SERVICE item with a <code>uiPath</code> field.</td></tr>
+      <tr><td><code>target</code></td><td>string</td><td>Yes</td><td>Name of the SERVICE item that serves the UI.</td></tr>
       <tr><td><code>steps</code></td><td>array</td><td>Yes</td><td>Ordered list of browser interactions to perform.</td></tr>
     </tbody>
   </table>

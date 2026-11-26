@@ -68,7 +68,7 @@ import CodeBlock from '../../components/CodeBlock.astro';
     "extraVar": "inline-wins"
   }
 }`} lang="json" />
-  <p>Referenced files must be plain <code>&#123; "key": "value" &#125;</code> objects (no nested objects). Variable files can themselves use <code>$ref</code> to load from another variables file — recursive resolution with circular reference detection.</p>
+  <p>Referenced files must be objects of variables. Keys must be letters, digits or underscores; values can be any JSON, including nested objects and arrays, read with dotted paths like <code>&#123;&#123;user.email&#125;&#125;</code>. Variable files can themselves use <code>$ref</code> to load from another variables file — recursive resolution with circular reference detection.</p>
 
   <h2>$ref for actions</h2>
   <p>Step actions support <code>$ref</code> to load reusable action definitions from shared fragments. This works for all action types — <code>httpRequest</code>, <code>dbQuery</code>, <code>ui</code>, and <code>wait</code>.</p>

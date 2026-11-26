@@ -356,10 +356,10 @@ items:
   <h3>Unified root context (<code>$</code>)</h3>
   <p>All assertion paths, extract paths, and variable references now resolve against a single document root:</p>
   <ul>
-    <li><code>$.response.</code> &mdash; HTTP response data</li>
+    <li><code>$.response.</code> &mdash; the step's response (HTTP response, or a <code>dbQuery</code>'s result)</li>
     <li><code>$.variables.</code> &mdash; extracted and global variables</li>
     <li><code>$.request.</code> &mdash; the original request</li>
-    <li><code>$.database.</code> &mdash; database query results</li>
+    <li><code>$.traffic</code>, <code>$.consoleLogs</code>, <code>$.dbLogs</code>, <code>$.timeline</code> &mdash; data captured during the step</li>
   </ul>
   <p>This replaces the previous fragmented context where different path prefixes resolved against different objects.</p>
 
@@ -384,7 +384,7 @@ items:
 
   <h3>Assertion engine enhancements</h3>
   <ul>
-    <li><code>transform</code> field on assertions (e.g. <code>length</code>, <code>keys</code>, <code>values</code>, <code>flatten</code>, <code>unique</code>, <code>lowercase</code>)</li>
+    <li><code>transform</code> field on assertions: <code>length</code>, <code>type</code>, <code>keys</code>, <code>values</code>, <code>entries</code></li>
     <li>Scope-level <code>forEach</code> and <code>extract</code> on assertion blocks</li>
     <li>New operators and tighter validation</li>
     <li>Fixed <code>count</code> assertion retry logic for <code>gt</code> operator</li>

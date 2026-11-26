@@ -163,7 +163,7 @@ import CodeBlock from '../../components/CodeBlock.astro';
     <li>Definition-level variables are seeded first, then test-level variables override</li>
     <li>Variables persist across all steps within a single test</li>
     <li>Extracted variables from step N are available in steps N+1, N+2, etc.</li>
-    <li>Within a <code>parallel</code> action, variable extraction order is non-deterministic</li>
+    <li>A <code>parallel</code> step extracts nothing: its sub-actions have no <code>extract</code>, and an <code>extract</code> on the step gets an empty response. Extract in a separate step</li>
     <li>Referencing an undefined variable causes an immediate error</li>
   </ul>
 

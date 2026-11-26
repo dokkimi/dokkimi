@@ -81,7 +81,7 @@ env:
   </table>
 
   <h3>Build-time interpolation: $&#123;&#123;VAR&#125;&#125;</h3>
-  <p>Any string value in a definition or shared fragment can reference a config env variable with <code>$&#123;&#123;VAR&#125;&#125;</code>. These are resolved at build time by the definition resolver, before the definition is sent to Control Tower.</p>
+  <p>Any string value in a definition or shared fragment can reference a config env variable with <code>$&#123;&#123;VAR&#125;&#125;</code>, except <code>$ref</code> paths and file paths (<code>initFilePath</code>, <code>initFilePaths</code>, <code>mountFiles</code> sources), which are read before it is resolved. These are resolved at build time by the definition resolver, before the definition is sent to Control Tower.</p>
   <CodeBlock code={`{
   "type": "SERVICE",
   "name": "my-service",
@@ -110,13 +110,13 @@ env:
     <li>Items without <code>stage</code> default to stage 0 — no changes needed for existing definitions.</li>
     <li>Stage numbers are sort keys, not indices — <code>0, 2, 5</code> is three stages deployed in order. Gaps are fine.</li>
     <li>A single run-level timeout covers all stages.</li>
-    <li>The <code>stage</code> property works on SERVICE, DATABASE, and BROKER items. MOCKs don't create containers and do not accept <code>stage</code>.</li>
+    <li>The <code>stage</code> property works on SERVICE, WORKER, DATABASE, and BROKER items. MOCKs don't create containers and do not accept <code>stage</code>.</li>
   </ul>
 
   <h2>Isolation model</h2>
   <p>Each runnable definition file creates its own isolated Docker namespace — a dedicated network with its own services, databases, browser, and DNS. No state is shared between definitions. When a run finishes, the entire namespace is destroyed.</p>
   <p>Tests <em>within</em> a single definition share the same namespace intentionally. This lets you write multi-step workflows where test 2 depends on state that test 1 created — for example, creating a user in one test and verifying their data persists in the next. Tests within a definition execute sequentially in order.</p>
-  <p>For scenarios that need completely independent data, put them in separate definition files. Each file gets its own fresh environment. You can run multiple definitions in parallel with <code>dokkimi run --max-parallel N</code>, and they'll never interfere with each other because each runs in its own isolated namespace.</p>
+  <p>For scenarios that need completely independent data, put them in separate definition files. Each file gets its own fresh environment. <code>dokkimi run</code> runs definitions in parallel (up to 6 at a time by default; change it with <code>dokkimi config</code>), and they'll never interfere with each other because each runs in its own isolated namespace.</p>
 
   <h2>Test runtime</h2>
   <p>Dokkimi's orchestration layer adds under a second of overhead. What determines your total runtime is your containers and your tests:</p>
@@ -127,14 +127,13 @@ env:
   </ul>
   <p>To keep runs fast:</p>
   <ul>
-    <li>Set <code>minMemory</code> and <code>minCpu</code> for resource-hungry containers (Elasticsearch, JVM-based services) so they get enough resources to start quickly.</li>
     <li>Keep database init files small — large seed scripts run before health checks pass.</li>
     <li>Use lighter image variants where possible (<code>-alpine</code>, <code>-slim</code>).</li>
-    <li>Split unrelated test scenarios into separate definitions and run them in parallel with <code>dokkimi run --max-parallel N</code>.</li>
+    <li>Split unrelated test scenarios into separate definitions; they run in parallel.</li>
   </ul>
 
   <h2>.dokignore</h2>
-  <p>You can create a <code>.dokkimi/.dokignore</code> file to exclude files from cloud/CI test runs. It uses the same syntax as <code>.gitignore</code>:</p>
+  <p>You can create a <code>.dokkimi/.dokignore</code> file to exclude definition files from runs. It uses <code>.gitignore</code>-style patterns:</p>
   <CodeBlock code={`# Ignore experimental definitions
 experiments/
 
@@ -143,7 +142,7 @@ definitions/broken-test.json
 
 # Ignore all files matching a pattern
 **/wip-*.json`} lang="bash" />
-  <p>Paths are relative to the <code>.dokkimi/</code> directory. Ignored files are still valid for local runs — <code>.dokignore</code> only affects cloud/CI pipelines.</p>
+  <p>Paths are relative to the <code>.dokkimi/</code> directory. Ignored files are skipped by every run that scans a folder or pattern, locally and in CI. Naming a file directly (<code>dokkimi run .dokkimi/definitions/broken-test.json</code>) still runs it.</p>
 
   <div class="nav-links">
     <a href="/docs/ai-integration">← AI Integration</a>

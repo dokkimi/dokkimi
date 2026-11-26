@@ -28,15 +28,10 @@ import CodeBlock from '../../components/CodeBlock.astro';
     <tbody>
       <tr><td><code>description</code></td><td>string</td><td>—</td><td>Human-readable description (max 500 chars)</td></tr>
       <tr><td><code>image</code></td><td>string</td><td>—</td><td>Docker image URI (e.g., <code>my-service:latest</code>)</td></tr>
-      <tr><td><code>uiPath</code></td><td>string</td><td>—</td><td>URL path to service's UI (e.g., <code>/</code>) — enables "Open UI" button</td></tr>
       <tr><td><code>command</code></td><td>string[]</td><td>—</td><td>Override the Docker image's default CMD (e.g., <code>["server", "/data"]</code>)</td></tr>
       <tr><td><code>entrypoint</code></td><td>string[]</td><td>—</td><td>Override the Docker image's ENTRYPOINT (e.g., <code>["/bin/sh", "-c", "..."]</code>)</td></tr>
       <tr><td><code>mountFiles</code></td><td>array</td><td>—</td><td>Files to mount into the container (read-only). See below.</td></tr>
       <tr><td><code>env</code></td><td>array</td><td>—</td><td>Environment variables (see below)</td></tr>
-      <tr><td><code>minCpu</code></td><td>number</td><td>—</td><td>Minimum CPU cores (e.g., 0.25)</td></tr>
-      <tr><td><code>minMemory</code></td><td>number</td><td>—</td><td>Minimum memory in MB</td></tr>
-      <tr><td><code>maxCpu</code></td><td>number</td><td>—</td><td>Maximum CPU cores</td></tr>
-      <tr><td><code>maxMemory</code></td><td>number</td><td>—</td><td>Maximum memory in MB</td></tr>
       <tr><td><code>stage</code></td><td>integer</td><td><code>0</code></td><td>Deployment stage — controls <a href="/docs/project-structure#staged-bootup-order">bootup order</a></td></tr>
     </tbody>
   </table>
@@ -76,21 +71,16 @@ import CodeBlock from '../../components/CodeBlock.astro';
   "image": "api-gateway:latest",
   "port": 3000,
   "healthCheck": "/health",
-  "uiPath": "/",
   "env": [
     { "name": "DATABASE_URL", "value": "postgresql://dokkimi:dokkimi@postgres-db:5432/dokkimi" },
     { "name": "REDIS_URL", "value": "redis://:dokkimi@redis-cache:6379" },
     { "name": "USER_SERVICE_URL", "value": "http://user-service" },
     { "name": "NODE_ENV", "value": "test" }
-  ],
-  "minCpu": 0.25,
-  "minMemory": 256,
-  "maxCpu": 1,
-  "maxMemory": 1024
+  ]
 }`} lang="json" />
 
   <h2>Infrastructure services</h2>
-  <p>SERVICE items aren't limited to your application code. Any Docker container can be a service — including infrastructure like Elasticsearch, Kafka, RabbitMQ, or anything else with a health check endpoint. This lets you test against real infrastructure without mocking it.</p>
+  <p>SERVICE items aren't limited to your application code. Any Docker container can be a service — including infrastructure like Elasticsearch, MinIO, or anything else with a health check endpoint. For Kafka and RabbitMQ, use a <a href="/docs/brokers">BROKER</a> item instead, so their messages are captured. This lets you test against real infrastructure without mocking it.</p>
 
   <h3>Elasticsearch</h3>
   <CodeBlock code={`{
@@ -123,7 +113,7 @@ import CodeBlock from '../../components/CodeBlock.astro';
   <p>Your services connect using any S3-compatible SDK with endpoint <code>http://minio:9000</code>.</p>
 
   <div class="callout">
-    <p><strong>Any Docker image works.</strong> Use an HTTP path (like <code>/health</code>) for services with an HTTP endpoint, or <code>"tcp"</code> for services that use non-HTTP protocols (custom TCP servers). Use the <code>command</code> field to override the default CMD for images that need a subcommand to start (like MinIO's <code>server /data</code>). Note: Dokkimi intercepts HTTP traffic and database wire protocols — pub/sub message brokers (Kafka, RabbitMQ) can run as SERVICE items but Dokkimi can't intercept or assert on messages flowing through them. Databases that need query interception should use the <a href="/docs/databases">DATABASE</a> item type instead.</p>
+    <p><strong>Any Docker image works.</strong> Use an HTTP path (like <code>/health</code>) for services with an HTTP endpoint, or <code>"tcp"</code> for services that use non-HTTP protocols (custom TCP servers). Use the <code>command</code> field to override the default CMD for images that need a subcommand to start (like MinIO's <code>server /data</code>). Note: Dokkimi intercepts HTTP traffic and database wire protocols — message brokers (Kafka, RabbitMQ) should use the <a href="/docs/brokers">BROKER</a> item type, which captures their messages for assertions. Databases that need query interception should use the <a href="/docs/databases">DATABASE</a> item type instead.</p>
   </div>
 
   <h2>DNS and inter-service communication</h2>
@@ -143,7 +133,7 @@ import CodeBlock from '../../components/CodeBlock.astro';
       <tr><td><code>name</code></td><td>string</td><td>Unique name (DNS label)</td></tr>
     </tbody>
   </table>
-  <p>Workers support the same optional fields as SERVICE (<code>image</code>, <code>command</code>, <code>entrypoint</code>, <code>env</code>, <code>mountFiles</code>, <code>stage</code>, resource limits) but not <code>port</code>, <code>healthCheck</code>, or <code>uiPath</code>.</p>
+  <p>Workers support the same optional fields as SERVICE (<code>image</code>, <code>command</code>, <code>entrypoint</code>, <code>env</code>, <code>mountFiles</code>, <code>stage</code>) but not <code>port</code> or <code>healthCheck</code>.</p>
   <CodeBlock code={`{
   "type": "WORKER",
   "name": "appwrite-worker-db",

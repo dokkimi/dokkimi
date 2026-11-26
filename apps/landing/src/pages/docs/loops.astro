@@ -25,7 +25,7 @@ import CodeBlock from '../../components/CodeBlock.astro';
     </tbody>
   </table>
 
-  <p>Step-level forEach example:</p>
+  <p>Step-level forEach example. On a step, the loop's <code>action</code>, <code>extract</code> and <code>assertions</code> go inside the loop object:</p>
   <CodeBlock code={`{
   "name": "Verify user {{user.name}}",
   "forEach": {
@@ -33,20 +33,20 @@ import CodeBlock from '../../components/CodeBlock.astro';
       { "name": "Alice", "email": "alice@test.com" },
       { "name": "Bob", "email": "bob@test.com" }
     ],
-    "as": "user"
-  },
-  "action": {
-    "type": "httpRequest",
-    "method": "GET",
-    "url": "api-gateway/api/users?email={{user.email}}"
-  },
-  "assertions": [
-    {
-      "assertions": [
-        { "path": "$.response.body.name", "operator": "eq", "value": "{{user.name}}" }
-      ]
-    }
-  ]
+    "as": "user",
+    "action": {
+      "type": "httpRequest",
+      "method": "GET",
+      "url": "api-gateway/api/users?email={{user.email}}"
+    },
+    "assertions": [
+      {
+        "assertions": [
+          { "path": "$.response.body.name", "operator": "eq", "value": "{{user.name}}" }
+        ]
+      }
+    ]
+  }
 }`} lang="json" />
 
   <h3>Loop name and metadata</h3>
@@ -69,16 +69,16 @@ import CodeBlock from '../../components/CodeBlock.astro';
       { "name": "Bob", "email": "bob@test.com" }
     ],
     "as": "user",
-    "name": "userLoop"
-  },
-  "action": {
-    "type": "httpRequest",
-    "method": "POST",
-    "url": "api-gateway/api/users",
-    "body": { "name": "{{user.name}}", "email": "{{user.email}}" }
-  },
-  "extract": {
-    "userId_{{userLoop.index}}": "$.response.body.id"
+    "name": "userLoop",
+    "action": {
+      "type": "httpRequest",
+      "method": "POST",
+      "url": "api-gateway/api/users",
+      "body": { "name": "{{user.name}}", "email": "{{user.email}}" }
+    },
+    "extract": {
+      "userId_{{userLoop.index}}": "$.response.body.id"
+    }
   }
 }`} lang="json" />
   <p>After this loop, <code>&#123;&#123;userId_0&#125;&#125;</code> and <code>&#123;&#123;userId_1&#125;&#125;</code> hold the IDs of Alice and Bob respectively.</p>
@@ -108,12 +108,14 @@ import CodeBlock from '../../components/CodeBlock.astro';
 
   <CodeBlock code={`{
   "name": "Seed user {{i}}",
-  "for": { "from": 1, "to": 5, "as": "i" },
-  "action": {
-    "type": "httpRequest",
-    "method": "POST",
-    "url": "api-gateway/api/users",
-    "body": { "name": "user-{{i}}" }
+  "for": {
+    "from": 1, "to": 5, "as": "i",
+    "action": {
+      "type": "httpRequest",
+      "method": "POST",
+      "url": "api-gateway/api/users",
+      "body": { "name": "user-{{i}}" }
+    }
   }
 }`} lang="json" />
 
@@ -144,12 +146,12 @@ import CodeBlock from '../../components/CodeBlock.astro';
     "delayMs": 500,
     "until": [
       { "path": "$.response.body.status", "operator": "eq", "value": "done" }
-    ]
-  },
-  "action": {
-    "type": "httpRequest",
-    "method": "GET",
-    "url": "api-gateway/api/jobs/{{jobId}}"
+    ],
+    "action": {
+      "type": "httpRequest",
+      "method": "GET",
+      "url": "api-gateway/api/jobs/{{jobId}}"
+    }
   }
 }`} lang="json" />
 
@@ -172,9 +174,9 @@ import CodeBlock from '../../components/CodeBlock.astro';
   "repeat": {
     "count": 10, "as": "attempt", "name": "pollLoop",
     "delayMs": 500,
-    "until": [{ "path": "$.response.body.status", "operator": "eq", "value": "done" }]
-  },
-  "action": { "type": "httpRequest", "method": "GET", "url": "api/jobs/{{jobId}}" }
+    "until": [{ "path": "$.response.body.status", "operator": "eq", "value": "done" }],
+    "action": { "type": "httpRequest", "method": "GET", "url": "api/jobs/{{jobId}}" }
+  }
 },
 {
   "name": "Verify polling completed",
@@ -195,12 +197,12 @@ import CodeBlock from '../../components/CodeBlock.astro';
   "stopOnFailure": false,
   "forEach": {
     "items": "{{users}}",
-    "as": "user"
-  },
-  "action": { "type": "httpRequest", "method": "GET", "url": "api/users/{{user.id}}" },
-  "assertions": [
-    { "assertions": [{ "path": "$.response.status", "operator": "eq", "value": 200 }] }
-  ]
+    "as": "user",
+    "action": { "type": "httpRequest", "method": "GET", "url": "api/users/{{user.id}}" },
+    "assertions": [
+      { "assertions": [{ "path": "$.response.status", "operator": "eq", "value": 200 }] }
+    ]
+  }
 }`} lang="json" />
 
   <h2>Where loops can be used</h2>

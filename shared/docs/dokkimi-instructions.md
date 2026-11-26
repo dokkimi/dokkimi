@@ -65,7 +65,7 @@ Fragments are not runnable on their own — they exist to be referenced via `$re
 
 ## .dokignore
 
-You can create a `.dokkimi/.dokignore` file to exclude files from cloud/CI test runs. It uses the same syntax as `.gitignore`:
+You can create a `.dokkimi/.dokignore` file to exclude definition files from runs. It uses `.gitignore`-style patterns:
 
 ```
 # Ignore experimental definitions
@@ -78,7 +78,7 @@ definitions/broken-test.json
 **/wip-*.json
 ```
 
-Paths are relative to the `.dokkimi/` directory. Ignored files are still valid for local runs — `.dokignore` only affects cloud/CI pipelines. The VSCode extension will also skip diagnostics for ignored files.
+Paths are relative to the `.dokkimi/` directory. Ignored files are skipped by every run that scans a folder or pattern, locally and in CI. Naming a file directly (`dokkimi run .dokkimi/definitions/broken-test.json`) still runs it. The VSCode extension will also skip diagnostics for ignored files.
 
 ## Config File
 
@@ -101,7 +101,7 @@ env:
 
 ### Build-time interpolation: `${{VAR}}`
 
-Any string value in a definition or shared fragment can reference a config env variable with `${{VAR}}`. These are resolved **at build time** by the definition resolver, before the definition is sent to Control Tower.
+Any string value in a definition or shared fragment can reference a config env variable with `${{VAR}}`, except `$ref` paths and file paths (`initFilePath`, `initFilePaths`, `mountFiles` sources), which are read before it is resolved. These are resolved **at build time** by the definition resolver, before the definition is sent to Control Tower.
 
 ```json
 {
@@ -234,15 +234,10 @@ A containerized application deployed with an interceptor sidecar for traffic cap
 | ------------- | ------------- | ------- | ---------------------------------------------------------------------------------------------------------------------------------- |
 | `description` | string        | —       | Human-readable description (max 500 chars)                                                                                         |
 | `image`       | string        | —       | Docker image URI (e.g., `"my-service:latest"`).                                                                                    |
-| `uiPath`      | string        | —       | URL path to service's UI (e.g., `"/"`, `"/app"`) — enables "Open UI" button                                                        |
 | `command`     | string[]      | —       | Override Docker image's default CMD (e.g., `["server", "/data"]`)                                                                  |
 | `entrypoint`  | string[]      | —       | Override Docker image's ENTRYPOINT (e.g., `["/bin/sh", "-c", "..."]`)                                                              |
 | `mountFiles`  | array         | —       | Files to mount into the container (read-only). Each entry: `{ "source": "../path/to/file", "target": "/absolute/container/path" }` |
 | `env`         | array         | —       | Environment variables: `[{ "name": "KEY", "value": "VALUE" }, ...]`                                                                |
-| `minCpu`      | number (≥ 0)  | —       | Minimum CPU cores (e.g., 0.25)                                                                                                     |
-| `minMemory`   | number (≥ 0)  | —       | Minimum memory in MB                                                                                                               |
-| `maxCpu`      | number (≥ 0)  | —       | Maximum CPU cores                                                                                                                  |
-| `maxMemory`   | number (≥ 0)  | —       | Maximum memory in MB                                                                                                               |
 | `stage`       | integer (≥ 0) | `0`     | Deployment stage. Items deploy in stage order — stage N+1 starts after stage N is healthy. Sort key, not index (gaps are fine).    |
 
 **Full example:**
@@ -254,7 +249,6 @@ A containerized application deployed with an interceptor sidecar for traffic cap
   "image": "api-gateway:latest",
   "port": 3000,
   "healthCheck": "/health",
-  "uiPath": "/",
   "env": [
     {
       "name": "DATABASE_URL",
@@ -263,11 +257,7 @@ A containerized application deployed with an interceptor sidecar for traffic cap
     { "name": "REDIS_URL", "value": "redis://redis-cache:6379" },
     { "name": "USER_SERVICE_URL", "value": "http://user-service" },
     { "name": "NODE_ENV", "value": "test" }
-  ],
-  "minCpu": 0.25,
-  "minMemory": 256,
-  "maxCpu": 1,
-  "maxMemory": 1024
+  ]
 }
 ```
 
@@ -301,10 +291,6 @@ A background process (queue consumer, event processor, cron daemon) that doesn't
 | `entrypoint`  | string[]      | —       | Override the Docker image's ENTRYPOINT                                                     |
 | `env`         | array         | —       | Environment variables (`[{ "name": "KEY", "value": "VALUE" }]`)                            |
 | `mountFiles`  | array         | —       | Files to mount (read-only): `[{ "source": "relative/path", "target": "/absolute/path" }]`  |
-| `minCpu`      | number (≥ 0)  | —       | Minimum CPU cores                                                                          |
-| `minMemory`   | number (≥ 0)  | —       | Minimum memory in MB                                                                       |
-| `maxCpu`      | number (≥ 0)  | —       | Maximum CPU cores                                                                          |
-| `maxMemory`   | number (≥ 0)  | —       | Maximum memory in MB                                                                       |
 | `stage`       | integer (≥ 0) | `0`     | Deployment stage. Items deploy in stage order — stage N+1 starts after stage N is healthy. |
 
 **Example:**
@@ -349,10 +335,6 @@ A managed database instance. Dokkimi provisions the database container, sets up 
 | `noAuth`        | boolean       | `false`     | Skip all authentication. Database starts without credentials. Cannot combine with dbName/dbUser/dbPassword. |
 | `initFilePath`  | string        | —           | Relative path from this file to a single init script                                                        |
 | `initFilePaths` | string[]      | —           | Relative paths to multiple init scripts (executed in order). Use one or the other, not both.                |
-| `minCpu`        | number (≥ 0)  | —           | Minimum CPU cores                                                                                           |
-| `minMemory`     | number (≥ 0)  | —           | Minimum memory in MB                                                                                        |
-| `maxCpu`        | number (≥ 0)  | —           | Maximum CPU cores                                                                                           |
-| `maxMemory`     | number (≥ 0)  | —           | Maximum memory in MB                                                                                        |
 | `stage`         | integer (≥ 0) | `0`         | Deployment stage. Items deploy in stage order — stage N+1 starts after stage N is healthy.                  |
 
 **Database engine details:**
@@ -452,7 +434,7 @@ Redis:
 
 An HTTP mock that intercepts outbound requests from services and returns controlled responses. When a service tries to call an external API (e.g., Stripe, Twilio), the interceptor sidecar matches the request against defined mocks and returns the mock response instead. Mocks apply to every request: from services, workers, test steps and the UI test browser, to external hosts and to your own services. A request that no mock matches goes to its real destination, over the scheme the caller used and with its certificate checked. If it can't be reached, the caller gets a 502.
 
-**HTTP and HTTPS both work — no code changes needed.** The interceptor listens on port 80 for HTTP and on port 443 for HTTPS, terminating TLS with per-hostname certificates signed by a Dokkimi CA that is generated once per environment and automatically mounted into every service container (`NODE_EXTRA_CA_CERTS` for Node.js, `SSL_CERT_FILE` for Python/Go/curl/etc., and a Java truststore for JVM services). You write `mockTarget` exactly the same way for either protocol — `"api.stripe.com"` matches both `http://api.stripe.com` and `https://api.stripe.com`. Leave your service's code calling the real Auth0/Stripe/Twilio URLs as-is; DNS in the network routes the hostname to the interceptor, the interceptor presents a trusted cert, terminates TLS, matches the request against your mocks, and serves the response.
+**HTTP and HTTPS both work — no code changes needed.** The interceptor listens on port 80 for HTTP and on port 443 for HTTPS, terminating TLS with per-hostname certificates signed by a Dokkimi CA that is generated once per environment and automatically mounted into every service container (`NODE_EXTRA_CA_CERTS` for Node.js, `SSL_CERT_FILE` for Python/Go/curl/etc.; JVM services don't trust it yet, so HTTPS mocks don't work for them). You write `mockTarget` exactly the same way for either protocol — `"api.stripe.com"` matches both `http://api.stripe.com` and `https://api.stripe.com`. Leave your service's code calling the real Auth0/Stripe/Twilio URLs as-is; DNS in the network routes the hostname to the interceptor, the interceptor presents a trusted cert, terminates TLS, matches the request against your mocks, and serves the response.
 
 **Required fields:**
 
@@ -471,7 +453,7 @@ An HTTP mock that intercepts outbound requests from services and returns control
 | `mockMethod`              | enum              | `"*"`   | HTTP method: `"GET"`, `"POST"`, `"PUT"`, `"DELETE"`, `"PATCH"`, `"HEAD"`, `"OPTIONS"`, or `"*"` (any)                                                                                                                  |
 | `mockOrigin`              | string            | —       | Name of the SERVICE or WORKER that makes the request. Omit it, or use `"*"`, for any caller, including test steps. `"chromium"` is the UI test browser                                                                 |
 | `mockDelayMs`             | integer (≥ 0)     | —       | Artificial response delay in milliseconds. Over 30 seconds, give a test step that waits for it a longer `timeout`                                                                                                      |
-| `mockResponseStatus`      | integer (100-599) | —       | HTTP response status code                                                                                                                                                                                              |
+| `mockResponseStatus`      | integer (100-599) | `200`   | HTTP response status code                                                                                                                                                                                              |
 | `mockResponseHeaders`     | object            | —       | Response headers: `{ "X-Request-Id": "abc" }`. A mock with a body has `Content-Type: application/json` unless set here                                                                                                 |
 | `mockResponseBody`        | any JSON          | —       | Response body (object, array, string, number, boolean, or null)                                                                                                                                                        |
 | `mockRequestBodyContains` | string            | —       | Substring match against the request body, decompressed (case-insensitive). Must be non-empty. Mutually exclusive with `mockRequestBodyMatches`.                                                                        |
@@ -618,10 +600,6 @@ A message broker instance with a transparent proxy sidecar that captures all pub
 | `healthCheck` | string            | —       | Health check endpoint or `"tcp"`                                                           |
 | `env`         | array             | —       | Environment variables: `[{ "name": "KEY", "value": "VALUE" }, ...]`                        |
 | `command`     | string[]          | —       | Override Docker image CMD                                                                  |
-| `minCpu`      | number (≥ 0)      | —       | Minimum CPU cores                                                                          |
-| `minMemory`   | number (≥ 0)      | —       | Minimum memory in MB                                                                       |
-| `maxCpu`      | number (≥ 0)      | —       | Maximum CPU cores                                                                          |
-| `maxMemory`   | number (≥ 0)      | —       | Maximum memory in MB                                                                       |
 | `stage`       | integer (≥ 0)     | `0`     | Deployment stage. Items deploy in stage order — stage N+1 starts after stage N is healthy. |
 
 **Broker engine details:**
@@ -856,31 +834,32 @@ Example:
 
 ## Tests
 
-Tests are defined in the top-level `tests` array. Each test is independent and contains a flat array of sequential steps. To run actions in parallel, use the `parallel` action type.
+Tests are defined in the top-level `tests` array. Each test contains a flat array of sequential steps. Tests run in order in the same environment: each starts with only the definition's and its own variables, but data written by one test is still there for the next. A failed test stops the tests after it, unless it sets `stopOnFailure: false`. For fully separate scenarios, use separate definition files. To run actions in parallel, use the `parallel` action type.
 
 **Definition-level variables:** The definition file itself can have a top-level `variables` field (alongside `name`, `items`, `tests`). These are shared across all tests in the definition. Test-level variables override definition-level variables with the same key.
 
 ### TestDefinition
 
-| Field            | Type    | Required | Default | Description                                                                                                                                         |
-| ---------------- | ------- | -------- | ------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `name`           | string  | Yes      | —       | Name of the test                                                                                                                                    |
-| `description`    | string  | No       | —       | What the test verifies                                                                                                                              |
-| `timeoutSeconds` | integer | No       | —       | Timeout for entire test in seconds                                                                                                                  |
-| `stopOnFailure`  | boolean | No       | `true`  | Default for the test's steps: stop the test when a step's assertions fail. With `false`, the steps continue and the test still fails                |
-| `variables`      | object  | No       | —       | Test-level variables as key-value pairs, available via `{{variableName}}`. Overrides definition-level variables with the same key. Supports `$ref`. |
-| `steps`          | array   | Yes      | —       | Flat array of steps, executed sequentially. At least one. With a test-level loop, next to the loop, not inside it                                   |
+| Field                        | Type    | Required | Default | Description                                                                                                                                         |
+| ---------------------------- | ------- | -------- | ------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `name`                       | string  | Yes      | —       | Name of the test                                                                                                                                    |
+| `description`                | string  | No       | —       | What the test verifies                                                                                                                              |
+| `stopOnFailure`              | boolean | No       | `true`  | Default for the test's steps: stop the test when a step's assertions fail. With `false`, the steps continue and the test still fails                |
+| `variables`                  | object  | No       | —       | Test-level variables as key-value pairs, available via `{{variableName}}`. Overrides definition-level variables with the same key. Supports `$ref`. |
+| `steps`                      | array   | Yes      | —       | Flat array of steps, executed sequentially. At least one. With a test-level loop, next to the loop, not inside it                                   |
+| `forEach` / `for` / `repeat` | object  | No       | —       | Run the test's `steps` once per iteration. `steps` stays next to the loop (see Loops)                                                               |
 
 ### TestStep
 
-| Field           | Type    | Required | Default | Description                                                                                               |
-| --------------- | ------- | -------- | ------- | --------------------------------------------------------------------------------------------------------- |
-| `name`          | string  | No       | —       | Step name                                                                                                 |
-| `description`   | string  | No       | —       | Step description                                                                                          |
-| `action`        | object  | Yes      | —       | Action to execute (httpRequest, dbQuery, wait, ui, or parallel)                                           |
-| `extract`       | object  | No       | —       | Extract variables from the root context: `{ "varName": "$.response.body.field" }`                         |
-| `assertions`    | array   | No       | —       | Assertion blocks to validate after action completes                                                       |
-| `stopOnFailure` | boolean | No       | `true`  | Stop the test when this step's assertions fail. With `false`, the next steps run and the test still fails |
+| Field                        | Type    | Required                  | Default | Description                                                                                               |
+| ---------------------------- | ------- | ------------------------- | ------- | --------------------------------------------------------------------------------------------------------- |
+| `name`                       | string  | No                        | —       | Step name                                                                                                 |
+| `description`                | string  | No                        | —       | Step description                                                                                          |
+| `action`                     | object  | Yes, unless inside a loop | —       | Action to execute (httpRequest, dbQuery, wait, ui, or parallel)                                           |
+| `extract`                    | object  | No                        | —       | Extract variables from the root context: `{ "varName": "$.response.body.field" }`                         |
+| `assertions`                 | array   | No                        | —       | Assertion blocks to validate after action completes                                                       |
+| `stopOnFailure`              | boolean | No                        | `true`  | Stop the test when this step's assertions fail. With `false`, the next steps run and the test still fails |
+| `forEach` / `for` / `repeat` | object  | No                        | —       | Repeat the step. Its `action`, `extract` and `assertions` go inside the loop object (see Loops)           |
 
 ### Step Actions
 
@@ -992,8 +971,6 @@ Write placeholders in the dialect of the target database; the value for each pla
 | Database | Placeholder | `params` key | Example                                                                  |
 | -------- | ----------- | ------------ | ------------------------------------------------------------------------ |
 | postgres | `$N`        | string `"N"` | `query: "WHERE id = $1"`, `params: { "1": "{{userId}}" }`                |
-| postgres | `$name`     | `name`       | `query: "WHERE email = $email"`, `params: { email: "{{userEmail}}" }`    |
-| postgres | `:name`     | `name`       | `query: "WHERE email = :email"`, `params: { email: "{{userEmail}}" }`    |
 | mysql    | `?`         | string `"N"` | `query: "WHERE id = ? AND name = ?"`, `params: { "1": "5", "2": "Bob" }` |
 
 For mysql each `?` consumes one positional value in source order — repeats like `WHERE a = ? OR b = ?` need both keys in `params` even if the value is the same.
@@ -1013,6 +990,20 @@ For mysql each `?` consumes one positional value in source order — repeats lik
 Supported MongoDB operations: `find`, `findOne`, `insertOne`, `insertMany`, `updateOne`, `updateMany`, `deleteOne`, `deleteMany`.
 
 Command fields: `operation` (required), `collection` (required), `filter` (for find/update/delete), `document` (for insertOne), `documents` (for insertMany), `update` (for updateOne/updateMany).
+
+**Redis query format:** For Redis databases, `query` is a Redis command, split on spaces. Wrap an argument that contains spaces in double quotes.
+
+```json
+{
+  "action": {
+    "type": "dbQuery",
+    "database": "redis-cache",
+    "query": "SET session:{{userId}} \"logged in\""
+  }
+}
+```
+
+Each value in the reply becomes a row `{ "value": ... }` in `$.response.data` (so `GET` gives one row, `LRANGE` one per element). `HGETALL` gives one row with the hash's fields. A missing key gives no rows.
 
 #### Wait (`wait`)
 
@@ -1062,7 +1053,7 @@ Runs multiple actions concurrently within a single step. All actions execute in 
 | `type`    | `"parallel"` | Yes      | Action type                          |
 | `actions` | array        | Yes      | Array of actions to run concurrently |
 
-Each entry in `actions` is a regular action object (`httpRequest`, `dbQuery`, `wait`, or `ui`). Parallel actions cannot be nested (no `parallel` inside `parallel`).
+Each entry in `actions` is an `httpRequest` or `dbQuery` action. `wait` and `ui` can't run inside `parallel`; put them in their own steps. Parallel actions cannot be nested (no `parallel` inside `parallel`).
 
 #### UI Action (`ui`)
 
@@ -1216,7 +1207,7 @@ Then have the SPA call `/api/...` (relative). The browser sees one origin; no pr
 }
 ```
 
-The referenced files must be plain `{ "key": "value" }` objects (no nested objects). Variable `$ref` files can themselves use `$ref` to load from another variables file (recursive resolution with circular reference detection).
+The referenced files must be objects of variables. Keys must be letters, digits or underscores; values can be any JSON, including nested objects and arrays, read with dotted paths like `{{user.email}}`. Variable `$ref` files can themselves use `$ref` to load from another variables file (recursive resolution with circular reference detection).
 
 **Where variables work:**
 
@@ -1310,7 +1301,7 @@ Supported JSONPath syntax:
 - Definition-level variables are seeded first, then test-level variables override, then extracted variables override at runtime
 - Variables persist across all steps within a single test run
 - Extracted variables from step N are available in steps N+1, N+2, etc.
-- Within a `parallel` action, variable extraction order is non-deterministic
+- A `parallel` step extracts nothing: its sub-actions have no `extract`, and an `extract` on the step gets an empty response. Extract in a separate step
 - Referencing an undefined variable causes an immediate error
 
 ---
@@ -1338,12 +1329,12 @@ Iterates over an array of items. Each iteration sets the loop variable to the cu
       { "name": "Alice", "email": "alice@test.com" },
       { "name": "Bob", "email": "bob@test.com" }
     ],
-    "as": "user"
-  },
-  "action": {
-    "type": "httpRequest",
-    "method": "GET",
-    "url": "api-gateway/api/users?email={{user.email}}"
+    "as": "user",
+    "action": {
+      "type": "httpRequest",
+      "method": "GET",
+      "url": "api-gateway/api/users?email={{user.email}}"
+    }
   }
 }
 ```
@@ -1370,12 +1361,16 @@ Iterates over a numeric range (inclusive on both ends).
 ```json
 {
   "name": "Seed user {{i}}",
-  "for": { "from": 1, "to": 5, "as": "i" },
-  "action": {
-    "type": "httpRequest",
-    "method": "POST",
-    "url": "api-gateway/api/users",
-    "body": { "name": "user-{{i}}" }
+  "for": {
+    "from": 1,
+    "to": 5,
+    "as": "i",
+    "action": {
+      "type": "httpRequest",
+      "method": "POST",
+      "url": "api-gateway/api/users",
+      "body": { "name": "user-{{i}}" }
+    }
   }
 }
 ```
@@ -1405,12 +1400,12 @@ The loop always executes at least once, regardless of `until`.
     "delayMs": 500,
     "until": [
       { "path": "$.response.body.status", "operator": "eq", "value": "done" }
-    ]
-  },
-  "action": {
-    "type": "httpRequest",
-    "method": "GET",
-    "url": "api-gateway/api/jobs/{{jobId}}"
+    ],
+    "action": {
+      "type": "httpRequest",
+      "method": "GET",
+      "url": "api-gateway/api/jobs/{{jobId}}"
+    }
   }
 }
 ```
@@ -1460,15 +1455,18 @@ Loops can be applied at five levels:
 }
 ```
 
-**Step-level** — add a loop modifier to a step. The action, extract, and assertions all repeat per iteration:
+**Step-level** — add a loop modifier to a step, with the action, extract, and assertions inside the loop object. They all repeat per iteration. Assertions and extract next to the loop are rejected:
 
 ```json
 {
   "name": "Create user {{user.name}}",
-  "forEach": { "items": "{{users}}", "as": "user" },
-  "action": { ... },
-  "extract": { "lastId": "$.response.body.id" },
-  "assertions": [ ... ]
+  "forEach": {
+    "items": "{{users}}",
+    "as": "user",
+    "action": { ... },
+    "extract": { "lastId": "$.response.body.id" },
+    "assertions": [ ... ]
+  }
 }
 ```
 
@@ -1625,12 +1623,12 @@ Where entries support logical combinators — `or`, `and`, and `not` — for com
 
 **Assertion paths inside match blocks** use `$.match.*` to reference the matched entry:
 
-| Path             | Description                                                        |
-| ---------------- | ------------------------------------------------------------------ |
-| `$.match.*`      | The single matched entry (when count=1), or the last matched entry |
-| `$.lastMatch.*`  | Alias for the last matched entry                                   |
-| `$.matches`      | Array of all matched entries                                       |
-| `$.matches[0].*` | Specific matched entry by index                                    |
+| Path             | Description                                                           |
+| ---------------- | --------------------------------------------------------------------- |
+| `$.match.*`      | The first matched entry                                               |
+| `$.lastMatch.*`  | The last matched entry (the same as `$.match` when one entry matched) |
+| `$.matches`      | Array of all matched entries                                          |
+| `$.matches[0].*` | Specific matched entry by index                                       |
 
 **Traffic assertion example:**
 
@@ -1710,7 +1708,7 @@ Instead of using `path` as the assertion source, you can use a transform shortha
 { "type": "$.response.body.count", "operator": "eq", "value": "number" }
 ```
 
-You can also use the object form `{ "from": "$.path", "transform": "count" }` in both `path` and `value` fields for more complex comparisons.
+You can also use the object form `{ "from": "$.path", "transform": "length" }` in both `path` and `value` fields for more complex comparisons.
 
 #### Value References
 
@@ -1761,13 +1759,13 @@ All assertion paths start with `$.` and resolve against the unified root context
 
 **Inside match blocks:**
 
-| Path                           | Description                                          |
-| ------------------------------ | ---------------------------------------------------- |
-| `$.match.response.status`      | Response status of the matched entry                 |
-| `$.match.request.body.field`   | Request body field of the matched entry              |
-| `$.lastMatch.*`                | Alias — same as `$.match.*` (the last matched entry) |
-| `$.matches`                    | Array of all matched entries                         |
-| `$.matches[0].response.status` | Field from a specific matched entry by index         |
+| Path                           | Description                                     |
+| ------------------------------ | ----------------------------------------------- |
+| `$.match.response.status`      | Response status of the matched entry            |
+| `$.match.request.body.field`   | Request body field of the matched entry         |
+| `$.lastMatch.*`                | The last matched entry (`$.match` is the first) |
+| `$.matches`                    | Array of all matched entries                    |
+| `$.matches[0].response.status` | Field from a specific matched entry by index    |
 
 **Other root context fields:**
 
@@ -1814,26 +1812,26 @@ Kafka metadata:
 
 ### Assertion Operators
 
-| Operator                | Value required? | Value type     | Description                                                                                                             |
-| ----------------------- | --------------- | -------------- | ----------------------------------------------------------------------------------------------------------------------- |
-| `eq`                    | Yes             | any            | Equality with coercion: numeric (`1` == `"1"`) and boolean (`true` == `"TRUE"`); case-sensitive for non-boolean strings |
-| `ne`                    | Yes             | any            | Not equal (inverse of `eq`)                                                                                             |
-| `gt`                    | Yes             | number         | Greater than                                                                                                            |
-| `gte`                   | Yes             | number         | Greater than or equal                                                                                                   |
-| `lt`                    | Yes             | number         | Less than                                                                                                               |
-| `lte`                   | Yes             | number         | Less than or equal                                                                                                      |
-| `contains`              | Yes             | any            | Dispatches by type: string → substring match (case-sensitive), array → element containment, object → key existence      |
-| `notContains`           | Yes             | any            | Inverse of `contains` (case-sensitive)                                                                                  |
-| `matches`               | Yes             | string (regex) | Regular expression match                                                                                                |
-| `exists`                | No              | —              | Value exists (is defined and not null)                                                                                  |
-| `notExists`             | No              | —              | Value does not exist                                                                                                    |
-| `in`                    | Yes             | array          | Value is in the given array                                                                                             |
-| `notIn`                 | Yes             | array          | Value is NOT in the given array                                                                                         |
-| `isEmpty`               | No              | —              | Value is null, an empty string, an empty array or an empty object. A missing path fails (use `notExists` for that)      |
-| `notEmpty`              | No              | —              | Value is not empty                                                                                                      |
-| `eqIgnoreCase`          | Yes             | any            | Case-insensitive equality for strings                                                                                   |
-| `containsIgnoreCase`    | Yes             | any            | Case-insensitive substring containment                                                                                  |
-| `notContainsIgnoreCase` | Yes             | any            | Inverse of `containsIgnoreCase`                                                                                         |
+| Operator                | Value required? | Value type     | Description                                                                                                                                                                                                      |
+| ----------------------- | --------------- | -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `eq`                    | Yes             | any            | Equality with coercion: numeric (`1` == `"1"`) and boolean (`true` == `"TRUE"`); case-sensitive for non-boolean strings                                                                                          |
+| `ne`                    | Yes             | any            | Not equal (inverse of `eq`)                                                                                                                                                                                      |
+| `gt`                    | Yes             | number         | Greater than                                                                                                                                                                                                     |
+| `gte`                   | Yes             | number         | Greater than or equal                                                                                                                                                                                            |
+| `lt`                    | Yes             | number         | Less than                                                                                                                                                                                                        |
+| `lte`                   | Yes             | number         | Less than or equal                                                                                                                                                                                               |
+| `contains`              | Yes             | any            | Dispatches by type: string → substring match (case-sensitive), array → element containment, object → key existence. Array elements must match exactly, without `eq`'s conversion: `[1, 2]` doesn't contain `"1"` |
+| `notContains`           | Yes             | any            | Inverse of `contains` (case-sensitive)                                                                                                                                                                           |
+| `matches`               | Yes             | string (regex) | Regular expression match                                                                                                                                                                                         |
+| `exists`                | No              | —              | Value exists (is defined and not null)                                                                                                                                                                           |
+| `notExists`             | No              | —              | Value does not exist                                                                                                                                                                                             |
+| `in`                    | Yes             | array          | Value is in the given array                                                                                                                                                                                      |
+| `notIn`                 | Yes             | array          | Value is NOT in the given array                                                                                                                                                                                  |
+| `isEmpty`               | No              | —              | Value is null, an empty string, an empty array or an empty object. A missing path fails (use `notExists` for that)                                                                                               |
+| `notEmpty`              | No              | —              | Value is not empty                                                                                                                                                                                               |
+| `eqIgnoreCase`          | Yes             | any            | Case-insensitive equality for strings                                                                                                                                                                            |
+| `containsIgnoreCase`    | Yes             | any            | Case-insensitive substring containment                                                                                                                                                                           |
+| `notContainsIgnoreCase` | Yes             | any            | Inverse of `containsIgnoreCase`                                                                                                                                                                                  |
 
 To check the type or length of a value, use the `type` or `count` source fields instead of an operator (see "Source Fields" above).
 
@@ -1896,7 +1894,6 @@ A full definition with two services, a database, a mock, and tests:
   "tests": [
     {
       "name": "Create order and process payment",
-      "timeoutSeconds": 60,
       "variables": {
         "userEmail": "test@example.com"
       },
@@ -2046,25 +2043,25 @@ The `dokkimi` CLI manages the full lifecycle: validate definitions, run tests, i
 
 ### Commands
 
-| Command                         | Description                                             |
-| ------------------------------- | ------------------------------------------------------- |
-| `dokkimi init`                  | Scaffold a `.dokkimi/` folder with example files        |
-| `dokkimi validate [path]`       | Validate definition files without running               |
-| `dokkimi run [target]`          | Run definition(s) and stream live results               |
-| `dokkimi inspect [path]`        | Interactively inspect results from the last run         |
-| `dokkimi dump [path] [-o file]` | Output raw JSON data dump for LLM-assisted debugging    |
-| `dokkimi baselines`             | Review and approve pending visual baselines             |
-| `dokkimi junit`                 | Generate a JUnit XML report from a test run             |
-| `dokkimi doctor`                | Run environment pre-flight checks                       |
-| `dokkimi stop`                  | Stop the current test run                               |
-| `dokkimi status`                | Show service and instance status                        |
-| `dokkimi clean`                 | Stop this project's instances and delete its runs       |
-| `dokkimi reboot`                | Restart all Dokkimi services                            |
-| `dokkimi shutdown`              | Stop all running Dokkimi services                       |
-| `dokkimi config`                | View and edit Dokkimi settings (concurrency, telemetry) |
-| `dokkimi mcp`                   | Start the MCP server (for AI tool integration)          |
-| `dokkimi uninstall`             | Remove Dokkimi data, images, and services               |
-| `dokkimi version`               | Show installed version                                  |
+| Command                         | Description                                                                                                                    |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| `dokkimi init`                  | Scaffold a `.dokkimi/` folder with example files                                                                               |
+| `dokkimi validate [path]`       | Validate definition files without running                                                                                      |
+| `dokkimi run [target]`          | Run definition(s) and stream live results                                                                                      |
+| `dokkimi inspect [path]`        | Interactively inspect results from the last run                                                                                |
+| `dokkimi dump [path] [-o file]` | Write a raw JSON data dump for LLM-assisted debugging                                                                          |
+| `dokkimi baselines`             | Review and approve pending visual baselines                                                                                    |
+| `dokkimi junit`                 | Generate a JUnit XML report from a test run                                                                                    |
+| `dokkimi doctor`                | Run environment pre-flight checks (`--json` for JSON)                                                                          |
+| `dokkimi stop`                  | Stop the current test run (`--json` for JSON)                                                                                  |
+| `dokkimi status`                | Show service and instance status (`--json` for JSON)                                                                           |
+| `dokkimi clean`                 | Stop this project's instances and delete its runs (`--all` for every project, `--force` to skip the prompt, `--json` for JSON) |
+| `dokkimi reboot`                | Restart all Dokkimi services                                                                                                   |
+| `dokkimi shutdown`              | Stop all running Dokkimi services                                                                                              |
+| `dokkimi config`                | View and edit Dokkimi settings (concurrency, telemetry)                                                                        |
+| `dokkimi mcp`                   | Start the MCP server (for AI tool integration)                                                                                 |
+| `dokkimi uninstall`             | Remove Dokkimi data, images, and services                                                                                      |
+| `dokkimi version`               | Show installed version                                                                                                         |
 
 ### `dokkimi run`
 
@@ -2103,7 +2100,7 @@ After a run completes, the CLI prompts `Press i to inspect results, b to review 
 
 ### `dokkimi inspect`
 
-Full-screen interactive TUI for drilling into test results and traffic logs. Uses the terminal's alternate screen buffer so it doesn't pollute scroll-back.
+Full-screen interactive TUI for drilling into test results and traffic logs. Uses the terminal's alternate screen buffer so it doesn't pollute scroll-back. Use `--run` to pick an earlier run from the history instead of the latest.
 
 **Navigation:**
 
@@ -2132,28 +2129,31 @@ Selecting a log item opens it as a temp file in your `$EDITOR` (defaults to `cod
 
 ### `dokkimi dump`
 
-Outputs a complete JSON data dump of the last run — designed for piping to LLMs or scripts for automated debugging.
+Writes a complete JSON data dump of the last run to a file — designed for LLMs or scripts for automated debugging. By default the file is `~/.dokkimi/runs/<project path>/<timestamp>/dump.json` (`dump_failed.json` with `--failed`), and the command prints its path. It never writes to stdout.
 
 **LLM debugging workflow:** When a user asks you to debug a failed test run, use `dokkimi dump --failed -o failures.json` to get structured JSON of only the failing instances. Then read the output file to diagnose the issue. Do NOT use `dokkimi inspect` — that is an interactive TUI designed for humans, not LLMs.
 
 ```bash
 dokkimi dump --failed -o failures.json # LLM debugging: only failed instances
-dokkimi dump -o run-dump.json          # Write full dump to file (streams, low memory)
-dokkimi dump                           # Output to stdout
+dokkimi dump -o run-dump.json          # Write full dump to this file (streams, low memory)
+dokkimi dump                           # Write to the run's folder
 dokkimi dump .dokkimi/auth.json -o out.json  # Dump specific definitions only
+dokkimi dump --run                     # Pick a run from the history
 ```
 
 **Options:**
 
-- `-o`, `--output <file>` — write to a file instead of stdout (streams instance-by-instance to avoid holding the full dump in memory)
+- `-o`, `--output <file>` — write to this file instead of the run's folder (streams instance-by-instance to avoid holding the full dump in memory). A directory gets `dump.json` inside it
 - `--failed` — only include instances that failed (filters out passing definitions)
+- `--run [runId]` — dump a specific run by ID, or pick one from the run history when no ID is given
+- `--inline-artifacts` — embed text artifacts (HTML) in the JSON, for when the reader can't open file paths. PNG artifacts stay as paths
 - `[path]` — filter to definitions matching a `.json` file or `.dokkimi/` folder
 
 If a specified definition wasn't part of the last run, a warning is printed to stderr.
 
 ### `dokkimi baselines`
 
-Interactive TUI for reviewing and approving pending visual baselines from the last run. When a test definition includes `screenshot` sub-steps with `match: true`, Dokkimi compares captures against baselines stored in `.dokkimi/<project>/baselines/`. New captures (no baseline yet) and failed diffs appear as pending.
+Interactive TUI for reviewing and approving pending visual baselines from the last run (`--run` picks an earlier run from the history). When a test definition includes `screenshot` sub-steps with `match: true`, Dokkimi compares captures against baselines stored in `.dokkimi/<project>/baselines/`. New captures (no baseline yet) and failed diffs appear as pending.
 
 **Three-level navigation:** tests → baselines → detail.
 
@@ -2194,7 +2194,9 @@ After changing settings that affect running services, a menu offers to reboot Do
       "assertionResults": [ ... ],
       "httpLogs": [ ... ],
       "databaseLogs": [ ... ],
-      "consoleLogs": [ ... ]
+      "consoleLogs": [ ... ],
+      "messageLogs": [ ... ],
+      "artifacts": [ ... ]
     }
   ]
 }
