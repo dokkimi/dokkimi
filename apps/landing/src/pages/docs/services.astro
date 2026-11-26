@@ -67,6 +67,7 @@ import CodeBlock from '../../components/CodeBlock.astro';
   { "name": "REDIS_URL", "value": "redis://:dokkimi@redis-cache:6379" },
   { "name": "NODE_ENV", "value": "test" }
 ]`} lang="json" />
+  <p>To call another service, use its <code>name</code> as the host and leave out the port: <code>http://user-service</code>, not <code>http://user-service:3000</code>. Calls go through the caller's interceptor, which listens on 80 and 443 and forwards to the target's <code>port</code>. A URL with the service's own port can't connect.</p>
 
   <h2>Full example</h2>
   <CodeBlock code={`{
@@ -79,7 +80,7 @@ import CodeBlock from '../../components/CodeBlock.astro';
   "env": [
     { "name": "DATABASE_URL", "value": "postgresql://dokkimi:dokkimi@postgres-db:5432/dokkimi" },
     { "name": "REDIS_URL", "value": "redis://:dokkimi@redis-cache:6379" },
-    { "name": "USER_SERVICE_URL", "value": "http://user-service:3000" },
+    { "name": "USER_SERVICE_URL", "value": "http://user-service" },
     { "name": "NODE_ENV", "value": "test" }
   ],
   "minCpu": 0.25,

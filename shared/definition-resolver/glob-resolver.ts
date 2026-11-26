@@ -143,8 +143,8 @@ export function filterFilesByPattern(
   dokkimiDir: string,
   pattern: string,
 ): string[] {
-  const isGlob = /[*?{}[\]]/.test(pattern);
   const isRegex = pattern.startsWith('/') && pattern.lastIndexOf('/') > 0;
+  const isGlob = !isRegex && /[*?{}[\]]/.test(pattern);
 
   let regex: RegExp | null = null;
   if (isRegex) {

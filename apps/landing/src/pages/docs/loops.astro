@@ -214,7 +214,7 @@ import CodeBlock from '../../components/CodeBlock.astro';
       <tr><td>Test-level</td><td><code>forEach</code>/<code>for</code>/<code>repeat</code> on a test</td><td>All steps repeat per iteration</td></tr>
       <tr><td>Step-level</td><td><code>forEach</code>/<code>for</code>/<code>repeat</code> on a step</td><td>Action + extract + assertions repeat per iteration</td></tr>
       <tr><td>Action-level</td><td><code>forEach</code>/<code>for</code>/<code>repeat</code> inside an action</td><td>Only the action repeats; extract + assertions run once after</td></tr>
-      <tr><td>Assertion-block</td><td><code>forEach</code> on an assertion block</td><td>Assertions nested inside the loop body run once per item</td></tr>
+      <tr><td>Assertion-block</td><td><code>forEach</code>, <code>for</code> or <code>repeat</code> on an assertion block</td><td>Assertions nested inside the loop body run once per item</td></tr>
       <tr><td>UI sub-step group</td><td><code>forEach</code>/<code>for</code>/<code>repeat</code> with nested <code>steps</code> inside a UI action</td><td>Sub-steps repeat per iteration</td></tr>
     </tbody>
   </table>

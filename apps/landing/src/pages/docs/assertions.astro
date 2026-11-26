@@ -23,15 +23,19 @@ $.response.headers.x-auth    // header lookup (case-insensitive)`} lang="text" /
   <p>Key lookups are <strong>case-insensitive</strong> — <code>$.response.headers.Content-Type</code> and <code>$.response.headers.content-type</code> both work.</p>
 
   <h2>Writing assertions</h2>
-  <p>Each step can have an <code>assertions</code> array. Place individual assertions directly in the array:</p>
+  <p>Each step can have an <code>assertions</code> array of <a href="#assertion-blocks">assertion blocks</a>. Each block has its own <code>assertions</code> array with the individual assertions:</p>
 
   <CodeBlock code={`{
   "assertions": [
-    { "path": "$.response.status", "operator": "eq", "value": 201 },
-    { "path": "$.response.body.id", "operator": "exists" },
-    { "path": "$.response.body.name", "operator": "eq", "value": "{{userName}}" },
-    { "path": "$.response.headers.content-type", "operator": "contains", "value": "application/json" },
-    { "path": "$.responseTime", "operator": "lt", "value": 500 }
+    {
+      "assertions": [
+        { "path": "$.response.status", "operator": "eq", "value": 201 },
+        { "path": "$.response.body.id", "operator": "exists" },
+        { "path": "$.response.body.name", "operator": "eq", "value": "{{userName}}" },
+        { "path": "$.response.headers.content-type", "operator": "contains", "value": "application/json" },
+        { "path": "$.responseTime", "operator": "lt", "value": 500 }
+      ]
+    }
   ]
 }`} lang="json" />
 
@@ -47,8 +51,8 @@ $.response.headers.x-auth    // header lookup (case-insensitive)`} lang="text" /
     </tbody>
   </table>
 
-  <h2>Assertion blocks</h2>
-  <p>When you need to query captured data (<code>match</code>), extract variables, or loop, wrap assertions in an <strong>assertion block</strong> — an object with its own <code>assertions</code> array. The block scopes <code>$.match.*</code> results and extract targets to that group. It can include:</p>
+  <h2 id="assertion-blocks">Assertion blocks</h2>
+  <p>An <strong>assertion block</strong> is an object with its own <code>assertions</code> array. A block can also query captured data (<code>match</code>), extract variables, or loop. The block scopes <code>$.match.*</code> results and extract targets to that group. It can include:</p>
   <table>
     <thead>
       <tr><th>Field</th><th>Type</th><th>Description</th></tr>
@@ -61,10 +65,14 @@ $.response.headers.x-auth    // header lookup (case-insensitive)`} lang="text" /
     </tbody>
   </table>
 
-  <p>A step's <code>assertions</code> array can mix flat assertions and blocks freely:</p>
+  <p>A step's <code>assertions</code> array can hold several blocks of different kinds:</p>
   <CodeBlock code={`{
   "assertions": [
-    { "path": "$.response.status", "operator": "eq", "value": 200 },
+    {
+      "assertions": [
+        { "path": "$.response.status", "operator": "eq", "value": 200 }
+      ]
+    },
 
     {
       "match": { "path": "$.traffic", "where": ["..."] },
@@ -418,7 +426,7 @@ $.response.headers.x-auth    // header lookup (case-insensitive)`} lang="text" /
       <tr><td><code>notExists</code></td><td>No</td><td>—</td><td>Value does not exist</td></tr>
       <tr><td><code>in</code></td><td>Yes</td><td>array</td><td>Value is in the given array</td></tr>
       <tr><td><code>notIn</code></td><td>Yes</td><td>array</td><td>Value is NOT in the given array</td></tr>
-      <tr><td><code>isEmpty</code></td><td>No</td><td>—</td><td>Value is empty/null/undefined/empty array/empty object</td></tr>
+      <tr><td><code>isEmpty</code></td><td>No</td><td>—</td><td>Value is null, an empty string, an empty array or an empty object. A missing path fails (use <code>notExists</code> for that)</td></tr>
       <tr><td><code>notEmpty</code></td><td>No</td><td>—</td><td>Value is not empty</td></tr>
     </tbody>
   </table>

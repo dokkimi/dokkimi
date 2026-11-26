@@ -135,6 +135,19 @@ describe('filterFilesByPattern', () => {
     expect(result).toEqual(['/project/.dokkimi/payments/checkout.json']);
   });
 
+  it('treats an explicit regex with glob characters as a regex', () => {
+    expect(filterFilesByPattern(files, dokkimiDir, '/check.*out/')).toEqual([
+      '/project/.dokkimi/payments/checkout.json',
+    ]);
+    expect(
+      filterFilesByPattern(files, dokkimiDir, '/^(auth|users)[/.]/'),
+    ).toEqual([
+      '/project/.dokkimi/auth/login.json',
+      '/project/.dokkimi/auth/signup.yaml',
+      '/project/.dokkimi/users.json',
+    ]);
+  });
+
   it('returns empty array when nothing matches', () => {
     const result = filterFilesByPattern(files, dokkimiDir, 'nonexistent');
     expect(result).toEqual([]);

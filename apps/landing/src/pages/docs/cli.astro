@@ -48,7 +48,7 @@ dokkimi run .dokkimi/auth.json       # A specific definition file
 # Pattern-based targets (matches file names/paths within .dokkimi/)
 dokkimi run auth                     # Substring match
 dokkimi run "auth/**"                # Glob pattern
-dokkimi run "auth.*service"          # Regex pattern`} lang="bash" />
+dokkimi run "/auth.*service/"        # Regex pattern (between slashes)`} lang="bash" />
 
   <h3>Watch mode</h3>
   <CodeBlock code={`dokkimi run --watch

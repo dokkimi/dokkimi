@@ -261,7 +261,7 @@ A containerized application deployed with an interceptor sidecar for traffic cap
       "value": "postgresql://dokkimi:dokkimi@postgres-db:5432/dokkimi"
     },
     { "name": "REDIS_URL", "value": "redis://redis-cache:6379" },
-    { "name": "USER_SERVICE_URL", "value": "http://user-service:3000" },
+    { "name": "USER_SERVICE_URL", "value": "http://user-service" },
     { "name": "NODE_ENV", "value": "test" }
   ],
   "minCpu": 0.25,
@@ -275,6 +275,7 @@ A containerized application deployed with an interceptor sidecar for traffic cap
 
 - Environment variables use `{ "name": "KEY", "value": "VALUE" }` format (array of objects, NOT a flat `{ "KEY": "VALUE" }` object).
 - **Service names are DNS hostnames.** Use the service `name` as the hostname when one service connects to another (e.g., `"postgresql://dokkimi:dokkimi@postgres-db:5432/dokkimi"` where `postgres-db` is a DATABASE item name).
+- **Call other services without a port:** `http://user-service`, not `http://user-service:3000`. Calls go through the caller's interceptor, which listens on 80 and 443 and forwards to the target's `port`. A URL with the service's own port can't connect.
 - Services connect to databases using the database item's `name` as the hostname and the database's default port.
 
 ---
@@ -1096,21 +1097,21 @@ action:
 
 Each sub-step has a single key naming its kind:
 
-| Kind         | Shape                                                                 | Purpose                                                                                                                                                                                                                                                                                      |
-| ------------ | --------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `visit`      | `visit: <path-or-url>`                                                | Navigate. Bare paths resolve against the target's base URL; absolute URLs are used verbatim.                                                                                                                                                                                                 |
-| `click`      | `click: <css-selector>`                                               | Click the first matching element.                                                                                                                                                                                                                                                            |
-| `type`       | `type: { selector, text }`                                            | Focus and type text into the element. `text` may reference `{{variables}}`.                                                                                                                                                                                                                  |
-| `waitFor`    | `waitFor: <css-selector>` or `waitFor: { selector, text }`            | Wait until the element is visible (and optionally contains the given text).                                                                                                                                                                                                                  |
-| `extract`    | `extract: { <varName>: { from, selector, name?, pattern?, group? } }` | Pull a value off the page and store it as a variable. See below.                                                                                                                                                                                                                             |
-| `screenshot` | `screenshot: <name>`                                                  | Take a PNG of the current viewport, tagged with `name`.                                                                                                                                                                                                                                      |
-| `scroll`     | `scroll: <css-selector>` or `scroll: { selector?, x?, y? }`           | Scroll. String form scrolls the matching element into view; object form scrolls to absolute pixel coords (`x`, `y` default to 0). chromedp auto-scrolls before clicks/waits, so explicit `scroll` is mainly for infinite-scroll triggers and lazy-load verification.                         |
-| `select`     | `select: { selector, value }`                                         | Set the value of a native `<select>` and dispatch a `change` event so framework listeners react. For custom (non-`<select>`) dropdowns, use `click` + `waitFor` + `click` instead.                                                                                                           |
-| `hover`      | `hover: <css-selector>`                                               | Dispatch `mouseover`/`mouseenter` on the matching element. Used for tooltips and hover-revealed menus.                                                                                                                                                                                       |
-| `key`        | `key: <key-name>` or `key: { selector, key }`                         | Send a single keyboard key. String form sends to the focused element; object form focuses the selector first. Recognized names: `Enter`, `Tab`, `Escape`, `Backspace`, `Delete`, `ArrowUp`/`Down`/`Left`/`Right`, `Home`, `End`, `PageUp`, `PageDown`, `Space`. Single characters also work. |
-| `upload`     | `upload: { selector, files: [path, ...] }`                            | Attach local files to an `<input type="file">`. Paths must exist **inside the test-agent container** — files are not bundled from the test definition itself; arrange delivery via a custom test-agent image or a mounted volume.                                                            |
-| `drag`       | `drag: { from, to }`                                                  | Synthesize a mouse drag from the `from` element's center to the `to` element's center. Works for HTML5 native drag and most JS drag libraries (react-dnd, dnd-kit) that listen on real mouse events. Pure `dispatchEvent('drag')`-only libraries are out of scope.                           |
-| `viewport`   | `viewport: { width, height }`                                         | Set the browser viewport dimensions (positive integers, pixels). Persists across subsequent UI actions until changed. The global default (1280×720) is configurable via `DOKKIMI_DEFAULT_VIEWPORT_WIDTH` / `DOKKIMI_DEFAULT_VIEWPORT_HEIGHT` env vars.                                       |
+| Kind         | Shape                                                                 | Purpose                                                                                                                                                                                                                                                                                                                                                       |
+| ------------ | --------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `visit`      | `visit: <path-or-url>`                                                | Navigate. Bare paths resolve against the target's base URL; absolute URLs are used verbatim.                                                                                                                                                                                                                                                                  |
+| `click`      | `click: <css-selector>`                                               | Click the first matching element.                                                                                                                                                                                                                                                                                                                             |
+| `type`       | `type: { selector, text }`                                            | Focus and type text into the element. `text` may reference `{{variables}}`.                                                                                                                                                                                                                                                                                   |
+| `waitFor`    | `waitFor: <css-selector>` or `waitFor: { selector, text }`            | Wait until the element is visible (and optionally contains the given text).                                                                                                                                                                                                                                                                                   |
+| `extract`    | `extract: { <varName>: { from, selector, name?, pattern?, group? } }` | Pull a value off the page and store it as a variable. See below.                                                                                                                                                                                                                                                                                              |
+| `screenshot` | `screenshot: <name>` or `screenshot: { name, selector?, match? }`     | Take a PNG of the current viewport, or of one element with `selector`, tagged with `name`. `match: true` (or `match: { threshold?, ignoreRegions? }`) compares it against the baseline; see `dokkimi baselines`. `threshold` is the fraction of pixels allowed to differ (0 to 1, default 0.01); `ignoreRegions` lists selectors masked out before comparing. |
+| `scroll`     | `scroll: <css-selector>` or `scroll: { selector?, x?, y? }`           | Scroll. String form scrolls the matching element into view; object form scrolls to absolute pixel coords (`x`, `y` default to 0). chromedp auto-scrolls before clicks/waits, so explicit `scroll` is mainly for infinite-scroll triggers and lazy-load verification.                                                                                          |
+| `select`     | `select: { selector, value }`                                         | Set the value of a native `<select>` and dispatch a `change` event so framework listeners react. For custom (non-`<select>`) dropdowns, use `click` + `waitFor` + `click` instead.                                                                                                                                                                            |
+| `hover`      | `hover: <css-selector>`                                               | Dispatch `mouseover`/`mouseenter` on the matching element. Used for tooltips and hover-revealed menus.                                                                                                                                                                                                                                                        |
+| `key`        | `key: <key-name>` or `key: { selector, key }`                         | Send a single keyboard key. String form sends to the focused element; object form focuses the selector first. Recognized names: `Enter`, `Tab`, `Escape`, `Backspace`, `Delete`, `ArrowUp`/`Down`/`Left`/`Right`, `Home`, `End`, `PageUp`, `PageDown`, `Space`. Single characters also work.                                                                  |
+| `upload`     | `upload: { selector, files: [path, ...] }`                            | Attach local files to an `<input type="file">`. Paths must exist **inside the test-agent container** — files are not bundled from the test definition itself; arrange delivery via a custom test-agent image or a mounted volume.                                                                                                                             |
+| `drag`       | `drag: { from, to }`                                                  | Synthesize a mouse drag from the `from` element's center to the `to` element's center. Works for HTML5 native drag and most JS drag libraries (react-dnd, dnd-kit) that listen on real mouse events. Pure `dispatchEvent('drag')`-only libraries are out of scope.                                                                                            |
+| `viewport`   | `viewport: { width, height }`                                         | Set the browser viewport dimensions (positive integers, pixels). Persists across subsequent UI actions until changed. The global default (1280×720) is configurable via `DOKKIMI_DEFAULT_VIEWPORT_WIDTH` / `DOKKIMI_DEFAULT_VIEWPORT_HEIGHT` env vars.                                                                                                        |
 
 Selector and text fields support `{{variable}}` interpolation.
 
@@ -1487,19 +1488,22 @@ Loops can be applied at five levels:
 }
 ```
 
-**Assertion-block level** — add `forEach` to an assertion block. The assertions run once per item (only `forEach` is supported at this level):
+**Assertion-block level** — add `forEach`, `for` or `repeat` to an assertion block, with the assertions inside the loop object. They run once per iteration. Read the loop variable through `$.variables.<as>` (a `{{var}}` can't be a `path`):
 
 ```json
 {
-  "forEach": { "items": "$.response.body", "as": "user" },
-  "assertions": [
-    {
-      "path": "{{user.email}}",
-      "operator": "matches",
-      "value": "^.+@.+\\..+$"
-    },
-    { "path": "{{user.active}}", "operator": "eq", "value": true }
-  ]
+  "forEach": {
+    "items": "$.response.body",
+    "as": "user",
+    "assertions": [
+      {
+        "path": "$.variables.user.email",
+        "operator": "matches",
+        "value": "^.+@.+\\..+$"
+      },
+      { "path": "$.variables.user.active", "operator": "eq", "value": true }
+    ]
+  }
 }
 ```
 
@@ -1825,7 +1829,7 @@ Kafka metadata:
 | `notExists`             | No              | —              | Value does not exist                                                                                                    |
 | `in`                    | Yes             | array          | Value is in the given array                                                                                             |
 | `notIn`                 | Yes             | array          | Value is NOT in the given array                                                                                         |
-| `isEmpty`               | No              | —              | Value is empty/null/undefined/empty array/empty object                                                                  |
+| `isEmpty`               | No              | —              | Value is null, an empty string, an empty array or an empty object. A missing path fails (use `notExists` for that)      |
 | `notEmpty`              | No              | —              | Value is not empty                                                                                                      |
 | `eqIgnoreCase`          | Yes             | any            | Case-insensitive equality for strings                                                                                   |
 | `containsIgnoreCase`    | Yes             | any            | Case-insensitive substring containment                                                                                  |
@@ -1851,7 +1855,7 @@ A full definition with two services, a database, a mock, and tests:
       "port": 3000,
       "healthCheck": "/health",
       "env": [
-        { "name": "ORDER_SERVICE_URL", "value": "http://order-service:3001" },
+        { "name": "ORDER_SERVICE_URL", "value": "http://order-service" },
         {
           "name": "DATABASE_URL",
           "value": "postgresql://dokkimi:dokkimi@postgres-db:5432/dokkimi"
@@ -2079,7 +2083,7 @@ dokkimi run .dokkimi/auth.json       # A specific definition file
 # Pattern-based targets (matches against file names/paths within .dokkimi/)
 dokkimi run auth                     # Substring match — runs files with "auth" in the name
 dokkimi run "auth/**"                # Glob pattern
-dokkimi run "auth.*service"          # Regex pattern
+dokkimi run "/auth.*service/"        # Regex pattern (between slashes)
 
 # Options
 dokkimi run --watch                  # Re-run on file changes

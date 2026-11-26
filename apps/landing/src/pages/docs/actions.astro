@@ -203,20 +203,27 @@ import CodeBlock from '../../components/CodeBlock.astro';
       <tr><td><code>select</code></td><td><code>&#123; selector, value &#125;</code></td><td>Select an option from a dropdown.</td></tr>
       <tr><td><code>hover</code></td><td>string (selector)</td><td>Hover over an element.</td></tr>
       <tr><td><code>waitFor</code></td><td>string or <code>&#123; selector, text? &#125;</code></td><td>Wait until an element appears. Optionally check for text content.</td></tr>
-      <tr><td><code>screenshot</code></td><td>string (name)</td><td>Capture a screenshot.</td></tr>
+      <tr><td><code>screenshot</code></td><td>string (name) or <code>&#123; name, selector?, match? &#125;</code></td><td>Capture a screenshot of the viewport, or of one element with <code>selector</code>. <code>match</code> compares it against a baseline (see below).</td></tr>
       <tr><td><code>scroll</code></td><td><code>&#123; x?, y? &#125;</code></td><td>Scroll the page by the given offset.</td></tr>
       <tr><td><code>key</code></td><td>string (key name)</td><td>Press a keyboard key (e.g. <code>Enter</code>, <code>Escape</code>).</td></tr>
       <tr><td><code>upload</code></td><td><code>&#123; selector, files &#125;</code></td><td>Upload files to a file input.</td></tr>
-      <tr><td><code>drag</code></td><td><code>&#123; source, target &#125;</code></td><td>Drag from one element to another.</td></tr>
+      <tr><td><code>drag</code></td><td><code>&#123; from, to &#125;</code></td><td>Drag from the <code>from</code> element to the <code>to</code> element (both selectors).</td></tr>
       <tr><td><code>extract</code></td><td>object</td><td>Extract values from the page into variables. Keys are variable names, values are source objects with <code>from</code>, <code>selector</code>, etc.</td></tr>
       <tr><td><code>viewport</code></td><td><code>&#123; width, height &#125;</code></td><td>Set browser viewport dimensions (pixels).</td></tr>
     </tbody>
   </table>
 
   <h3>Visual regression with screenshots</h3>
-  <p>Screenshots captured during a test run are saved as artifacts. To enable visual regression testing, add <code>match: true</code> to the screenshot sub-step:</p>
-  <CodeBlock code={`{ "screenshot": "checkout-page", "match": true }`} lang="json" />
-  <p>When <code>match: true</code> is set, Dokkimi compares the capture against a baseline stored in <code>.dokkimi/&lt;project&gt;/baselines/</code>. If no baseline exists yet (first run), or if the diff exceeds the threshold, it appears as a pending baseline. Review and approve pending baselines with <code>dokkimi baselines</code>.</p>
+  <p>Screenshots captured during a test run are saved as artifacts. To enable visual regression testing, use the object form and add <code>match: true</code>:</p>
+  <CodeBlock code={`{ "screenshot": { "name": "checkout-page", "match": true } }`} lang="json" />
+  <p>To change the defaults, set <code>match</code> to an object instead. <code>threshold</code> is the fraction of pixels allowed to differ (0 to 1, default 0.01), and <code>ignoreRegions</code> lists selectors masked out before comparing:</p>
+  <CodeBlock code={`{
+  "screenshot": {
+    "name": "checkout-page",
+    "match": { "threshold": 0.05, "ignoreRegions": ["[data-testid='clock']"] }
+  }
+}`} lang="json" />
+  <p>When <code>match</code> is set, Dokkimi compares the capture against a baseline stored in <code>.dokkimi/&lt;project&gt;/baselines/</code>. If no baseline exists yet (first run), or if the diff exceeds the threshold, it appears as a pending baseline. Review and approve pending baselines with <code>dokkimi baselines</code>.</p>
 
   <div class="callout">
     <p><strong>Use <code>data-testid</code> selectors.</strong> CSS class selectors break when you restyle. Test IDs are stable and make your intent clear.</p>
