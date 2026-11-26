@@ -209,20 +209,50 @@ func FindDirectDatabaseLog(dbLogs []DatabaseLogMessage, action StepAction, stepE
 	return best
 }
 
-// queriesMatch compares two query strings structurally. Both are parsed as
-// JSON; if either fails to parse, it falls back to exact string comparison.
-// This handles BSON round-trip differences (key ordering, float formatting).
-func queriesMatch(a, b string) bool {
-	a = strings.TrimSpace(a)
-	b = strings.TrimSpace(b)
-	if a == b {
+// queriesMatch reports whether a logged query is the step's own query. They
+// are compared as text, or else structurally as JSON (key order and spacing
+// don't matter). For a MongoDB insert, the driver adds a generated _id to each
+// document that has none, so an _id that is only in the logged document is
+// ignored.
+func queriesMatch(logged, step string) bool {
+	logged = strings.TrimSpace(logged)
+	step = strings.TrimSpace(step)
+	if logged == step {
 		return true
 	}
-	var parsedA, parsedB interface{}
-	if json.Unmarshal([]byte(a), &parsedA) != nil || json.Unmarshal([]byte(b), &parsedB) != nil {
+	var parsedLogged, parsedStep interface{}
+	if json.Unmarshal([]byte(logged), &parsedLogged) != nil || json.Unmarshal([]byte(step), &parsedStep) != nil {
 		return false
 	}
-	return reflect.DeepEqual(parsedA, parsedB)
+	dropGeneratedIDs(parsedLogged, parsedStep)
+	return reflect.DeepEqual(parsedLogged, parsedStep)
+}
+
+// dropGeneratedIDs removes, from a logged MongoDB insertOne or insertMany, the
+// _id of each document whose counterpart in the step's query has no _id.
+func dropGeneratedIDs(logged, step interface{}) {
+	l, lok := logged.(map[string]interface{})
+	s, sok := step.(map[string]interface{})
+	if !lok || !sok || (l["operation"] != "insertOne" && l["operation"] != "insertMany") {
+		return
+	}
+	dropID := func(loggedDoc, stepDoc interface{}) {
+		ld, lok := loggedDoc.(map[string]interface{})
+		sd, sok := stepDoc.(map[string]interface{})
+		if lok && sok {
+			if _, has := sd["_id"]; !has {
+				delete(ld, "_id")
+			}
+		}
+	}
+	dropID(l["document"], s["document"])
+	ldocs, lok := l["documents"].([]interface{})
+	sdocs, sok := s["documents"].([]interface{})
+	if lok && sok && len(ldocs) == len(sdocs) {
+		for i := range ldocs {
+			dropID(ldocs[i], sdocs[i])
+		}
+	}
 }
 
 func stepTimeWindow(stepExec StepExecution) (time.Time, time.Time, error) {

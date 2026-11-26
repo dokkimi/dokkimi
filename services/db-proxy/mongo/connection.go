@@ -65,6 +65,13 @@ func (pc *proxyConnection) relay() {
 
 	select {
 	case <-clientToUpDone:
+		// The client is gone: pass it on with a half-close, so the server ends
+		// the connection while replies in flight still reach the client.
+		if tc, ok := pc.upstreamConn.(*net.TCPConn); ok {
+			tc.CloseWrite()
+		} else {
+			pc.upstreamConn.Close()
+		}
 		<-upToClientDone
 	case <-upToClientDone:
 		pc.clientConn.Close()

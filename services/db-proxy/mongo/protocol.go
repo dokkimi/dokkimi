@@ -280,7 +280,7 @@ func extractResponseData(rawDoc []byte, cmdName string) []map[string]interface{}
 	}
 
 	switch cmdName {
-	case "find", "getMore":
+	case "find", "getMore", "aggregate":
 		batch, _ := extractCursorBatch(rawDoc)
 		if batch != nil {
 			return batch
@@ -317,19 +317,27 @@ func extractResponseData(rawDoc []byte, cmdName string) []map[string]interface{}
 		}
 		return []map[string]interface{}{row}
 
+	case "findAndModify":
+		// The document before or after the change, or null when nothing matched
+		for _, elem := range doc {
+			if elem.Key == "value" {
+				if d, ok := elem.Value.(bson.D); ok {
+					return []map[string]interface{}{bsonDToMap(d)}
+				}
+			}
+		}
+		return []map[string]interface{}{}
+
 	default:
 		return nil
 	}
 }
 
 // bsonDToMap converts a bson.D to map[string]interface{}, recursively converting
-// sub-documents and arrays. Strips the _id field since test assertions don't reference it.
+// sub-documents and arrays. ObjectIDs become hex strings when marshaled.
 func bsonDToMap(d bson.D) map[string]interface{} {
 	m := make(map[string]interface{}, len(d))
 	for _, elem := range d {
-		if elem.Key == "_id" {
-			continue
-		}
 		m[elem.Key] = bsonValueToGo(elem.Value)
 	}
 	return m
@@ -815,8 +823,12 @@ func reconstructGeneric(commandName, collection string, doc bson.D) string {
 		{key: "operation", value: commandName},
 		{key: "collection", value: collection},
 	}
-	knownFields := map[string]bool{
-		"filter": true, "document": true, "documents": true, "update": true,
+	// Fields worth logging, by their name on the wire and in the log.
+	// findAndModify calls its filter "query".
+	knownFields := map[string]string{
+		"filter": "filter", "query": "filter", "document": "document", "documents": "documents",
+		"update": "update", "pipeline": "pipeline", "sort": "sort", "remove": "remove",
+		"new": "new", "upsert": "upsert",
 	}
 	for _, elem := range doc {
 		if elem.Key == commandName || elem.Key == "$db" ||
@@ -824,8 +836,8 @@ func reconstructGeneric(commandName, collection string, doc bson.D) string {
 			elem.Key == "$readPreference" || elem.Key == "ordered" {
 			continue
 		}
-		if knownFields[elem.Key] {
-			pairs = append(pairs, orderedPair{key: elem.Key, value: bsonToInterface(elem.Value)})
+		if name, ok := knownFields[elem.Key]; ok {
+			pairs = append(pairs, orderedPair{key: name, value: bsonToInterface(elem.Value)})
 		}
 	}
 	return marshalOrdered(pairs)
@@ -865,9 +877,6 @@ func bsonToInterface(v interface{}) interface{} {
 	case bson.D:
 		pairs := make(orderedDoc, 0, len(val))
 		for _, elem := range val {
-			if elem.Key == "_id" {
-				continue
-			}
 			pairs = append(pairs, orderedPair{key: elem.Key, value: bsonToInterface(elem.Value)})
 		}
 		return pairs
