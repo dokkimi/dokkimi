@@ -127,16 +127,6 @@ tests:
         assertions:
           - assertions:
               - { path: $.response.body.mocked, operator: eq, value: any }
-      - name: Service that doesn't exist
-        action: { type: httpRequest, method: GET, url: apii/users }
-        assertions:
-          - assertions:
-              - { path: $.response.status, operator: eq, value: 502 }
-              - {
-                  path: $.response.body.error,
-                  operator: contains,
-                  value: no service named,
-                }
   - name: From a worker
     steps:
       - name: Wait for its calls

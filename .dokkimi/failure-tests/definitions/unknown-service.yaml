@@ -1,0 +1,19 @@
+name: unknown-service
+description: A step calling a service that doesn't exist fails right away, saying so
+config:
+  timeoutSeconds: 60
+items:
+  - type: SERVICE
+    name: api
+    image: node:20-alpine
+    port: 3000
+    healthCheck: /
+    command:
+      - node
+      - -e
+      - require('http').createServer((req, res) => res.end()).listen(3000)
+tests:
+  - name: Misspelled service
+    steps:
+      - name: Calls apii
+        action: { type: httpRequest, method: GET, url: apii/users }

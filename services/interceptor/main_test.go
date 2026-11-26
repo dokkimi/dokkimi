@@ -720,3 +720,20 @@ func TestHandleRequest_AddsNoResponseHeaders(t *testing.T) {
 		})
 	}
 }
+
+// Only a test step's request is told that Dokkimi couldn't deliver it.
+func TestHandleRequest_MarksItsOwnErrorsForSteps(t *testing.T) {
+	ok := http.HandlerFunc(func(http.ResponseWriter, *http.Request) {})
+	for origin, url := range map[string]string{
+		"":            "http://interceptor-service/nosuch/x",
+		"test-origin": "http://127.0.0.1:1/x",
+	} {
+		w, _ := handleAndCapture(t, origin, url, ok)
+		if w.Code != http.StatusBadGateway {
+			t.Fatalf("origin %q: status %d, want 502", origin, w.Code)
+		}
+		if got := w.Header().Get(DokkimiErrorHeader) != ""; got != (origin == "") {
+			t.Errorf("origin %q: marked = %v", origin, got)
+		}
+	}
+}

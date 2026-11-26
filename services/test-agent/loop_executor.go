@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"time"
@@ -209,12 +210,15 @@ type LoopBody func(iterIdx int, iter Iteration) (lastResp map[string]interface{}
 // runLoop executes the iteration plan: delays between iterations, invokes the
 // body callback, checks repeat-until, and calls setLoopResult at the end.
 // The body is responsible for calling iter.SetupFn() to seed loop variables.
-func runLoop(plan IterationPlan, varCtx *VariableContext, body LoopBody) (LoopResult, error) {
+// The delays end early, with ctx's error, when ctx does.
+func runLoop(ctx context.Context, plan IterationPlan, varCtx *VariableContext, body LoopBody) (LoopResult, error) {
 	completed := true
 	iterationsRan := 0
 
 	for iterIdx, iter := range plan.Iterations {
-		delayBetweenIterations(iterIdx, plan.DelayMs)
+		if err := delayBetweenIterations(ctx, iterIdx, plan.DelayMs); err != nil {
+			return LoopResult{false, iterationsRan}, err
+		}
 
 		resp, err := body(iterIdx, iter)
 		if err != nil {
@@ -296,9 +300,20 @@ func evaluateUntil(until []Assertion, rootCtx map[string]interface{}, varCtx *Va
 }
 
 // delayBetweenIterations sleeps for delayMs if > 0 and not the first iteration.
-func delayBetweenIterations(iteration int, delayMs int) {
+func delayBetweenIterations(ctx context.Context, iteration int, delayMs int) error {
 	if iteration > 0 && delayMs > 0 {
 		log.Printf("Loop delay: %dms before iteration %d", delayMs, iteration)
-		time.Sleep(time.Duration(delayMs) * time.Millisecond)
+		return sleep(ctx, time.Duration(delayMs)*time.Millisecond)
+	}
+	return nil
+}
+
+// sleep waits for d, or returns ctx's error if ctx ends first.
+func sleep(ctx context.Context, d time.Duration) error {
+	select {
+	case <-time.After(d):
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
 	}
 }

@@ -159,6 +159,7 @@ import CodeBlock from '../../components/CodeBlock.astro';
       <tr><td><code>query</code></td><td>string</td><td>Yes</td><td>SQL query or MongoDB command JSON (supports <code>&#123;&#123;variables&#125;&#125;</code>)</td></tr>
     </tbody>
   </table>
+  <p>A query that fails fails the step, unless the step asserts on <code>$.response.success</code> or <code>$.response.error</code> to test the failure. Inside <code>parallel</code>, it always fails the step.</p>
 
   <h2>UI Action</h2>
   <p>Drive a real Chromium browser to test user-facing flows. When a definition contains UI actions, Dokkimi automatically attaches a headless Chromium sidecar to the test environment.</p>

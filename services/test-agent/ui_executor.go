@@ -496,7 +496,7 @@ func (e *UIStepExecutor) runSubStepGroup(
 		return err
 	}
 
-	_, loopErr := runLoop(plan, e.varCtx, func(iterIdx int, iter Iteration) (map[string]interface{}, error) {
+	_, loopErr := runLoop(ctx, plan, e.varCtx, func(iterIdx int, iter Iteration) (map[string]interface{}, error) {
 		iter.SetupFn()
 		log.Printf("UI sub-step group iteration %d %s", iterIdx, iter.Label)
 

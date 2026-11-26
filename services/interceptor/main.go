@@ -289,6 +289,11 @@ func handleRequest(w http.ResponseWriter, r *http.Request, proxy *ProxyService, 
 
 		// Return error response
 		log.Printf("[Interceptor] Failed to handle request for %s %s: %v", r.Method, r.URL.Path, err)
+		if cfg.Origin == "" {
+			// Tells the test agent that this 502 is Dokkimi's, not the target's.
+			// Only test steps get it.
+			w.Header().Set(DokkimiErrorHeader, "true")
+		}
 		http.Error(w, fmt.Sprintf("Proxy error: %v", err), http.StatusBadGateway)
 		return
 	}
@@ -356,6 +361,10 @@ func handleRequest(w http.ResponseWriter, r *http.Request, proxy *ProxyService, 
 
 	log.Printf("[Interceptor] Sent response to client: status=%d, bodySize=%d bytes", resp.StatusCode, len(responseBodyBytes))
 }
+
+// DokkimiErrorHeader marks a response that Dokkimi made because it couldn't
+// deliver a test step's request.
+const DokkimiErrorHeader = "X-Dokkimi-Error"
 
 // decompress returns body as it is if it isn't compressed or can't be decompressed.
 func decompress(body []byte, encoding string) []byte {

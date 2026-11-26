@@ -407,54 +407,6 @@
           ]
         }
       ]
-    },
-    {
-      "name": "stopOnFailure false — collect all iteration failures",
-      "steps": [
-        {
-          "name": "Fetch nonexistent posts (should fail but continue)",
-          "stopOnFailure": false,
-          "forEach": {
-            "items": ["nonexistent-id-aaa", "nonexistent-id-bbb"],
-            "as": "badId",
-            "name": "failLoop",
-            "assertions": [
-              {
-                "assertions": [
-                  {
-                    "path": "$.response.status",
-                    "operator": "eq",
-                    "value": 200
-                  }
-                ]
-              }
-            ]
-          },
-          "action": {
-            "type": "httpRequest",
-            "method": "GET",
-            "url": "api-service/api/posts/{{badId}}"
-          }
-        },
-        {
-          "name": "Verify both iterations ran despite failures",
-          "action": {
-            "type": "wait",
-            "durationMs": 10
-          },
-          "assertions": [
-            {
-              "assertions": [
-                {
-                  "path": "$.variables.failLoop.iterations",
-                  "operator": "eq",
-                  "value": 2
-                }
-              ]
-            }
-          ]
-        }
-      ]
     }
   ]
 }

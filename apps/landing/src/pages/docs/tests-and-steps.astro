@@ -52,7 +52,7 @@ import CodeBlock from '../../components/CodeBlock.astro';
       <tr><td><code>name</code></td><td>string</td><td>Yes</td><td>—</td><td>Name of the test</td></tr>
       <tr><td><code>description</code></td><td>string</td><td>No</td><td>—</td><td>What the test verifies</td></tr>
       <tr><td><code>timeoutSeconds</code></td><td>integer</td><td>No</td><td>—</td><td>Timeout for entire test</td></tr>
-      <tr><td><code>stopOnFailure</code></td><td>boolean</td><td>No</td><td><code>true</code></td><td>Stop subsequent steps when any assertion fails</td></tr>
+      <tr><td><code>stopOnFailure</code></td><td>boolean</td><td>No</td><td><code>true</code></td><td>Default for the test's steps: stop the test when a step's assertions fail. With <code>false</code>, the steps continue and the test still fails</td></tr>
       <tr><td><code>variables</code></td><td>object</td><td>No</td><td>—</td><td>Test-level variables (overrides definition-level). Supports <a href="/docs/refs"><code>$ref</code></a>.</td></tr>
       <tr><td><code>steps</code></td><td>array</td><td>Yes</td><td>—</td><td>Sequential list of test steps. At least one</td></tr>
     </tbody>
@@ -69,7 +69,7 @@ import CodeBlock from '../../components/CodeBlock.astro';
       <tr><td><code>action</code></td><td>object</td><td>Yes</td><td>—</td><td>Action to execute (see <a href="/docs/actions">Actions</a>)</td></tr>
       <tr><td><code>extract</code></td><td>object</td><td>No</td><td>—</td><td>Extract variables from response (see <a href="/docs/variables">Variables</a>)</td></tr>
       <tr><td><code>assertions</code></td><td>array</td><td>No</td><td>—</td><td>Assertion blocks (see <a href="/docs/assertions">Assertions</a>)</td></tr>
-      <tr><td><code>stopOnFailure</code></td><td>boolean</td><td>No</td><td><code>true</code></td><td>Stop test when assertions in this step fail</td></tr>
+      <tr><td><code>stopOnFailure</code></td><td>boolean</td><td>No</td><td><code>true</code></td><td>Stop the test when this step's assertions fail. With <code>false</code>, the next steps run and the test still fails</td></tr>
     </tbody>
   </table>
 

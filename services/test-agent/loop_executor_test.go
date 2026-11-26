@@ -1,6 +1,8 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"testing"
 	"time"
@@ -387,7 +389,7 @@ func TestRunLoop(t *testing.T) {
 		}
 
 		var calls []int
-		result, err := runLoop(plan, varCtx, func(iterIdx int, iter Iteration) (map[string]interface{}, error) {
+		result, err := runLoop(context.Background(), plan, varCtx, func(iterIdx int, iter Iteration) (map[string]interface{}, error) {
 			iter.SetupFn()
 			calls = append(calls, iterIdx)
 			return nil, nil
@@ -424,7 +426,7 @@ func TestRunLoop(t *testing.T) {
 		}
 
 		var calls int
-		result, err := runLoop(plan, varCtx, func(iterIdx int, iter Iteration) (map[string]interface{}, error) {
+		result, err := runLoop(context.Background(), plan, varCtx, func(iterIdx int, iter Iteration) (map[string]interface{}, error) {
 			iter.SetupFn()
 			calls++
 			if iterIdx == 1 {
@@ -462,7 +464,7 @@ func TestRunLoop(t *testing.T) {
 		}
 
 		var calls int
-		result, err := runLoop(plan, varCtx, func(iterIdx int, iter Iteration) (map[string]interface{}, error) {
+		result, err := runLoop(context.Background(), plan, varCtx, func(iterIdx int, iter Iteration) (map[string]interface{}, error) {
 			iter.SetupFn()
 			calls++
 			status := float64(500)
@@ -502,7 +504,7 @@ func TestRunLoop(t *testing.T) {
 			},
 		}
 
-		result, err := runLoop(plan, varCtx, func(iterIdx int, iter Iteration) (map[string]interface{}, error) {
+		result, err := runLoop(context.Background(), plan, varCtx, func(iterIdx int, iter Iteration) (map[string]interface{}, error) {
 			iter.SetupFn()
 			return map[string]interface{}{"statusCode": float64(500)}, nil
 		})
@@ -519,7 +521,7 @@ func TestRunLoop(t *testing.T) {
 		plan := IterationPlan{LoopName: "empty"}
 
 		var calls int
-		result, err := runLoop(plan, varCtx, func(iterIdx int, iter Iteration) (map[string]interface{}, error) {
+		result, err := runLoop(context.Background(), plan, varCtx, func(iterIdx int, iter Iteration) (map[string]interface{}, error) {
 			iter.SetupFn()
 			calls++
 			return nil, nil
@@ -635,7 +637,7 @@ func TestRunLoop_CompletedShouldBeFalseOnBodyError(t *testing.T) {
 		LoopName: "test",
 	}
 
-	result, err := runLoop(plan, varCtx, func(iterIdx int, iter Iteration) (map[string]interface{}, error) {
+	result, err := runLoop(context.Background(), plan, varCtx, func(iterIdx int, iter Iteration) (map[string]interface{}, error) {
 		iter.SetupFn()
 		if iterIdx == 1 {
 			return nil, fmt.Errorf("boom")
@@ -944,7 +946,7 @@ func TestRunLoop_RepeatUntilWithSourceFieldShorthands(t *testing.T) {
 		}
 
 		var calls int
-		result, err := runLoop(plan, varCtx, func(iterIdx int, iter Iteration) (map[string]interface{}, error) {
+		result, err := runLoop(context.Background(), plan, varCtx, func(iterIdx int, iter Iteration) (map[string]interface{}, error) {
 			iter.SetupFn()
 			calls++
 			if iterIdx == 0 {
@@ -982,7 +984,7 @@ func TestRunLoop_RepeatUntilWithSourceFieldShorthands(t *testing.T) {
 		}
 
 		var calls int
-		result, err := runLoop(plan, varCtx, func(iterIdx int, iter Iteration) (map[string]interface{}, error) {
+		result, err := runLoop(context.Background(), plan, varCtx, func(iterIdx int, iter Iteration) (map[string]interface{}, error) {
 			iter.SetupFn()
 			calls++
 			items := make([]interface{}, iterIdx+1)
@@ -1035,4 +1037,15 @@ func TestRunLoop_ExtractWithDynamicKeys(t *testing.T) {
 			}
 		}
 	})
+}
+
+func TestRunLoop_DelayEndsAtTheDeadline(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	plan := IterationPlan{DelayMs: 5000, Iterations: []Iteration{{SetupFn: func() {}}, {SetupFn: func() {}}}}
+	start := time.Now()
+	_, err := runLoop(ctx, plan, NewVariableContext(), func(int, Iteration) (map[string]interface{}, error) { return nil, nil })
+	if !errors.Is(err, context.DeadlineExceeded) || time.Since(start) > time.Second {
+		t.Errorf("got %v after %v, want the deadline right away", err, time.Since(start))
+	}
 }

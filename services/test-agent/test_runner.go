@@ -13,6 +13,7 @@ import (
 func (e *TestExecutor) ExecuteTests(ctx context.Context, testConfig *TestConfig, startAtStep, stopBefore int) ([]StepExecution, error) {
 	log.Printf("Starting test execution for testRunId: %s (startAt=%d, stopBefore=%d)", testConfig.TestRunID, startAtStep, stopBefore)
 	e.testExecutionLogger.LogEvent("TEST_EXECUTION_STARTED", "Starting test execution", nil, nil)
+	e.continuedFailures = nil
 
 	steps := e.flattenSteps(testConfig, true)
 	log.Printf("Executing %d total step(s), running steps [%d, %d)", len(steps), startAtStep, stopBefore)
@@ -74,7 +75,7 @@ func (e *TestExecutor) ExecuteTests(ctx context.Context, testConfig *TestConfig,
 			plan.Iterations = []Iteration{{Label: "", SetupFn: func() {}}}
 		}
 
-		_, loopErr := runLoop(plan, e.varCtx, func(iterIdx int, iter Iteration) (map[string]interface{}, error) {
+		_, loopErr := runLoop(ctx, plan, e.varCtx, func(iterIdx int, iter Iteration) (map[string]interface{}, error) {
 			if tg.testIndex != lastTestIndex || hasLoop {
 				if !hasLoop || iterIdx == 0 {
 					lastTestIndex = tg.testIndex
@@ -129,6 +130,7 @@ func (e *TestExecutor) ExecuteTests(ctx context.Context, testConfig *TestConfig,
 func (e *TestExecutor) ExecuteStep(ctx context.Context, testConfig *TestConfig, stepIndex int) ([]StepExecution, error) {
 	log.Printf("Debug: executing single step %d for testRunId: %s", stepIndex, testConfig.TestRunID)
 	e.testExecutionLogger.LogEvent("TEST_EXECUTION_STARTED", fmt.Sprintf("Debug: executing step %d", stepIndex), nil, nil)
+	e.continuedFailures = nil
 
 	steps := e.flattenSteps(testConfig, false)
 	if stepIndex < 0 || stepIndex >= len(steps) {

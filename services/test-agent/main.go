@@ -278,10 +278,14 @@ func main() {
 
 		if execErr != nil {
 			log.Printf("Test execution failed: %v", execErr)
+			message := fmt.Sprintf("Test execution failed: %v", execErr)
+			if testCtx.Err() == context.DeadlineExceeded {
+				message = fmt.Sprintf("Timed out after %ds (config.timeoutSeconds): %v", runConfig.TimeoutSeconds, execErr)
+			}
 			notificationErr := completionNotifier.NotifyCompletion(
 				req.TestRunID,
 				"failure",
-				fmt.Sprintf("Test execution failed: %v", execErr),
+				message,
 				stepExecutions,
 			)
 			if notificationErr != nil {
@@ -293,10 +297,10 @@ func main() {
 		log.Printf("Execution complete, notifying Control Tower...")
 		status := "success"
 		message := ""
-		if vf := testExecutor.VisualFailures(); len(vf) > 0 {
+		if failures := append(append([]string{}, testExecutor.ContinuedFailures()...), testExecutor.VisualFailures()...); len(failures) > 0 {
 			status = "failure"
-			message = strings.Join(vf, "\n")
-			log.Printf("Visual match failures detected: %s", message)
+			message = strings.Join(failures, "\n")
+			log.Printf("Failures detected: %s", message)
 		}
 		if notifyErr := completionNotifier.NotifyCompletion(req.TestRunID, status, message, stepExecutions); notifyErr != nil {
 			log.Printf("Failed to notify Control Tower: %v", notifyErr)

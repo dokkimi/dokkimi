@@ -55,6 +55,14 @@ func (e *TestExecutor) executeAPIStep(ctx context.Context, action StepAction, st
 			continue
 		}
 
+		if resp.Headers.Get(dokkimiErrorHeader) != "" {
+			// Dokkimi couldn't deliver the request, so there is no response
+			lastErr = errors.New(strings.TrimSpace(string(resp.Body)))
+			lastResp = nil
+			log.Printf("Request not delivered: %v (URL: %s)", lastErr, fullURL)
+			continue
+		}
+
 		if retryableStatusCodes[resp.StatusCode] {
 			lastErr = fmt.Errorf("received retryable status code %d", resp.StatusCode)
 			lastResp = resp
@@ -72,6 +80,10 @@ func (e *TestExecutor) executeAPIStep(ctx context.Context, action StepAction, st
 	log.Printf("Request failed after %d retries: %v", maxRetries+1, lastErr)
 	return nil, fmt.Errorf("%s %s failed: %s", action.Method, action.URL, rootCause(lastErr))
 }
+
+// dokkimiErrorHeader marks a response the interceptor made because it couldn't
+// deliver the request. Keep in sync with the interceptor's DokkimiErrorHeader.
+const dokkimiErrorHeader = "X-Dokkimi-Error"
 
 // apiResponseToExtractDoc converts an APIResponse to an extraction document: { statusCode, headers, body }.
 func apiResponseToExtractDoc(resp *APIResponse) map[string]interface{} {

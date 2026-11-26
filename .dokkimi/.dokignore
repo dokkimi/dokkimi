@@ -4,3 +4,5 @@ failure-tests/definitions/crash-loop.yaml
 failure-tests/definitions/crash-on-start.yaml
 failure-tests/definitions/crash-broker.yaml
 failure-tests/definitions/crash-in-later-stage.yaml
+failure-tests/definitions/continue-after-failure.yaml
+failure-tests/definitions/unknown-service.yaml

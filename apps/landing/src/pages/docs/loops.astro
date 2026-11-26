@@ -189,7 +189,7 @@ import CodeBlock from '../../components/CodeBlock.astro';
 }`} lang="json" />
 
   <h2>stopOnFailure interaction</h2>
-  <p>By default, a failed assertion in any loop iteration stops the loop immediately. Set <code>"stopOnFailure": false</code> on the step to collect all iteration failures without halting:</p>
+  <p>By default, a failed assertion in any loop iteration stops the loop immediately. Set <code>"stopOnFailure": false</code> on the step to collect all iteration failures without halting. The test still fails if any iteration did:</p>
   <CodeBlock code={`{
   "name": "Verify all users (collect failures)",
   "stopOnFailure": false,

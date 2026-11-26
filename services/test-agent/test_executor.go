@@ -41,6 +41,7 @@ type TestExecutor struct {
 	validationReporter    *ValidationReporter
 	instanceID            string
 	lastStepResponse      map[string]interface{} // last response from executeStep, for test-level until
+	continuedFailures     []string               // steps that failed under stopOnFailure: false
 }
 
 // NewTestExecutor creates a new test executor
@@ -77,6 +78,12 @@ func NewTestExecutor(interceptorURL string, timeout time.Duration, databaseQuery
 // steps can be dispatched. Leave unset for API/DB-only runs.
 func (e *TestExecutor) SetUIStepExecutor(ui *UIStepExecutor) {
 	e.uiStepExecutor = ui
+}
+
+// ContinuedFailures describes the steps that failed but didn't stop the test,
+// because of stopOnFailure: false. They fail it once it is done.
+func (e *TestExecutor) ContinuedFailures() []string {
+	return e.continuedFailures
 }
 
 // VisualFailures returns any visual match failure messages collected during
@@ -145,6 +152,9 @@ func (e *TestExecutor) flattenSteps(testConfig *TestConfig, resetVars bool) []fl
 	globalIndex := 0
 	for ti, testDef := range testConfig.Tests {
 		for si, step := range testDef.Steps {
+			if step.StopOnFailure == nil {
+				step.StopOnFailure = testDef.StopOnFailure // the test's setting is the default
+			}
 			steps = append(steps, flatStep{
 				globalIndex:   globalIndex,
 				testIndex:     ti,

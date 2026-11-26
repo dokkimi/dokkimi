@@ -829,7 +829,7 @@ The optional top-level `config` object holds run-level settings that apply to th
 
 | Field            | Type    | Required | Default | Description                                                               |
 | ---------------- | ------- | -------- | ------- | ------------------------------------------------------------------------- |
-| `timeoutSeconds` | integer | No       | `300`   | Timeout for the entire run in seconds                                     |
+| `timeoutSeconds` | integer | No       | `300`   | Timeout for the tests, in seconds, including waits and loop delays        |
 | `browser`        | object  | No       | —       | Browser configuration for UI tests (ignored when there are no UI actions) |
 
 ### browser
@@ -866,20 +866,20 @@ Tests are defined in the top-level `tests` array. Each test is independent and c
 | `name`           | string  | Yes      | —       | Name of the test                                                                                                                                    |
 | `description`    | string  | No       | —       | What the test verifies                                                                                                                              |
 | `timeoutSeconds` | integer | No       | —       | Timeout for entire test in seconds                                                                                                                  |
-| `stopOnFailure`  | boolean | No       | `true`  | Stop executing subsequent steps when any assertion fails                                                                                            |
+| `stopOnFailure`  | boolean | No       | `true`  | Default for the test's steps: stop the test when a step's assertions fail. With `false`, the steps continue and the test still fails                |
 | `variables`      | object  | No       | —       | Test-level variables as key-value pairs, available via `{{variableName}}`. Overrides definition-level variables with the same key. Supports `$ref`. |
 | `steps`          | array   | Yes      | —       | Flat array of steps, executed sequentially. At least one. With a test-level loop, next to the loop, not inside it                                   |
 
 ### TestStep
 
-| Field           | Type    | Required | Default | Description                                                                       |
-| --------------- | ------- | -------- | ------- | --------------------------------------------------------------------------------- |
-| `name`          | string  | No       | —       | Step name                                                                         |
-| `description`   | string  | No       | —       | Step description                                                                  |
-| `action`        | object  | Yes      | —       | Action to execute (httpRequest, dbQuery, wait, ui, or parallel)                   |
-| `extract`       | object  | No       | —       | Extract variables from the root context: `{ "varName": "$.response.body.field" }` |
-| `assertions`    | array   | No       | —       | Assertion blocks to validate after action completes                               |
-| `stopOnFailure` | boolean | No       | `true`  | Stop test when assertions in this step fail                                       |
+| Field           | Type    | Required | Default | Description                                                                                               |
+| --------------- | ------- | -------- | ------- | --------------------------------------------------------------------------------------------------------- |
+| `name`          | string  | No       | —       | Step name                                                                                                 |
+| `description`   | string  | No       | —       | Step description                                                                                          |
+| `action`        | object  | Yes      | —       | Action to execute (httpRequest, dbQuery, wait, ui, or parallel)                                           |
+| `extract`       | object  | No       | —       | Extract variables from the root context: `{ "varName": "$.response.body.field" }`                         |
+| `assertions`    | array   | No       | —       | Assertion blocks to validate after action completes                                                       |
+| `stopOnFailure` | boolean | No       | `true`  | Stop the test when this step's assertions fail. With `false`, the next steps run and the test still fails |
 
 ### Step Actions
 
@@ -981,6 +981,8 @@ action:
 | `database` | string      | Yes      | Name of a DATABASE item in the definition                      |
 | `query`    | string      | Yes      | SQL query or MongoDB command JSON (supports `{{variables}}`)   |
 | `params`   | object      | No       | Bound query parameters (string values support `{{variables}}`) |
+
+A query that fails fails the step, unless the step asserts on `$.response.success` or `$.response.error` to test the failure. Inside `parallel`, it always fails the step.
 
 **SQL placeholder syntax:**
 
