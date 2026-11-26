@@ -104,6 +104,8 @@ export class DockerBrokerGroupService {
         'io.dokkimi.item-name': item.name,
       },
       ...(item.command ? { cmd: item.command } : {}),
+      maxCpu: item.maxCpu,
+      maxMemory: item.maxMemory,
     });
 
     this.logger.log(`Created broker group for ${item.name} (${item.broker})`);

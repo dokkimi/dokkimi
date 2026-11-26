@@ -18,6 +18,10 @@ export interface RunContainerOptions {
   logConfig?: { Type: string; Config: Record<string, string> };
   /** Mount tmpfs volumes (e.g. { '/var/lib/mysql': '' } for in-memory data dirs). */
   tmpfs?: Record<string, string>;
+  /** Limit in CPU cores (the item's maxCpu). */
+  maxCpu?: number | null;
+  /** Limit in MB (the item's maxMemory). */
+  maxMemory?: number | null;
 }
 
 export interface ContainerInfo {
@@ -162,6 +166,10 @@ export class DockerClientService implements OnApplicationBootstrap {
           : { NetworkMode: opts.networkName }),
         ...(opts.logConfig ? { LogConfig: opts.logConfig } : {}),
         ...(opts.tmpfs ? { Tmpfs: opts.tmpfs } : {}),
+        ...(opts.maxCpu ? { NanoCpus: Math.round(opts.maxCpu * 1e9) } : {}),
+        ...(opts.maxMemory
+          ? { Memory: Math.round(opts.maxMemory * 1024 * 1024) }
+          : {}),
       },
       NetworkingConfig: networkingConfig,
     };

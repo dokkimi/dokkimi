@@ -505,6 +505,27 @@ describe('DockerServiceGroupService', () => {
       expect(userCall.exposedPorts).toContain(3000);
     });
 
+    it('should pass maxCpu and maxMemory to the user container only', async () => {
+      const item = buildServiceItem({ maxCpu: 1, maxMemory: 512 });
+
+      await service.createServiceGroup(
+        'dokkimi-run-inst1',
+        'inst1',
+        item,
+        'api-gateway',
+        'item-1',
+        '127.0.0.11',
+        configPaths,
+        caBundlePaths,
+        [],
+      );
+
+      const [interceptorCall, userCall] =
+        mockDockerClient.runContainer.mock.calls.map((c) => c[0]);
+      expect(userCall).toMatchObject({ maxCpu: 1, maxMemory: 512 });
+      expect(interceptorCall.maxCpu).toBeUndefined();
+    });
+
     it('should mount local dev path when specified', async () => {
       const item = buildServiceItem({
         localDevPath: '/home/user/project/src',

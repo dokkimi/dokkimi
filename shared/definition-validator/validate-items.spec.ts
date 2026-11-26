@@ -101,6 +101,57 @@ describe('validateItem', () => {
         r.warnings.some((w) => w.includes('unknown property "bogus"')),
       ).toBe(true);
     });
+
+    it('errors on maxCpu and maxMemory that are not positive', () => {
+      const r = makeResult();
+      validateItem(
+        {
+          type: 'SERVICE',
+          name: 'svc',
+          port: 3000,
+          healthCheck: '/h',
+          maxCpu: 0,
+          maxMemory: '512',
+        },
+        0,
+        '/f.json',
+        r,
+        fs,
+      );
+      expect(r.errors).toEqual([
+        expect.stringContaining('"maxCpu" must be a positive number'),
+        expect.stringContaining('"maxMemory" must be a number of MB'),
+      ]);
+    });
+
+    it('errors on fields that were removed, and accepts max limits', () => {
+      const r = makeResult();
+      validateItem(
+        {
+          type: 'SERVICE',
+          name: 'svc',
+          port: 3000,
+          healthCheck: '/h',
+          uiPath: '/',
+          minCpu: 0.5,
+          minMemory: 256,
+          maxCpu: 1,
+          maxMemory: 512,
+        },
+        0,
+        '/f.json',
+        r,
+        fs,
+      );
+      expect(r.errors).toEqual([
+        expect.stringContaining('"minCpu" is not supported'),
+        expect.stringContaining('"minMemory" is not supported'),
+        expect.stringContaining('"uiPath" is not supported'),
+      ]);
+      expect(r.warnings.some((w) => w.includes('unknown property'))).toBe(
+        false,
+      );
+    });
   });
 
   describe('stage', () => {

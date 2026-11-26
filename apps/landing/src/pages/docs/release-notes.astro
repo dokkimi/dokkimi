@@ -48,6 +48,14 @@ import CodeBlock from '../../components/CodeBlock.astro';
     <li><strong>A <code>match</code> needs a match</strong> &mdash; Without a <code>count</code>, it passed when nothing matched. It now needs at least one, as documented, and waits for late logs like an explicit count does.</li>
   </ul>
 
+  <h3>Definition fields</h3>
+  <p>Fields that were documented but did nothing are now validation errors, so a definition using one fails validation until it's removed.</p>
+  <ul>
+    <li><strong>Resource limits work</strong> &mdash; <code>maxCpu</code> and <code>maxMemory</code> were accepted and ignored. They now limit the service, worker, database or broker container. A container that uses more memory than <code>maxMemory</code> is killed.</li>
+    <li><strong>Removed fields are errors</strong> &mdash; <code>minCpu</code>, <code>minMemory</code> and <code>uiPath</code> on items, and <code>timeoutSeconds</code> on a test (use <code>config.timeoutSeconds</code>), never did anything.</li>
+    <li><strong><code>wait</code> and <code>ui</code> inside <code>parallel</code></strong> &mdash; These failed when the test ran. They are now validation errors; put them in their own steps.</li>
+  </ul>
+
   <h3>Mocks</h3>
   <ul>
     <li><strong>The most specific mock wins</strong> &mdash; Mocks were ranked by points that added up, so unrelated fields could tie, an omitted <code>mockOrigin</code> counted as a specific one, and a longer prefix didn't win. They are now compared by target, then origin, path, method, and body. See <a href="/docs/mocks#precedence">Mock precedence</a>.</li>

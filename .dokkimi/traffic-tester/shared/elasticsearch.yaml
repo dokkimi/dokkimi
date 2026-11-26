@@ -10,4 +10,3 @@ env:
     value: 'false'
   - name: ES_JAVA_OPTS
     value: '-Xms256m -Xmx256m'
-minMemory: 512

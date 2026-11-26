@@ -23,7 +23,6 @@ tests:
                 operator: eq
                 value: 200
   - name: Full e2e flow — CT runs + log ingestion + test completion
-    timeoutSeconds: 90
     steps:
       - name: 'CT: Create a run'
         action:

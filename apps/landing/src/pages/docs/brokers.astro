@@ -32,6 +32,8 @@ import CodeBlock from '../../components/CodeBlock.astro';
       <tr><td><code>env</code></td><td>array</td><td>&mdash;</td><td>Environment variables: <code>[&#123; "name": "KEY", "value": "VALUE" &#125;]</code></td></tr>
       <tr><td><code>command</code></td><td>string[]</td><td>&mdash;</td><td>Override Docker image CMD</td></tr>
       <tr><td><code>stage</code></td><td>integer</td><td><code>0</code></td><td>Deployment stage &mdash; controls <a href="/docs/project-structure#staged-bootup-order">bootup order</a></td></tr>
+      <tr><td><code>maxCpu</code></td><td>number</td><td>&mdash;</td><td>Limit on CPU cores (e.g., 0.5). No limit when unset</td></tr>
+      <tr><td><code>maxMemory</code></td><td>number</td><td>&mdash;</td><td>Limit on memory in MB (at least 6). The container is killed if it uses more. No limit when unset</td></tr>
     </tbody>
   </table>
 

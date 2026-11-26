@@ -52,7 +52,6 @@ variables:
 
 tests:
   - name: Full order placement flow — gateway → processor → DB → Kafka → notifications
-    timeoutSeconds: 120
     steps:
       - name: Verify all services are healthy
         action:

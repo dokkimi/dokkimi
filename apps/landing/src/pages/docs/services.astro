@@ -33,6 +33,8 @@ import CodeBlock from '../../components/CodeBlock.astro';
       <tr><td><code>mountFiles</code></td><td>array</td><td>—</td><td>Files to mount into the container (read-only). See below.</td></tr>
       <tr><td><code>env</code></td><td>array</td><td>—</td><td>Environment variables (see below)</td></tr>
       <tr><td><code>stage</code></td><td>integer</td><td><code>0</code></td><td>Deployment stage — controls <a href="/docs/project-structure#staged-bootup-order">bootup order</a></td></tr>
+      <tr><td><code>maxCpu</code></td><td>number</td><td>—</td><td>Limit on CPU cores (e.g., 0.5). No limit when unset</td></tr>
+      <tr><td><code>maxMemory</code></td><td>number</td><td>—</td><td>Limit on memory in MB (at least 6). The container is killed if it uses more. No limit when unset</td></tr>
     </tbody>
   </table>
 
@@ -133,7 +135,7 @@ import CodeBlock from '../../components/CodeBlock.astro';
       <tr><td><code>name</code></td><td>string</td><td>Unique name (DNS label)</td></tr>
     </tbody>
   </table>
-  <p>Workers support the same optional fields as SERVICE (<code>image</code>, <code>command</code>, <code>entrypoint</code>, <code>env</code>, <code>mountFiles</code>, <code>stage</code>) but not <code>port</code> or <code>healthCheck</code>.</p>
+  <p>Workers support the same optional fields as SERVICE (<code>image</code>, <code>command</code>, <code>entrypoint</code>, <code>env</code>, <code>mountFiles</code>, <code>stage</code>, <code>maxCpu</code>, <code>maxMemory</code>) but not <code>port</code> or <code>healthCheck</code>.</p>
   <CodeBlock code={`{
   "type": "WORKER",
   "name": "appwrite-worker-db",

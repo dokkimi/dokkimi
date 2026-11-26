@@ -305,15 +305,15 @@ export function validateStep(
           r,
         );
       }
-      // Reject more than one UI action in a parallel group
-      const uiCount = (action.actions as Record<string, unknown>[]).filter(
-        (a) => a?.type === 'ui',
-      ).length;
-      if (uiCount > 1) {
-        err(
-          r,
-          `${ctx}.action: parallel cannot have more than one UI action — split each UI action into its own sequential step`,
-        );
+      // The test agent runs only httpRequest and dbQuery inside parallel
+      for (let ai = 0; ai < action.actions.length; ai++) {
+        const subType = (action.actions[ai] as Record<string, unknown>)?.type;
+        if (subType === 'wait' || subType === 'ui') {
+          err(
+            r,
+            `${ctx}.action.actions[${ai}]: "${subType}" can't run inside parallel — put it in its own step`,
+          );
+        }
       }
     }
   } else if (action.type) {
@@ -409,7 +409,14 @@ export function validateTests(
       err(r, `${ctx}: missing or empty "name"`);
     }
 
-    checkUnknownKeys(test, VALID_TEST_KEYS, ctx, r);
+    const { timeoutSeconds, ...knownTestKeys } = test;
+    if (timeoutSeconds !== undefined) {
+      err(
+        r,
+        `${ctx}: "timeoutSeconds" is not supported on a test — use config.timeoutSeconds for the run`,
+      );
+    }
+    checkUnknownKeys(knownTestKeys, VALID_TEST_KEYS, ctx, r);
 
     validateVariablesField(test.variables, ctx, filePath, r, fs);
 

@@ -289,7 +289,33 @@ describe('validateTests', () => {
       );
     });
 
-    it('accepts a single UI action in a parallel action', () => {
+    it('accepts httpRequest and dbQuery inside parallel', () => {
+      const r = makeResult();
+      validateTests(
+        [
+          {
+            name: 'test',
+            steps: [
+              {
+                action: {
+                  type: 'parallel',
+                  actions: [
+                    { type: 'httpRequest', method: 'GET', url: '/api' },
+                    { type: 'dbQuery', database: 'db', query: 'SELECT 1' },
+                  ],
+                },
+              },
+            ],
+          },
+        ],
+        r,
+        defFile,
+        mockFs,
+      );
+      expect(r.errors.some((e) => e.includes('inside parallel'))).toBe(false);
+    });
+
+    it('errors on ui and wait inside parallel', () => {
       const r = makeResult();
       validateTests(
         [
@@ -305,7 +331,7 @@ describe('validateTests', () => {
                       target: 'frontend-svc',
                       steps: [{ visit: '/' }],
                     },
-                    { type: 'httpRequest', method: 'GET', url: '/api' },
+                    { type: 'wait', durationMs: 10 },
                   ],
                 },
               },
@@ -316,47 +342,40 @@ describe('validateTests', () => {
         defFile,
         mockFs,
       );
-      expect(r.errors.some((e) => e.includes('more than one UI action'))).toBe(
-        false,
+      expect(r.errors).toEqual(
+        expect.arrayContaining([
+          expect.stringContaining(
+            'actions[0]: "ui" can\'t run inside parallel',
+          ),
+          expect.stringContaining(
+            'actions[1]: "wait" can\'t run inside parallel',
+          ),
+        ]),
       );
     });
 
-    it('errors on two UI actions in a parallel action', () => {
+    it('errors on timeoutSeconds on a test', () => {
       const r = makeResult();
       validateTests(
         [
           {
             name: 'test',
-            steps: [
-              {
-                action: {
-                  type: 'parallel',
-                  actions: [
-                    {
-                      type: 'ui',
-                      target: 'frontend-svc',
-                      steps: [{ visit: '/' }],
-                    },
-                    {
-                      type: 'ui',
-                      target: 'admin-svc',
-                      steps: [{ visit: '/' }],
-                    },
-                  ],
-                },
-              },
-            ],
+            timeoutSeconds: 60,
+            steps: [{ action: { type: 'wait', durationMs: 10 } }],
           },
         ],
         r,
         defFile,
         mockFs,
       );
-      expect(
-        r.errors.some((e) =>
-          e.includes('parallel cannot have more than one UI action'),
-        ),
-      ).toBe(true);
+      expect(r.errors).toEqual(
+        expect.arrayContaining([
+          expect.stringContaining(
+            '"timeoutSeconds" is not supported on a test',
+          ),
+        ]),
+      );
+      expect(r.warnings.some((w) => w.includes('timeoutSeconds'))).toBe(false);
     });
   });
 

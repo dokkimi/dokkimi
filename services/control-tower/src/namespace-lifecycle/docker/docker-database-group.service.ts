@@ -123,6 +123,8 @@ export class DockerDatabaseGroupService {
           : {}),
       exposedPorts: [internalPort],
       ...(dbTmpfs ? { tmpfs: dbTmpfs } : {}),
+      maxCpu: item.maxCpu,
+      maxMemory: item.maxMemory,
       labels: {
         'io.dokkimi.instance-id': instanceId,
         'io.dokkimi.role': 'database',

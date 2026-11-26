@@ -239,6 +239,8 @@ A containerized application deployed with an interceptor sidecar for traffic cap
 | `mountFiles`  | array         | —       | Files to mount into the container (read-only). Each entry: `{ "source": "../path/to/file", "target": "/absolute/container/path" }` |
 | `env`         | array         | —       | Environment variables: `[{ "name": "KEY", "value": "VALUE" }, ...]`                                                                |
 | `stage`       | integer (≥ 0) | `0`     | Deployment stage. Items deploy in stage order — stage N+1 starts after stage N is healthy. Sort key, not index (gaps are fine).    |
+| `maxCpu`      | number (> 0)  | —       | Limit on CPU cores (e.g., `0.5`). No limit when unset                                                                              |
+| `maxMemory`   | number (≥ 6)  | —       | Limit on memory in MB. The container is killed if it uses more. No limit when unset                                                |
 
 **Full example:**
 
@@ -292,6 +294,8 @@ A background process (queue consumer, event processor, cron daemon) that doesn't
 | `env`         | array         | —       | Environment variables (`[{ "name": "KEY", "value": "VALUE" }]`)                            |
 | `mountFiles`  | array         | —       | Files to mount (read-only): `[{ "source": "relative/path", "target": "/absolute/path" }]`  |
 | `stage`       | integer (≥ 0) | `0`     | Deployment stage. Items deploy in stage order — stage N+1 starts after stage N is healthy. |
+| `maxCpu`      | number (> 0)  | —       | Limit on CPU cores (e.g., `0.5`). No limit when unset                                      |
+| `maxMemory`   | number (≥ 6)  | —       | Limit on memory in MB. The container is killed if it uses more. No limit when unset        |
 
 **Example:**
 
@@ -336,6 +340,8 @@ A managed database instance. Dokkimi provisions the database container, sets up 
 | `initFilePath`  | string        | —           | Relative path from this file to a single init script                                                        |
 | `initFilePaths` | string[]      | —           | Relative paths to multiple init scripts (executed in order). Use one or the other, not both.                |
 | `stage`         | integer (≥ 0) | `0`         | Deployment stage. Items deploy in stage order — stage N+1 starts after stage N is healthy.                  |
+| `maxCpu`        | number (> 0)  | —           | Limit on CPU cores (e.g., `0.5`). No limit when unset                                                       |
+| `maxMemory`     | number (≥ 6)  | —           | Limit on memory in MB. The container is killed if it uses more. No limit when unset                         |
 
 **Database engine details:**
 
@@ -601,6 +607,8 @@ A message broker instance with a transparent proxy sidecar that captures all pub
 | `env`         | array             | —       | Environment variables: `[{ "name": "KEY", "value": "VALUE" }, ...]`                        |
 | `command`     | string[]          | —       | Override Docker image CMD                                                                  |
 | `stage`       | integer (≥ 0)     | `0`     | Deployment stage. Items deploy in stage order — stage N+1 starts after stage N is healthy. |
+| `maxCpu`      | number (> 0)      | —       | Limit on CPU cores (e.g., `0.5`). No limit when unset                                      |
+| `maxMemory`   | number (≥ 6)      | —       | Limit on memory in MB. The container is killed if it uses more. No limit when unset        |
 
 **Broker engine details:**
 

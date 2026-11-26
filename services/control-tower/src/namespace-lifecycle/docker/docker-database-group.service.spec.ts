@@ -171,6 +171,22 @@ describe('DockerDatabaseGroupService', () => {
       expect(dbCall.networkMode).toBe('container:postgres-db-dbproxy-inst1');
     });
 
+    it('should pass maxCpu and maxMemory to the database container only', async () => {
+      await service.createDatabaseGroup(
+        'dokkimi-run-inst1',
+        'inst1',
+        buildDbItem({ maxCpu: 2, maxMemory: 1024 }),
+        'postgres-db',
+        'item-1',
+      );
+
+      const [proxyCall, dbCall] = mockDockerClient.runContainer.mock.calls.map(
+        (c) => c[0],
+      );
+      expect(dbCall).toMatchObject({ maxCpu: 2, maxMemory: 1024 });
+      expect(proxyCall.maxCpu).toBeUndefined();
+    });
+
     it('should set correct labels on both containers', async () => {
       await service.createDatabaseGroup(
         'dokkimi-run-inst1',

@@ -72,10 +72,7 @@ export const VALID_ITEM_KEYS: Record<string, Set<string>> = {
     'image',
     'port',
     'healthCheck',
-    'uiPath',
     'env',
-    'minCpu',
-    'minMemory',
     'maxCpu',
     'maxMemory',
     'localDevPath',
@@ -92,8 +89,6 @@ export const VALID_ITEM_KEYS: Record<string, Set<string>> = {
     'stage',
     'image',
     'env',
-    'minCpu',
-    'minMemory',
     'maxCpu',
     'maxMemory',
     'localDevPath',
@@ -118,8 +113,6 @@ export const VALID_ITEM_KEYS: Record<string, Set<string>> = {
     'dbUser',
     'dbPassword',
     'noAuth',
-    'minCpu',
-    'minMemory',
     'maxCpu',
     'maxMemory',
   ]),
@@ -136,8 +129,6 @@ export const VALID_ITEM_KEYS: Record<string, Set<string>> = {
     'healthCheck',
     'env',
     'command',
-    'minCpu',
-    'minMemory',
     'maxCpu',
     'maxMemory',
   ]),
@@ -180,10 +171,17 @@ export const VALID_ITEM_KEYS: Record<string, Set<string>> = {
   ]),
 };
 
+// Fields that were documented but never did anything. Using one is an
+// error, so it isn't silently ignored.
+export const REMOVED_ITEM_KEYS: Record<string, string> = {
+  minCpu: 'Docker does not reserve resources; use maxCpu for a limit',
+  minMemory: 'Docker does not reserve resources; use maxMemory for a limit',
+  uiPath: 'it was never used; remove it',
+};
+
 export const VALID_TEST_KEYS = new Set([
   'name',
   'description',
-  'timeoutSeconds',
   'stopOnFailure',
   'variables',
   'steps',

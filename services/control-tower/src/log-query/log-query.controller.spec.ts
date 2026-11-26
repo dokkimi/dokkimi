@@ -68,6 +68,7 @@ describe('LogQueryController', () => {
             responseReceivedAt: new Date(),
             timestamp: new Date(),
             duration: 45,
+            logId: null,
           },
         ],
         total: 1,

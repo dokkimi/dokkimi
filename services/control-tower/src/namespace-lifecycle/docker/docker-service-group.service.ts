@@ -246,6 +246,8 @@ export class DockerServiceGroupService {
       },
       ...(item.command ? { cmd: item.command } : {}),
       ...(item.entrypoint ? { entrypoint: item.entrypoint } : {}),
+      maxCpu: item.maxCpu,
+      maxMemory: item.maxMemory,
       ...(testAgentIP
         ? {
             logConfig: {

@@ -179,6 +179,38 @@ describe('DockerClientService', () => {
       );
     });
 
+    it('should turn maxCpu and maxMemory into Docker limits', async () => {
+      await service.runContainer({
+        name: 'service-a',
+        image: 'user-image:tag',
+        networkName: 'dokkimi-run-inst-1',
+        maxCpu: 0.5,
+        maxMemory: 256,
+      });
+
+      expect(mockDocker.createContainer).toHaveBeenCalledWith(
+        expect.objectContaining({
+          HostConfig: expect.objectContaining({
+            NanoCpus: 500_000_000,
+            Memory: 256 * 1024 * 1024,
+          }),
+        }),
+      );
+    });
+
+    it('should set no limits when maxCpu and maxMemory are absent', async () => {
+      await service.runContainer({
+        name: 'service-a',
+        image: 'user-image:tag',
+        networkName: 'dokkimi-run-inst-1',
+      });
+
+      const hostConfig =
+        mockDocker.createContainer.mock.calls.at(-1)[0].HostConfig;
+      expect(hostConfig).not.toHaveProperty('NanoCpus');
+      expect(hostConfig).not.toHaveProperty('Memory');
+    });
+
     it('should set network aliases via NetworkingConfig', async () => {
       await service.runContainer({
         name: 'service-a-interceptor',

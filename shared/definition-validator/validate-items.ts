@@ -14,6 +14,7 @@ import {
   MOCK_RESPONSE_STATUS_MIN,
   MOCK_RESPONSE_STATUS_MAX,
   VALID_ITEM_KEYS,
+  REMOVED_ITEM_KEYS,
 } from './constants';
 import {
   ValidationResult,
@@ -670,9 +671,30 @@ export function validateItem(
     }
   }
 
+  const known: Record<string, unknown> = { ...item };
+  for (const [key, reason] of Object.entries(REMOVED_ITEM_KEYS)) {
+    if (key in item) {
+      err(r, `${label}: "${key}" is not supported — ${reason}`);
+      delete known[key];
+    }
+  }
+
   const validKeys = VALID_ITEM_KEYS[type];
   if (validKeys) {
-    checkUnknownKeys(item, validKeys, label, r);
+    checkUnknownKeys(known, validKeys, label, r);
+  }
+
+  if (
+    item.maxCpu !== undefined &&
+    (typeof item.maxCpu !== 'number' || !(item.maxCpu > 0))
+  ) {
+    err(r, `${label}: "maxCpu" must be a positive number of CPU cores`);
+  }
+  if (
+    item.maxMemory !== undefined &&
+    (typeof item.maxMemory !== 'number' || !(item.maxMemory >= 6))
+  ) {
+    err(r, `${label}: "maxMemory" must be a number of MB, at least 6`);
   }
 
   switch (type) {
