@@ -35,6 +35,14 @@ import CodeBlock from '../../components/CodeBlock.astro';
   </ul>
   <p>Tests that can change: suites with unmocked calls will reach the internet, mocks may now match a step's own request, a different mock may win, and an assertion that expects <code>http://</code> in the URL of an HTTPS call needs <code>https://</code>.</p>
 
+  <h3>Tests that checked nothing</h3>
+  <p>These tests passed without running or checking anything. They now fail, so a suite that passed before can fail after upgrading.</p>
+  <ul>
+    <li><strong>Loops on a test run</strong> &mdash; A <code>forEach</code>, <code>for</code> or <code>repeat</code> on a test ran none of its steps. Put <code>steps</code> next to the loop, as the docs show; inside it is now an error. A loop can also use the test's own <code>variables</code>.</li>
+    <li><strong>A test needs steps</strong> &mdash; A test without <code>steps</code>, or with a misspelled key such as <code>stpes</code>, is now a validation error.</li>
+    <li><strong>A <code>match</code> needs a match</strong> &mdash; Without a <code>count</code>, it passed when nothing matched. It now needs at least one, as documented, and waits for late logs like an explicit count does.</li>
+  </ul>
+
   <h3>Mocks</h3>
   <ul>
     <li><strong>The most specific mock wins</strong> &mdash; Mocks were ranked by points that added up, so unrelated fields could tie, an omitted <code>mockOrigin</code> counted as a specific one, and a longer prefix didn't win. They are now compared by target, then origin, path, method, and body. See <a href="/docs/mocks#precedence">Mock precedence</a>.</li>

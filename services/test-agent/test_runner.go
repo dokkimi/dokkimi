@@ -44,9 +44,26 @@ func (e *TestExecutor) ExecuteTests(ctx context.Context, testConfig *TestConfig,
 		groups[len(groups)-1].steps = append(groups[len(groups)-1].steps, fs)
 	}
 
+	// seedVariables starts a test with only the definition's and the test's variables
+	seedVariables := func(tg testGroup) {
+		e.varCtx.Reset()
+		if e.stepValidator != nil {
+			e.stepValidator.ResetStepTime()
+		}
+		for name, value := range testConfig.Variables {
+			e.varCtx.Set(name, value)
+		}
+		for name, value := range tg.testDef.Variables {
+			e.varCtx.Set(name, value)
+		}
+	}
+
 	for _, tg := range groups {
 		testDef := tg.testDef
 		hasLoop := testDef.ForEach != nil || testDef.For != nil || testDef.Repeat != nil
+		if hasLoop {
+			seedVariables(tg) // the loop's items may use them
+		}
 
 		plan, err := buildIterationPlan(testDef.ForEach, testDef.For, testDef.Repeat, e.varCtx)
 		if err != nil {
@@ -62,22 +79,7 @@ func (e *TestExecutor) ExecuteTests(ctx context.Context, testConfig *TestConfig,
 				if !hasLoop || iterIdx == 0 {
 					lastTestIndex = tg.testIndex
 				}
-				e.varCtx.Reset()
-				if e.stepValidator != nil {
-					e.stepValidator.ResetStepTime()
-				}
-				if testConfig.Variables != nil {
-					for name, value := range testConfig.Variables {
-						e.varCtx.Set(name, value)
-					}
-				}
-				if len(tg.steps) > 0 {
-					if vars := tg.steps[0].testVariables; vars != nil {
-						for name, value := range vars {
-							e.varCtx.Set(name, value)
-						}
-					}
-				}
+				seedVariables(tg)
 				iter.SetupFn()
 			}
 

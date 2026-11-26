@@ -91,7 +91,12 @@ describe('validateDefinition', () => {
       {
         name: 'def',
         items: [{ type: 'DATABASE', name: 'pg', database: 'postgres' }],
-        tests: [{ name: 'test', steps: [] }],
+        tests: [
+          {
+            name: 'test',
+            steps: [{ action: { type: 'wait', durationMs: 1 } }],
+          },
+        ],
       },
       '/f.json',
       r,

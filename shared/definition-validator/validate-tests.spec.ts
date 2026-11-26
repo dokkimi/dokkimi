@@ -15,8 +15,48 @@ describe('validateTests', () => {
 
   it('validates a minimal valid test', () => {
     const r = makeResult();
-    validateTests([{ name: 'my-test', steps: [] }], r, defFile, mockFs);
+    validateTests(
+      [
+        {
+          name: 'my-test',
+          steps: [{ action: { type: 'wait', durationMs: 1 } }],
+        },
+      ],
+      r,
+      defFile,
+      mockFs,
+    );
     expect(r.errors).toHaveLength(0);
+  });
+
+  it.each([
+    [{ name: 'no steps' }, 'a test needs "steps"'],
+    [
+      { name: 'typo', stpes: [{ action: { type: 'wait', durationMs: 1 } }] },
+      'a test needs "steps"',
+    ],
+    [{ name: 'empty', steps: [] }, 'a test needs at least one step'],
+  ])('rejects a test that runs nothing: %j', (test, message) => {
+    const r = makeResult();
+    validateTests([test], r, defFile, mockFs);
+    expect(r.errors).toEqual([`tests[0]: ${message}`]);
+  });
+
+  it('accepts steps next to a test-level loop', () => {
+    const r = makeResult();
+    validateTests(
+      [
+        {
+          name: 'loop',
+          forEach: { items: [1, 2], as: 'x' },
+          steps: [{ action: { type: 'wait', durationMs: 1 } }],
+        },
+      ],
+      r,
+      defFile,
+      mockFs,
+    );
+    expect(r.errors).toEqual([]);
   });
 
   it('errors when tests is not an array', () => {
@@ -62,7 +102,13 @@ describe('validateTests', () => {
     it('accepts valid variables', () => {
       const r = makeResult();
       validateTests(
-        [{ name: 'test', variables: { myVar: 'value' } }],
+        [
+          {
+            name: 'test',
+            variables: { myVar: 'value' },
+            steps: [{ action: { type: 'wait', durationMs: 1 } }],
+          },
+        ],
         r,
         defFile,
         mockFs,
@@ -97,6 +143,7 @@ describe('validateTests', () => {
         [
           {
             name: 'test',
+            steps: [{ action: { type: 'wait', durationMs: 1 } }],
             variables: {
               num: 42,
               arr: [1, 2, 3],

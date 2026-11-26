@@ -140,11 +140,12 @@ func (ms *MatchStack) Pop(rootCtx map[string]interface{}) {
 	}
 }
 
-// desugarMatchCount converts the count field on match (int or CountAssertion object)
+// desugarMatchCount converts the count field on match (int or CountAssertion
+// object). Without one, a match needs at least one entry.
 // into a CountAssertion. Returns nil if no count specified.
 func desugarMatchCount(count interface{}) *CountAssertion {
 	if count == nil {
-		return nil
+		return &CountAssertion{Operator: "gte", Value: 1}
 	}
 	switch c := count.(type) {
 	case float64:

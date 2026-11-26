@@ -868,7 +868,7 @@ Tests are defined in the top-level `tests` array. Each test is independent and c
 | `timeoutSeconds` | integer | No       | —       | Timeout for entire test in seconds                                                                                                                  |
 | `stopOnFailure`  | boolean | No       | `true`  | Stop executing subsequent steps when any assertion fails                                                                                            |
 | `variables`      | object  | No       | —       | Test-level variables as key-value pairs, available via `{{variableName}}`. Overrides definition-level variables with the same key. Supports `$ref`. |
-| `steps`          | array   | Yes      | —       | Flat array of steps, executed sequentially                                                                                                          |
+| `steps`          | array   | Yes      | —       | Flat array of steps, executed sequentially. At least one. With a test-level loop, next to the loop, not inside it                                   |
 
 ### TestStep
 

@@ -22,7 +22,6 @@ import { validateUiAction } from './validate-ui-action';
 import {
   validateLoopModifiers,
   validateLoopSiblingConflicts,
-  validateTestLoopSiblingConflicts,
 } from './validate-loops';
 
 // ---------------------------------------------------------------------------
@@ -416,51 +415,49 @@ export function validateTests(
 
     // Validate loop modifiers on the test itself.
     validateLoopModifiers(test, ctx, r, { level: 'test' });
-    validateTestLoopSiblingConflicts(test, ctx, r);
 
-    if (test.steps !== undefined) {
-      if (!Array.isArray(test.steps)) {
-        err(r, `${ctx}: "steps" must be an array`);
-      } else {
-        for (let si = 0; si < test.steps.length; si++) {
-          validateStep(
-            test.steps[si] as Record<string, unknown>,
-            `${ctx}.steps[${si}]`,
+    if (test.steps === undefined) {
+      err(r, `${ctx}: a test needs "steps"`);
+    } else if (!Array.isArray(test.steps)) {
+      err(r, `${ctx}: "steps" must be an array`);
+    } else if (test.steps.length === 0) {
+      err(r, `${ctx}: a test needs at least one step`);
+    } else {
+      for (let si = 0; si < test.steps.length; si++) {
+        validateStep(
+          test.steps[si] as Record<string, unknown>,
+          `${ctx}.steps[${si}]`,
+          r,
+        );
+      }
+
+      // Warn if test-level repeat has until but the last step is a wait action,
+      // since until evaluates against the last step's response (which is nil for wait).
+      if (
+        test.repeat !== undefined &&
+        typeof test.repeat === 'object' &&
+        !Array.isArray(test.repeat) &&
+        (test.repeat as Record<string, unknown>).until !== undefined
+      ) {
+        const lastStep = test.steps[test.steps.length - 1] as Record<
+          string,
+          unknown
+        >;
+        const action = lastStep?.action as Record<string, unknown> | undefined;
+        if (action?.type === 'wait') {
+          warn(
             r,
+            `${ctx}: test-level "repeat.until" evaluates against the last step's response, but the last step is a "wait" action (which produces no response) — the until condition will never match a $.response.* path`,
           );
         }
-
-        // Warn if test-level repeat has until but the last step is a wait action,
-        // since until evaluates against the last step's response (which is nil for wait).
-        if (
-          test.repeat !== undefined &&
-          typeof test.repeat === 'object' &&
-          !Array.isArray(test.repeat) &&
-          (test.repeat as Record<string, unknown>).until !== undefined &&
-          test.steps.length > 0
-        ) {
-          const lastStep = test.steps[test.steps.length - 1] as Record<
-            string,
-            unknown
-          >;
-          const action = lastStep?.action as
-            | Record<string, unknown>
-            | undefined;
-          if (action?.type === 'wait') {
-            warn(
-              r,
-              `${ctx}: test-level "repeat.until" evaluates against the last step's response, but the last step is a "wait" action (which produces no response) — the until condition will never match a $.response.* path`,
-            );
-          }
-        }
-
-        // Cross-step uniqueness for artifact names. The artifact pipeline
-        // writes user-named captures to <type>/<name>.<ext> under the
-        // instance directory; two captures sharing a name within one test
-        // would silently overwrite each other in storage. Covers both plain
-        // screenshot primitives and visualMatch captures (same folder).
-        validateScreenshotNameUniqueness(test.steps, ctx, r);
       }
+
+      // Cross-step uniqueness for artifact names. The artifact pipeline
+      // writes user-named captures to <type>/<name>.<ext> under the
+      // instance directory; two captures sharing a name within one test
+      // would silently overwrite each other in storage. Covers both plain
+      // screenshot primitives and visualMatch captures (same folder).
+      validateScreenshotNameUniqueness(test.steps, ctx, r);
     }
   }
 }

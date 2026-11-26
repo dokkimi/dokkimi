@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -437,5 +438,40 @@ func TestTestExecutor_TestVarsNotSeededWhenStartAtStepSkipsStepZero(t *testing.T
 		t.Errorf("Bug #2: test-level variable {{testVar}} not set when startAtStep skips step 0: %v", varErr)
 	} else if val != "should-be-seeded" {
 		t.Errorf("Bug #2: expected testVar='should-be-seeded', got '%s'", val)
+	}
+}
+
+func TestTestExecutor_TestLevelLoopUsesTestVariables(t *testing.T) {
+	var paths []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		paths = append(paths, r.URL.Path)
+		w.Write([]byte(`{}`))
+	}))
+	defer server.Close()
+
+	executor := NewTestExecutor(server.URL, 30*time.Second, nil, nil)
+	testConfig := &TestConfig{
+		TestRunID: "run",
+		Variables: map[string]interface{}{"defIds": []interface{}{"a", "b"}},
+		Tests: []TestDefinition{
+			{
+				Name:    "definition variable",
+				ForEach: &ForEachLoop{Items: "{{defIds}}", As: "id"},
+				Steps:   []TestStep{{Action: StepAction{Type: "httpRequest", Method: "GET", URL: "svc/{{id}}"}}},
+			},
+			{
+				Name:      "test variable",
+				Variables: map[string]interface{}{"testIds": []interface{}{"c", "d"}},
+				ForEach:   &ForEachLoop{Items: "{{testIds}}", As: "id"},
+				Steps:     []TestStep{{Action: StepAction{Type: "httpRequest", Method: "GET", URL: "svc/{{id}}"}}},
+			},
+		},
+	}
+
+	if _, err := executor.ExecuteTests(context.Background(), testConfig, 0, -1); err != nil {
+		t.Fatalf("ExecuteTests() error = %v", err)
+	}
+	if want := []string{"/svc/a", "/svc/b", "/svc/c", "/svc/d"}; !reflect.DeepEqual(paths, want) {
+		t.Errorf("requested %v, want %v", paths, want)
 	}
 }
