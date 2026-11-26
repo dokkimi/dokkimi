@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/binary"
 	"fmt"
 	"log"
 	"net"
@@ -54,9 +55,21 @@ func (p *Proxy) handleConnection(clientConn net.Conn) {
 	pc.relay()
 }
 
-// stripDeprecateEOFFromGreeting removes CLIENT_DEPRECATE_EOF (bit 24) from
-// the server's advertised capabilities so the driver never enables it locally.
-func stripDeprecateEOFFromGreeting(pkt *mysqlPacket) {
+// Capabilities the proxy hides from both sides, so the traffic stays in a form
+// it can read: TLS and compression would make it unreadable, query attributes
+// add a block before the query text, and without DEPRECATE_EOF the server
+// sends the EOF markers the result set state machine expects.
+const (
+	capCompress        uint32 = 0x00000020
+	capSSL             uint32 = 0x00000800
+	capDeprecateEOF    uint32 = 0x01000000
+	capQueryAttributes uint32 = 0x08000000
+	hiddenCapabilities        = capCompress | capSSL | capDeprecateEOF | capQueryAttributes
+)
+
+// hideCapabilitiesInGreeting removes hiddenCapabilities from the server's
+// advertised capabilities so the driver never enables them.
+func hideCapabilitiesInGreeting(pkt *mysqlPacket) {
 	if len(pkt.payload) < 2 || pkt.payload[0] != 0x0a {
 		return
 	}
@@ -73,13 +86,16 @@ func stripDeprecateEOFFromGreeting(pkt *mysqlPacket) {
 	}
 	// After NUL: conn_id(4) + auth_data_1(8) + filler(1) + cap_lower(2) +
 	// charset(1) + status(2) + cap_upper(2)
-	// cap_upper starts at nulPos + 1 + 4 + 8 + 1 + 2 + 1 + 2 = nulPos + 19
+	// cap_lower starts at nulPos + 1 + 4 + 8 + 1 = nulPos + 14, cap_upper at nulPos + 19
+	lowerCapOff := nulPos + 14
 	upperCapOff := nulPos + 19
 	if upperCapOff+2 > len(pkt.payload) {
 		return
 	}
-	// CLIENT_DEPRECATE_EOF = bit 24 = bit 8 of upper caps = bit 0 of second byte
-	pkt.payload[upperCapOff+1] &= 0xFE
+	lower := uint32(binary.LittleEndian.Uint16(pkt.payload[lowerCapOff:])) &^ hiddenCapabilities
+	upper := uint32(binary.LittleEndian.Uint16(pkt.payload[upperCapOff:])) &^ (hiddenCapabilities >> 16)
+	binary.LittleEndian.PutUint16(pkt.payload[lowerCapOff:], uint16(lower))
+	binary.LittleEndian.PutUint16(pkt.payload[upperCapOff:], uint16(upper))
 }
 
 func (p *Proxy) relayHandshake(client, upstream net.Conn) error {
@@ -91,7 +107,7 @@ func (p *Proxy) relayHandshake(client, upstream net.Conn) error {
 		client.Write(serverGreeting.rawBytes())
 		return fmt.Errorf("server sent error during greeting")
 	}
-	stripDeprecateEOFFromGreeting(serverGreeting)
+	hideCapabilitiesInGreeting(serverGreeting)
 	if _, err := client.Write(serverGreeting.rawBytes()); err != nil {
 		return fmt.Errorf("forward greeting to client: %w", err)
 	}
@@ -100,10 +116,11 @@ func (p *Proxy) relayHandshake(client, upstream net.Conn) error {
 	if err != nil {
 		return fmt.Errorf("read client handshake response: %w", err)
 	}
-	// Strip CLIENT_DEPRECATE_EOF (bit 24 = 0x01000000) so the server uses
-	// traditional EOF markers that our result set state machine expects.
+	// Clear the same capabilities in the client's reply, in case a client sets
+	// them anyway.
 	if len(clientResponse.payload) >= 4 {
-		clientResponse.payload[3] &= 0xFE
+		caps := binary.LittleEndian.Uint32(clientResponse.payload) &^ hiddenCapabilities
+		binary.LittleEndian.PutUint32(clientResponse.payload, caps)
 	}
 	if _, err := upstream.Write(clientResponse.rawBytes()); err != nil {
 		return fmt.Errorf("forward handshake response to upstream: %w", err)

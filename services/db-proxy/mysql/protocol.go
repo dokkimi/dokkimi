@@ -26,8 +26,15 @@ const (
 	fieldTypeDouble     byte = 0x05
 	fieldTypeLongLong   byte = 0x08
 	fieldTypeInt24      byte = 0x09
+	fieldTypeTimestamp  byte = 0x07
+	fieldTypeDate       byte = 0x0a
+	fieldTypeTime       byte = 0x0b
+	fieldTypeDatetime   byte = 0x0c
+	fieldTypeYear       byte = 0x0d
 	fieldTypeNewDecimal byte = 0xf6
 	fieldTypeVarString  byte = 0xfd
+
+	columnFlagUnsigned uint16 = 0x0020
 )
 
 // mysqlPacket represents a single MySQL protocol packet
@@ -156,16 +163,18 @@ func readLenEncString(data []byte) (string, int, bool) {
 		return "", 1, true
 	}
 	length, n := readLenEncInt(data)
-	if n == 0 || int(length) > len(data)-n {
+	if n == 0 || length > uint64(len(data)-n) {
 		return "", 0, false
 	}
 	return string(data[n : n+int(length)]), n + int(length), false
 }
 
-// columnDef holds column name and type from a ColumnDefinition41 packet
+// columnDef holds column name, type, flags and decimals from a ColumnDefinition41 packet
 type columnDef struct {
 	name      string
 	fieldType byte
+	flags     uint16
+	decimals  byte
 }
 
 // parseColumnDef extracts column name and type from a ColumnDefinition41 packet payload
@@ -201,7 +210,13 @@ func parseColumnDef(payload []byte) columnDef {
 		return columnDef{name: name}
 	}
 	ft := payload[off]
-	return columnDef{name: name, fieldType: ft}
+	col := columnDef{name: name, fieldType: ft}
+	// flags(2) + decimals(1)
+	if off+4 <= len(payload) {
+		col.flags = binary.LittleEndian.Uint16(payload[off+1:])
+		col.decimals = payload[off+3]
+	}
+	return col
 }
 
 // parseTextRowValues extracts column values from a text resultset row.
@@ -225,8 +240,10 @@ func parseTextRowValues(payload []byte, numCols int) []interface{} {
 	return values
 }
 
-// parseBinaryRowValues extracts column values from a binary resultset row.
-// Binary row format: 0x00 header + NULL bitmap + binary-encoded values.
+// parseBinaryRowValues extracts column values from a binary resultset row
+// (the reply to COM_STMT_EXECUTE). Format: 0x00 header + NULL bitmap (offset 2)
+// + the non-NULL values. Values come out the same as the text protocol's, so a
+// query logs the same whether it was prepared or not.
 func parseBinaryRowValues(payload []byte, columns []columnDef) []interface{} {
 	numCols := len(columns)
 	nullBitmapLen := (numCols + 7 + 2) / 8
@@ -238,7 +255,7 @@ func parseBinaryRowValues(payload []byte, columns []columnDef) []interface{} {
 	values := make([]interface{}, numCols)
 	off := 1 + nullBitmapLen
 
-	for i := 0; i < numCols; i++ {
+	for i, col := range columns {
 		bytePos := (i + 2) / 8
 		bitPos := uint((i + 2) % 8)
 		if nullBitmap[bytePos]&(1<<bitPos) != 0 {
@@ -246,65 +263,161 @@ func parseBinaryRowValues(payload []byte, columns []columnDef) []interface{} {
 			continue
 		}
 
-		switch columns[i].fieldType {
+		unsigned := col.flags&columnFlagUnsigned != 0
+		fixed := func(size int) []byte {
+			if off+size > len(payload) {
+				return nil
+			}
+			b := payload[off : off+size]
+			off += size
+			return b
+		}
+
+		switch col.fieldType {
 		case fieldTypeTiny:
+			b := fixed(1)
+			if b == nil {
+				return values
+			}
+			if unsigned {
+				values[i] = int64(b[0])
+			} else {
+				values[i] = int64(int8(b[0]))
+			}
+		case fieldTypeShort, fieldTypeYear:
+			b := fixed(2)
+			if b == nil {
+				return values
+			}
+			v := binary.LittleEndian.Uint16(b)
+			if unsigned || col.fieldType == fieldTypeYear {
+				values[i] = int64(v)
+			} else {
+				values[i] = int64(int16(v))
+			}
+		case fieldTypeLong, fieldTypeInt24:
+			b := fixed(4)
+			if b == nil {
+				return values
+			}
+			v := binary.LittleEndian.Uint32(b)
+			if unsigned {
+				values[i] = int64(v)
+			} else {
+				values[i] = int64(int32(v))
+			}
+		case fieldTypeLongLong:
+			b := fixed(8)
+			if b == nil {
+				return values
+			}
+			v := binary.LittleEndian.Uint64(b)
+			if unsigned && v > math.MaxInt64 {
+				values[i] = strconv.FormatUint(v, 10) // as the text protocol gives it
+			} else {
+				values[i] = int64(v)
+			}
+		case fieldTypeFloat:
+			b := fixed(4)
+			if b == nil {
+				return values
+			}
+			values[i] = float64(math.Float32frombits(binary.LittleEndian.Uint32(b)))
+		case fieldTypeDouble:
+			b := fixed(8)
+			if b == nil {
+				return values
+			}
+			values[i] = math.Float64frombits(binary.LittleEndian.Uint64(b))
+		case fieldTypeDate, fieldTypeDatetime, fieldTypeTimestamp, fieldTypeTime:
 			if off >= len(payload) {
 				return values
 			}
-			values[i] = int64(int8(payload[off]))
+			n := int(payload[off])
 			off++
-		case fieldTypeShort:
-			if off+2 > len(payload) {
+			b := fixed(n)
+			if b == nil {
 				return values
 			}
-			values[i] = int64(int16(binary.LittleEndian.Uint16(payload[off:])))
-			off += 2
-		case fieldTypeLong, fieldTypeInt24:
-			if off+4 > len(payload) {
-				return values
-			}
-			values[i] = int64(int32(binary.LittleEndian.Uint32(payload[off:])))
-			off += 4
-		case fieldTypeLongLong:
-			if off+8 > len(payload) {
-				return values
-			}
-			values[i] = int64(binary.LittleEndian.Uint64(payload[off:]))
-			off += 8
-		case fieldTypeFloat:
-			if off+4 > len(payload) {
-				return values
-			}
-			bits := binary.LittleEndian.Uint32(payload[off:])
-			values[i] = float64(math.Float32frombits(bits))
-			off += 4
-		case fieldTypeDouble:
-			if off+8 > len(payload) {
-				return values
-			}
-			bits := binary.LittleEndian.Uint64(payload[off:])
-			values[i] = math.Float64frombits(bits)
-			off += 8
-		default:
-			s, n, isNull := readLenEncString(payload[off:])
-			if isNull {
-				values[i] = nil
-				off++
-			} else if n == 0 {
-				return values
+			if col.fieldType == fieldTypeTime {
+				values[i] = formatBinaryTime(b, col.decimals)
 			} else {
-				values[i] = coerceValue(s, columns[i].fieldType)
-				off += n
+				values[i] = formatBinaryDatetime(b, col.fieldType == fieldTypeDate, col.decimals)
 			}
+		default:
+			s, n, _ := readLenEncString(payload[off:])
+			if n == 0 {
+				return values
+			}
+			values[i] = coerceValue(s, col.fieldType)
+			off += n
 		}
 	}
 	return values
 }
 
+// formatFraction formats microseconds with the column's number of decimals,
+// as the text protocol does (DATETIME(3) gives ".789"). Without a fixed number
+// (0x1f, e.g. for expressions) it shows all six digits when there are any.
+func formatFraction(micro uint32, decimals byte) string {
+	if decimals == 0x1f {
+		if micro == 0 {
+			return ""
+		}
+		decimals = 6
+	}
+	if decimals == 0 || decimals > 6 {
+		return ""
+	}
+	return fmt.Sprintf(".%0*d", int(decimals), micro/uint32(math.Pow10(6-int(decimals))))
+}
+
+// formatBinaryDatetime formats a binary DATE, DATETIME or TIMESTAMP value
+// (length 0, 4, 7 or 11) as "YYYY-MM-DD" or "YYYY-MM-DD HH:MM:SS[.fff]".
+func formatBinaryDatetime(b []byte, dateOnly bool, decimals byte) string {
+	var year uint16
+	var month, day, hour, minute, second byte
+	var micro uint32
+	if len(b) >= 4 {
+		year, month, day = binary.LittleEndian.Uint16(b), b[2], b[3]
+	}
+	if len(b) >= 7 {
+		hour, minute, second = b[4], b[5], b[6]
+	}
+	if len(b) >= 11 {
+		micro = binary.LittleEndian.Uint32(b[7:])
+	}
+	date := fmt.Sprintf("%04d-%02d-%02d", year, month, day)
+	if dateOnly {
+		return date
+	}
+	return fmt.Sprintf("%s %02d:%02d:%02d%s", date, hour, minute, second, formatFraction(micro, decimals))
+}
+
+// formatBinaryTime formats a binary TIME value (length 0, 8 or 12) as
+// "[-]HH:MM:SS[.fff]", with days folded into the hours as the text protocol does.
+func formatBinaryTime(b []byte, decimals byte) string {
+	sign := ""
+	var hours int
+	var minute, second byte
+	var micro uint32
+	if len(b) >= 8 {
+		if b[0] == 1 {
+			sign = "-"
+		}
+		hours = int(binary.LittleEndian.Uint32(b[1:]))*24 + int(b[5])
+		minute, second = b[6], b[7]
+	}
+	if len(b) >= 12 {
+		micro = binary.LittleEndian.Uint32(b[8:])
+	}
+	return fmt.Sprintf("%s%02d:%02d:%02d%s", sign, hours, minute, second, formatFraction(micro, decimals))
+}
+
 // coerceValue converts a text-format MySQL value to a native Go type
 func coerceValue(s string, ft byte) interface{} {
 	switch ft {
-	case fieldTypeTiny, fieldTypeShort, fieldTypeLong, fieldTypeLongLong, fieldTypeInt24:
+	case fieldTypeTiny, fieldTypeShort, fieldTypeLong, fieldTypeLongLong, fieldTypeInt24, fieldTypeYear:
 		if v, err := strconv.ParseInt(s, 10, 64); err == nil {
 			return v
 		}
