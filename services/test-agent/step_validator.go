@@ -59,7 +59,6 @@ func (sv *StepValidator) RecordStepTime(step TestStep, stepExec StepExecution) {
 // step is a wait that needs to inherit this step's buffered logs).
 func (sv *StepValidator) ValidateStepWithRetry(step TestStep, stepExec StepExecution, stepResp map[string]interface{}, skipFlush bool) ([]AssertionResult, bool) {
 	sv.blockCache = resolvedBlocksCache{}
-	resetLowerKeyCache()
 
 	effectiveExec := stepExec
 	if step.Action.Type == "wait" && sv.prevStepStartTime != "" {
