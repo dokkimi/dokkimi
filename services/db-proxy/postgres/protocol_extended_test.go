@@ -260,7 +260,7 @@ func TestExtractTypedDataRow_NullColumns(t *testing.T) {
 	binary.BigEndian.PutUint32(frame[1:5], uint32(len(bodyBytes)+4))
 	copy(frame[5:], bodyBytes)
 
-	values := extractTypedDataRow(frame, cols)
+	values := extractTypedDataRow(frame, cols, nil, nil)
 	if len(values) != 2 {
 		t.Fatalf("expected 2, got %d", len(values))
 	}
@@ -285,7 +285,7 @@ func TestExtractTypedDataRow_EmptyString(t *testing.T) {
 	binary.BigEndian.PutUint32(frame[1:5], uint32(len(bodyBytes)+4))
 	copy(frame[5:], bodyBytes)
 
-	values := extractTypedDataRow(frame, cols)
+	values := extractTypedDataRow(frame, cols, nil, nil)
 	if len(values) != 1 {
 		t.Fatalf("expected 1, got %d", len(values))
 	}

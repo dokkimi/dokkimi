@@ -1,6 +1,7 @@
 package main
 
 import (
+	"github.com/jackc/pgx/v5/pgtype"
 	"io"
 	"log"
 	"net"
@@ -14,6 +15,17 @@ import (
 type pendingQuery struct {
 	sql       string
 	startTime time.Time
+	formats   []int16 // result format codes from Bind (extended protocol)
+	group     int     // number of sync points (Query or Sync) sent before it
+	stmt      string  // prepared statement it executes (extended protocol)
+}
+
+// describeRequest is a Describe the client sent, waiting for its
+// RowDescription or NoData: of a prepared statement ('S') or a portal ('P').
+type describeRequest struct {
+	kind  byte
+	name  string
+	group int
 }
 
 // proxyConnection manages a single client↔upstream connection pair
@@ -23,10 +35,18 @@ type proxyConnection struct {
 	config       *shared.Config
 	logger       *shared.QueryLogger
 
-	mu         sync.Mutex
-	stmtCache  map[string]string // statement name → SQL
-	activeStmt string            // statement being executed (set by Bind)
-	pending    []pendingQuery    // queries awaiting response
+	mu            sync.Mutex
+	stmtCache     map[string]string // statement name → SQL
+	activeStmt    string            // statement being executed (set by Bind)
+	activeFormats []int16           // result formats of that execution (set by Bind)
+	pending       []pendingQuery    // queries awaiting response
+	syncSent      int               // sync points (Query or Sync) sent by the client
+	readySeen     int               // ReadyForQuery messages received from the server
+
+	describes   []describeRequest       // Describes waiting for their reply
+	stmtColumns map[string][]columnMeta // prepared statement → its result columns
+
+	types *pgtype.Map // decodes binary result values; one per connection, not shared
 
 	// Result accumulation for the current query
 	columns    []columnMeta             // from RowDescription
@@ -40,6 +60,8 @@ func newProxyConnection(client, upstream net.Conn, cfg *shared.Config, logger *s
 		config:       cfg,
 		logger:       logger,
 		stmtCache:    make(map[string]string),
+		stmtColumns:  make(map[string][]columnMeta),
+		types:        pgtype.NewMap(),
 	}
 }
 
@@ -77,9 +99,26 @@ func (pc *proxyConnection) relayClientToUpstream() {
 		switch msgType {
 		case msgQuery:
 			query := extractSimpleQuery(frame)
+			pc.mu.Lock()
 			if query != "" {
+				pc.pending = append(pc.pending, pendingQuery{sql: query, startTime: time.Now(), group: pc.syncSent})
+			}
+			pc.syncSent++ // a simple query is its own sync point
+			pc.mu.Unlock()
+
+		case msgSync:
+			pc.mu.Lock()
+			pc.syncSent++
+			pc.mu.Unlock()
+
+		case msgDescribe:
+			if len(frame) >= 6 {
+				name := ""
+				if end := indexOf(frame[6:], 0); end >= 0 {
+					name = string(frame[6 : 6+end])
+				}
 				pc.mu.Lock()
-				pc.pending = append(pc.pending, pendingQuery{sql: query, startTime: time.Now()})
+				pc.describes = append(pc.describes, describeRequest{kind: frame[5], name: name, group: pc.syncSent})
 				pc.mu.Unlock()
 			}
 
@@ -93,15 +132,17 @@ func (pc *proxyConnection) relayClientToUpstream() {
 
 		case msgBind:
 			stmtName := extractBindStmtName(frame)
+			formats := extractBindResultFormats(frame)
 			pc.mu.Lock()
 			pc.activeStmt = stmtName
+			pc.activeFormats = formats
 			pc.mu.Unlock()
 
 		case msgExecute:
 			pc.mu.Lock()
 			stmtName := pc.activeStmt
 			if query, ok := pc.stmtCache[stmtName]; ok {
-				pc.pending = append(pc.pending, pendingQuery{sql: query, startTime: time.Now()})
+				pc.pending = append(pc.pending, pendingQuery{sql: query, startTime: time.Now(), formats: pc.activeFormats, group: pc.syncSent, stmt: stmtName})
 			}
 			pc.mu.Unlock()
 
@@ -133,18 +174,42 @@ func (pc *proxyConnection) relayUpstreamToClient() {
 		}
 
 		switch msgType {
-		case msgRowDescription:
+		case msgRowDescription, msgNoData:
+			// The reply to a Describe, or (simple query) the start of a result.
+			var cols []columnMeta
+			if msgType == msgRowDescription {
+				cols = extractColumnInfo(frame)
+			}
 			pc.mu.Lock()
-			pc.columns = extractColumnInfo(frame)
+			if len(pc.describes) > 0 {
+				d := pc.describes[0]
+				pc.describes = pc.describes[1:]
+				if d.kind == 'S' {
+					// A statement can be described once and run many times
+					pc.stmtColumns[d.name] = cols
+				} else {
+					pc.columns = cols
+				}
+			} else if msgType == msgRowDescription {
+				pc.columns = cols
+			}
 			pc.resultRows = nil
 			pc.mu.Unlock()
 
 		case msgDataRow:
 			pc.mu.Lock()
-			if pc.columns != nil {
-				values := extractTypedDataRow(frame, pc.columns)
-				row := make(map[string]interface{}, len(pc.columns))
-				for i, col := range pc.columns {
+			cols := pc.columns
+			var formats []int16
+			if len(pc.pending) > 0 {
+				formats = pc.pending[0].formats
+				if cols == nil {
+					cols = pc.stmtColumns[pc.pending[0].stmt]
+				}
+			}
+			if cols != nil {
+				values := extractTypedDataRow(frame, cols, formats, pc.types)
+				row := make(map[string]interface{}, len(cols))
+				for i, col := range cols {
 					if i < len(values) {
 						row[col.name] = values[i]
 					}
@@ -169,6 +234,43 @@ func (pc *proxyConnection) relayUpstreamToClient() {
 			pc.columns = nil
 			pc.mu.Unlock()
 			pc.completeQuery(false, 0, errMsg, nil)
+
+		case msgEmptyQuery:
+			// The reply to an empty query (";" or ""), e.g. a connection check
+			pc.completeQuery(true, 0, "", nil)
+
+		case msgPortalSuspended:
+			// Execute with a row limit (a cursor or fetch size) returned its rows;
+			// the next Execute continues it as a new entry.
+			pc.mu.Lock()
+			data := pc.resultRows
+			pc.resultRows = nil
+			pc.mu.Unlock()
+			pc.completeQuery(true, int64(len(data)), "", data)
+
+		case msgReadyForQuery:
+			// Everything sent before this sync point is done. After an error the
+			// server skips the rest of the group, so drop what it never answered,
+			// or every later query would be paired with the wrong reply.
+			pc.mu.Lock()
+			pc.readySeen++
+			kept := pc.pending[:0]
+			for _, pq := range pc.pending {
+				if pq.group >= pc.readySeen {
+					kept = append(kept, pq)
+				}
+			}
+			pc.pending = kept
+			keptDescribes := pc.describes[:0]
+			for _, d := range pc.describes {
+				if d.group >= pc.readySeen {
+					keptDescribes = append(keptDescribes, d)
+				}
+			}
+			pc.describes = keptDescribes
+			pc.columns = nil
+			pc.resultRows = nil
+			pc.mu.Unlock()
 		}
 
 		if _, err := pc.clientConn.Write(frame); err != nil {

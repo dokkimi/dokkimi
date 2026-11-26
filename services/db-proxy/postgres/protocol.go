@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/binary"
 	"fmt"
+	"github.com/jackc/pgx/v5/pgtype"
 	"io"
 	"strconv"
 	"strings"
@@ -18,6 +19,7 @@ const (
 	msgBind      byte = 'B'
 	msgExecute   byte = 'E'
 	msgSync      byte = 'S'
+	msgDescribe  byte = 'D'
 	msgTerminate byte = 'X'
 
 	// Server message types
@@ -32,6 +34,8 @@ const (
 	msgParseComplete   byte = '1'
 	msgBindComplete    byte = '2'
 	msgNoData          byte = 'n'
+	msgEmptyQuery      byte = 'I'
+	msgPortalSuspended byte = 's'
 	msgNoticeResponse  byte = 'N'
 )
 
@@ -243,8 +247,11 @@ func extractColumnInfo(frame []byte) []columnMeta {
 }
 
 // extractTypedDataRow extracts column values from a DataRow ('D') frame, using
-// type OIDs from RowDescription to coerce text-format values to native types.
-func extractTypedDataRow(frame []byte, cols []columnMeta) []interface{} {
+// type OIDs from RowDescription to coerce values to native types. formats are
+// the result format codes the client asked for in Bind (none: all text; one:
+// for every column; else one per column). Binary values are decoded and turned
+// into their text form, so a value is logged the same in either format.
+func extractTypedDataRow(frame []byte, cols []columnMeta, formats []int16, types *pgtype.Map) []interface{} {
 	if len(frame) < 7 {
 		return nil
 	}
@@ -261,20 +268,112 @@ func extractTypedDataRow(frame []byte, cols []columnMeta) []interface{} {
 		body = body[4:]
 		if colLen == -1 {
 			values = append(values, nil)
-		} else {
-			if int(colLen) > len(body) {
-				break
-			}
-			s := string(body[:colLen])
-			if i < len(cols) {
-				values = append(values, coerceValue(s, cols[i].typeOID))
-			} else {
-				values = append(values, s)
-			}
-			body = body[colLen:]
+			continue
 		}
+		if int(colLen) > len(body) {
+			break
+		}
+		raw := body[:colLen]
+		body = body[colLen:]
+		if i >= len(cols) {
+			values = append(values, string(raw))
+			continue
+		}
+		s := string(raw)
+		if resultFormat(formats, i) == pgtype.BinaryFormatCode {
+			s = binaryToText(types, cols[i].typeOID, raw)
+		}
+		values = append(values, coerceValue(s, cols[i].typeOID))
 	}
 	return values
+}
+
+// resultFormat returns the format code of column i, as Bind specifies it.
+func resultFormat(formats []int16, i int) int16 {
+	switch {
+	case len(formats) == 0:
+		return pgtype.TextFormatCode
+	case len(formats) == 1:
+		return formats[0]
+	case i < len(formats):
+		return formats[i]
+	default:
+		return pgtype.TextFormatCode
+	}
+}
+
+// binaryToText converts a binary-format value to Postgres's text form. A type
+// pgtype doesn't know is shown as its raw bytes.
+func binaryToText(types *pgtype.Map, oid uint32, raw []byte) string {
+	t, ok := types.TypeForOID(oid)
+	if !ok {
+		return string(raw)
+	}
+	v, err := t.Codec.DecodeValue(types, oid, pgtype.BinaryFormatCode, raw)
+	if err != nil {
+		return string(raw)
+	}
+	text, err := types.Encode(oid, pgtype.TextFormatCode, v, nil)
+	if err != nil || text == nil {
+		return string(raw)
+	}
+	return string(text)
+}
+
+// extractBindResultFormats returns the result-column format codes from a Bind
+// ('B') frame: portal\0 stmt\0 nParamFormats formats... nParams (len value)...
+// nResultFormats formats...
+func extractBindResultFormats(frame []byte) []int16 {
+	if len(frame) < 6 {
+		return nil
+	}
+	body := frame[5:]
+	for i := 0; i < 2; i++ { // portal and statement names
+		end := indexOf(body, 0)
+		if end < 0 {
+			return nil
+		}
+		body = body[end+1:]
+	}
+	u16 := func() (int, bool) {
+		if len(body) < 2 {
+			return 0, false
+		}
+		v := int(binary.BigEndian.Uint16(body))
+		body = body[2:]
+		return v, true
+	}
+	n, ok := u16()
+	if !ok || len(body) < 2*n {
+		return nil
+	}
+	body = body[2*n:]
+	nParams, ok := u16()
+	if !ok {
+		return nil
+	}
+	for i := 0; i < nParams; i++ {
+		if len(body) < 4 {
+			return nil
+		}
+		l := int32(binary.BigEndian.Uint32(body))
+		body = body[4:]
+		if l > 0 {
+			if int(l) > len(body) {
+				return nil
+			}
+			body = body[l:]
+		}
+	}
+	nResults, ok := u16()
+	if !ok || len(body) < 2*nResults {
+		return nil
+	}
+	formats := make([]int16, nResults)
+	for i := range formats {
+		formats[i] = int16(binary.BigEndian.Uint16(body[2*i:]))
+	}
+	return formats
 }
 
 // coerceValue converts a text-format PG wire value to a native Go type based on the type OID.

@@ -261,7 +261,7 @@ func TestExtractTypedDataRow(t *testing.T) {
 	binary.BigEndian.PutUint32(frame[1:5], uint32(len(bodyBytes)+4))
 	copy(frame[5:], bodyBytes)
 
-	values := extractTypedDataRow(frame, cols)
+	values := extractTypedDataRow(frame, cols, nil, nil)
 	if len(values) != 4 {
 		t.Fatalf("expected 4 values, got %d", len(values))
 	}
