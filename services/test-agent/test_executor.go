@@ -6,20 +6,13 @@ import (
 	"time"
 )
 
-// Retry configuration for transient errors
+// Retry configuration for requests that never reached the service
 const (
 	maxRetries        = 3
 	initialBackoff    = 500 * time.Millisecond
 	maxBackoff        = 5 * time.Second
 	backoffMultiplier = 2.0
 )
-
-// retryableStatusCodes are HTTP status codes that indicate transient errors worth retrying
-var retryableStatusCodes = map[int]bool{
-	502: true, // Bad Gateway - upstream not ready
-	503: true, // Service Unavailable
-	504: true, // Gateway Timeout
-}
 
 // APIResponse holds the result of an HTTP request
 type APIResponse struct {

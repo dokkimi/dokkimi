@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -593,5 +594,81 @@ func TestTestExecutor_LoopStoppedByTheDeadlineHasAnEndTime(t *testing.T) {
 	exec, err := executor.executeStepAt(ctx, flatStep{step: step})
 	if !errors.Is(err, context.DeadlineExceeded) || exec.EndTime == "" {
 		t.Errorf("got %v with end time %q, want the deadline and an end time", err, exec.EndTime)
+	}
+}
+
+// A 5xx from the service is its answer: it goes to the assertions and the
+// request is not sent again (a retried POST would repeat its effects).
+func TestTestExecutor_ServiceErrorsAreNotRetried(t *testing.T) {
+	for _, status := range []int{http.StatusBadGateway, http.StatusServiceUnavailable, http.StatusGatewayTimeout, http.StatusInternalServerError} {
+		var requests atomic.Int32
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			requests.Add(1)
+			w.WriteHeader(status)
+		}))
+		executor := NewTestExecutor(server.URL, time.Second, nil, nil)
+		resp, err := executor.executeAPIStep(context.Background(), StepAction{Type: "httpRequest", Method: "POST", URL: "svc/orders"}, 0)
+		server.Close()
+		if err != nil || resp["statusCode"] != status {
+			t.Errorf("%d: got %v %v, want the response", status, resp, err)
+		}
+		if n := requests.Load(); n != 1 {
+			t.Errorf("%d: the service received %d requests, want 1", status, n)
+		}
+	}
+}
+
+// When the interceptor answers with X-Dokkimi-Error, the service may already
+// have received the request (it crashed or closed the connection), so the
+// request is not sent again: the step fails with the interceptor's message.
+func TestTestExecutor_DokkimiErrorIsNotRetried(t *testing.T) {
+	var requests atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests.Add(1)
+		w.Header().Set(dokkimiErrorHeader, "true")
+		w.WriteHeader(http.StatusBadGateway)
+		w.Write([]byte("Proxy error: EOF\n"))
+	}))
+	defer server.Close()
+	executor := NewTestExecutor(server.URL, time.Second, nil, nil)
+	_, err := executor.executeAPIStep(context.Background(), StepAction{Type: "httpRequest", Method: "POST", URL: "svc/orders"}, 0)
+	if err == nil || !strings.Contains(err.Error(), "Proxy error: EOF") {
+		t.Errorf("got %v, want the interceptor's error", err)
+	}
+	if n := requests.Load(); n != 1 {
+		t.Errorf("the interceptor received %d requests, want 1", n)
+	}
+}
+
+// When the test agent can't reach its interceptor, the request never got to
+// the service, so it is sent again.
+func TestTestExecutor_UnreachableInterceptorIsRetried(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	addr := ln.Addr().String()
+	ln.Close() // nothing listens yet: the first attempt is refused
+
+	var requests atomic.Int32
+	server := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests.Add(1)
+		w.WriteHeader(http.StatusCreated)
+	})}
+	go func() {
+		time.Sleep(200 * time.Millisecond) // up before the first retry (500 ms)
+		if l, err := net.Listen("tcp", addr); err == nil {
+			server.Serve(l)
+		}
+	}()
+	defer server.Close()
+
+	executor := NewTestExecutor("http://"+addr, time.Second, nil, nil)
+	resp, err := executor.executeAPIStep(context.Background(), StepAction{Type: "httpRequest", Method: "POST", URL: "svc/orders"}, 0)
+	if err != nil || resp["statusCode"] != http.StatusCreated {
+		t.Errorf("got %v %v, want the 201 after a retry", resp, err)
+	}
+	if n := requests.Load(); n != 1 {
+		t.Errorf("the service received %d requests, want 1", n)
 	}
 }

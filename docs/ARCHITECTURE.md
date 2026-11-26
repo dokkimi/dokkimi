@@ -395,6 +395,8 @@ All log types (traffic, console, DB) are asserted through the same generic match
 
 ### Step outcomes
 
+An HTTP step's request is sent again (up to 3 more times, with backoff) only when the test agent can't reach its interceptor, so the request certainly never got to the service. Any response from the service, 5xx included, is the step's result. An `X-Dokkimi-Error` response fails the step without a retry, since the service may have received the request before the connection failed.
+
 A step fails when an assertion fails, when its request couldn't be delivered (`X-Dokkimi-Error`), or when a `dbQuery` fails, unless the step asserts on `$.response.success` or `$.response.error` to test the failure (inside `parallel` a failed query always fails). With `stopOnFailure: false` (on the step, or as the test's default), the failure is recorded, the next steps and tests run, and the test fails at the end. Otherwise the test stops, and so do the tests after it. Waits and loop delays end at the run's deadline (`config.timeoutSeconds`); a loop takes the deadline through its context.
 
 ### MatchStack

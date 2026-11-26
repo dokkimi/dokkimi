@@ -16,7 +16,11 @@ import (
 	"time"
 )
 
-// executeAPIStep executes an HTTP request action with retry logic for transient errors.
+// executeAPIStep executes an HTTP request action. Only a request that never
+// reached the interceptor (a connection error) is sent again. Any response from
+// the service, 5xx included, is the step's result. When the interceptor answers
+// with X-Dokkimi-Error the step fails without a retry: the service may already
+// have received the request.
 // Returns an extraction document: { statusCode, headers, body }.
 func (e *TestExecutor) executeAPIStep(ctx context.Context, action StepAction, stepIndex int) (map[string]interface{}, error) {
 	strippedURL := stripScheme(action.URL)
@@ -26,7 +30,6 @@ func (e *TestExecutor) executeAPIStep(ctx context.Context, action StepAction, st
 	e.testExecutionLogger.LogRequestStarted(stepIndex, action.Method, action.URL)
 
 	var lastErr error
-	var lastResp *APIResponse
 	backoff := initialBackoff
 
 	for attempt := 0; attempt <= maxRetries; attempt++ {
@@ -50,33 +53,18 @@ func (e *TestExecutor) executeAPIStep(ctx context.Context, action StepAction, st
 		}
 		if err != nil {
 			lastErr = err
-			lastResp = nil
 			log.Printf("Request failed with error: %v (URL: %s)", err, fullURL)
 			continue
 		}
 
 		if resp.Headers.Get(dokkimiErrorHeader) != "" {
-			// Dokkimi couldn't deliver the request, so there is no response
-			lastErr = errors.New(strings.TrimSpace(string(resp.Body)))
-			lastResp = nil
-			log.Printf("Request not delivered: %v (URL: %s)", lastErr, fullURL)
-			continue
-		}
-
-		if retryableStatusCodes[resp.StatusCode] {
-			lastErr = fmt.Errorf("received retryable status code %d", resp.StatusCode)
-			lastResp = resp
-			log.Printf("Received retryable status code %d for %s %s", resp.StatusCode, action.Method, fullURL)
-			continue
+			// The interceptor got no response from the service, so there is none
+			return nil, fmt.Errorf("%s %s failed: %s", action.Method, action.URL, strings.TrimSpace(string(resp.Body)))
 		}
 
 		return apiResponseToExtractDoc(resp), nil
 	}
 
-	if lastResp != nil {
-		log.Printf("Request returned status %d after %d retries: %s %s", lastResp.StatusCode, maxRetries+1, action.Method, fullURL)
-		return apiResponseToExtractDoc(lastResp), nil
-	}
 	log.Printf("Request failed after %d retries: %v", maxRetries+1, lastErr)
 	return nil, fmt.Errorf("%s %s failed: %s", action.Method, action.URL, rootCause(lastErr))
 }
