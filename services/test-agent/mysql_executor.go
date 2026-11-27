@@ -5,11 +5,12 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"net"
 	"strconv"
 	"strings"
 	"time"
 
-	_ "github.com/go-sql-driver/mysql"
+	"github.com/go-sql-driver/mysql"
 )
 
 // getMysqlPool returns a cached *sql.DB pool for the given MySQL database, creating one on first use.
@@ -26,10 +27,16 @@ func (e *DatabaseQueryExecutor) getMysqlPool(databaseName string) (*sql.DB, erro
 	if port == 0 {
 		port = 3306
 	}
-	connStr := fmt.Sprintf("%s:%s@tcp(%s:%d)/%s",
-		dbInfo.User, dbInfo.Password, databaseName, port, dbInfo.Database)
+	// The driver's own format: a hand-built DSN broke on a password with
+	// "/" or "@"
+	dsn := mysql.NewConfig()
+	dsn.User = dbInfo.User
+	dsn.Passwd = dbInfo.Password
+	dsn.Net = "tcp"
+	dsn.Addr = net.JoinHostPort(databaseName, strconv.Itoa(port))
+	dsn.DBName = dbInfo.Database
 
-	db, err := sql.Open("mysql", connStr)
+	db, err := sql.Open("mysql", dsn.FormatDSN())
 	if err != nil {
 		return nil, err
 	}

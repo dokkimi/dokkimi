@@ -3,15 +3,15 @@ package main
 import (
 	"context"
 	"database/sql"
-	"fmt"
 	"log"
+	"net"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
 
 	shared "github.com/dokkimi/dokkimi/services/db-proxy/shared"
-	_ "github.com/go-sql-driver/mysql"
+	"github.com/go-sql-driver/mysql"
 )
 
 func main() {
@@ -43,10 +43,15 @@ func main() {
 	}
 
 	healthChecker := shared.NewHealthCheckerWithFunc(cfg, func(ctx context.Context) error {
-		connStr := fmt.Sprintf("%s:%s@tcp(localhost:%s)/%s",
-			cfg.DatabaseCredentials.DBUser, cfg.DatabaseCredentials.DBPassword,
-			cfg.DatabasePort, cfg.DatabaseCredentials.DBName)
-		db, err := sql.Open("mysql", connStr)
+		// The driver's own format escapes nothing it doesn't have to: a
+		// hand-built DSN broke on a password with "/" or "@"
+		dsn := mysql.NewConfig()
+		dsn.User = cfg.DatabaseCredentials.DBUser
+		dsn.Passwd = cfg.DatabaseCredentials.DBPassword
+		dsn.Net = "tcp"
+		dsn.Addr = net.JoinHostPort("localhost", cfg.DatabasePort)
+		dsn.DBName = cfg.DatabaseCredentials.DBName
+		db, err := sql.Open("mysql", dsn.FormatDSN())
 		if err != nil {
 			return err
 		}

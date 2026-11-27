@@ -26,8 +26,7 @@ func (e *DatabaseQueryExecutor) getPostgresPool(databaseName string) (*sql.DB, e
 	if port == 0 {
 		port = 5432
 	}
-	connStr := fmt.Sprintf("postgres://%s:%s@%s:%d/%s?sslmode=disable",
-		dbInfo.User, dbInfo.Password, databaseName, port, dbInfo.Database)
+	connStr := PostgresURL(dbInfo.User, dbInfo.Password, databaseName, strconv.Itoa(port), dbInfo.Database)
 
 	db, err := sql.Open("postgres", connStr)
 	if err != nil {

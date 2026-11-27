@@ -34,7 +34,7 @@ export class DockerDatabaseGroupService {
     }
 
     const config = getConfig();
-    const resolved = resolveDbCredentials(item);
+    const resolved = resolveDbCredentials(item, item.database);
     const dbConfig = this.databaseConfig.getConfig(
       item.database,
       {
@@ -222,7 +222,7 @@ if [ -d "${initFileMountPath}" ]; then
   for f in ${initFileMountPath}/*; do
     case "$f" in
       *.sh)  echo "Running $f"; . "$f" ;;
-      *.js)  echo "Running $f"; mongosh --port ${internalPort}${mongoshAuth} "$f" ;;
+      *.js)  echo "Running $f"; mongosh --port ${internalPort}${mongoshAuth} "\${MONGO_INITDB_DATABASE:-test}" "$f" ;;
     esac
   done
 fi`

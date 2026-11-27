@@ -319,6 +319,26 @@ describe('DockerDatabaseGroupService', () => {
       expect(entrypoint).not.toContain("user:'dokkimi'");
     });
 
+    // Before, mongosh ran the init scripts against the "test" database
+    it('runs init scripts against the database dbName creates', async () => {
+      await service.createDatabaseGroup(
+        'dokkimi-run-inst1',
+        'inst1',
+        buildDbItem({
+          database: 'mongodb',
+          initFiles: [{ filename: 'seed.js', content: Buffer.from('') }],
+        }),
+        'mongo-db',
+        'item-1',
+      );
+
+      const entrypoint =
+        mockDockerClient.runContainer.mock.calls[1][0].entrypoint[2];
+      expect(entrypoint).toMatch(
+        /mongosh --port 27018 .*"\$\{MONGO_INITDB_DATABASE:-test\}" "\$f"/,
+      );
+    });
+
     it('should use internal port 27018 in entrypoint', async () => {
       await service.createDatabaseGroup(
         'dokkimi-run-inst1',

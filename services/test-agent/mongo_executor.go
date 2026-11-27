@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"time"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
@@ -27,13 +28,7 @@ func (e *DatabaseQueryExecutor) getMongoClient(databaseName string) (*mongo.Clie
 	if port == 0 {
 		port = 27017
 	}
-	var connStr string
-	if dbInfo.User != "" && dbInfo.Password != "" {
-		connStr = fmt.Sprintf("mongodb://%s:%s@%s:%d/%s?authSource=admin",
-			dbInfo.User, dbInfo.Password, databaseName, port, dbInfo.Database)
-	} else {
-		connStr = fmt.Sprintf("mongodb://%s:%d/%s", databaseName, port, dbInfo.Database)
-	}
+	connStr := MongoURL(dbInfo.User, dbInfo.Password, databaseName, strconv.Itoa(port), dbInfo.Database)
 
 	client, err := mongo.Connect(mongoOptions.Client().ApplyURI(connStr))
 	if err != nil {
