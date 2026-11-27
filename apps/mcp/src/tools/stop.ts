@@ -31,6 +31,8 @@ export function registerStop(server: McpServer): void {
               content: [
                 { type: 'text', text: JSON.stringify(result, null, 2) },
               ],
+              // Tell the agent when the stop failed
+              isError: result.success === false,
             });
           } catch {
             resolve({
