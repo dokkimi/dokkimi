@@ -85,6 +85,13 @@ func TestReadMessage_CompressedCorrupt(t *testing.T) {
 
 func recordingConnection(t *testing.T) (*proxyConnection, func() []shared.DatabaseLogMessage) {
 	t.Helper()
+	logger, logs := recordingLogger(t)
+	return newProxyConnection(nil, nil, &shared.Config{}, logger, newCursorRegistry()), logs
+}
+
+// recordingLogger sends logs to a fake Control Tower and returns what it got
+func recordingLogger(t *testing.T) (*shared.QueryLogger, func() []shared.DatabaseLogMessage) {
+	t.Helper()
 	var mu sync.Mutex
 	var got []shared.DatabaseLogMessage
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -98,7 +105,7 @@ func recordingConnection(t *testing.T) (*proxyConnection, func() []shared.Databa
 	t.Cleanup(srv.Close)
 	logger := shared.NewQueryLogger(srv.URL, 2*time.Second)
 	t.Cleanup(logger.Stop)
-	return newProxyConnection(nil, nil, &shared.Config{}, logger), func() []shared.DatabaseLogMessage {
+	return logger, func() []shared.DatabaseLogMessage {
 		time.Sleep(300 * time.Millisecond)
 		mu.Lock()
 		defer mu.Unlock()

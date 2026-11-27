@@ -3,10 +3,12 @@ import * as os from 'os';
 import * as path from 'path';
 
 let mockRunsDir = '/tmp/mock-dokkimi/runs/test/project';
+let mockDatabaseUrl = 'file:/tmp/mock-dokkimi/dokkimi.db';
 
 jest.mock('@dokkimi/config', () => ({
   loadConfig: jest.fn(() => ({
     services: { controlTower: { host: 'localhost', port: 19001 } },
+    database: { url: mockDatabaseUrl },
   })),
   buildServiceUrl: jest.fn(() => 'http://localhost:19001'),
   DOKKIMI_DIR: '/tmp/mock-dokkimi',
@@ -187,6 +189,49 @@ describe('clean', () => {
     expect(consoleLogSpy).toHaveBeenCalledWith(
       expect.stringContaining('Nothing to clean'),
     );
+  });
+
+  // Before, --all with Dokkimi down kept every other project's runs, and
+  // the run history, while reporting success
+  describe('--all with Dokkimi down', () => {
+    const dir = '/tmp/mock-dokkimi';
+    const otherRun = path.join(dir, 'runs/other/project/20260101-000000');
+
+    beforeEach(() => {
+      mockCheckService.mockResolvedValue({
+        healthy: false,
+        name: 'ct',
+        url: 'http://localhost',
+        detail: 'not reachable',
+      });
+      fs.mkdirSync(otherRun, { recursive: true });
+      for (const f of ['dokkimi.db', 'dokkimi.db-wal', 'config.json']) {
+        fs.writeFileSync(path.join(dir, f), 'x');
+      }
+    });
+
+    afterEach(() => {
+      mockDatabaseUrl = `file:${dir}/dokkimi.db`;
+      fs.rmSync(dir, { recursive: true, force: true });
+    });
+
+    it("deletes every project's runs and the run database", async () => {
+      await clean(['--all', '--force']);
+
+      expect(fs.existsSync(path.join(dir, 'runs'))).toBe(false);
+      expect(fs.existsSync(path.join(dir, 'dokkimi.db'))).toBe(false);
+      expect(fs.existsSync(path.join(dir, 'dokkimi.db-wal'))).toBe(false);
+      // Settings stay
+      expect(fs.existsSync(path.join(dir, 'config.json'))).toBe(true);
+    });
+
+    it('leaves a database outside ~/.dokkimi alone', async () => {
+      mockDatabaseUrl = 'postgresql://db.example/dokkimi';
+      await clean(['--all', '--force']);
+
+      expect(fs.existsSync(path.join(dir, 'runs'))).toBe(false);
+      expect(fs.existsSync(path.join(dir, 'dokkimi.db'))).toBe(true);
+    });
   });
 
   describe('with containers of another project running', () => {

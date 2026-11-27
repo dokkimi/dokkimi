@@ -20,6 +20,8 @@ jest.mock('@dokkimi/telemetry', () => ({
 
 jest.mock('@dokkimi/definition-resolver', () => ({
   resolveDefinitions: jest.fn(() => ({ definitions: [] })),
+  isDokkimiDataDir: jest.requireActual('@dokkimi/definition-resolver')
+    .isDokkimiDataDir,
 }));
 
 jest.mock('fs', () => {

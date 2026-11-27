@@ -320,6 +320,9 @@ func extractResponseInfo(msg *mongoMessage, cmdName string) responseInfo {
 			info.cursorID = cursorID
 		} else {
 			info.data = extractResponseData(bsonDoc[:docLen], cmdName)
+			if cmdName == "aggregate" {
+				_, info.cursorID = extractCursorBatch(bsonDoc[:docLen])
+			}
 		}
 	}
 
@@ -1011,6 +1014,27 @@ func extractGetMoreCursorID(rawBody []byte) int64 {
 		}
 	}
 	return 0
+}
+
+// extractKillCursorsIDs extracts the cursor IDs from a killCursors command:
+// {killCursors: "collection", cursors: [NumberLong(id), ...]}
+func extractKillCursorsIDs(rawBody []byte) []int64 {
+	var doc bson.D
+	if err := bson.Unmarshal(rawBody, &doc); err != nil {
+		return nil
+	}
+	for _, elem := range doc {
+		if elem.Key == "cursors" {
+			if arr, ok := elem.Value.(bson.A); ok {
+				ids := make([]int64, 0, len(arr))
+				for _, v := range arr {
+					ids = append(ids, bsonNumToInt64(v))
+				}
+				return ids
+			}
+		}
+	}
+	return nil
 }
 
 // isDriverInternalCommand returns true for commands we don't want to log.

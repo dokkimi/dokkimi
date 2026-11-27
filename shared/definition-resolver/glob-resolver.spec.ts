@@ -5,6 +5,7 @@ import {
   filterFilesByPattern,
   findDokkimiDir,
   findDokkimiDirFrom,
+  isDokkimiDataDir,
   collectInitFilePaths,
   loadDokignore,
   scanDefinitionFiles,
@@ -78,6 +79,43 @@ describe('findDokkimiDirFrom', () => {
     } finally {
       fs.rmSync(isolated, { recursive: true, force: true });
     }
+  });
+});
+
+// Before, ~/.dokkimi (Dokkimi's data, run snapshots among them) was taken
+// for a project's .dokkimi, and its old snapshots were run as definitions
+describe('~/.dokkimi', () => {
+  let home: string;
+
+  beforeEach(() => {
+    home = createTempDir();
+    // The module itself: the imported `os` is a read-only copy
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    jest.spyOn(require('os') as typeof os, 'homedir').mockReturnValue(home);
+    touch(home, '.dokkimi/runs/p/20260101-000000/snapshots/a/definition.json');
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+
+  it('is not found from a folder under home with no project', () => {
+    const dir = path.join(home, 'code', 'newproj');
+    fs.mkdirSync(dir, { recursive: true });
+    expect(isDokkimiDataDir(path.join(home, '.dokkimi'))).toBe(true);
+    expect(findDokkimiDirFrom(dir)).toBeNull();
+    expect(findDokkimiDirFrom(home)).toBeNull();
+    expect(
+      findDokkimiDir(path.join(home, '.dokkimi', 'runs', 'x.json')),
+    ).toBeNull();
+  });
+
+  it("still finds a project's .dokkimi under home", () => {
+    const project = path.join(home, 'code', 'app', '.dokkimi');
+    fs.mkdirSync(path.join(project, 'sub'), { recursive: true });
+    expect(findDokkimiDirFrom(path.join(project, 'sub'))).toBe(project);
+    expect(findDokkimiDirFrom(path.dirname(project))).toBe(project);
   });
 });
 

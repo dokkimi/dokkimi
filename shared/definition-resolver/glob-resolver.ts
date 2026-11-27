@@ -1,4 +1,5 @@
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 import { minimatch } from 'minimatch';
 import { isDefinitionFile } from '@dokkimi/definition-validator';
@@ -88,10 +89,19 @@ export function loadDokignore(dokkimiDir: string): IgnoreRules {
   return { exact, globs };
 }
 
+/**
+ * `~/.dokkimi` holds Dokkimi's own data, run snapshots among them: it is not
+ * a project's `.dokkimi`. Before, from a folder under home with no project,
+ * it was taken for one, and old snapshots were run as definitions.
+ */
+export function isDokkimiDataDir(dir: string): boolean {
+  return path.resolve(dir) === path.join(os.homedir(), '.dokkimi');
+}
+
 export function findDokkimiDir(filePath: string): string | null {
   let dir = path.dirname(filePath);
   while (true) {
-    if (path.basename(dir) === '.dokkimi') {
+    if (path.basename(dir) === '.dokkimi' && !isDokkimiDataDir(dir)) {
       return dir;
     }
     const parent = path.dirname(dir);
@@ -108,7 +118,7 @@ export function findDokkimiDir(filePath: string): string | null {
  */
 export function findDokkimiDirFrom(dir: string): string | null {
   // Check if dir itself is .dokkimi
-  if (path.basename(dir) === '.dokkimi') {
+  if (path.basename(dir) === '.dokkimi' && !isDokkimiDataDir(dir)) {
     return dir;
   }
   // Check if dir is inside a .dokkimi tree
@@ -118,14 +128,22 @@ export function findDokkimiDirFrom(dir: string): string | null {
   }
   // Check if dir contains a .dokkimi child
   const child = path.join(dir, '.dokkimi');
-  if (fs.existsSync(child) && fs.statSync(child).isDirectory()) {
+  if (
+    !isDokkimiDataDir(child) &&
+    fs.existsSync(child) &&
+    fs.statSync(child).isDirectory()
+  ) {
     return child;
   }
   // Walk up looking for directories that contain .dokkimi
   let current = path.dirname(dir);
   while (true) {
     const candidate = path.join(current, '.dokkimi');
-    if (fs.existsSync(candidate) && fs.statSync(candidate).isDirectory()) {
+    if (
+      !isDokkimiDataDir(candidate) &&
+      fs.existsSync(candidate) &&
+      fs.statSync(candidate).isDirectory()
+    ) {
       return candidate;
     }
     const parent = path.dirname(current);

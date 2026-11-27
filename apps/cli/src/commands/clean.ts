@@ -94,7 +94,7 @@ export async function clean(args: string[]): Promise<void> {
       if (ctCheck.healthy) {
         await cleanViaCT(ctUrl, true, all);
       } else {
-        await cleanDirectDocker(true);
+        await cleanDirectDocker(true, all, config.database.url);
       }
     } catch (err) {
       success = false;
@@ -114,7 +114,7 @@ export async function clean(args: string[]): Promise<void> {
   if (ctCheck.healthy) {
     await cleanViaCT(ctUrl, force, all);
   } else {
-    await cleanDirectDocker(force);
+    await cleanDirectDocker(force, all, config.database.url);
   }
 }
 
@@ -282,11 +282,16 @@ async function cleanViaCT(
 }
 
 /**
- * Clean directly via Docker when CT is not running.
+ * Clean directly via Docker when CT is not running. With --all, also delete
+ * every project's run data, which Control Tower would have done.
  */
-async function cleanDirectDocker(force: boolean): Promise<void> {
+async function cleanDirectDocker(
+  force: boolean,
+  all: boolean,
+  databaseUrl: string,
+): Promise<void> {
   const containers = findDokkimiContainers();
-  if (containers.length === 0) {
+  if (containers.length === 0 && !all) {
     // Also check for orphaned networks
     const networks = findDokkimiNetworks();
     if (networks.length === 0) {
@@ -305,7 +310,11 @@ async function cleanDirectDocker(force: boolean): Promise<void> {
   console.log('');
 
   if (!force) {
-    const answer = await prompt('Delete all Dokkimi Docker resources? (Y/n) ');
+    const answer = await prompt(
+      all
+        ? "Delete all Dokkimi Docker resources and every project's runs? (Y/n) "
+        : 'Delete all Dokkimi Docker resources? (Y/n) ',
+    );
     if (answer === 'n' || answer === 'no') {
       console.log('Aborted.');
       process.exit(0);
@@ -313,7 +322,11 @@ async function cleanDirectDocker(force: boolean): Promise<void> {
   }
 
   const startTime = Date.now();
-  cleanupDokkimiDockerResources();
+  cleanupDokkimiDockerResources(all);
+  if (all) {
+    // Before, --all here kept other projects' runs and still reported success
+    deleteLocalRunDatabase(databaseUrl);
+  }
 
   console.log('');
   console.log(
@@ -389,6 +402,27 @@ function cleanupDokkimiDockerResources(all = false): void {
 
   // Remove legacy global storage and run artifacts
   cleanupRunStorage(all);
+}
+
+/**
+ * Deletes the local run database, which holds only run data, when Dokkimi is
+ * not running: Control Tower recreates it on its next start. Only the default
+ * file in ~/.dokkimi; a DOKKIMI_DATABASE_URL elsewhere is left alone.
+ */
+function deleteLocalRunDatabase(databaseUrl: string): void {
+  const file = databaseUrl.startsWith('file:') ? databaseUrl.slice(5) : null;
+  if (!file || path.dirname(path.resolve(file)) !== DOKKIMI_DIR) {
+    return;
+  }
+  for (const suffix of ['', '-wal', '-shm', '-journal']) {
+    try {
+      fs.rmSync(`${file}${suffix}`, { force: true });
+    } catch (e: unknown) {
+      console.warn(
+        `Warning: could not remove ${file}${suffix}: ${(e as Error).message}`,
+      );
+    }
+  }
 }
 
 function cleanupRunStorage(all: boolean): void {

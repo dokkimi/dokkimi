@@ -26,6 +26,7 @@ import {
   loadDokignore,
   findDokkimiDir,
   findDokkimiDirFrom,
+  isDokkimiDataDir,
   filterFilesByPattern,
   collectInitFilePaths,
 } from './glob-resolver';
@@ -148,6 +149,7 @@ export function resolveDefinitions(target?: string): ResolverResult {
     // 2a: Directory contains a .dokkimi subfolder → use it
     const dokkimiSubdir = path.join(absTarget, '.dokkimi');
     if (
+      !isDokkimiDataDir(dokkimiSubdir) &&
       fs.existsSync(dokkimiSubdir) &&
       fs.statSync(dokkimiSubdir).isDirectory()
     ) {

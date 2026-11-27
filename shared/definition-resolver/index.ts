@@ -6,3 +6,4 @@ export {
   InitFileEntry,
   DokkimiConfig,
 } from './resolve';
+export { isDokkimiDataDir } from './glob-resolver';
