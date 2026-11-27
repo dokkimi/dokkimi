@@ -1,4 +1,7 @@
-import { DockerDatabaseGroupService } from './docker-database-group.service';
+import {
+  DockerDatabaseGroupService,
+  postgresMajor,
+} from './docker-database-group.service';
 import { DefinitionItem } from '../deployment-context.types';
 import { buildDbProxyEnvVars } from '@dokkimi/config';
 
@@ -501,6 +504,41 @@ describe('DockerDatabaseGroupService', () => {
           dbName: 'dokkimi',
         }),
       );
+    });
+  });
+
+  // Before, Postgres 18 refused to start with the tmpfs at
+  // /var/lib/postgresql/data
+  describe('Postgres tmpfs', () => {
+    it.each([
+      ['postgres:15', '/var/lib/postgresql/data'],
+      ['postgres:16-alpine', '/var/lib/postgresql/data'],
+      ['getlago/postgres-partman:15.0-alpine', '/var/lib/postgresql/data'],
+      ['postgres:18', '/var/lib/postgresql'],
+      ['postgres:latest', '/var/lib/postgresql'],
+      ['my-registry:5000/pg:dev', '/var/lib/postgresql'],
+    ])('%s mounts %s', async (image, mount) => {
+      mockDatabaseConfig.getConfig.mockReturnValue({ ...pgConfig(), image });
+      await service.createDatabaseGroup(
+        'dokkimi-run-inst1',
+        'inst1',
+        buildDbItem(),
+        'postgres-db',
+        'item-1',
+      );
+
+      const dbCall = mockDockerClient.runContainer.mock.calls[1][0];
+      expect(dbCall.tmpfs).toEqual({ [mount]: '' });
+    });
+
+    it.each([
+      ['postgres:18', 18],
+      ['postgres:16.4-alpine', 16],
+      ['registry:5000/team/pg:15', 15],
+      ['postgres@sha256:abc', null],
+      ['postgres', null],
+    ])('reads the major version of %s', (image, major) => {
+      expect(postgresMajor(image)).toBe(major);
     });
   });
 
