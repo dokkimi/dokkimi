@@ -1,7 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
-import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
-import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
+import { APP_INTERCEPTOR } from '@nestjs/core';
 import { PrismaModule } from './prisma/prisma.module';
 import { LoggingModule } from './logging/logging.module';
 import { LoggingInterceptor } from './logging/logging.interceptor';
@@ -42,12 +41,6 @@ import { getConfig, getConcurrencyPrefs } from '@dokkimi/config';
         },
       ],
     }),
-    ThrottlerModule.forRoot([
-      {
-        ttl: 60000, // 1 minute
-        limit: 100, // 100 requests per minute (log ingestion uses @SkipThrottle)
-      },
-    ]),
     PrismaModule,
     LoggingModule.forRoot({ serviceName: 'CT', serviceColor: '\x1b[36m' }),
     TelemetryModule.forRoot({ serviceName: 'control-tower' }),
@@ -62,10 +55,6 @@ import { getConfig, getConcurrencyPrefs } from '@dokkimi/config';
   ],
   controllers: [],
   providers: [
-    {
-      provide: APP_GUARD,
-      useClass: ThrottlerGuard,
-    },
     {
       provide: APP_INTERCEPTOR,
       useClass: LoggingInterceptor,

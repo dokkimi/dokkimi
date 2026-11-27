@@ -7,7 +7,6 @@ import {
   Logger,
   Post,
 } from '@nestjs/common';
-import { SkipThrottle } from '@nestjs/throttler';
 import { HealthService } from './health.service';
 import { HealthStatusDto } from './dto/health-status.dto';
 
@@ -23,7 +22,6 @@ export class HealthController {
     return this.healthService.getHealthStatus();
   }
 
-  @SkipThrottle()
   @Post('status')
   async updateHealthStatus(@Body() dto: HealthStatusDto) {
     try {

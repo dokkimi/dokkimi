@@ -5,7 +5,6 @@ import {
   OnModuleInit,
   OnModuleDestroy,
 } from '@nestjs/common';
-import { SkipThrottle } from '@nestjs/throttler';
 import { TelemetryService } from '../../telemetry/telemetry.service';
 import { HttpLogProcessorService } from '../processors/http-log-processor.service';
 import { ConsoleLogProcessorService } from '../processors/console-log-processor.service';
@@ -22,7 +21,6 @@ import { TestValidationLogMessageDto } from '../dto/test-validation-log-message.
 
 const BATCH_INTERVAL_MS = 30_000; // 30 seconds
 
-@SkipThrottle() // Skip rate limiting for log ingestion endpoints - designed for high volume
 @Controller('logs')
 export class LogProcessorController implements OnModuleInit, OnModuleDestroy {
   private httpLogCount = 0;

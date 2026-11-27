@@ -8,10 +8,8 @@ import {
   InternalServerErrorException,
   Logger,
 } from '@nestjs/common';
-import { SkipThrottle } from '@nestjs/throttler';
 import { NamespaceLifecycleService } from '../namespace-lifecycle/namespace-lifecycle.service';
 
-@SkipThrottle()
 @Controller('instances')
 export class InstanceStageController {
   private readonly logger = new Logger(InstanceStageController.name);

@@ -85,7 +85,7 @@ Go sidecars use `ghcr.io/dokkimi/<name>` prefix. Control Tower uses `dokkimi/con
 All backend logic lives in Control Tower as separate NestJS modules. Keep module public surface narrow — cross-module communication goes through explicitly re-exported services.
 
 - **`runs/` + `namespace/` + `namespace-lifecycle/`** — REST API and Docker orchestration
-- **`log-processing/`** — log ingestion (`POST /logs/{http,console,database,test-execution,test-validation}`), marked `@SkipThrottle()` for high-volume sidecar traffic
+- **`log-processing/`** — log ingestion (`POST /logs/{http,console,database,test-execution,test-validation}`) from the sidecars. Control Tower has no rate limit: it serves only the local CLI and sidecars
 - **`test-validation/`** — receives pre-validated assertion results from test-agent, stores them, handles `POST /test-complete`, then calls `RunsService.handleValidationComplete` in-process
 - **`health/`** — aggregated liveness + `POST /health/status` readiness endpoint for sidecars
 
