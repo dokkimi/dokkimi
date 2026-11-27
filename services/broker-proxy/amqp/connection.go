@@ -23,14 +23,21 @@ type channelState struct {
 	bodyBuf     bytes.Buffer
 }
 
+// channelKey identifies a message being assembled: AMQP multiplexes channels
+// on one connection, and a channel can carry a publish (client to broker) and
+// a delivery (broker to client) at the same time, each in its own frames.
+type channelKey struct {
+	fromClient bool
+	channel    uint16
+}
+
 type amqpConnection struct {
 	client   net.Conn
 	upstream net.Conn
 	cfg      *shared.Config
 	logger   *shared.MessageLogger
 
-	// Per-channel state for message assembly (AMQP multiplexes channels on one TCP conn)
-	channels map[uint16]*channelState
+	channels map[channelKey]*channelState
 	mu       sync.Mutex
 }
 
@@ -40,7 +47,7 @@ func newAmqpConnection(client, upstream net.Conn, cfg *shared.Config, logger *sh
 		upstream: upstream,
 		cfg:      cfg,
 		logger:   logger,
-		channels: make(map[uint16]*channelState),
+		channels: make(map[channelKey]*channelState),
 	}
 }
 
@@ -116,10 +123,10 @@ func (c *amqpConnection) inspectFrame(f *frame, isClientToUpstream bool) {
 		c.handleMethod(f.Channel, classID, methodID, args, isClientToUpstream)
 
 	case frameHeader:
-		c.handleContentHeader(f.Channel, f.Payload)
+		c.handleContentHeader(channelKey{isClientToUpstream, f.Channel}, f.Payload)
 
 	case frameBody:
-		c.handleContentBody(f.Channel, f.Payload)
+		c.handleContentBody(channelKey{isClientToUpstream, f.Channel}, f.Payload)
 	}
 }
 
@@ -139,7 +146,7 @@ func (c *amqpConnection) handleMethod(channel, classID, methodID uint16, args []
 			return
 		}
 		c.mu.Lock()
-		c.channels[channel] = &channelState{
+		c.channels[channelKey{true, channel}] = &channelState{
 			operation:  "publish",
 			exchange:   exchange,
 			routingKey: routingKey,
@@ -156,7 +163,7 @@ func (c *amqpConnection) handleMethod(channel, classID, methodID uint16, args []
 			return
 		}
 		c.mu.Lock()
-		c.channels[channel] = &channelState{
+		c.channels[channelKey{false, channel}] = &channelState{
 			operation:  "deliver",
 			exchange:   exchange,
 			routingKey: routingKey,
@@ -165,7 +172,7 @@ func (c *amqpConnection) handleMethod(channel, classID, methodID uint16, args []
 	}
 }
 
-func (c *amqpConnection) handleContentHeader(channel uint16, payload []byte) {
+func (c *amqpConnection) handleContentHeader(channel channelKey, payload []byte) {
 	c.mu.Lock()
 	cs, ok := c.channels[channel]
 	if !ok {
@@ -192,7 +199,7 @@ func (c *amqpConnection) handleContentHeader(channel uint16, payload []byte) {
 	}
 }
 
-func (c *amqpConnection) handleContentBody(channel uint16, payload []byte) {
+func (c *amqpConnection) handleContentBody(channel channelKey, payload []byte) {
 	c.mu.Lock()
 	cs, ok := c.channels[channel]
 	if !ok {
@@ -209,7 +216,7 @@ func (c *amqpConnection) handleContentBody(channel uint16, payload []byte) {
 	}
 }
 
-func (c *amqpConnection) completeMessage(channel uint16) {
+func (c *amqpConnection) completeMessage(channel channelKey) {
 	c.mu.Lock()
 	cs, ok := c.channels[channel]
 	if !ok {

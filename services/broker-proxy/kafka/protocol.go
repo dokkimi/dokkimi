@@ -1,10 +1,20 @@
 package main
 
 import (
+	"bytes"
+	"compress/gzip"
 	"encoding/binary"
+	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
-	"log"
+	"sort"
+	"sync"
+
+	"github.com/klauspost/compress/s2"
+	"github.com/klauspost/compress/zstd"
+	"github.com/pierrec/lz4/v4"
+	"github.com/twmb/franz-go/pkg/kmsg"
 )
 
 // Kafka API keys
@@ -13,12 +23,6 @@ const (
 	apiFetch    int16 = 1
 	apiMetadata int16 = 3
 )
-
-// First Produce version that uses flexible encoding (compact strings/arrays).
-const produceFlexVersion int16 = 9
-
-// First Fetch version that uses flexible encoding.
-const fetchFlexVersion int16 = 12
 
 // requestHeader holds the parsed header common to every Kafka request.
 type requestHeader struct {
@@ -100,7 +104,7 @@ func parseRequestHeader(payload []byte) (requestHeader, int, error) {
 	}
 
 	// v2 request header (flexible versions) has tagged fields after client ID
-	if isFlexibleRequest(h.APIKey, h.APIVersion) {
+	if isFlexible(h.APIKey, h.APIVersion) {
 		n, err := skipTaggedFields(payload, pos)
 		if err == nil {
 			pos = n
@@ -110,285 +114,268 @@ func parseRequestHeader(payload []byte) (requestHeader, int, error) {
 	return h, pos, nil
 }
 
-// ---------- Produce request parsing ----------
+// ---------- Produce, Fetch and Metadata ----------
+//
+// Requests and responses are decoded with franz-go's kmsg, which knows every
+// version of every Kafka API, including the topic IDs that Produce v13+ and
+// Fetch v13+ use instead of topic names.
 
-func parseProduceRequest(payload []byte, pos int, apiVersion int16) ([]producedRecord, error) {
-	flex := apiVersion >= produceFlexVersion
-	r := &reader{buf: payload, pos: pos, flex: flex}
-
-	// Transactional ID (nullable string) — present from v3+
-	if apiVersion >= 3 {
-		if _, _, err := r.readNullableString(); err != nil {
-			return nil, fmt.Errorf("transactional id: %w", err)
-		}
+// isFlexible reports whether an API version uses Kafka's flexible encoding,
+// which also decides whether its request and response headers have tagged
+// fields.
+func isFlexible(apiKey, apiVersion int16) bool {
+	req := kmsg.RequestForKey(apiKey)
+	if req == nil {
+		return false
 	}
-
-	// Acks (int16) + Timeout (int32)
-	if err := r.skip(6); err != nil {
-		return nil, fmt.Errorf("acks/timeout: %w", err)
-	}
-
-	topicCount, err := r.readArrayLen()
-	if err != nil {
-		return nil, fmt.Errorf("topic count: %w", err)
-	}
-
-	var records []producedRecord
-	for i := 0; i < topicCount; i++ {
-		topicName, err := r.readString()
-		if err != nil {
-			return records, fmt.Errorf("topic name: %w", err)
-		}
-
-		partCount, err := r.readArrayLen()
-		if err != nil {
-			return records, fmt.Errorf("partition count: %w", err)
-		}
-
-		for j := 0; j < partCount; j++ {
-			partIndex, err := r.readInt32()
-			if err != nil {
-				return records, fmt.Errorf("partition index: %w", err)
-			}
-
-			batchBytes, err := r.readRawBytes()
-			if err != nil {
-				return records, fmt.Errorf("record batch bytes: %w", err)
-			}
-
-			parsed := parseRecordBatch(batchBytes, topicName, partIndex)
-			records = append(records, parsed...)
-
-			if flex {
-				r.skipTaggedFields()
-			}
-		}
-
-		if flex {
-			r.skipTaggedFields()
-		}
-	}
-
-	return records, nil
+	req.SetVersion(apiVersion)
+	return req.IsFlexible()
 }
 
-// ---------- Fetch response parsing ----------
-
-func parseFetchResponse(payload []byte, apiVersion int16) ([]fetchedRecord, error) {
-	flex := apiVersion >= fetchFlexVersion
-	pos := 4 // skip correlation ID
-
-	// v1 response header (flexible) has tagged fields
-	if flex {
+// responseBody returns a response payload without its header: the correlation
+// ID, and the tagged fields a flexible response header has.
+func responseBody(payload []byte, apiKey, apiVersion int16) ([]byte, error) {
+	if len(payload) < 4 {
+		return nil, fmt.Errorf("response too short: %d", len(payload))
+	}
+	pos := 4
+	if isFlexible(apiKey, apiVersion) {
 		n, err := skipTaggedFields(payload, pos)
 		if err != nil {
 			return nil, err
 		}
 		pos = n
 	}
-
-	r := &reader{buf: payload, pos: pos, flex: flex}
-
-	// Throttle time (int32)
-	if err := r.skip(4); err != nil {
-		return nil, fmt.Errorf("throttle time: %w", err)
-	}
-
-	// Error code (int16) — v7+
-	if apiVersion >= 7 {
-		if err := r.skip(2); err != nil {
-			return nil, fmt.Errorf("error code: %w", err)
-		}
-	}
-
-	// Session ID (int32) — v7+
-	if apiVersion >= 7 {
-		if err := r.skip(4); err != nil {
-			return nil, fmt.Errorf("session id: %w", err)
-		}
-	}
-
-	topicCount, err := r.readArrayLen()
-	if err != nil {
-		return nil, fmt.Errorf("topic count: %w", err)
-	}
-
-	var records []fetchedRecord
-	for i := 0; i < topicCount; i++ {
-		topicName, err := r.readString()
-		if err != nil {
-			return records, fmt.Errorf("topic name: %w", err)
-		}
-
-		partCount, err := r.readArrayLen()
-		if err != nil {
-			return records, fmt.Errorf("partition count: %w", err)
-		}
-
-		for j := 0; j < partCount; j++ {
-			partIndex, err := r.readInt32()
-			if err != nil {
-				return records, fmt.Errorf("partition index: %w", err)
-			}
-
-			// Error code (int16)
-			if err := r.skip(2); err != nil {
-				return records, nil
-			}
-
-			// High watermark (int64)
-			if err := r.skip(8); err != nil {
-				return records, nil
-			}
-
-			// Last stable offset (int64) — v4+
-			if apiVersion >= 4 {
-				if err := r.skip(8); err != nil {
-					return records, nil
-				}
-			}
-
-			// Log start offset (int64) — v5+
-			if apiVersion >= 5 {
-				if err := r.skip(8); err != nil {
-					return records, nil
-				}
-			}
-
-			// Aborted transactions — v4+
-			if apiVersion >= 4 {
-				abortedCount, err := r.readArrayLen()
-				if err != nil {
-					return records, nil
-				}
-				// Each aborted transaction: producerId(int64) + firstOffset(int64)
-				for k := 0; k < abortedCount; k++ {
-					if err := r.skip(16); err != nil {
-						return records, nil
-					}
-					if flex {
-						r.skipTaggedFields()
-					}
-				}
-			}
-
-			// Preferred read replica (int32) — v11+
-			if apiVersion >= 11 {
-				if err := r.skip(4); err != nil {
-					return records, nil
-				}
-			}
-
-			// Records (nullable bytes — the record batch)
-			batchBytes, err := r.readNullableRawBytes()
-			if err != nil {
-				return records, nil
-			}
-
-			if batchBytes != nil {
-				parsed := parseFetchRecordBatch(batchBytes, topicName, partIndex)
-				records = append(records, parsed...)
-			}
-
-			if flex {
-				r.skipTaggedFields()
-			}
-		}
-
-		if flex {
-			r.skipTaggedFields()
-		}
-	}
-
-	return records, nil
+	return payload[pos:], nil
 }
 
-// ---------- record batch ----------
+// topicNames maps topic IDs to names, learned from Metadata responses. It is
+// shared by all connections: a client may fetch metadata on one connection
+// and produce or fetch on another.
+var topicNames sync.Map // [16]byte → string
 
-func parseRecordBatch(data []byte, topic string, partition int32) []producedRecord {
-	// Record batch header: baseOffset(8) + batchLength(4) + partLeaderEpoch(4) +
-	//   magic(1) + crc(4) + attributes(2) + lastOffsetDelta(4) +
-	//   firstTimestamp(8) + maxTimestamp(8) + producerId(8) + producerEpoch(2) +
-	//   baseSequence(4) + recordCount(4) = 61 bytes
-	if len(data) < 61 {
-		return nil
+func recordTopicNames(body []byte, apiVersion int16) error {
+	resp := kmsg.NewPtrMetadataResponse()
+	resp.Version = apiVersion
+	if err := resp.ReadFrom(body); err != nil {
+		return err
 	}
-
-	magic := data[16]
-	if magic != 2 {
-		return nil // only v2 record batches
+	for _, t := range resp.Topics {
+		if t.Topic != nil && t.TopicID != ([16]byte{}) {
+			topicNames.Store(t.TopicID, *t.Topic)
+		}
 	}
+	return nil
+}
 
-	attributes := binary.BigEndian.Uint16(data[21:23])
-	compression := attributes & 0x07
-	if compression != 0 {
-		log.Printf("Kafka: skipping compressed record batch (codec=%d) in topic — messages will not appear in $.messageLogs", compression)
-		return nil
+// topicName returns a topic's name, from the request or response itself or,
+// for v13+, from its ID. An ID never seen in a Metadata response is shown as
+// is.
+func topicName(name string, id [16]byte) string {
+	if name != "" || id == ([16]byte{}) {
+		return name
 	}
+	if n, ok := topicNames.Load(id); ok {
+		return n.(string)
+	}
+	return hex.EncodeToString(id[:])
+}
 
-	baseOffset := int64(binary.BigEndian.Uint64(data[0:8]))
-	recordCount := int32(binary.BigEndian.Uint32(data[57:61]))
-	pos := 61
-
+func parseProduceRequest(body []byte, apiVersion int16) ([]producedRecord, error) {
+	req := kmsg.NewPtrProduceRequest()
+	req.Version = apiVersion
+	if err := req.ReadFrom(body); err != nil {
+		return nil, err
+	}
 	var records []producedRecord
-	for i := int32(0); i < recordCount && pos < len(data); i++ {
-		rec, newPos, err := parseRecord(data, pos)
-		if err != nil {
-			break
+	var firstErr error
+	for _, t := range req.Topics {
+		topic := topicName(t.Topic, t.TopicID)
+		for _, p := range t.Partitions {
+			recs, err := readRecords(p.Records, nil)
+			if err != nil && firstErr == nil {
+				firstErr = err
+			}
+			for _, r := range recs {
+				records = append(records, producedRecord{Topic: topic, Partition: p.Partition, Key: r.key, Value: r.value})
+			}
 		}
-		pos = newPos
-
-		records = append(records, producedRecord{
-			Topic:     topic,
-			Partition: partition,
-			Key:       rec.key,
-			Value:     rec.value,
-		})
-		_ = baseOffset // available if needed
 	}
-
-	return records
+	return records, firstErr
 }
 
-func parseFetchRecordBatch(data []byte, topic string, partition int32) []fetchedRecord {
-	if len(data) < 61 {
-		return nil
+func parseFetchResponse(body []byte, apiVersion int16) ([]fetchedRecord, error) {
+	resp := kmsg.NewPtrFetchResponse()
+	resp.Version = apiVersion
+	if err := resp.ReadFrom(body); err != nil {
+		return nil, err
 	}
-
-	magic := data[16]
-	if magic != 2 {
-		return nil
-	}
-
-	attributes := binary.BigEndian.Uint16(data[21:23])
-	compression := attributes & 0x07
-	if compression != 0 {
-		log.Printf("Kafka: skipping compressed record batch (codec=%d) in topic — messages will not appear in $.messageLogs", compression)
-		return nil
-	}
-
-	baseOffset := int64(binary.BigEndian.Uint64(data[0:8]))
-	recordCount := int32(binary.BigEndian.Uint32(data[57:61]))
-	pos := 61
-
 	var records []fetchedRecord
-	for i := int32(0); i < recordCount && pos < len(data); i++ {
-		rec, newPos, err := parseRecord(data, pos)
-		if err != nil {
+	var firstErr error
+	for _, t := range resp.Topics {
+		topic := topicName(t.Topic, t.TopicID)
+		for _, p := range t.Partitions {
+			recs, err := readRecords(p.RecordBatches, p.AbortedTransactions)
+			if err != nil && firstErr == nil {
+				firstErr = err
+			}
+			for _, r := range recs {
+				records = append(records, fetchedRecord{Topic: topic, Partition: p.Partition, Offset: r.offset, Key: r.key, Value: r.value})
+			}
+		}
+	}
+	return records, firstErr
+}
+
+// ---------- record batches ----------
+
+const (
+	attrCompression   = 0x07
+	attrTransactional = 0x10
+	attrControl       = 0x20
+)
+
+// record is one message read from a record batch.
+type record struct {
+	offset int64
+	key    []byte
+	value  []byte
+}
+
+// readRecords reads the records of every record batch in data (one partition's
+// "records" field, which can hold many batches back to back). Control batches,
+// Kafka's transaction markers, are not messages and are skipped. aborted lists
+// the transactions a read_committed Fetch says were aborted: their records
+// are skipped too, as the consumer skips them. A batch cut off at the end of
+// data (a Fetch can end mid-batch) is ignored.
+func readRecords(data []byte, aborted []kmsg.FetchResponseTopicPartitionAbortedTransaction) ([]record, error) {
+	aborted = append([]kmsg.FetchResponseTopicPartitionAbortedTransaction(nil), aborted...)
+	sort.Slice(aborted, func(i, j int) bool { return aborted[i].FirstOffset < aborted[j].FirstOffset })
+	inAbortedTxn := map[int64]bool{} // producer ID → its current transaction was aborted
+
+	var records []record
+	var firstErr error
+	for len(data) >= 12 {
+		size := 12 + int(int32(binary.BigEndian.Uint32(data[8:12])))
+		if size < 12 || size > len(data) {
 			break
 		}
-		pos = newPos
+		batchBytes := data[:size]
+		data = data[size:]
 
-		records = append(records, fetchedRecord{
-			Topic:     topic,
-			Partition: partition,
-			Offset:    baseOffset + int64(rec.offsetDelta),
-			Key:       rec.key,
-			Value:     rec.value,
-		})
+		var b kmsg.RecordBatch
+		if err := b.ReadFrom(batchBytes); err != nil {
+			if firstErr == nil {
+				firstErr = err
+			}
+			continue
+		}
+		if b.Magic != 2 {
+			continue // older message formats
+		}
+
+		for len(aborted) > 0 && aborted[0].FirstOffset <= b.FirstOffset {
+			inAbortedTxn[aborted[0].ProducerID] = true
+			aborted = aborted[1:]
+		}
+		transactional := b.Attributes&attrTransactional != 0
+		if b.Attributes&attrControl != 0 {
+			if transactional {
+				delete(inAbortedTxn, b.ProducerID) // the commit or abort marker ends it
+			}
+			continue
+		}
+		if transactional && inAbortedTxn[b.ProducerID] {
+			continue
+		}
+
+		raw, err := decompress(b.Attributes&attrCompression, b.Records)
+		if err != nil {
+			if firstErr == nil {
+				firstErr = err
+			}
+			continue
+		}
+		pos := 0
+		for i := int32(0); i < b.NumRecords && pos < len(raw); i++ {
+			r, next, err := parseRecord(raw, pos)
+			if err != nil {
+				if firstErr == nil {
+					firstErr = err
+				}
+				break
+			}
+			pos = next
+			records = append(records, record{offset: b.FirstOffset + int64(r.offsetDelta), key: r.key, value: r.value})
+		}
 	}
+	return records, firstErr
+}
 
-	return records
+// maxDecompressed bounds what one batch may decompress to.
+const maxDecompressed = 256 << 20
+
+var zstdDecoder, _ = zstd.NewReader(nil, zstd.WithDecoderConcurrency(0), zstd.WithDecoderMaxMemory(maxDecompressed))
+
+var xerialPrefix = []byte{130, 83, 78, 65, 80, 80, 89, 0}
+
+// decompress returns a record batch's records uncompressed. Codecs: 1 gzip,
+// 2 snappy (raw, or in the xerial framing Java producers use), 3 lz4, 4 zstd.
+func decompress(codec int16, data []byte) ([]byte, error) {
+	readAll := func(r io.Reader) ([]byte, error) {
+		out, err := io.ReadAll(io.LimitReader(r, maxDecompressed+1))
+		if err == nil && len(out) > maxDecompressed {
+			err = errors.New("decompressed batch is too large")
+		}
+		return out, err
+	}
+	switch codec {
+	case 0:
+		return data, nil
+	case 1:
+		zr, err := gzip.NewReader(bytes.NewReader(data))
+		if err != nil {
+			return nil, fmt.Errorf("gzip: %w", err)
+		}
+		return readAll(zr)
+	case 2:
+		if len(data) > 16 && bytes.HasPrefix(data, xerialPrefix) {
+			return xerialDecode(data[16:])
+		}
+		return s2.Decode(nil, data)
+	case 3:
+		return readAll(lz4.NewReader(bytes.NewReader(data)))
+	case 4:
+		return zstdDecoder.DecodeAll(data, nil)
+	default:
+		return nil, fmt.Errorf("unknown compression codec %d", codec)
+	}
+}
+
+// xerialDecode decodes xerial-framed snappy (after its 16-byte header): chunks
+// of a 4-byte length and a snappy block.
+func xerialDecode(src []byte) ([]byte, error) {
+	var out []byte
+	for len(src) > 0 {
+		if len(src) < 4 {
+			return nil, errors.New("malformed xerial framing")
+		}
+		size := int(int32(binary.BigEndian.Uint32(src)))
+		src = src[4:]
+		if size < 0 || size > len(src) {
+			return nil, errors.New("malformed xerial framing")
+		}
+		chunk, err := s2.Decode(nil, src[:size])
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, chunk...)
+		if len(out) > maxDecompressed {
+			return nil, errors.New("decompressed batch is too large")
+		}
+		src = src[size:]
+	}
+	return out, nil
 }
 
 // rawRecord holds fields from a single v2 record.
@@ -462,222 +449,6 @@ func parseRecord(data []byte, pos int) (rawRecord, int, error) {
 		key:         key,
 		value:       value,
 	}, recEnd, nil
-}
-
-// ---------- helpers ----------
-
-// isFlexibleRequest returns true if this API key + version uses flexible encoding.
-func isFlexibleRequest(apiKey, apiVersion int16) bool {
-	switch apiKey {
-	case apiProduce:
-		return apiVersion >= produceFlexVersion
-	case apiFetch:
-		return apiVersion >= fetchFlexVersion
-	case apiMetadata:
-		return apiVersion >= 9
-	default:
-		return apiVersion >= 2 // conservative default
-	}
-}
-
-// reader provides sequential reading from a byte slice, with awareness of
-// flexible vs non-flexible encoding.
-type reader struct {
-	buf  []byte
-	pos  int
-	flex bool
-}
-
-func (r *reader) readInt16() (int16, error) {
-	if r.pos+2 > len(r.buf) {
-		return 0, fmt.Errorf("need 2 bytes at %d, have %d", r.pos, len(r.buf))
-	}
-	v := int16(binary.BigEndian.Uint16(r.buf[r.pos : r.pos+2]))
-	r.pos += 2
-	return v, nil
-}
-
-func (r *reader) readInt32() (int32, error) {
-	if r.pos+4 > len(r.buf) {
-		return 0, fmt.Errorf("need 4 bytes at %d, have %d", r.pos, len(r.buf))
-	}
-	v := int32(binary.BigEndian.Uint32(r.buf[r.pos : r.pos+4]))
-	r.pos += 4
-	return v, nil
-}
-
-func (r *reader) skip(n int) error {
-	if r.pos+n > len(r.buf) {
-		return fmt.Errorf("cannot skip %d at pos %d, len %d", n, r.pos, len(r.buf))
-	}
-	r.pos += n
-	return nil
-}
-
-// readString reads a string. In flexible mode, uses compact encoding.
-func (r *reader) readString() (string, error) {
-	if r.flex {
-		return r.readCompactString()
-	}
-	return r.readLegacyString()
-}
-
-func (r *reader) readNullableString() (string, bool, error) {
-	if r.flex {
-		return r.readCompactNullableString()
-	}
-	return r.readLegacyNullableString()
-}
-
-func (r *reader) readLegacyString() (string, error) {
-	if r.pos+2 > len(r.buf) {
-		return "", fmt.Errorf("string length at %d", r.pos)
-	}
-	length := int(binary.BigEndian.Uint16(r.buf[r.pos : r.pos+2]))
-	r.pos += 2
-	if r.pos+length > len(r.buf) {
-		return "", fmt.Errorf("string body %d at %d", length, r.pos)
-	}
-	s := string(r.buf[r.pos : r.pos+length])
-	r.pos += length
-	return s, nil
-}
-
-func (r *reader) readLegacyNullableString() (string, bool, error) {
-	if r.pos+2 > len(r.buf) {
-		return "", false, fmt.Errorf("nullable string length at %d", r.pos)
-	}
-	length := int16(binary.BigEndian.Uint16(r.buf[r.pos : r.pos+2]))
-	r.pos += 2
-	if length < 0 {
-		return "", false, nil
-	}
-	if r.pos+int(length) > len(r.buf) {
-		return "", false, fmt.Errorf("nullable string body %d at %d", length, r.pos)
-	}
-	s := string(r.buf[r.pos : r.pos+int(length)])
-	r.pos += int(length)
-	return s, true, nil
-}
-
-func (r *reader) readCompactString() (string, error) {
-	length, err := r.readUvarint()
-	if err != nil {
-		return "", err
-	}
-	if length == 0 {
-		return "", fmt.Errorf("compact string is null")
-	}
-	strLen := int(length) - 1
-	if r.pos+strLen > len(r.buf) {
-		return "", fmt.Errorf("compact string body %d at %d", strLen, r.pos)
-	}
-	s := string(r.buf[r.pos : r.pos+strLen])
-	r.pos += strLen
-	return s, nil
-}
-
-func (r *reader) readCompactNullableString() (string, bool, error) {
-	length, err := r.readUvarint()
-	if err != nil {
-		return "", false, err
-	}
-	if length == 0 {
-		return "", false, nil
-	}
-	strLen := int(length) - 1
-	if r.pos+strLen > len(r.buf) {
-		return "", false, fmt.Errorf("compact nullable string body %d at %d", strLen, r.pos)
-	}
-	s := string(r.buf[r.pos : r.pos+strLen])
-	r.pos += strLen
-	return s, true, nil
-}
-
-// readArrayLen reads an array count.
-func (r *reader) readArrayLen() (int, error) {
-	if r.flex {
-		n, err := r.readUvarint()
-		if err != nil {
-			return 0, err
-		}
-		return int(n) - 1, nil // compact arrays encode count+1
-	}
-	v, err := r.readInt32()
-	return int(v), err
-}
-
-// readRawBytes reads a length-prefixed bytes field.
-func (r *reader) readRawBytes() ([]byte, error) {
-	var length int
-	if r.flex {
-		n, err := r.readUvarint()
-		if err != nil {
-			return nil, err
-		}
-		length = int(n) - 1
-	} else {
-		v, err := r.readInt32()
-		if err != nil {
-			return nil, err
-		}
-		length = int(v)
-	}
-	if length < 0 {
-		return nil, nil
-	}
-	if r.pos+length > len(r.buf) {
-		return nil, fmt.Errorf("bytes field %d at %d", length, r.pos)
-	}
-	b := r.buf[r.pos : r.pos+length]
-	r.pos += length
-	return b, nil
-}
-
-// readNullableRawBytes reads a nullable length-prefixed bytes field.
-func (r *reader) readNullableRawBytes() ([]byte, error) {
-	var length int
-	if r.flex {
-		n, err := r.readUvarint()
-		if err != nil {
-			return nil, err
-		}
-		if n == 0 {
-			return nil, nil
-		}
-		length = int(n) - 1
-	} else {
-		v, err := r.readInt32()
-		if err != nil {
-			return nil, err
-		}
-		if v < 0 {
-			return nil, nil
-		}
-		length = int(v)
-	}
-	if r.pos+length > len(r.buf) {
-		return nil, fmt.Errorf("nullable bytes field %d at %d", length, r.pos)
-	}
-	b := r.buf[r.pos : r.pos+length]
-	r.pos += length
-	return b, nil
-}
-
-func (r *reader) readUvarint() (uint64, error) {
-	v, n, err := readUvarint(r.buf, r.pos)
-	if err != nil {
-		return 0, err
-	}
-	r.pos = n
-	return v, nil
-}
-
-func (r *reader) skipTaggedFields() {
-	n, err := skipTaggedFields(r.buf, r.pos)
-	if err == nil {
-		r.pos = n
-	}
 }
 
 // ---------- varint encoding ----------

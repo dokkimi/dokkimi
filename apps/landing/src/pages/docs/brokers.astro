@@ -141,7 +141,7 @@ broker: kafka`} lang="yaml" />
       <tr><td><code>routingKey</code></td><td>Routing key used for the message</td></tr>
       <tr><td rowspan="4">Kafka</td><td><code>topic</code></td><td>Kafka topic</td></tr>
       <tr><td><code>partition</code></td><td>Partition index</td></tr>
-      <tr><td><code>key</code></td><td>Message key (string or parsed JSON)</td></tr>
+      <tr><td><code>key</code></td><td>Message key, as the exact text it was (a numeric key stays a string). A key that is a JSON object or array is shown parsed</td></tr>
       <tr><td><code>offset</code></td><td>Message offset (consume only)</td></tr>
     </tbody>
   </table>

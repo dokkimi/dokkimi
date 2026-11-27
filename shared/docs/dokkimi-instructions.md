@@ -1809,12 +1809,12 @@ AMQP metadata:
 
 Kafka metadata:
 
-| Field       | Type    | Description                                          |
-| ----------- | ------- | ---------------------------------------------------- |
-| `topic`     | string  | Kafka topic                                          |
-| `partition` | integer | Partition index                                      |
-| `key`       | any     | Message key (string or parsed JSON, null if not set) |
-| `offset`    | integer | Message offset (consume only)                        |
+| Field       | Type    | Description                                                                                                                       |
+| ----------- | ------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| `topic`     | string  | Kafka topic                                                                                                                       |
+| `partition` | integer | Partition index                                                                                                                   |
+| `key`       | any     | Message key, as the exact text it was (a numeric key stays a string); a JSON object or array key is shown parsed; null if not set |
+| `offset`    | integer | Message offset (consume only)                                                                                                     |
 
 ---
 
