@@ -140,6 +140,9 @@ func FindDirectRequestLog(httpLogs []HttpLogMessage, action StepAction, stepExec
 			} else {
 				service = stepURL
 			}
+			// The log's target has no port: a service is reached on its own
+			// port, and an external host's port isn't part of its name
+			service, _, _ = strings.Cut(service, ":")
 			if service != "" && (log.Target == nil || *log.Target != service) {
 				continue
 			}

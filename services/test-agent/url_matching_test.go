@@ -59,6 +59,8 @@ func TestFindDirectRequestLog_MatchesSchemeAndEncoding(t *testing.T) {
 		{"service-a/search?q=hello world", "http://service-a/search?q=hello%20world"},
 		{"service-a/a%20b", "http://service-a/a%20b"},
 		{"service-a/café", "http://service-a/caf%C3%A9"},
+		{"service-a:3000/echo", "http://service-a/echo"},          // the port goes to the service's own
+		{"https://service-a:3000/echo", "https://service-a/echo"}, // scheme and port
 	} {
 		if FindDirectRequestLog([]HttpLogMessage{logAt(tc.logged)}, StepAction{Method: "GET", URL: tc.step}, exec) == nil {
 			t.Errorf("step %s didn't find its log %s", tc.step, tc.logged)
