@@ -13,7 +13,7 @@ import { LogProcessingModule } from './log-processing/log-processing.module';
 import { ArtifactsModule } from './artifacts/artifacts.module';
 import { BaselinesModule } from './baselines/baselines.module';
 import { StorageModule } from './storage/storage.module';
-import { getConfig, getConcurrencyPrefs } from '@dokkimi/config';
+import { getConfig, resolveConcurrency } from '@dokkimi/config';
 
 @Module({
   imports: [
@@ -22,16 +22,13 @@ import { getConfig, getConcurrencyPrefs } from '@dokkimi/config';
       load: [
         () => {
           const config = getConfig();
+          const concurrency = resolveConcurrency(config);
           return {
             DATABASE_URL: config.database.url,
             STORAGE_DIR: config.storage.dir,
             INIT_FILES_DIR: config.storage.initFilesDir,
-            MAX_CONCURRENT_NAMESPACES:
-              getConcurrencyPrefs().maxConcurrentTests ??
-              config.concurrency.maxConcurrentTests,
-            MAX_BOOTING_NAMESPACES:
-              getConcurrencyPrefs().maxBootingTests ??
-              config.concurrency.maxBootingTests,
+            MAX_CONCURRENT_NAMESPACES: concurrency.maxConcurrentTests,
+            MAX_BOOTING_NAMESPACES: concurrency.maxBootingTests,
             CIRCUIT_BREAKER_TIMEOUT: config.circuitBreaker?.timeout ?? 3000,
             CIRCUIT_BREAKER_ERROR_THRESHOLD:
               config.circuitBreaker?.errorThresholdPercentage ?? 50,

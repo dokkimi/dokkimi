@@ -446,7 +446,7 @@ Redis:
 
 An HTTP mock that intercepts outbound requests from services and returns controlled responses. When a service tries to call an external API (e.g., Stripe, Twilio), the interceptor sidecar matches the request against defined mocks and returns the mock response instead. Mocks apply to every request: from services, workers, test steps and the UI test browser, to external hosts and to your own services. A request that no mock matches goes to its real destination, over the scheme the caller used and with its certificate checked. If it can't be reached, the caller gets a 502.
 
-**HTTP and HTTPS both work — no code changes needed.** The interceptor listens on port 80 for HTTP and on port 443 for HTTPS, terminating TLS with per-hostname certificates signed by a Dokkimi CA that is generated once per environment and automatically mounted into every service container (`NODE_EXTRA_CA_CERTS` for Node.js, `SSL_CERT_FILE` for Python/Go/curl/etc.; JVM services don't trust it yet, so HTTPS mocks don't work for them). You write `mockTarget` exactly the same way for either protocol — `"api.stripe.com"` matches both `http://api.stripe.com` and `https://api.stripe.com`. Leave your service's code calling the real Auth0/Stripe/Twilio URLs as-is; DNS in the network routes the hostname to the interceptor, the interceptor presents a trusted cert, terminates TLS, matches the request against your mocks, and serves the response.
+**HTTP and HTTPS both work — no code changes needed.** The interceptor listens on port 80 for HTTP and on port 443 for HTTPS, terminating TLS with per-hostname certificates signed by a Dokkimi CA that is generated once per environment and automatically mounted into every service container (`NODE_EXTRA_CA_CERTS` for Node.js, `SSL_CERT_FILE` for Python/Go/curl/etc., and a Java truststore through `JAVA_TOOL_OPTIONS` for JVM services; a `JAVA_TOOL_OPTIONS` you set is kept, after Dokkimi's). You write `mockTarget` exactly the same way for either protocol — `"api.stripe.com"` matches both `http://api.stripe.com` and `https://api.stripe.com`. Leave your service's code calling the real Auth0/Stripe/Twilio URLs as-is; DNS in the network routes the hostname to the interceptor, the interceptor presents a trusted cert, terminates TLS, matches the request against your mocks, and serves the response.
 
 **Required fields:**
 
@@ -2165,6 +2165,8 @@ dokkimi dump --run                     # Pick a run from the history
 - `[path]` — filter to definitions matching a `.json` file or `.dokkimi/` folder
 
 If a specified definition wasn't part of the last run, a warning is printed to stderr.
+
+Each instance includes up to 500 HTTP, database and message logs and 1000 console and test execution logs. A list cut off at its limit is named under the instance's `truncated`, with its full count (`"truncated": { "httpLogs": { "included": 500, "total": 812 } }`). If any data can't be fetched, the command prints why, exits 1 and writes no file.
 
 ### `dokkimi baselines`
 

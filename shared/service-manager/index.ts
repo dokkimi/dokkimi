@@ -5,6 +5,8 @@ import {
   DokkimiConfig,
   DOKKIMI_VERSION,
   buildServiceUrl,
+  concurrencyDifference,
+  resolveConcurrency,
 } from '@dokkimi/config';
 import { isProcessAlive, killProcess } from '@dokkimi/platform';
 
@@ -84,13 +86,25 @@ export async function ensureServicesRunning(
     }
 
     if (health.healthy) {
-      if (health.version === DOKKIMI_VERSION || !isLocal) {
+      if (!isLocal) {
         return;
       }
-      // An older (or newer) daemon, e.g. still running after an upgrade:
-      // restart it, unless that would end a run
+      // A daemon of another version (e.g. still running after an upgrade),
+      // or with other concurrency than this command's (a changed DOKKIMI_MAX_*
+      // variable or saved setting: the daemon read them when it started)
+      const differences = [
+        health.version !== DOKKIMI_VERSION &&
+          `version ${health.version ?? '(unknown)'}, not ${DOKKIMI_VERSION}`,
+        health.concurrency &&
+          concurrencyDifference(health.concurrency, resolveConcurrency(config)),
+      ].filter((d): d is string => typeof d === 'string');
+      if (differences.length === 0) {
+        return;
+      }
+      // Restart it, unless that would end a run
+      const difference = differences.join('; ');
       if (pid === null || health.activeRun) {
-        const running = `[Dokkimi] Control Tower ${health.version ?? '(unknown version)'} is running, not ${DOKKIMI_VERSION}.`;
+        const running = `[Dokkimi] Control Tower is running with ${difference}.`;
         console.warn(
           pid === null
             ? `${running} It wasn't started by this CLI, so it is used; stop it to switch.`
@@ -98,9 +112,7 @@ export async function ensureServicesRunning(
         );
         return;
       }
-      console.log(
-        `[Dokkimi] Restarting Control Tower ${health.version ?? '(unknown version)'} as ${DOKKIMI_VERSION}`,
-      );
+      console.log(`[Dokkimi] Restarting Control Tower (${difference})`);
       await stopProcess(pid);
     } else if (pid !== null) {
       console.log(

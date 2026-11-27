@@ -1,7 +1,8 @@
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { ReadinessStatus, RunStatus } from '@prisma/client';
-import { DOKKIMI_VERSION } from '@dokkimi/config';
+import { ConfigService } from '@nestjs/config';
+import { Concurrency, DOKKIMI_VERSION } from '@dokkimi/config';
 import { HealthStatusDto } from './dto/health-status.dto';
 
 export interface HealthCheckResult {
@@ -19,6 +20,8 @@ export interface HealthStatus {
   version: string;
   /** A run is pending or running: the CLI restarts an old version only when not */
   activeRun: boolean;
+  /** What it runs with: the CLI restarts it, when idle, to apply a change */
+  concurrency: Concurrency;
   checks: {
     database: HealthCheckResult;
     prisma: HealthCheckResult;
@@ -30,7 +33,10 @@ export class HealthService {
   private readonly logger = new Logger(HealthService.name);
   private readonly startTime = Date.now();
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly config: ConfigService,
+  ) {}
 
   async getHealthStatus(): Promise<HealthStatus> {
     const [database, { result: prisma, activeRun }] = await Promise.all([
@@ -48,6 +54,12 @@ export class HealthService {
       uptime: Math.floor((Date.now() - this.startTime) / 1000),
       version: DOKKIMI_VERSION,
       activeRun,
+      concurrency: {
+        maxConcurrentTests: this.config.get<number>(
+          'MAX_CONCURRENT_NAMESPACES',
+        )!,
+        maxBootingTests: this.config.get<number>('MAX_BOOTING_NAMESPACES')!,
+      },
       checks: {
         database,
         prisma,

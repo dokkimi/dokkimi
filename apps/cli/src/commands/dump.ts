@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { resolveDefinitions } from '@dokkimi/definition-resolver';
-import { fetchJson } from '../lib/cli-utils';
+import { fetchJson, fetchJsonOrThrow } from '../lib/cli-utils';
 import { loadConfig, buildServiceUrl } from '@dokkimi/config';
 import { stripIds } from '../lib/editor';
 import { trackEvent } from '@dokkimi/telemetry';
@@ -41,6 +41,26 @@ export interface WriteDumpOptions {
 }
 
 export async function writeDump(opts: WriteDumpOptions): Promise<void> {
+  const resolved = path.resolve(opts.outputPath);
+  fs.mkdirSync(path.dirname(resolved), { recursive: true });
+  // Streamed instance by instance, to a file renamed only once complete: a
+  // failed fetch leaves no partial dump
+  const partial = `${resolved}.partial`;
+  const stream = fs.createWriteStream(partial);
+  try {
+    await streamDump(stream, opts);
+  } catch (err) {
+    stream.destroy();
+    fs.rmSync(partial, { force: true });
+    throw err;
+  }
+  fs.renameSync(partial, resolved);
+}
+
+async function streamDump(
+  stream: fs.WriteStream,
+  opts: WriteDumpOptions,
+): Promise<void> {
   const {
     ctUrl,
     instances,
@@ -48,13 +68,8 @@ export async function writeDump(opts: WriteDumpOptions): Promise<void> {
     runStatus,
     createdAt,
     completedAt,
-    outputPath,
     inlineArtifacts = false,
   } = opts;
-
-  const resolved = path.resolve(outputPath);
-  fs.mkdirSync(path.dirname(resolved), { recursive: true });
-  const stream = fs.createWriteStream(resolved);
 
   stream.write('{\n');
   stream.write(`  "runId": ${JSON.stringify(runId)},\n`);
@@ -181,16 +196,24 @@ export async function dump(args: string[]): Promise<void> {
     }
   }
 
-  await writeDump({
-    ctUrl,
-    instances,
-    runId: selectedRun.runId,
-    runStatus: selectedRun.status,
-    createdAt: selectedRun.createdAt,
-    completedAt: selectedRun.completedAt,
-    outputPath: outputFile,
-    inlineArtifacts,
-  });
+  try {
+    await writeDump({
+      ctUrl,
+      instances,
+      runId: selectedRun.runId,
+      runStatus: selectedRun.status,
+      createdAt: selectedRun.createdAt,
+      completedAt: selectedRun.completedAt,
+      outputPath: outputFile,
+      inlineArtifacts,
+    });
+  } catch (err) {
+    // Before, a failed fetch became an empty list in the dump
+    console.error(
+      `Dump failed: ${err instanceof Error ? err.message : String(err)}`,
+    );
+    process.exit(1);
+  }
   console.log(`Dump written to ${path.resolve(outputFile)}`);
 
   trackEvent('cli_dump_result', {
@@ -289,6 +312,13 @@ interface DumpOptions {
   inlineArtifacts: boolean;
 }
 
+/** How many of each kind of log the dump asks for */
+const LOG_LIMITS = { http: 500, database: 500, console: 1000, message: 500 };
+const DUMP_FETCH_TIMEOUT_MS = 30000;
+
+const get = <T>(url: string, allow404 = false) =>
+  fetchJsonOrThrow<T>(url, { allow404, timeoutMs: DUMP_FETCH_TIMEOUT_MS });
+
 async function dumpInstance(
   ctUrl: string,
   runId: string,
@@ -306,30 +336,46 @@ async function dumpInstance(
     assertions,
     artifactsRes,
   ] = await Promise.all([
-    fetchJson<DefinitionSnapshot>(
+    // An instance that was never submitted has no definition
+    get<DefinitionSnapshot>(
       `${ctUrl}/runs/${runId}/instances/${instance.id}/definition`,
+      true,
     ),
-    fetchJson<InstanceDetail>(`${ctUrl}/namespaces/instances/${instance.id}`),
-    fetchJson<HttpLogsResponse>(
-      `${ctUrl}/logs/http/instance/${instance.id}?limit=500`,
+    get<InstanceDetail>(`${ctUrl}/namespaces/instances/${instance.id}`),
+    get<HttpLogsResponse>(
+      `${ctUrl}/logs/http/instance/${instance.id}?limit=${LOG_LIMITS.http}`,
     ),
-    fetchJson<DatabaseLogsResponse>(
-      `${ctUrl}/logs/database/instance/${instance.id}?limit=500`,
+    get<DatabaseLogsResponse>(
+      `${ctUrl}/logs/database/instance/${instance.id}?limit=${LOG_LIMITS.database}`,
     ),
-    fetchJson<ConsoleLogsResponse>(
-      `${ctUrl}/logs/console/instance/${instance.id}?limit=1000`,
+    get<ConsoleLogsResponse>(
+      `${ctUrl}/logs/console/instance/${instance.id}?limit=${LOG_LIMITS.console}`,
     ),
-    fetchJson<MessageLogsResponse>(
-      `${ctUrl}/logs/message/instance/${instance.id}?limit=500`,
+    get<MessageLogsResponse>(
+      `${ctUrl}/logs/message/instance/${instance.id}?limit=${LOG_LIMITS.message}`,
     ),
-    fetchJson<TestExecutionLogsResponse>(
+    get<TestExecutionLogsResponse>(
       `${ctUrl}/logs/test-execution/instance/${instance.id}`,
     ),
-    fetchJson<AssertionResult[]>(
+    get<AssertionResult[]>(
       `${ctUrl}/logs/assertion-results/instance/${instance.id}`,
     ),
-    fetchJson<ArtifactsResponse>(`${ctUrl}/artifacts/instance/${instance.id}`),
+    get<ArtifactsResponse>(`${ctUrl}/artifacts/instance/${instance.id}`),
   ]);
+
+  // Name each list the server cut off, with its full count
+  const truncated: Record<string, { included: number; total: number }> = {};
+  for (const [key, res] of Object.entries({
+    testExecutionLogs: execRes,
+    httpLogs: httpRes,
+    databaseLogs: dbRes,
+    consoleLogs: consoleRes,
+    messageLogs: msgRes,
+  })) {
+    if (res && res.total > res.logs.length) {
+      truncated[key] = { included: res.logs.length, total: res.total };
+    }
+  }
 
   return {
     name: instance.name,
@@ -348,6 +394,7 @@ async function dumpInstance(
       artifactsRes?.artifacts ?? [],
       opts.inlineArtifacts,
     ),
+    ...(Object.keys(truncated).length > 0 ? { truncated } : {}),
   };
 }
 

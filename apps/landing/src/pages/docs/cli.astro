@@ -134,6 +134,7 @@ dokkimi dump -o run-dump.json            # Write to this file (streams, low memo
 dokkimi dump --failed -o failures.json   # Only failed instances
 dokkimi dump .dokkimi/auth.json          # Specific definitions only
 dokkimi dump --run                       # Pick a run from the history`} lang="bash" />
+  <p>Each instance includes up to 500 HTTP, database and message logs and 1000 console and test execution logs. A list cut off at its limit is named under the instance's <code>truncated</code>, with its full count. If any data can't be fetched, the command prints why, exits 1 and writes no file.</p>
 
   <h3>Options</h3>
   <table>

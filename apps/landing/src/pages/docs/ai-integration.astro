@@ -69,7 +69,7 @@ import CodeBlock from '../../components/CodeBlock.astro';
       <tr><td><code>clean</code></td><td>Stop the project's instances and delete its runs, containers, and networks.</td></tr>
       <tr><td><code>init</code></td><td>Scaffold a new <code>.dokkimi/</code> project.</td></tr>
       <tr><td><code>get_config</code></td><td>Show all Dokkimi settings with their defaults and where each value comes from (project, global, or default).</td></tr>
-      <tr><td><code>set_config</code></td><td>Change a setting (concurrency, run history, telemetry). Concurrency is machine-wide: Dokkimi uses the global value, and changes take effect after <code>reboot</code>.</td></tr>
+      <tr><td><code>set_config</code></td><td>Change a setting (concurrency, run history, telemetry). Concurrency is machine-wide: Dokkimi uses the global value, and a change takes effect on the next command that finds no run active.</td></tr>
       <tr><td><code>reboot</code></td><td>Restart Dokkimi services. Interrupts any running instances.</td></tr>
       <tr><td><code>send_feedback</code></td><td>Send feedback to the Dokkimi team about the AI experience: something missing, confusing, or working well.</td></tr>
     </tbody>

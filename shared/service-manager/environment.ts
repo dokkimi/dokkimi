@@ -1,7 +1,7 @@
 import path from 'path';
 import fs from 'fs';
 import os from 'os';
-import { DokkimiConfig } from '@dokkimi/config';
+import { Concurrency, DokkimiConfig } from '@dokkimi/config';
 import { execSilent, isCommandAvailable, startDocker } from '@dokkimi/platform';
 
 const SERVICE_ID = 'control-tower';
@@ -11,6 +11,7 @@ interface HealthResponse {
   service?: string;
   version?: string;
   activeRun?: boolean;
+  concurrency?: Concurrency;
 }
 
 export interface Health {
@@ -18,6 +19,7 @@ export interface Health {
   detail?: string;
   version?: string;
   activeRun?: boolean;
+  concurrency?: Concurrency;
 }
 
 /**
@@ -39,7 +41,12 @@ export async function checkHealth(url: string): Promise<Health> {
     if (body.status !== 'healthy') {
       return { healthy: false, detail: `status: ${body.status}` };
     }
-    return { healthy: true, version: body.version, activeRun: body.activeRun };
+    return {
+      healthy: true,
+      version: body.version,
+      activeRun: body.activeRun,
+      concurrency: body.concurrency,
+    };
   } catch {
     return { healthy: false, detail: 'not reachable' };
   }

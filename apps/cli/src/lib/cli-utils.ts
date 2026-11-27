@@ -60,6 +60,36 @@ export async function fetchJson<T>(
   }
 }
 
+/**
+ * Like fetchJson, but a failure throws, naming the URL and why: for callers
+ * that mustn't mistake a failed request for an empty result. A 404 returns
+ * null when `allow404` is set.
+ */
+export async function fetchJsonOrThrow<T>(
+  url: string,
+  opts: { allow404?: boolean; timeoutMs?: number } = {},
+): Promise<T | null> {
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      signal: AbortSignal.timeout(opts.timeoutMs ?? TIMEOUT_FETCH),
+    });
+  } catch (err) {
+    const timedOut = err instanceof DOMException && err.name === 'TimeoutError';
+    throw new Error(
+      `${timedOut ? 'Timed out' : 'Could not connect'} fetching ${url}`,
+      { cause: err },
+    );
+  }
+  if (res.status === 404 && opts.allow404) {
+    return null;
+  }
+  if (!res.ok) {
+    throw new Error(`HTTP ${res.status} fetching ${url}`);
+  }
+  return (await res.json()) as T;
+}
+
 export async function fetchAction(
   url: string,
   method: 'POST' | 'DELETE',

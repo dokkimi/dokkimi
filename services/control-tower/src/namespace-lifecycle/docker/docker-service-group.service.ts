@@ -191,8 +191,9 @@ export class DockerServiceGroupService {
     );
 
     const userContainerName = `${containerName}-${instanceId}`;
+    const caEnv = this.caService.getServiceCaEnvVars();
     const userEnv: Record<string, string> = {
-      ...this.caService.getServiceCaEnvVars(),
+      ...caEnv,
       HOSTNAME: '0.0.0.0',
     };
 
@@ -207,6 +208,15 @@ export class DockerServiceGroupService {
         for (const [k, v] of Object.entries(item.env)) {
           userEnv[k] = String(v ?? '');
         }
+      }
+      // The user's own JAVA_TOOL_OPTIONS keeps the truststore, before it: a
+      // truststore of their own still wins
+      if (
+        caEnv.JAVA_TOOL_OPTIONS &&
+        userEnv.JAVA_TOOL_OPTIONS !== caEnv.JAVA_TOOL_OPTIONS
+      ) {
+        userEnv.JAVA_TOOL_OPTIONS =
+          `${caEnv.JAVA_TOOL_OPTIONS} ${userEnv.JAVA_TOOL_OPTIONS}`.trim();
       }
     }
 

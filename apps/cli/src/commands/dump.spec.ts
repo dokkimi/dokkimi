@@ -11,6 +11,7 @@ jest.mock('@dokkimi/config', () => ({
 }));
 jest.mock('../lib/cli-utils', () => ({
   fetchJson: jest.fn(),
+  fetchJsonOrThrow: jest.fn(),
 }));
 
 jest.mock('@dokkimi/telemetry', () => ({
@@ -27,16 +28,21 @@ jest.mock('fs', () => {
     ...actual,
     mkdirSync: jest.fn(),
     createWriteStream: jest.fn(),
+    renameSync: jest.fn(),
+    rmSync: jest.fn(),
     readFileSync: actual.readFileSync,
   };
 });
 
 import * as fs from 'fs';
-import { fetchJson } from '../lib/cli-utils';
+import { fetchJson, fetchJsonOrThrow } from '../lib/cli-utils';
 import { trackEvent } from '@dokkimi/telemetry';
 import { dump } from './dump';
 
 const mockFetchJson = fetchJson as jest.MockedFunction<typeof fetchJson>;
+const mockFetchStrict = fetchJsonOrThrow as jest.MockedFunction<
+  typeof fetchJsonOrThrow
+>;
 const mockMkdirSync = fs.mkdirSync as jest.MockedFunction<typeof fs.mkdirSync>;
 const mockCreateWriteStream = fs.createWriteStream as jest.MockedFunction<
   typeof fs.createWriteStream
@@ -73,6 +79,7 @@ function makeMockStream() {
   const stream = {
     write: jest.fn((data: string) => chunks.push(data)),
     end: jest.fn((cb: () => void) => cb()),
+    destroy: jest.fn(),
   };
   return { stream, chunks };
 }
@@ -108,6 +115,8 @@ function setupFetchJsonForDump() {
     }
     return null;
   });
+  // The instance data goes through the strict fetch
+  mockFetchStrict.mockImplementation((url: string) => mockFetchJson(url));
 }
 
 let processExitSpy: jest.SpyInstance;
@@ -198,7 +207,80 @@ describe('dump', () => {
 
     await dump(['-o', '/tmp/custom-dump.json']);
 
-    expect(mockCreateWriteStream).toHaveBeenCalledWith('/tmp/custom-dump.json');
+    expect(mockCreateWriteStream).toHaveBeenCalledWith(
+      '/tmp/custom-dump.json.partial',
+    );
+    expect(fs.renameSync).toHaveBeenCalledWith(
+      '/tmp/custom-dump.json.partial',
+      '/tmp/custom-dump.json',
+    );
+  });
+
+  // Before, a failed fetch became an empty list and the dump looked complete
+  it('fails, leaving no dump, when a fetch fails', async () => {
+    setupFetchJsonForDump();
+    mockFetchStrict.mockImplementation(async (url: string) => {
+      if (url.includes('/logs/http/')) {
+        throw new Error(`HTTP 500 fetching ${url}`);
+      }
+      return mockFetchJson(url);
+    });
+    const { stream } = makeMockStream();
+    mockCreateWriteStream.mockReturnValue(stream as unknown as fs.WriteStream);
+
+    await expect(dump(['-o', '/tmp/d.json'])).rejects.toThrow('process.exit');
+
+    expect(processExitSpy).toHaveBeenCalledWith(1);
+    expect(consoleErrorSpy).toHaveBeenCalledWith(
+      expect.stringMatching(/^Dump failed: HTTP 500 fetching .*\/logs\/http\//),
+    );
+    expect(fs.rmSync).toHaveBeenCalledWith('/tmp/d.json.partial', {
+      force: true,
+    });
+    expect(fs.renameSync).not.toHaveBeenCalled();
+    expect(consoleLogSpy).not.toHaveBeenCalledWith(
+      expect.stringContaining('Dump written to'),
+    );
+  });
+
+  it('allows a missing definition', async () => {
+    setupFetchJsonForDump();
+    mockFetchStrict.mockImplementation(async (url: string, opts) => {
+      if (url.includes('/definition')) {
+        expect(opts?.allow404).toBe(true);
+        return null;
+      }
+      return mockFetchJson(url);
+    });
+    const { stream } = makeMockStream();
+    mockCreateWriteStream.mockReturnValue(stream as unknown as fs.WriteStream);
+
+    await dump(['-o', '/tmp/d.json']);
+
+    expect(fs.renameSync).toHaveBeenCalled();
+  });
+
+  // Before, a list cut off at its limit looked complete
+  it('names each list cut off at its limit, with its total', async () => {
+    setupFetchJsonForDump();
+    mockFetchStrict.mockImplementation(async (url: string) => {
+      if (url.includes('/logs/http/')) {
+        return { logs: [{ method: 'GET' }, { method: 'POST' }], total: 812 };
+      }
+      if (url.includes('/logs/console/')) {
+        return { logs: [{ log: 'a' }], total: 1 };
+      }
+      return mockFetchJson(url);
+    });
+    const { stream, chunks } = makeMockStream();
+    mockCreateWriteStream.mockReturnValue(stream as unknown as fs.WriteStream);
+
+    await dump(['-o', '/tmp/d.json']);
+
+    const parsed = JSON.parse(chunks.join(''));
+    expect(parsed.instances[0].truncated).toEqual({
+      httpLogs: { included: 2, total: 812 },
+    });
   });
 
   it('handles no latest run gracefully', async () => {

@@ -1,6 +1,7 @@
 import {
   prompt,
   fetchJson,
+  fetchJsonOrThrow,
   fetchAction,
   fetchPost,
   fetchPostWithError,
@@ -50,6 +51,43 @@ describe('fetchJson', () => {
     mockFetch.mockRejectedValue(new Error('Network error'));
     const result = await fetchJson('http://localhost/api');
     expect(result).toBeNull();
+  });
+});
+
+describe('fetchJsonOrThrow', () => {
+  const url = 'http://localhost/logs';
+
+  it('returns parsed JSON on success', async () => {
+    mockFetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => [1],
+    });
+    await expect(fetchJsonOrThrow(url)).resolves.toEqual([1]);
+  });
+
+  it('throws on an error status, naming the URL', async () => {
+    mockFetch.mockResolvedValue({ ok: false, status: 500 });
+    await expect(fetchJsonOrThrow(url)).rejects.toThrow(
+      'HTTP 500 fetching http://localhost/logs',
+    );
+  });
+
+  it('throws on a 404 unless allowed', async () => {
+    mockFetch.mockResolvedValue({ ok: false, status: 404 });
+    await expect(fetchJsonOrThrow(url)).rejects.toThrow('HTTP 404');
+    await expect(fetchJsonOrThrow(url, { allow404: true })).resolves.toBeNull();
+  });
+
+  it('throws on a timeout or a failed connection', async () => {
+    mockFetch.mockRejectedValueOnce(
+      new DOMException('timed out', 'TimeoutError'),
+    );
+    await expect(fetchJsonOrThrow(url)).rejects.toThrow('Timed out fetching');
+    mockFetch.mockRejectedValueOnce(new TypeError('fetch failed'));
+    await expect(fetchJsonOrThrow(url)).rejects.toThrow(
+      'Could not connect fetching',
+    );
   });
 });
 

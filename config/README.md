@@ -41,9 +41,6 @@ import { loadConfig, getConfig } from '@dokkimi/config';
 // Load config (uses config/config.yaml by default)
 loadConfig();
 const config = getConfig();
-
-// CI mode — applies concurrency defaults for parallel runs
-loadConfig(undefined, { ci: true });
 ```
 
 ## Environment Variable Overrides
@@ -57,7 +54,7 @@ The config loader applies env var overrides after loading the YAML file. These a
 | `DOKKIMI_MAX_CONCURRENT_NAMESPACES` | `concurrency.maxConcurrentTests` |
 | `DOKKIMI_MAX_BOOTING_NAMESPACES`    | `concurrency.maxBootingTests`    |
 
-CI mode (via `loadConfig(undefined, { ci: true })` or `process.env.CI`) sets concurrency defaults (`maxConcurrentTests: 3`, `maxBootingTests: 1`) unless explicitly overridden.
+Control Tower's concurrency comes from `resolveConcurrency()`: a `DOKKIMI_MAX_*` variable wins, then the setting saved with `dokkimi config` (`~/.dokkimi/config.json`), then `config.yaml`. The daemon reads them when it starts; the CLI restarts it, when no run is active, when this command's values differ.
 
 ## Configuration Values
 

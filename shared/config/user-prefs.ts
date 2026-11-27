@@ -114,6 +114,48 @@ export function getConcurrencyPrefs(projectPath?: string): ConcurrencyPrefs {
   return global;
 }
 
+export interface Concurrency {
+  maxConcurrentTests: number;
+  maxBootingTests: number;
+}
+
+/**
+ * The concurrency Control Tower runs with: an environment variable wins, then
+ * the saved setting (`dokkimi config`), then the config file. `config` is the
+ * loaded config, which has the environment variables applied. Before, a saved
+ * setting won over the variables, so CI's DOKKIMI_MAX_* could be ignored.
+ */
+export function resolveConcurrency(config: {
+  concurrency: Concurrency;
+}): Concurrency {
+  const saved = getConcurrencyPrefs();
+  const { maxConcurrentTests, maxBootingTests } = config.concurrency;
+  return {
+    maxConcurrentTests: process.env.DOKKIMI_MAX_CONCURRENT_NAMESPACES
+      ? maxConcurrentTests
+      : (saved.maxConcurrentTests ?? maxConcurrentTests),
+    maxBootingTests: process.env.DOKKIMI_MAX_BOOTING_NAMESPACES
+      ? maxBootingTests
+      : (saved.maxBootingTests ?? maxBootingTests),
+  };
+}
+
+/** How a running Control Tower's concurrency differs from the wanted one, or null */
+export function concurrencyDifference(
+  running: Concurrency,
+  wanted: Concurrency,
+): string | null {
+  if (
+    running.maxConcurrentTests === wanted.maxConcurrentTests &&
+    running.maxBootingTests === wanted.maxBootingTests
+  ) {
+    return null;
+  }
+  const show = (c: Concurrency) =>
+    `${c.maxConcurrentTests} parallel, ${c.maxBootingTests} booting`;
+  return `concurrency ${show(running)}, not ${show(wanted)}`;
+}
+
 export function setConcurrencyPrefs(
   concurrency: ConcurrencyPrefs,
   projectPath?: string,

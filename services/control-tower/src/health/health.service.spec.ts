@@ -3,6 +3,7 @@ import { BadRequestException } from '@nestjs/common';
 import { ReadinessStatus } from '@prisma/client';
 import { HealthService } from './health.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { ConfigService } from '@nestjs/config';
 import { DOKKIMI_VERSION } from '@dokkimi/config';
 
 describe('HealthService', () => {
@@ -28,6 +29,15 @@ describe('HealthService', () => {
         {
           provide: PrismaService,
           useValue: mockPrismaService,
+        },
+        {
+          provide: ConfigService,
+          useValue: {
+            get: (key: string) =>
+              ({ MAX_CONCURRENT_NAMESPACES: 4, MAX_BOOTING_NAMESPACES: 1 })[
+                key
+              ],
+          },
         },
       ],
     }).compile();
@@ -55,6 +65,17 @@ describe('HealthService', () => {
       expect(result.checks.prisma.latency).toBeGreaterThanOrEqual(0);
       expect(result.timestamp).toBeDefined();
       expect(result.uptime).toBeGreaterThanOrEqual(0);
+    });
+
+    // The CLI compares it with what it resolves, to apply a change
+    it('reports the concurrency it runs with', async () => {
+      mockPrismaService.client.$queryRaw.mockResolvedValue([{ '1': 1 }]);
+      mockPrismaService.run.findFirst.mockResolvedValue(null);
+
+      expect((await service.getHealthStatus()).concurrency).toEqual({
+        maxConcurrentTests: 4,
+        maxBootingTests: 1,
+      });
     });
 
     it('should return unhealthy status when database check fails', async () => {

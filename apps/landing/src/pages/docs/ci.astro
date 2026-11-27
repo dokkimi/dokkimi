@@ -115,7 +115,7 @@ jobs:
   <p>The CLI automatically pulls any sidecar images it needs (interceptor, test-agent, dnsmasq, etc.) on first run. To speed up repeated runs, you can pre-pull them — see <a href="#pre-pull-images">Pre-pull sidecar images</a> below.</p>
 
   <h3>Environment variable overrides</h3>
-  <p>Dokkimi reads these environment variables to override default configuration. Set them before running <code>dokkimi run</code>:</p>
+  <p>Dokkimi reads these environment variables to override default configuration. Set them before running <code>dokkimi run</code>. The concurrency variables win over settings saved with <code>dokkimi config</code>; if Dokkimi is already running with other values, the CLI restarts it to apply them once no run is active:</p>
 
   <table>
     <thead>

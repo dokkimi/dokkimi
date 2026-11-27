@@ -43,7 +43,7 @@ When a CA cert and key are mounted (via `DOKKIMI_CA_CERT_PATH` / `DOKKIMI_CA_KEY
 - Caches the cert per hostname for ~1 hour to avoid regenerating on every connection
 - After the handshake completes, the request flows through the same proxy/mock/log pipeline as HTTP
 
-The CA itself is generated once by Control Tower and stored on the host filesystem. Service containers automatically receive the CA via bind-mounted file plus `NODE_EXTRA_CA_CERTS`, `SSL_CERT_FILE`, and (for JVM services) a keytool-updated truststore — so the certs the interceptor presents are trusted with no per-service configuration. If the CA env vars are not set, HTTPS interception is disabled and the interceptor logs `"No CA cert/key found, HTTPS interception disabled"` at startup.
+The CA itself is generated once by Control Tower and stored on the host filesystem. Service containers automatically receive the CA via bind-mounted file plus `NODE_EXTRA_CA_CERTS`, `SSL_CERT_FILE`, and (for JVM services) a JKS truststore with the public roots and the Dokkimi CA, set through `JAVA_TOOL_OPTIONS` — so the certs the interceptor presents are trusted with no per-service configuration. If the CA env vars are not set, HTTPS interception is disabled and the interceptor logs `"No CA cert/key found, HTTPS interception disabled"` at startup.
 
 ### 2. Request/Response Logging
 

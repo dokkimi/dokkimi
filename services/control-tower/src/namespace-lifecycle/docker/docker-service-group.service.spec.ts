@@ -66,6 +66,7 @@ const mockCaService = {
   getServiceCaEnvVars: jest.fn().mockReturnValue({
     NODE_EXTRA_CA_CERTS: '/etc/ssl/certs/dokkimi-ca.crt',
     SSL_CERT_FILE: '/ca-bundle/ca-bundle.crt',
+    JAVA_TOOL_OPTIONS: '-Djavax.net.ssl.trustStore=/ca-bundle/java-cacerts',
   }),
   getInterceptorCaEnvVars: jest.fn().mockReturnValue({
     DOKKIMI_CA_CERT_PATH: '/etc/dokkimi/ca/tls.crt',
@@ -88,6 +89,7 @@ const caBundlePaths: CaBundlePaths = {
   caCertPath: '/home/.dokkimi/ca/ca.crt',
   caKeyPath: '/home/.dokkimi/ca/ca.key',
   caBundlePath: '/tmp/dokkimi-test/ca-bundle.crt',
+  javaTruststorePath: '/tmp/dokkimi-test/java-cacerts',
 };
 
 function buildServiceItem(
@@ -440,6 +442,37 @@ describe('DockerServiceGroupService', () => {
       expect(userCall.env.DB_URL).toBe('postgres://localhost');
       expect(userCall.env.HOSTNAME).toBe('0.0.0.0');
     });
+
+    // Before, a user's JAVA_TOOL_OPTIONS would have replaced the truststore's
+    it.each([
+      [undefined, '-Djavax.net.ssl.trustStore=/ca-bundle/java-cacerts'],
+      [
+        '-Xmx512m',
+        '-Djavax.net.ssl.trustStore=/ca-bundle/java-cacerts -Xmx512m',
+      ],
+    ])(
+      'keeps the truststore with JAVA_TOOL_OPTIONS %s',
+      async (own, expected) => {
+        const item = buildServiceItem({
+          env: own ? { JAVA_TOOL_OPTIONS: own } : { OTHER: 'x' },
+        });
+
+        await service.createServiceGroup(
+          'dokkimi-run-inst1',
+          'inst1',
+          item,
+          'api-gateway',
+          'item-1',
+          '127.0.0.11',
+          configPaths,
+          caBundlePaths,
+          [],
+        );
+
+        const userCall = mockDockerClient.runContainer.mock.calls[1][0];
+        expect(userCall.env.JAVA_TOOL_OPTIONS).toBe(expected);
+      },
+    );
 
     it('should merge user-defined env vars (array format)', async () => {
       const item = buildServiceItem({

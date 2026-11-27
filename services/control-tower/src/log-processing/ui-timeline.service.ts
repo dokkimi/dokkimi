@@ -383,15 +383,12 @@ function buildCallForest(
   nodes.sort((a, b) => a.startMs - b.startMs);
 
   const topLevel: ForestNode[] = [];
-  for (const n of nodes) {
+  for (const [i, n] of nodes.entries()) {
     let parent: ForestNode | null = null;
-    for (const c of nodes) {
-      if (c === n) {
-        continue;
-      }
-      if (c.startMs > n.startMs) {
-        continue;
-      }
+    // Only a node earlier in start order can be a parent. Before, two calls
+    // starting in the same millisecond (x→y and y→x) could each take the
+    // other as parent, and both vanished from the tree.
+    for (const c of nodes.slice(0, i)) {
       if (c.endMs < n.startMs) {
         continue;
       }

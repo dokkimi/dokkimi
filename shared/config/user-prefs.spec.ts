@@ -63,3 +63,62 @@ describe('user prefs', () => {
     });
   });
 });
+
+describe('resolveConcurrency', () => {
+  const fileConfig = {
+    concurrency: { maxConcurrentTests: 6, maxBootingTests: 2 },
+  };
+  const saved = JSON.stringify({
+    concurrency: { maxConcurrentTests: 3, maxBootingTests: 1 },
+  });
+
+  afterEach(() => {
+    delete process.env.DOKKIMI_MAX_CONCURRENT_NAMESPACES;
+    delete process.env.DOKKIMI_MAX_BOOTING_NAMESPACES;
+  });
+
+  // Before, a saved setting won over the environment variables
+  it('lets an environment variable win over a saved setting', () => {
+    withPrefsFile(saved, (prefs) => {
+      process.env.DOKKIMI_MAX_CONCURRENT_NAMESPACES = '8';
+      // The loader has applied the variable to the config
+      const config = {
+        concurrency: { maxConcurrentTests: 8, maxBootingTests: 2 },
+      };
+      expect(prefs.resolveConcurrency(config)).toEqual({
+        maxConcurrentTests: 8,
+        maxBootingTests: 1,
+      });
+    });
+  });
+
+  it('uses a saved setting over the config file', () => {
+    withPrefsFile(saved, (prefs) => {
+      expect(prefs.resolveConcurrency(fileConfig)).toEqual({
+        maxConcurrentTests: 3,
+        maxBootingTests: 1,
+      });
+    });
+  });
+
+  it('falls back to the config file', () => {
+    withPrefsFile(null, (prefs) => {
+      expect(prefs.resolveConcurrency(fileConfig)).toEqual(
+        fileConfig.concurrency,
+      );
+    });
+  });
+
+  it('describes a difference, and none when equal', () => {
+    withPrefsFile(null, (prefs) => {
+      const a = { maxConcurrentTests: 6, maxBootingTests: 2 };
+      expect(prefs.concurrencyDifference(a, { ...a })).toBeNull();
+      expect(
+        prefs.concurrencyDifference(a, {
+          maxConcurrentTests: 4,
+          maxBootingTests: 2,
+        }),
+      ).toBe('concurrency 6 parallel, 2 booting, not 4 parallel, 2 booting');
+    });
+  });
+});
