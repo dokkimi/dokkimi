@@ -205,7 +205,7 @@ func TestProxyService_forwardRequest(t *testing.T) {
 }
 
 func TestProxyService_getTargetURL(t *testing.T) {
-	cfg := &Config{}
+	cfg := &Config{Origin: "test-origin"} // a sidecar: these are a service's own calls
 	cache := NewMockCache(5 * time.Minute)
 
 	urlMap := UrlMap{
@@ -341,6 +341,36 @@ func TestProxyService_getTargetURL_FromStep(t *testing.T) {
 		takeTargetFromPath(r, urlMap())
 		if got := proxy.getTargetURL(r); got != want {
 			t.Errorf("%s: got %s, want %s", request, got, want)
+		}
+	}
+}
+
+// A step's URL can ask for a scheme; without one, a service gets its own and
+// an external host gets HTTPS. The header is never forwarded.
+func TestProxyService_getTargetURL_StepScheme(t *testing.T) {
+	urlMap := func() UrlMap {
+		return UrlMap{"api": ServiceInfo{Scheme: "http", URL: "http://api", Name: "api", Port: 4000}}
+	}
+	proxy := NewProxyService(&Config{}, NewMockManager(NewMockCache(time.Minute), ""), urlMap)
+
+	for _, tc := range []struct{ path, scheme, want string }{
+		{"/api/orders", "", "http://api:4000/orders"},
+		{"/api/orders", "https", "https://api:4000/orders"},
+		{"/api/orders", "http", "http://api:4000/orders"},
+		{"/api.example.com/v1", "", "https://api.example.com/v1"},
+		{"/api.example.com/v1", "http", "http://api.example.com/v1"},
+		{"/api.example.com/v1", "ftp", "https://api.example.com/v1"},
+	} {
+		r := httptest.NewRequest("GET", "http://interceptor-service"+tc.path, nil)
+		if tc.scheme != "" {
+			r.Header.Set(DokkimiSchemeHeader, tc.scheme)
+		}
+		takeTargetFromPath(r, urlMap())
+		if got := proxy.getTargetURL(r); got != tc.want {
+			t.Errorf("%s with scheme %q: got %s, want %s", tc.path, tc.scheme, got, tc.want)
+		}
+		if r.Header.Get(DokkimiSchemeHeader) != "" {
+			t.Errorf("%s: the scheme header would be forwarded", tc.path)
 		}
 	}
 }

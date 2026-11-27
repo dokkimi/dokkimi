@@ -41,16 +41,20 @@ import CodeBlock from '../../components/CodeBlock.astro';
   </table>
 
   <div class="callout">
-    <p><strong>Use service names, not ports.</strong> The <code>url</code> field uses the format <code>service-name/path</code> — just the item name and the route. Dokkimi handles DNS and port resolution internally. Don't include ports or protocols.</p>
+    <p><strong>Use service names, not ports.</strong> The <code>url</code> field uses the format <code>service-name/path</code> — just the item name and the route. Dokkimi handles DNS and port resolution internally. Don't include the port. A scheme (<code>http://</code> or <code>https://</code>) is optional; see below.</p>
   </div>
 
   <p>For example, if your service item is named <code>api-gateway</code> and listens on port 3000:</p>
   <CodeBlock code={`// Correct
 "url": "api-gateway/api/users"
 
-// Wrong — don't include ports or protocols
-"url": "http://api-gateway:3000/api/users"`} lang="javascript" />
-  <p>The request is checked against your <a href="/docs/mocks">mocks</a> first, like any other. A name with a dot that isn't one of your services, such as <code>api.stripe.com/v1/charges</code>, goes to that host over HTTPS. Any other unknown name gets a 502 response.</p>
+// Also correct — the scheme is optional
+"url": "http://api-gateway/api/users"
+
+// Wrong — don't include the port
+"url": "api-gateway:3000/api/users"`} lang="javascript" />
+  <p>The request is checked against your <a href="/docs/mocks">mocks</a> first, like any other. A name with a dot that isn't one of your services, such as <code>api.stripe.com/v1/charges</code>, goes to that host. Any other unknown name gets a 502 response.</p>
+  <p>The request uses the scheme in the URL if there is one. Without one, a service gets the scheme it serves (normally HTTP) and an external host gets HTTPS. Characters a URL can't contain as they are, such as spaces, are percent-encoded when the request is sent; what's already encoded is sent as written.</p>
   <p>If the response breaks off before it is complete, the step fails.</p>
 
   <h3>Form data (file uploads)</h3>

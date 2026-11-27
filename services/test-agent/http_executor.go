@@ -23,7 +23,7 @@ import (
 // have received the request.
 // Returns an extraction document: { statusCode, headers, body }.
 func (e *TestExecutor) executeAPIStep(ctx context.Context, action StepAction, stepIndex int) (map[string]interface{}, error) {
-	strippedURL := stripScheme(action.URL)
+	strippedURL := encodeURLChars(stripScheme(action.URL))
 	fullURL := e.interceptorURL + "/" + strippedURL
 
 	// Log user-friendly message with the URL
@@ -72,6 +72,11 @@ func (e *TestExecutor) executeAPIStep(ctx context.Context, action StepAction, st
 // dokkimiErrorHeader marks a response the interceptor made because it couldn't
 // deliver the request. Keep in sync with the interceptor's DokkimiErrorHeader.
 const dokkimiErrorHeader = "X-Dokkimi-Error"
+
+// dokkimiSchemeHeader tells the interceptor which scheme a step's URL asked
+// for; the interceptor strips it before forwarding. Keep in sync with the
+// interceptor's DokkimiSchemeHeader.
+const dokkimiSchemeHeader = "X-Dokkimi-Scheme"
 
 // apiResponseToExtractDoc converts an APIResponse to an extraction document: { statusCode, headers, body }.
 func apiResponseToExtractDoc(resp *APIResponse) map[string]interface{} {
@@ -246,6 +251,9 @@ func (e *TestExecutor) doAPIRequest(ctx context.Context, action StepAction, full
 	if contentType != "" {
 		req.Header.Set("Content-Type", contentType)
 	}
+	if scheme := requestedScheme(action.URL); scheme != "" {
+		req.Header.Set(dokkimiSchemeHeader, scheme)
+	}
 	for key, value := range action.Headers {
 		if action.FormData != nil && strings.EqualFold(key, "Content-Type") {
 			continue
@@ -385,6 +393,36 @@ func appendQueryParams(rawURL string, params map[string]interface{}) (string, er
 }
 
 // stripScheme removes http:// or https:// prefix from a URL
+// requestedScheme returns "http" or "https" when a step's URL starts with one,
+// else "" (the interceptor then uses its default for the target).
+func requestedScheme(url string) string {
+	switch {
+	case strings.HasPrefix(url, "http://"):
+		return "http"
+	case strings.HasPrefix(url, "https://"):
+		return "https"
+	default:
+		return ""
+	}
+}
+
+// encodeURLChars percent-encodes the characters a URL can't contain as they
+// are (spaces, quotes, <>, control characters, non-ASCII), as a browser does
+// with a typed URL. Everything else is kept as written, including %, +, & and
+// =, so an already-encoded URL doesn't change.
+func encodeURLChars(s string) string {
+	var b strings.Builder
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if c <= 0x20 || c >= 0x7f || strings.IndexByte(`"<>\^`+"`"+`{|}`, c) >= 0 {
+			fmt.Fprintf(&b, "%%%02X", c)
+		} else {
+			b.WriteByte(c)
+		}
+	}
+	return b.String()
+}
+
 func stripScheme(url string) string {
 	if strings.HasPrefix(url, "http://") {
 		return url[7:]

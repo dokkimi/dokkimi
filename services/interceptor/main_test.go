@@ -484,6 +484,21 @@ func TestHandleRequest_LogsTheSchemeUsed(t *testing.T) {
 	}
 }
 
+// The path is logged as sent, still encoded, like the query: decoding would
+// make different requests look the same.
+func TestHandleRequest_LogsThePathAsSent(t *testing.T) {
+	ok := http.HandlerFunc(func(http.ResponseWriter, *http.Request) {})
+	for _, url := range []string{
+		"http://service-a/files/a%20b?name=John%20Smith",
+		"http://service-a/a%2Fb",
+		"http://service-a/caf%C3%A9",
+	} {
+		if _, message := handleAndCapture(t, "test-origin", url, ok); message.URL != url {
+			t.Errorf("logged %s, want %s", message.URL, url)
+		}
+	}
+}
+
 // Mocks apply to every request, and every request is logged with its target.
 func TestHandleRequest_FromServiceAndStep(t *testing.T) {
 	target := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

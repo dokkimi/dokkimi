@@ -81,3 +81,10 @@ func TestRelay_ForwardsUnpairedReplies(t *testing.T) {
 	send(t, server, "+PONG\r\n+EXTRA\r\n")
 	expectRead(t, client, "+PONG\r\n+EXTRA\r\n")
 }
+
+func TestExtractCommand_QuotesArgumentsWithSpaces(t *testing.T) {
+	v := &respValue{typ: respArray, array: []respValue{{str: "SET"}, {str: "greeting"}, {str: "hello world"}, {str: ""}}}
+	if got, want := extractCommand(v), `SET greeting "hello world" ""`; got != want {
+		t.Errorf("got %s, want %s", got, want)
+	}
+}

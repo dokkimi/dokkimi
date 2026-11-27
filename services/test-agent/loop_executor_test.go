@@ -612,7 +612,7 @@ func TestStepValidator_ForEachVarsCleanedUpBetweenBlocks(t *testing.T) {
 	}
 
 	stepExec := StepExecution{StepIndex: 0}
-	results, _ := sv.validateStep(step, stepExec, nil)
+	results, _ := sv.validateStep(step, step.Action, stepExec, nil)
 
 	// Block 1's assertion should fail because {{item}} was cleaned up.
 	// If it passes with value "bob" (the last forEach iteration), the leak is proven.
@@ -725,7 +725,7 @@ func TestRunLoop_NestedLoopBody(t *testing.T) {
 			EndTime:   now.Add(200 * time.Millisecond).Format(time.RFC3339Nano),
 		}
 
-		results, passed := sv.validateStep(step, stepExec, nil)
+		results, passed := sv.validateStep(step, step.Action, stepExec, nil)
 		if !passed {
 			t.Errorf("expected step to pass, got failing results:")
 			for _, r := range results {
@@ -786,7 +786,7 @@ func TestRunLoop_NestedLoopBody(t *testing.T) {
 			EndTime:   now.Add(200 * time.Millisecond).Format(time.RFC3339Nano),
 		}
 
-		results, passed := sv.validateStep(step, stepExec, nil)
+		results, passed := sv.validateStep(step, step.Action, stepExec, nil)
 		if !passed {
 			t.Errorf("expected step to pass, got failing results:")
 			for _, r := range results {
@@ -849,7 +849,7 @@ func TestRunLoop_NestedForEachInsideForEach(t *testing.T) {
 			EndTime:   now.Add(200 * time.Millisecond).Format(time.RFC3339Nano),
 		}
 
-		results, passed := sv.validateStep(step, stepExec, nil)
+		results, passed := sv.validateStep(step, step.Action, stepExec, nil)
 		if !passed {
 			t.Errorf("expected step to pass, got failing results:")
 			for _, r := range results {
@@ -914,7 +914,7 @@ func TestRunLoop_NestedForEachInsideForEach(t *testing.T) {
 			EndTime:   now.Add(200 * time.Millisecond).Format(time.RFC3339Nano),
 		}
 
-		results, passed := sv.validateStep(step, stepExec, nil)
+		results, passed := sv.validateStep(step, step.Action, stepExec, nil)
 		if !passed {
 			t.Errorf("expected step to pass, got failing results:")
 			for _, r := range results {

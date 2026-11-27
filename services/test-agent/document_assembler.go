@@ -129,13 +129,16 @@ func FindDirectRequestLog(httpLogs []HttpLogMessage, action StepAction, stepExec
 			continue
 		}
 		if action.URL != "" {
-			slashIdx := strings.Index(action.URL, "/")
+			// Compare as it was sent: without a scheme, and encoded as the
+			// interceptor logs the path
+			stepURL := encodeURLChars(stripScheme(action.URL))
+			slashIdx := strings.Index(stepURL, "/")
 			var service, path string
 			if slashIdx >= 0 {
-				service = action.URL[:slashIdx]
-				path = action.URL[slashIdx:]
+				service = stepURL[:slashIdx]
+				path = stepURL[slashIdx:]
 			} else {
-				service = action.URL
+				service = stepURL
 			}
 			if service != "" && (log.Target == nil || *log.Target != service) {
 				continue
@@ -176,7 +179,7 @@ func FindDirectDatabaseLog(dbLogs []DatabaseLogMessage, action StepAction, stepE
 		if log.DatabaseName != action.Database {
 			continue
 		}
-		if !queriesMatch(log.Query, action.Query) {
+		if !queriesMatch(log.Query, action.Query) && !(strings.EqualFold(log.DatabaseType, "redis") && redisCommandsMatch(log.Query, action.Query)) {
 			continue
 		}
 		candidates = append(candidates, log)
@@ -210,6 +213,21 @@ func queriesMatch(logged, step string) bool {
 	}
 	dropGeneratedIDs(parsedLogged, parsedStep)
 	return reflect.DeepEqual(parsedLogged, parsedStep)
+}
+
+// redisCommandsMatch compares two Redis commands argument by argument, as the
+// Redis executor splits them, ignoring the case of the command name.
+func redisCommandsMatch(logged, step string) bool {
+	a, b := parseRedisCommand(logged), parseRedisCommand(step)
+	if len(a) == 0 || len(a) != len(b) || !strings.EqualFold(a[0], b[0]) {
+		return false
+	}
+	for i := 1; i < len(a); i++ {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
 }
 
 // dropGeneratedIDs removes, from a logged MongoDB insertOne or insertMany, the

@@ -366,6 +366,11 @@ func handleRequest(w http.ResponseWriter, r *http.Request, proxy *ProxyService, 
 // deliver a test step's request.
 const DokkimiErrorHeader = "X-Dokkimi-Error"
 
+// DokkimiSchemeHeader carries the scheme a test step's URL asked for ("http"
+// or "https"). The interceptor uses it instead of its default and strips it
+// before forwarding. Keep in sync with the test agent's dokkimiSchemeHeader.
+const DokkimiSchemeHeader = "X-Dokkimi-Scheme"
+
 // decompress returns body as it is if it isn't compressed or can't be decompressed.
 func decompress(body []byte, encoding string) []byte {
 	var reader io.Reader

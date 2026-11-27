@@ -65,7 +65,15 @@ func (sv *StepValidator) ValidateStepWithRetry(step TestStep, stepExec StepExecu
 		effectiveExec.StartTime = sv.prevStepStartTime
 	}
 
-	results, passed := sv.validateStep(step, effectiveExec, stepResp)
+	// Resolve the action's variables once, as it was sent: an extract in this
+	// step can change a variable its own URL or query uses, and every retry
+	// must still look for the request that was actually made.
+	action := step.Action
+	if resolved, err := sv.varCtx.ResolveAction(step.Action); err == nil {
+		action = resolved
+	}
+
+	results, passed := sv.validateStep(step, action, effectiveExec, stepResp)
 	if passed || !isRetryable(results) {
 		if !skipFlush {
 			sv.logBuffer.Flush()
@@ -76,7 +84,7 @@ func (sv *StepValidator) ValidateStepWithRetry(step TestStep, stepExec StepExecu
 	deadline := time.Now().Add(validationMaxWait)
 	for time.Now().Before(deadline) {
 		time.Sleep(validationRetryInterval)
-		results, passed = sv.validateStep(step, effectiveExec, stepResp)
+		results, passed = sv.validateStep(step, action, effectiveExec, stepResp)
 		if passed || !isRetryable(results) {
 			if !skipFlush {
 				sv.logBuffer.Flush()
@@ -134,16 +142,13 @@ func isCountRetryable(r AssertionResult) bool {
 
 // validateStep runs all assertion blocks for a step against the buffered logs.
 // stepResp is the document returned by the step executor (non-nil for UI steps).
-func (sv *StepValidator) validateStep(step TestStep, stepExec StepExecution, stepResp map[string]interface{}) ([]AssertionResult, bool) {
+func (sv *StepValidator) validateStep(step TestStep, action StepAction, stepExec StepExecution, stepResp map[string]interface{}) ([]AssertionResult, bool) {
 	httpLogs, dbLogs, msgLogs, consoleLogs := sv.logBuffer.Snapshot()
 	var results []AssertionResult
 
-	// Resolve variables in the step action so log matching compares resolved
-	// values (e.g. actual query strings) rather than ${{var}} templates.
+	// Log matching compares the action as it was sent (variables resolved)
 	resolvedStep := step
-	if resolved, err := sv.varCtx.ResolveAction(step.Action); err == nil {
-		resolvedStep.Action = resolved
-	}
+	resolvedStep.Action = action
 
 	rootCtx, actionLogFound := AssembleRootContext(resolvedStep, stepExec, httpLogs, dbLogs, msgLogs, consoleLogs, sv.varCtx, stepResp)
 

@@ -101,7 +101,9 @@ func (l *Logger) logResponseInternal(r *http.Request, statusCode int, isMocked b
 			host = r.URL.Host
 		}
 	}
-	fullURL := schemeUsed(r) + "://" + host + r.URL.Path
+	// The path as sent, still encoded (like the query below): decoding would
+	// make different requests look the same (/a%2Fb and /a/b)
+	fullURL := schemeUsed(r) + "://" + host + r.URL.EscapedPath()
 	if r.URL.RawQuery != "" {
 		fullURL += "?" + r.URL.RawQuery
 	}

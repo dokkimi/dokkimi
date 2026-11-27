@@ -234,6 +234,13 @@ func (p *ProxyService) getTargetURL(r *http.Request) string {
 		}
 		baseURL = scheme + "://" + baseURL
 	}
+	// A test step that asked for a scheme gets it (the global interceptor only
+	// handles test steps; takeTargetFromPath set the scheme it asked for)
+	if p.origin == "" && r.URL.Scheme != "" {
+		if _, rest, ok := strings.Cut(baseURL, "://"); ok {
+			baseURL = r.URL.Scheme + "://" + rest
+		}
+	}
 	return appendServicePort(baseURL, serviceInfo.Port) + r.URL.RequestURI()
 }
 
@@ -242,11 +249,23 @@ func (p *ProxyService) getTargetURL(r *http.Request) string {
 func takeTargetFromPath(r *http.Request, urlMap UrlMap) {
 	r.Host, _, _ = strings.Cut(strings.TrimPrefix(r.URL.Path, "/"), "/")
 	stripFirstSegment(r.URL)
+
+	// The scheme the step asked for, if any ("" means the target's default).
+	// The header is never forwarded.
+	requested := r.Header.Get(DokkimiSchemeHeader)
+	r.Header.Del(DokkimiSchemeHeader)
+	if requested != "http" && requested != "https" {
+		requested = ""
+	}
+	r.URL.Scheme = requested
+
 	if targetService(r, urlMap) != "" {
 		return
 	}
 	if strings.Contains(r.Host, ".") {
-		r.URL.Scheme = "https" // a step doesn't say which scheme to use
+		if r.URL.Scheme == "" {
+			r.URL.Scheme = "https" // external APIs are almost always HTTPS
+		}
 		return
 	}
 	// Accept other spellings of a service name (e.g., MY_SERVICE → my-service)
