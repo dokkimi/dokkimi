@@ -1,3 +1,4 @@
+import { outcomeOf } from '../lib/outcome';
 import * as path from 'path';
 import { fetchJson } from '../lib/cli-utils';
 import { loadConfig, buildServiceUrl } from '@dokkimi/config';
@@ -71,7 +72,7 @@ export async function junit(args: string[]): Promise<void> {
 
   if (failedOnly) {
     instances = instances.filter(
-      (i) => i.testStatus === 'FAILED' || i.status === 'FAILED',
+      (i) => outcomeOf(selectedRun.status, i) !== 'passed',
     );
     if (instances.length === 0) {
       console.error('No failed instances in the selected run.');
@@ -88,6 +89,7 @@ export async function junit(args: string[]): Promise<void> {
   const junitOpts = {
     ctUrl,
     runId: selectedRun.runId,
+    runStatus: selectedRun.status,
     instances,
     durationMs,
   };

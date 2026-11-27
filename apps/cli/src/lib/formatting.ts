@@ -40,7 +40,11 @@ export function statusColor(st: string): string {
     case 'COMPLETED':
       return '\x1b[32m';
     case 'FAILED':
+    case 'INVALID':
+    case 'NOT RUN':
       return '\x1b[31m';
+    case 'CANCELLED':
+      return '\x1b[33m';
     case 'SKIPPED':
     case 'NOT_VALIDATED':
       return '\x1b[90m';

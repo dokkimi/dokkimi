@@ -66,8 +66,15 @@ describe('run_tests', () => {
       success: true,
       isError: false,
       runId: 'run-1',
-      summary: { total: 1, passed: 1, failed: 0, skipped: 0 },
-      instances: [{ id: 'i1', name: 'n', status: 'PASSED' }],
+      summary: {
+        total: 1,
+        passed: 1,
+        failed: 0,
+        cancelled: 0,
+        notRun: 0,
+        running: 0,
+      },
+      instances: [{ id: 'i1', name: 'n', outcome: 'passed' }],
     });
   });
 
@@ -78,6 +85,17 @@ describe('run_tests', () => {
       isError: true,
       runId: 'run-1',
       summary: { failed: 1 },
+    });
+  });
+
+  // Before, a cancelled run whose CLI exited 0 was a success: nothing failed
+  it('fails a cancelled run even when the CLI exited 0', async () => {
+    storeRun('CANCELLED', { status: 'STOPPED', testStatus: null });
+    expect(await runTests(started, 0)).toMatchObject({
+      success: false,
+      isError: true,
+      summary: { total: 1, passed: 0, cancelled: 1 },
+      instances: [{ outcome: 'cancelled' }],
     });
   });
 
@@ -110,7 +128,14 @@ describe('run_tests', () => {
         isError: true,
         error: `No run was started (dokkimi run exited with code ${code})`,
         output: [output],
-        summary: { total: 0, passed: 0, failed: 0, skipped: 0 },
+        summary: {
+          total: 0,
+          passed: 0,
+          failed: 0,
+          cancelled: 0,
+          notRun: 0,
+          running: 0,
+        },
         instances: [],
       });
       expect(mockFetch).not.toHaveBeenCalledWith(

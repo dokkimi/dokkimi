@@ -12,6 +12,8 @@ jest.mock('@dokkimi/config', () => ({
   loadConfig: jest.fn(),
   buildServiceUrl: jest.fn(),
   DokkimiConfig: {},
+  instanceOutcome: jest.requireActual('@dokkimi/config').instanceOutcome,
+  countOutcomes: jest.requireActual('@dokkimi/config').countOutcomes,
 }));
 jest.mock('../lib/cli-utils', () => ({
   fetchJson: jest.fn(),
@@ -53,7 +55,7 @@ jest.mock('./run-helpers', () => {
   };
 });
 
-import { run } from './run';
+import { run, parseRunArgs } from './run';
 import { resolveDefinitions } from '@dokkimi/definition-resolver';
 import { ensureServicesRunning } from '@dokkimi/service-manager';
 import { trackEvent } from '@dokkimi/telemetry';
@@ -223,7 +225,13 @@ describe('run', () => {
   it('handles definition resolution errors (all invalid) - skips run', async () => {
     mockResolveDefinitions.mockReturnValue({
       definitions: [],
-      errors: [{ file: '/project/.dokkimi/bad.yml', errors: ['syntax error'] }],
+      errors: [
+        {
+          file: '/project/.dokkimi/bad.yml',
+          errors: ['syntax error'],
+          warnings: [],
+        },
+      ],
       config: {},
       consumedFiles: [],
     });
@@ -248,8 +256,12 @@ describe('run', () => {
 
     await expect(run(['--ci'])).rejects.toThrow('process.exit');
 
+    // Before, finding nothing to run passed
     expect(mockFetchPostWithError).not.toHaveBeenCalled();
-    expect(logSpy).toHaveBeenCalledWith('No runnable definitions found.');
+    expect(errorSpy).toHaveBeenCalledWith(
+      '\x1b[31mNo definitions found.\x1b[0m',
+    );
+    expect(mockExit).toHaveBeenCalledWith(1);
   });
 
   it('tracks telemetry event with correct counts', async () => {
@@ -503,7 +515,11 @@ describe('run', () => {
         },
       ],
       errors: [
-        { file: '/project/.dokkimi/bad.yml', errors: ['Invalid reference'] },
+        {
+          file: '/project/.dokkimi/bad.yml',
+          errors: ['Invalid reference'],
+          warnings: [],
+        },
       ],
       config: {},
       consumedFiles: [],
@@ -575,22 +591,22 @@ describe('run', () => {
     );
   });
 
-  it('tracks skipped instances in telemetry', async () => {
+  it('tracks each outcome in telemetry', async () => {
     const pollResult = {
-      passed: true,
+      passed: false,
       runId: 'run-1',
+      runStatus: 'COMPLETED',
       instances: [
         {
           id: 'inst-1',
           name: 'test-a',
-          status: 'COMPLETED',
+          status: 'STOPPED',
           testStatus: 'PASSED',
         },
         {
-          id: 'inst-2',
+          id: 'invalid-test-b',
           name: 'test-b',
-          status: 'SKIPPED',
-          testStatus: 'SKIPPED',
+          status: 'INVALID',
         },
       ],
     };
@@ -627,9 +643,69 @@ describe('run', () => {
     expect(mockTrackEvent).toHaveBeenCalledWith(
       'cli_run_result',
       expect.objectContaining({
-        skipped_count: 1,
+        definition_count: 2,
         passed_count: 1,
+        error_file_count: 1,
       }),
     );
+  });
+});
+
+// Before, an unknown option, or `--timeout 900` with a space, was taken for
+// the target or ignored, and the run passed with nothing run
+describe('parseRunArgs', () => {
+  it('reads every option', () => {
+    expect(
+      parseRunArgs([
+        '--ci',
+        '-w',
+        '--failed',
+        '--timeout',
+        '90',
+        '--junit',
+        'r.xml',
+        'auth',
+      ]),
+    ).toEqual({
+      ciMode: true,
+      watchMode: true,
+      failedOnly: true,
+      timeoutSeconds: 90,
+      junitPath: 'r.xml',
+      target: 'auth',
+    });
+    expect(parseRunArgs(['--timeout=0'])).toMatchObject({ timeoutSeconds: 0 });
+  });
+
+  it.each([
+    [['--max-parallel', '3'], 'Unknown option: --max-parallel'],
+    [['--timeout'], '--timeout needs a whole number of seconds'],
+    [['--timeout=ten'], '--timeout needs a whole number of seconds'],
+    [['--junit'], '--junit needs a file path'],
+    [['a', 'b'], 'Only one target can be run, got: a b'],
+  ])('rejects %j', (args, error) => {
+    expect(parseRunArgs(args)).toEqual({ error });
+  });
+
+  it('exits 1 on an unknown option, before running anything', async () => {
+    await expect(run(['--ci', '--max-parallel', '3'])).rejects.toThrow(
+      'process.exit',
+    );
+    expect(mockExit).toHaveBeenCalledWith(1);
+    expect(mockResolveDefinitions).not.toHaveBeenCalled();
+  });
+
+  it('names a target that matches nothing, and exits 1', async () => {
+    mockResolveDefinitions.mockReturnValue({
+      definitions: [],
+      errors: [],
+      config: {},
+      consumedFiles: [],
+    });
+    await expect(run(['--ci', 'nosuch'])).rejects.toThrow('process.exit');
+    expect(errorSpy).toHaveBeenCalledWith(
+      '\x1b[31mNo definitions match "nosuch".\x1b[0m',
+    );
+    expect(mockExit).toHaveBeenCalledWith(1);
   });
 });

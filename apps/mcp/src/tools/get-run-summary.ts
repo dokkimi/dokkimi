@@ -3,6 +3,7 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { ctFetchOrNull } from '../lib/ct-client';
 import { findDokkimiDir } from '../lib/dokkimi-dir';
 import type { LatestRunResponse } from '../lib/ct-types';
+import { summarizeRun } from '../lib/run-outcomes';
 
 export function registerGetRunSummary(server: McpServer): void {
   server.tool(
@@ -35,40 +36,12 @@ export function registerGetRunSummary(server: McpServer): void {
           };
         }
 
-        let passed = 0;
-        let failed = 0;
-        let skipped = 0;
-
-        const instances = run.instances.map((inst) => {
-          const status = inst.testStatus ?? inst.status;
-          if (status === 'PASSED' || status === 'COMPLETED') {
-            passed++;
-          } else if (status === 'FAILED') {
-            failed++;
-          } else if (status === 'SKIPPED') {
-            skipped++;
-          }
-
-          return {
-            id: inst.id,
-            name: inst.name,
-            status,
-            ...(inst.errorMessage ? { errorMessage: inst.errorMessage } : {}),
-          };
-        });
-
         const result = {
           runId: run.runId,
           status: run.status,
           createdAt: run.createdAt,
           completedAt: run.completedAt,
-          summary: {
-            total: run.instances.length,
-            passed,
-            failed,
-            skipped,
-          },
-          instances,
+          ...summarizeRun(run),
         };
 
         return {

@@ -3,9 +3,16 @@ import * as path from 'path';
 import { fetchJson } from './cli-utils';
 import type { RunStatusInstance } from './run-display';
 import type { AssertionResult } from './inspect-types';
+import { outcomeOf, type RunOutcome } from './outcome';
+
+// Characters XML 1.0 doesn't allow, even escaped. Before, a control
+// character in a log or message made the whole report unreadable.
+// eslint-disable-next-line no-control-regex
+const XML_ILLEGAL = /[\x00-\x08\x0B\x0C\x0E-\x1F\uFFFE\uFFFF]/g;
 
 function escapeXml(str: string): string {
   return str
+    .replace(XML_ILLEGAL, '')
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
@@ -15,24 +22,36 @@ function escapeXml(str: string): string {
 
 export interface JUnitOptions {
   ctUrl: string;
-  runId: string;
+  /** null when no run started (every definition invalid, or none found) */
+  runId: string | null;
+  runStatus: string;
   instances: RunStatusInstance[];
   durationMs: number;
   timestamp?: string;
 }
 
-export async function generateJUnitXml(opts: JUnitOptions): Promise<string> {
-  const { ctUrl, instances, durationMs } = opts;
-  const timestamp = opts.timestamp ?? new Date().toISOString();
+/** Why a definition that didn't pass or fail its test is an error */
+const ERROR_MESSAGES: Record<
+  Exclude<RunOutcome, 'passed' | 'failed'>,
+  string
+> = {
+  cancelled: 'Cancelled',
+  'not-run': 'Never ran',
+  running: 'Did not finish',
+  invalid: 'Invalid definition',
+};
 
+async function fetchAssertions(
+  opts: JUnitOptions,
+): Promise<Map<string, AssertionResult[]>> {
   const assertionsByInstance = new Map<string, AssertionResult[]>();
   await Promise.all(
-    instances
-      .filter((inst) => !inst.id.startsWith('skipped-'))
+    opts.instances
+      .filter((inst) => outcomeOf(opts.runStatus, inst) !== 'invalid')
       .map(async (inst) => {
         try {
           const results = await fetchJson<AssertionResult[]>(
-            `${ctUrl}/logs/assertion-results/instance/${inst.id}`,
+            `${opts.ctUrl}/logs/assertion-results/instance/${inst.id}`,
           );
           if (results && results.length > 0) {
             assertionsByInstance.set(inst.id, results);
@@ -40,31 +59,43 @@ export async function generateJUnitXml(opts: JUnitOptions): Promise<string> {
         } catch {}
       }),
   );
+  return assertionsByInstance;
+}
 
+/**
+ * Before, only a definition whose test failed was reported: a timed-out,
+ * stopped, cancelled or never-run one counted as passed, and an invalid one
+ * was dropped or skipped. Now anything that didn't pass is a failure (its
+ * test failed) or an error (it didn't get a result).
+ */
+export async function generateJUnitXml(opts: JUnitOptions): Promise<string> {
+  const { ctUrl, instances, durationMs, runStatus } = opts;
+  const timestamp = opts.timestamp ?? new Date().toISOString();
+  const assertionsByInstance = await fetchAssertions(opts);
+
+  const outcomes = instances.map((i) => outcomeOf(runStatus, i));
   const totalTests = instances.length;
-  const failures = instances.filter(
-    (i) => (i.testStatus ?? i.status) === 'FAILED',
-  ).length;
-  const skipped = instances.filter(
-    (i) => (i.testStatus ?? i.status) === 'SKIPPED',
+  const failures = outcomes.filter((o) => o === 'failed').length;
+  const errors = outcomes.filter(
+    (o) => o !== 'passed' && o !== 'failed',
   ).length;
   const durationSec = (durationMs / 1000).toFixed(3);
+  const suiteName = escapeXml(opts.runId ?? 'dokkimi');
   const lines: string[] = [];
   lines.push('<?xml version="1.0" encoding="UTF-8"?>');
   lines.push(
-    `<testsuites tests="${totalTests}" failures="${failures}" errors="0" skipped="${skipped}" time="${durationSec}">`,
+    `<testsuites tests="${totalTests}" failures="${failures}" errors="${errors}" skipped="0" time="${durationSec}">`,
   );
   lines.push(
-    `  <testsuite name="${escapeXml(opts.runId)}" tests="${totalTests}" failures="${failures}" errors="0" skipped="${skipped}" time="${durationSec}" timestamp="${timestamp}">`,
+    `  <testsuite name="${suiteName}" tests="${totalTests}" failures="${failures}" errors="${errors}" skipped="0" time="${durationSec}" timestamp="${timestamp}">`,
   );
 
-  for (const inst of instances) {
-    const displayStatus = inst.testStatus ?? inst.status;
+  for (const [index, inst] of instances.entries()) {
+    const outcome = outcomes[index];
     const assertions = assertionsByInstance.get(inst.id) ?? [];
     const failedAssertions = assertions.filter(
       (a) => !a.passed && a.assertionType !== 'skip',
     );
-    const isFailed = failedAssertions.length > 0 || displayStatus === 'FAILED';
 
     const timeSec = instanceDurationSec(inst);
     const timeAttr = timeSec !== null ? ` time="${timeSec.toFixed(3)}"` : '';
@@ -72,7 +103,7 @@ export async function generateJUnitXml(opts: JUnitOptions): Promise<string> {
       `    <testcase name="${escapeXml(inst.name)}" classname="${escapeXml(inst.name)}"${timeAttr}>`,
     );
 
-    if (isFailed) {
+    if (outcome === 'failed') {
       const failureBody = await formatInstanceFailure(
         ctUrl,
         inst,
@@ -85,8 +116,11 @@ export async function generateJUnitXml(opts: JUnitOptions): Promise<string> {
       lines.push(
         `      <failure message="${escapeXml(message)}">${escapeXml(failureBody)}</failure>`,
       );
-    } else if (displayStatus === 'SKIPPED') {
-      lines.push('      <skipped/>');
+    } else if (outcome !== 'passed') {
+      const message = ERROR_MESSAGES[outcome];
+      lines.push(
+        `      <error message="${escapeXml(message)}">${escapeXml(inst.errorMessage ?? message)}</error>`,
+      );
     }
 
     lines.push('    </testcase>');
@@ -111,65 +145,45 @@ export async function writeJUnitXml(
 export async function generateSummaryMarkdown(
   opts: JUnitOptions,
 ): Promise<string> {
-  const { ctUrl, instances, durationMs } = opts;
-
-  const assertionsByInstance = new Map<string, AssertionResult[]>();
-  await Promise.all(
-    instances
-      .filter((inst) => !inst.id.startsWith('skipped-'))
-      .map(async (inst) => {
-        try {
-          const results = await fetchJson<AssertionResult[]>(
-            `${ctUrl}/logs/assertion-results/instance/${inst.id}`,
-          );
-          if (results && results.length > 0) {
-            assertionsByInstance.set(inst.id, results);
-          }
-        } catch {}
-      }),
-  );
+  const { ctUrl, instances, durationMs, runStatus } = opts;
+  const assertionsByInstance = await fetchAssertions(opts);
 
   const testcases: ParsedTestCase[] = await Promise.all(
     instances.map(async (inst) => {
-      const displayStatus = inst.testStatus ?? inst.status;
-      const assertions = assertionsByInstance.get(inst.id) ?? [];
-      const failedAssertions = assertions.filter(
-        (a) => !a.passed && a.assertionType !== 'skip',
-      );
-      const isFailed =
-        failedAssertions.length > 0 || displayStatus === 'FAILED';
-
+      const outcome = outcomeOf(runStatus, inst);
       const dur = instanceDurationSec(inst) ?? undefined;
-
-      if (isFailed) {
+      if (outcome === 'passed') {
+        return { name: inst.name, status: 'PASSED' as const, durationSec: dur };
+      }
+      if (outcome !== 'failed') {
+        const message = ERROR_MESSAGES[outcome];
         return {
           name: inst.name,
-          status: 'FAILED' as const,
+          status: 'ERROR' as const,
           durationSec: dur,
-          failureMessage:
-            failedAssertions.length > 0
-              ? `${failedAssertions.length} assertion(s) failed`
-              : (inst.errorMessage ?? 'Test failed'),
-          failureBody: await formatInstanceFailure(
-            ctUrl,
-            inst,
-            failedAssertions,
-          ),
-        };
-      } else if (displayStatus === 'SKIPPED') {
-        return {
-          name: inst.name,
-          status: 'SKIPPED' as const,
-          durationSec: dur,
+          failureMessage: message,
+          failureBody: inst.errorMessage ?? message,
         };
       }
-      return { name: inst.name, status: 'PASSED' as const, durationSec: dur };
+      const failedAssertions = (assertionsByInstance.get(inst.id) ?? []).filter(
+        (a) => !a.passed && a.assertionType !== 'skip',
+      );
+      return {
+        name: inst.name,
+        status: 'FAILED' as const,
+        durationSec: dur,
+        failureMessage:
+          failedAssertions.length > 0
+            ? `${failedAssertions.length} assertion(s) failed`
+            : (inst.errorMessage ?? 'Test failed'),
+        failureBody: await formatInstanceFailure(ctUrl, inst, failedAssertions),
+      };
     }),
   );
 
   return buildSummaryMarkdown([
     {
-      name: opts.runId,
+      name: opts.runId ?? 'dokkimi',
       testcases,
       durationSec: Math.round(durationMs / 1000),
     },
@@ -188,7 +202,7 @@ function instanceDurationSec(inst: RunStatusInstance): number | null {
 
 interface ParsedTestCase {
   name: string;
-  status: 'PASSED' | 'FAILED' | 'SKIPPED';
+  status: 'PASSED' | 'FAILED' | 'ERROR' | 'SKIPPED';
   durationSec?: number;
   failureMessage?: string;
   failureBody?: string;
@@ -246,6 +260,9 @@ function parseJUnitXml(xml: string): {
       /<failure\s+message="([^"]*)">([\s\S]*?)<\/failure>/,
     );
     const skippedMatch = block.match(/<skipped\s*\/>/);
+    const errorMatch = block.match(
+      /<error\s+message="([^"]*)">([\s\S]*?)<\/error>/,
+    );
 
     if (failureMatch) {
       testcases.push({
@@ -254,6 +271,14 @@ function parseJUnitXml(xml: string): {
         durationSec: durationTc,
         failureMessage: unescapeXml(failureMatch[1]),
         failureBody: unescapeXml(failureMatch[2]),
+      });
+    } else if (errorMatch) {
+      testcases.push({
+        name,
+        status: 'ERROR',
+        durationSec: durationTc,
+        failureMessage: unescapeXml(errorMatch[1]),
+        failureBody: unescapeXml(errorMatch[2]),
       });
     } else if (skippedMatch) {
       testcases.push({ name, status: 'SKIPPED', durationSec: durationTc });
@@ -298,6 +323,8 @@ function statusIcon(status: ParsedTestCase['status']): string {
       return ':white_check_mark:';
     case 'FAILED':
       return ':x:';
+    case 'ERROR':
+      return ':warning:';
     case 'SKIPPED':
       return ':fast_forward:';
   }
@@ -310,29 +337,32 @@ function buildSummaryMarkdown(groups: ParsedTestGroup[]): string {
   );
   const passed = allTestcases.filter((t) => t.status === 'PASSED').length;
   const failed = allTestcases.filter((t) => t.status === 'FAILED').length;
+  const errors = allTestcases.filter((t) => t.status === 'ERROR').length;
   const skipped = allTestcases.filter((t) => t.status === 'SKIPPED').length;
 
   const lines: string[] = [];
 
   lines.push(COMMENT_MARKER);
-  const icon = failed > 0 ? ':x:' : ':white_check_mark:';
+  const icon = failed + errors > 0 ? ':x:' : ':white_check_mark:';
   lines.push(`### ${icon} Dokkimi Test Results`);
   lines.push('');
-  lines.push('| Tests | Passed | Failed | Skipped | Duration |');
-  lines.push('|-------|--------|--------|---------|----------|');
+  lines.push('| Tests | Passed | Failed | Errors | Skipped | Duration |');
+  lines.push('|-------|--------|--------|--------|---------|----------|');
   lines.push(
-    `| ${allTestcases.length} | ${passed} | ${failed} | ${skipped} | ${totalDuration}s |`,
+    `| ${allTestcases.length} | ${passed} | ${failed} | ${errors} | ${skipped} | ${totalDuration}s |`,
   );
   lines.push('');
 
-  if (failed > 0) {
+  if (failed + errors > 0) {
     lines.push('#### Failed Tests');
     lines.push('');
     for (const group of groups) {
-      const failedTcs = group.testcases.filter((t) => t.status === 'FAILED');
+      const failedTcs = group.testcases.filter(
+        (t) => t.status === 'FAILED' || t.status === 'ERROR',
+      );
       for (const tc of failedTcs) {
         lines.push(
-          `<details open><summary>:x: ${group.name} / ${tc.name}</summary>`,
+          `<details open><summary>${statusIcon(tc.status)} ${group.name} / ${tc.name}</summary>`,
         );
         lines.push('');
         if (tc.failureBody) {

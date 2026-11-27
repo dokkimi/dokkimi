@@ -4,6 +4,7 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { ctFetchOrNull } from '../lib/ct-client';
 import { findDokkimiDir } from '../lib/dokkimi-dir';
 import type { LatestRunResponse } from '../lib/ct-types';
+import { summarizeRun } from '../lib/run-outcomes';
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -83,38 +84,11 @@ export function registerWatchRun(server: McpServer): void {
           }
 
           if (TERMINAL_STATUSES.has(run.status)) {
-            let passed = 0;
-            let failed = 0;
-            let skipped = 0;
-
-            const instances = run.instances.map((inst) => {
-              const status = inst.testStatus ?? inst.status;
-              if (status === 'PASSED' || status === 'COMPLETED') {
-                passed++;
-              } else if (status === 'FAILED') {
-                failed++;
-              } else if (status === 'SKIPPED') {
-                skipped++;
-              }
-              return {
-                id: inst.id,
-                name: inst.name,
-                status,
-                ...(inst.errorMessage
-                  ? { errorMessage: inst.errorMessage }
-                  : {}),
-              };
-            });
-
+            const { summary, instances } = summarizeRun(run);
             const result = {
               runId: run.runId,
               status: run.status,
-              summary: {
-                total: run.instances.length,
-                passed,
-                failed,
-                skipped,
-              },
+              summary,
               instances,
             };
 
@@ -125,7 +99,8 @@ export function registerWatchRun(server: McpServer): void {
                   text: JSON.stringify(result, null, 2),
                 },
               ],
-              isError: failed > 0,
+              // Before, a cancelled run with nothing failed wasn't an error
+              isError: summary.passed !== summary.total,
             };
           }
 

@@ -3,6 +3,7 @@ import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { ctFetch, ctFetchOrNull } from '../lib/ct-client';
 import { findDokkimiDir } from '../lib/dokkimi-dir';
+import { endedWithoutPassing } from '../lib/run-outcomes';
 import type {
   LatestRunResponse,
   AssertionResult,
@@ -60,24 +61,18 @@ export function registerDiagnose(server: McpServer): void {
             };
           }
 
-          const failed = run.instances.filter(
-            (i) => (i.testStatus ?? i.status) === 'FAILED',
-          );
-
-          if (failed.length === 0) {
+          const ended = endedWithoutPassing(run);
+          if ('message' in ended) {
             return {
               content: [
                 {
                   type: 'text' as const,
-                  text: JSON.stringify(
-                    { message: 'No failures found. All tests passed.' },
-                    null,
-                    2,
-                  ),
+                  text: JSON.stringify({ message: ended.message }, null, 2),
                 },
               ],
             };
           }
+          const failed = ended.instances;
 
           targetInstances = failed.map((i) => ({
             id: i.id,

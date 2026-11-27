@@ -9,28 +9,26 @@ jest.mock('./terminal', () => ({
   exitAltScreen: jest.fn(),
 }));
 jest.mock('./run-format', () => ({
-  formatInstanceLine: jest.fn((inst: { name: string }) => `  ${inst.name}`),
+  formatInstanceLine: jest.fn(
+    (_runStatus: string, inst: { name: string }) => `  ${inst.name}`,
+  ),
   printSummary: jest.fn(),
-  categorizeInstances: jest.fn((instances: Array<{ status: string }>) => ({
-    inProgress: instances.filter((i) => i.status === 'RUNNING'),
-    done: instances.filter(
-      (i) => i.status !== 'RUNNING' && i.status !== 'PENDING',
-    ),
-    pendingCount: instances.filter((i) => i.status === 'PENDING').length,
-    passedCount: instances.filter(
-      (i) => (i as any).testStatus === 'PASSED' || i.status === 'COMPLETED',
-    ).length,
-    failedCount: instances.filter(
-      (i) => (i as any).testStatus === 'FAILED' || i.status === 'FAILED',
-    ).length,
-  })),
+  categorizeInstances: jest.fn(
+    (_runStatus: string, instances: Array<{ status: string }>) => ({
+      inProgress: instances.filter((i) => i.status === 'RUNNING'),
+      done: instances.filter(
+        (i) => i.status !== 'RUNNING' && i.status !== 'PENDING',
+      ),
+      pendingCount: instances.filter((i) => i.status === 'PENDING').length,
+      passedCount: instances.filter(
+        (i) => (i as any).testStatus === 'PASSED' || i.status === 'COMPLETED',
+      ).length,
+      failedCount: instances.filter(
+        (i) => (i as any).testStatus === 'FAILED' || i.status === 'FAILED',
+      ).length,
+    }),
+  ),
   SPINNER_FRAMES: ['|', '/', '-', '\\'],
-  TERMINAL_INSTANCE_STATUSES: new Set([
-    'PASSED',
-    'FAILED',
-    'COMPLETED',
-    'SKIPPED',
-  ]),
 }));
 jest.mock('./formatting', () => ({
   formatDuration: jest.fn((ms: number) => `${Math.round(ms / 1000)}s`),
@@ -139,7 +137,41 @@ describe('pollForCompletion', () => {
     expect(result.passed).toBe(false);
   });
 
-  it('includes skipped instances in result', async () => {
+  // Before, a completed run passed next to an invalid definition
+  it('does not pass with an invalid definition', async () => {
+    mockFetchJson.mockResolvedValue({
+      runId: 'run-1',
+      status: 'COMPLETED',
+      instances: [
+        { id: 'i1', name: 'a', status: 'STOPPED', testStatus: 'PASSED' },
+      ],
+    });
+
+    const result = await pollForCompletion(
+      'http://ct:19001',
+      'run-1',
+      undefined,
+      [{ id: 'invalid-b', name: 'b', status: 'INVALID' }],
+    );
+
+    expect(result.passed).toBe(false);
+    expect(result.runStatus).toBe('COMPLETED');
+  });
+
+  // Before, a cancelled run counted as passed where nothing had failed
+  it('does not pass a cancelled run', async () => {
+    mockFetchJson.mockResolvedValue({
+      runId: 'run-1',
+      status: 'CANCELLED',
+      instances: [{ id: 'i1', name: 'a', status: 'STOPPED' }],
+    });
+
+    const result = await pollForCompletion('http://ct:19001', 'run-1');
+
+    expect(result.passed).toBe(false);
+  });
+
+  it('includes invalid definitions in the result', async () => {
     mockFetchJson.mockResolvedValue({
       runId: 'run-1',
       status: 'COMPLETED',
@@ -157,8 +189,7 @@ describe('pollForCompletion', () => {
       {
         id: 'skip-1',
         name: 'bad-def',
-        status: 'SKIPPED',
-        testStatus: 'SKIPPED',
+        status: 'INVALID',
         errorMessage: 'Invalid definition',
       },
     ];

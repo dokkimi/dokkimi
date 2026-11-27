@@ -2,12 +2,12 @@ import { formatDuration } from './formatting';
 import { enterAltScreen, exitAltScreen } from './terminal';
 import { fetchJson, sleep, LOST_CONTACT_MS } from './cli-utils';
 import {
-  TERMINAL_INSTANCE_STATUSES,
   SPINNER_FRAMES,
   categorizeInstances,
   formatInstanceLine,
   printSummary,
 } from './run-format';
+import { outcomeOf, runPassed } from './outcome';
 
 const ANSI_RE = /\x1b\[[0-9;]*[A-Za-z]/g;
 
@@ -34,6 +34,8 @@ export interface RunStatusResponse {
 export interface RunOnceResult {
   passed: boolean;
   runId: string | null;
+  /** The run's status when the CLI stopped following it ('' without a run) */
+  runStatus: string;
   instances: RunStatusInstance[];
   hasUiSteps?: boolean;
   baselinesUploaded?: number;
@@ -85,9 +87,8 @@ export async function pollForCompletion(
           if (inst.status !== 'PENDING' && !instanceStartedAt.has(inst.id)) {
             instanceStartedAt.set(inst.id, now);
           }
-          const displayStatus = inst.testStatus ?? inst.status;
           if (
-            TERMINAL_INSTANCE_STATUSES.has(displayStatus) &&
+            outcomeOf(result.status, inst) !== 'running' &&
             !instanceCompletedAt.has(inst.id)
           ) {
             instanceCompletedAt.set(inst.id, now);
@@ -132,6 +133,7 @@ export async function pollForCompletion(
         }
 
         const snapshot = latestStatus as RunStatusResponse | null;
+        const runStatus = snapshot?.status ?? '';
         const allInstances = snapshot
           ? [...snapshot.instances, ...skipped]
           : [...skipped];
@@ -139,6 +141,7 @@ export async function pollForCompletion(
           const spinner = SPINNER_FRAMES[tick % SPINNER_FRAMES.length];
           const lines = allInstances.map((inst) =>
             formatInstanceLine(
+              runStatus,
               inst,
               instanceStartedAt.get(inst.id),
               instanceCompletedAt.get(inst.id),
@@ -150,7 +153,7 @@ export async function pollForCompletion(
         console.log('');
         console.log(endedBy);
         console.log('');
-        return { passed: false, runId, instances: allInstances };
+        return { passed: false, runId, runStatus, instances: allInstances };
       }
 
       // latestStatus is mutated asynchronously by the poll timer
@@ -175,6 +178,7 @@ export async function pollForCompletion(
           for (const inst of allInstances) {
             lines.push(
               formatInstanceLine(
+                current.status,
                 inst,
                 instanceStartedAt.get(inst.id),
                 instanceCompletedAt.get(inst.id),
@@ -190,8 +194,12 @@ export async function pollForCompletion(
             instanceStartedAt,
             instanceCompletedAt,
           );
-          const passed = current.status === 'COMPLETED';
-          return { passed, runId, instances: allInstances };
+          return {
+            passed: runPassed(current.status, allInstances),
+            runId,
+            runStatus: current.status,
+            instances: allInstances,
+          };
         }
 
         // Live render on alt screen — cursor home + clear, fits any size
@@ -204,7 +212,7 @@ export async function pollForCompletion(
 
         // Categorize
         const { inProgress, done, pendingCount, passedCount, failedCount } =
-          categorizeInstances(allInstances);
+          categorizeInstances(current.status, allInstances);
 
         const buf: string[] = [];
 
@@ -246,6 +254,7 @@ export async function pollForCompletion(
           for (const inst of shown) {
             buf.push(
               formatInstanceLine(
+                current.status,
                 inst,
                 instanceStartedAt.get(inst.id),
                 instanceCompletedAt.get(inst.id),

@@ -2080,7 +2080,11 @@ The `dokkimi` CLI manages the full lifecycle: validate definitions, run tests, i
 
 ### `dokkimi run`
 
-Resolves definitions, submits them to Control Tower, and streams live status with spinners and elapsed time. Exits with code 0 if all pass, 1 if any fail.
+Resolves definitions, submits them to Control Tower, and streams live status with spinners and elapsed time. Exits with code 0 only when every definition passed. It exits 1 when any failed, was cancelled, never ran or is invalid, when the target matches nothing, and on an unknown option. Invalid definitions are listed with the run (as `INVALID`), and every file's errors and warnings are printed before it starts.
+
+Each definition ends as `PASSED`, `FAILED`, `CANCELLED`, `NOT RUN` or `INVALID`. The summary counts each one: `3 of 4 definitions passed: 1 not run.`
+
+With `--junit <path>`, the report is written even when no run started. A failed test is a `<failure>`; a definition that got no result (cancelled, never ran, timed out, invalid) is an `<error>`. If the report can't be written, the command says so and exits 1.
 
 The target argument is flexible (similar to jest):
 

@@ -4,6 +4,7 @@ import { resolveDefinitions } from '@dokkimi/definition-resolver';
 import { fetchJson, fetchJsonOrThrow } from '../lib/cli-utils';
 import { loadConfig, buildServiceUrl } from '@dokkimi/config';
 import { stripIds } from '../lib/editor';
+import { outcomeOf } from '../lib/outcome';
 import { trackEvent } from '@dokkimi/telemetry';
 import type {
   LatestRunResponse,
@@ -188,7 +189,7 @@ export async function dump(args: string[]): Promise<void> {
 
   if (failedOnly) {
     instances = instances.filter(
-      (i) => i.testStatus === 'FAILED' || i.status === 'FAILED',
+      (i) => outcomeOf(selectedRun.status, i) !== 'passed',
     );
     if (instances.length === 0) {
       console.error('No failed instances in the selected run.');

@@ -71,11 +71,12 @@ dokkimi run auth --watch`} lang="bash" />
     <tbody>
       <tr><td><code>--watch, -w</code></td><td>Re-run automatically when definition files change</td></tr>
       <tr><td><code>--ci</code></td><td>CI-optimized output (no interactive UI, prints the run ID, exits with code 0/1)</td></tr>
-      <tr><td><code>--failed</code></td><td>Re-run only definitions that failed in the last run</td></tr>
-      <tr><td><code>--timeout=&lt;seconds&gt;</code></td><td>Fail if not complete within the timeout (default: 600 in CI mode). A run also fails if Dokkimi stops answering for 30 seconds.</td></tr>
-      <tr><td><code>--junit &lt;path&gt;</code></td><td>Write a JUnit XML report to the given path after the run completes</td></tr>
+      <tr><td><code>--failed</code></td><td>Re-run only the definitions that didn't pass in the target project's last run</td></tr>
+      <tr><td><code>--timeout=&lt;seconds&gt;</code> or <code>--timeout &lt;seconds&gt;</code></td><td>Fail if not complete within the timeout (default: 600 in CI mode). A run also fails if Dokkimi stops answering for 30 seconds.</td></tr>
+      <tr><td><code>--junit &lt;path&gt;</code></td><td>Write a JUnit XML report to the given path, even when no run started. A failed test is a <code>&lt;failure&gt;</code>; a cancelled, never-run, timed-out or invalid definition is an <code>&lt;error&gt;</code></td></tr>
     </tbody>
   </table>
+  <p>The run exits 0 only when every definition passed. It exits 1 when any failed, was cancelled, never ran or is invalid, when the target matches nothing, and on an unknown option. Each definition ends as <code>PASSED</code>, <code>FAILED</code>, <code>CANCELLED</code>, <code>NOT RUN</code> or <code>INVALID</code>, and the summary counts each one (<code>3 of 4 definitions passed: 1 not run.</code>). Invalid definitions are listed with the run, after every file's errors and warnings.</p>
 
   <h3>Post-run inspect prompt</h3>
   <p>After a run completes (TTY only, non-watch), the CLI prompts: <code>Press i to inspect results, or any other key to exit...</code>. In CI/non-TTY environments, this is skipped.</p>

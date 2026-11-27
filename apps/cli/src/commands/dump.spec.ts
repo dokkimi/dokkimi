@@ -1,4 +1,5 @@
 jest.mock('@dokkimi/config', () => ({
+  instanceOutcome: jest.requireActual('@dokkimi/config').instanceOutcome,
   loadConfig: jest.fn(() => ({
     services: { controlTower: { host: 'localhost', port: 19001 } },
     storage: { dir: '/tmp/dokkimi-storage' },

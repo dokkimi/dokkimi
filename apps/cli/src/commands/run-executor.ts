@@ -29,6 +29,8 @@ import {
 } from './run-helpers';
 import type { LatestRunResponse } from '../lib/inspect-types';
 import { getProjectPath, latestRunUrl } from '../lib/project-path';
+import { INVALID_STATUS, outcomeOf } from '../lib/outcome';
+import type { ResolverError } from '@dokkimi/definition-resolver';
 
 export async function executeRun(
   ctUrl: string,
@@ -51,40 +53,29 @@ export async function executeRun(
 
   warnIfVersionMismatch(result.config);
 
-  // Build skipped instances for files with validation errors
+  // Files with validation errors are listed with the run's definitions, and
+  // fail it. Before, next to valid ones they were skipped quietly, with exit
+  // 0, and no file's errors or warnings were shown.
   const errorFiles = result.errors.filter((e) => e.errors.length > 0);
-  const skippedInstances: RunStatusInstance[] = errorFiles.map((e) => {
+  const invalidInstances: RunStatusInstance[] = errorFiles.map((e) => {
     const name = path.basename(e.file, path.extname(e.file));
     return {
-      id: `skipped-${name}`,
+      id: `invalid-${name}`,
       name,
-      status: 'SKIPPED',
-      testStatus: 'SKIPPED',
+      status: INVALID_STATUS,
       errorMessage: 'Invalid definition',
     };
   });
+  printProblems(result.errors);
 
   if (errorFiles.length > 0 && result.definitions.length === 0) {
-    console.log('');
     console.log('No valid definitions to run.');
-    console.log('');
-    for (const inst of skippedInstances) {
-      console.log(
-        `  \x1b[90m–\x1b[0m ${inst.name.padEnd(30)}  \x1b[90mSKIPPED\x1b[0m     \x1b[90mInvalid definition\x1b[0m`,
-      );
-    }
-    for (const { file, errors } of errorFiles) {
-      console.log('');
-      console.log(`${file}:`);
-      for (const message of errors) {
-        console.log(`  \x1b[31merror\x1b[0m  ${message}`);
-      }
-    }
     console.log('');
     return {
       passed: false,
       runId: null,
-      instances: skippedInstances,
+      runStatus: '',
+      instances: invalidInstances,
       consumedFiles: result.consumedFiles,
     };
   }
@@ -97,11 +88,17 @@ export async function executeRun(
     definitions = definitions.filter((d) => nameSet.has(d.name));
   }
 
+  // Before, a target that matched nothing (a typo) passed
   if (definitions.length === 0) {
-    console.log('No runnable definitions found.');
+    console.error(
+      target
+        ? `\x1b[31mNo definitions match "${target}".\x1b[0m`
+        : '\x1b[31mNo definitions found.\x1b[0m',
+    );
     return {
-      passed: true,
+      passed: false,
       runId: null,
+      runStatus: '',
       instances: [],
       consumedFiles: result.consumedFiles,
     };
@@ -123,7 +120,7 @@ export async function executeRun(
     console.error(
       `\x1b[31m${err instanceof Error ? err.message : String(err)}\x1b[0m`,
     );
-    return { passed: false, runId: null, instances: [] };
+    return { passed: false, runId: null, runStatus: '', instances: [] };
   }
 
   const projectPath = result.dokkimiDir
@@ -151,7 +148,7 @@ export async function executeRun(
 
   if ('error' in createResult) {
     console.error(`\x1b[31mFailed to create run: ${createResult.error}\x1b[0m`);
-    return { passed: false, runId: null, instances: [] };
+    return { passed: false, runId: null, runStatus: '', instances: [] };
   }
   const createRes = createResult.data;
 
@@ -172,7 +169,7 @@ export async function executeRun(
   // before any test can complete and trigger the visual-match diff job.
   for (const def of definitions) {
     if (abort.signal.aborted) {
-      return { passed: false, runId, instances: [] };
+      return { passed: false, runId, runStatus: '', instances: [] };
     }
     const instanceId = instanceMap.get(def.name);
     if (!instanceId) {
@@ -188,7 +185,7 @@ export async function executeRun(
 
   for (const def of definitions) {
     if (abort.signal.aborted) {
-      return { passed: false, runId, instances: [] };
+      return { passed: false, runId, runStatus: '', instances: [] };
     }
     const instanceId = instanceMap.get(def.name);
     if (!instanceId) {
@@ -212,11 +209,11 @@ export async function executeRun(
         ctUrl,
         runId,
         abort,
-        skippedInstances,
+        invalidInstances,
         timeoutMs,
-        definitions.length + skippedInstances.length,
+        definitions.length + invalidInstances.length,
       )
-    : await pollForCompletion(ctUrl, runId, abort, skippedInstances, timeoutMs);
+    : await pollForCompletion(ctUrl, runId, abort, invalidInstances, timeoutMs);
   return {
     ...pollResult,
     hasUiSteps,
@@ -225,31 +222,47 @@ export async function executeRun(
   };
 }
 
-export function parseJUnitFlag(args: string[]): string | null {
-  const idx = args.indexOf('--junit');
-  if (idx === -1) {
-    return null;
+/** Every file's errors and warnings, as `dokkimi validate` shows them */
+function printProblems(problems: ResolverError[]): void {
+  const withProblems = problems.filter(
+    (p) => p.errors.length > 0 || p.warnings.length > 0,
+  );
+  if (withProblems.length === 0) {
+    return;
   }
-  const value = args[idx + 1];
-  if (!value || value.startsWith('-')) {
-    console.error('--junit requires a file path');
-    process.exit(1);
+  console.log('');
+  for (const { file, errors, warnings } of withProblems) {
+    console.log(`${file}:`);
+    for (const message of errors) {
+      console.log(`  \x1b[31merror\x1b[0m  ${message}`);
+    }
+    for (const message of warnings) {
+      console.log(`  \x1b[33mwarn\x1b[0m   ${message}`);
+    }
   }
-  args.splice(idx, 2);
-  return value;
+  console.log('');
 }
 
-export async function readFailedNames(ctUrl: string): Promise<string[]> {
+/** The definitions that didn't pass in the last run of the target's project */
+export async function readFailedNames(
+  ctUrl: string,
+  target?: string,
+): Promise<string[]> {
   try {
-    const projectPath = getProjectPath();
+    // Before, the current folder's project, whatever the target
+    const { dokkimiDir } = resolveDefinitions(target);
+    const projectPath = dokkimiDir
+      ? path.dirname(dokkimiDir)
+      : getProjectPath();
     const run = await fetchJson<LatestRunResponse>(
       latestRunUrl(ctUrl, projectPath),
     );
     if (!run) {
       return [];
     }
+    // Every definition that didn't pass: failed, cancelled, never run
     return run.instances
-      .filter((i) => (i.testStatus ?? i.status) === 'FAILED')
+      .filter((i) => outcomeOf(run.status, i) !== 'passed')
       .map((i) => i.name);
   } catch {
     return [];
