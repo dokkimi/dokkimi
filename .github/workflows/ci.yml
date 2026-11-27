@@ -154,6 +154,9 @@ jobs:
 
       - name: Post in-progress comment
         if: github.event_name == 'pull_request'
+        # On a pull request from a fork the token is read-only; a comment
+        # that can't be posted must not stop or fail the tests
+        continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -189,21 +192,33 @@ jobs:
 
       - name: Build Docker images
         run: |
-          docker build -t dokkimi/control-tower:latest \
-            -f services/control-tower/Dockerfile . &
-          docker build -t ghcr.io/dokkimi/interceptor:latest \
-            -f services/interceptor/Dockerfile services/interceptor &
-          docker build -t ghcr.io/dokkimi/test-agent:latest \
-            -f services/test-agent/Dockerfile services/test-agent &
+          # Builds run in parallel. Wait on each one: a bare `wait` succeeds even
+          # when a build failed, and the tests would then run against the
+          # published :latest image instead of this commit's.
+          names=() pids=()
+          build() { local name=$1; shift; docker build "$@" & names+=("$name"); pids+=($!); }
+          build control-tower -t dokkimi/control-tower:latest \
+            -f services/control-tower/Dockerfile .
+          build interceptor -t ghcr.io/dokkimi/interceptor:latest \
+            -f services/interceptor/Dockerfile services/interceptor
+          build test-agent -t ghcr.io/dokkimi/test-agent:latest \
+            -f services/test-agent/Dockerfile services/test-agent
           for db in postgres mysql mongo redis; do
-            docker build -t ghcr.io/dokkimi/db-proxy-${db}:latest \
-              -f services/db-proxy/${db}/Dockerfile services/db-proxy &
+            build db-proxy-${db} -t ghcr.io/dokkimi/db-proxy-${db}:latest \
+              -f services/db-proxy/${db}/Dockerfile services/db-proxy
           done
-          docker build -t ghcr.io/dokkimi/broker-proxy-amqp:latest \
-            -f services/broker-proxy/amqp/Dockerfile services/broker-proxy &
-          docker build -t ghcr.io/dokkimi/broker-proxy-kafka:latest \
-            -f services/broker-proxy/kafka/Dockerfile services/broker-proxy &
-          wait
+          build broker-proxy-amqp -t ghcr.io/dokkimi/broker-proxy-amqp:latest \
+            -f services/broker-proxy/amqp/Dockerfile services/broker-proxy
+          build broker-proxy-kafka -t ghcr.io/dokkimi/broker-proxy-kafka:latest \
+            -f services/broker-proxy/kafka/Dockerfile services/broker-proxy
+          failed=()
+          for i in "${!pids[@]}"; do
+            wait "${pids[$i]}" || failed+=("${names[$i]}")
+          done
+          if [ ${#failed[@]} -gt 0 ]; then
+            echo "::error::Image builds failed: ${failed[*]}"
+            exit 1
+          fi
 
       - name: Free disk space
         run: |
@@ -243,6 +258,10 @@ jobs:
         timeout-minutes: 10
         run: node apps/cli/dist/bin/dokkimi.js run .dokkimi/demo-spa --ci --junit junit-reports/demo-spa.xml
 
+      - name: Run loop tests
+        timeout-minutes: 10
+        run: node apps/cli/dist/bin/dokkimi.js run .dokkimi/loop-tests --ci --junit junit-reports/loop-tests.xml
+
       - name: Upload JUnit reports
         if: always()
         uses: actions/upload-artifact@v5
@@ -258,6 +277,9 @@ jobs:
 
       - name: Comment on PR
         if: always() && github.event_name == 'pull_request'
+        # On a pull request from a fork the token is read-only; a comment
+        # that can't be posted must not stop or fail the tests
+        continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
         run: |

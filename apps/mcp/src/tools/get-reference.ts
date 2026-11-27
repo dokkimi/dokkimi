@@ -2,10 +2,15 @@ import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { loadSpec } from '../lib/load-spec';
 
+// Each topic is a list of headings from dokkimi-instructions.md. A heading
+// followed in the list by a deeper one (## Item Types, then ### SERVICE) gives
+// only its introduction, the text before its first subsection.
 const TOPIC_SECTIONS: Record<string, string[]> = {
   service: ['## Item Types', '### SERVICE'],
+  worker: ['## Item Types', '### WORKER'],
   database: ['## Item Types', '### DATABASE'],
   mock: ['## Item Types', '### MOCK'],
+  broker: ['## Item Types', '### BROKER'],
   tests: ['## Tests'],
   assertions: [
     '## Tests',
@@ -13,6 +18,7 @@ const TOPIC_SECTIONS: Record<string, string[]> = {
     '### Assertion Paths',
     '### Assertion Operators',
   ],
+  loops: ['## Tests', '### Loops'],
   variables: ['## Config File', '## Tests', '### Variable Interpolation'],
   ui: ['## Tests', '### Step Actions'],
   config: ['## Config'],
@@ -24,30 +30,64 @@ const TOPIC_SECTIONS: Record<string, string[]> = {
   ],
 };
 
-function extractSection(spec: string, heading: string): string {
-  const level = heading.match(/^#+/)![0].length;
-  const escapedHeading = heading.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const boundary = /\w$/.test(heading) ? '\\b' : '';
-  const pattern = new RegExp(
-    `(${escapedHeading}${boundary}[^\\n]*\\n)([\\s\\S]*?)(?=\\n#{1,${level}} [^#]|$)`,
-  );
-  const match = spec.match(pattern);
-  return match ? match[1] + match[2] : '';
+const headingLevel = (heading: string): number =>
+  heading.match(/^#+/)?.[0].length ?? 0;
+
+/**
+ * Returns the section under a heading that matches exactly, up to the next
+ * heading of the same or a higher level, or (introOnly) up to the next heading
+ * of any level. Lines inside fenced code blocks are never headings, so a "#"
+ * comment in an example doesn't end the section.
+ */
+function extractSection(
+  spec: string,
+  heading: string,
+  introOnly: boolean,
+): string {
+  const level = headingLevel(heading);
+  const lines = spec.split('\n');
+  let inFence = false;
+  let start = -1;
+  let end = lines.length;
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (/^\s*(```|~~~)/.test(line)) {
+      inFence = !inFence;
+      continue;
+    }
+    if (inFence || !/^#{1,6} /.test(line)) {
+      continue;
+    }
+    if (start < 0) {
+      if (line.trim() === heading) {
+        start = i;
+      }
+      continue;
+    }
+    if (introOnly || headingLevel(line) <= level) {
+      end = i;
+      break;
+    }
+  }
+  return start < 0 ? '' : lines.slice(start, end).join('\n').trim();
 }
 
-function extractTopic(spec: string, topic: string): string {
+export function extractTopic(spec: string, topic: string): string {
   const headings = TOPIC_SECTIONS[topic];
   if (!headings) {
     return '';
   }
 
   const sections: string[] = [];
-  for (const heading of headings) {
-    const section = extractSection(spec, heading);
+  headings.forEach((heading, i) => {
+    const next = headings[i + 1];
+    const introOnly =
+      next !== undefined && headingLevel(next) > headingLevel(heading);
+    const section = extractSection(spec, heading, introOnly);
     if (section) {
-      sections.push(section.trim());
+      sections.push(section);
     }
-  }
+  });
   return sections.join('\n\n');
 }
 
@@ -60,9 +100,12 @@ export function registerGetReference(server: McpServer): void {
         .enum([
           'service',
           'database',
+          'worker',
           'mock',
+          'broker',
           'tests',
           'assertions',
+          'loops',
           'variables',
           'ui',
           'config',

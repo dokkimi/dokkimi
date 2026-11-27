@@ -50,12 +50,17 @@ runs:
         ### :hourglass_flowing_sand: Dokkimi Test Results
 
         Tests are running... [View progress](${RUN_URL})"
-        COMMENT_ID=$(gh api "repos/${{ github.repository }}/issues/${PR}/comments" --jq '.[] | select(.body | contains("<!-- dokkimi-test-results -->")) | .id' | tail -1)
-        if [ -n "$COMMENT_ID" ]; then
-          gh api "repos/${{ github.repository }}/issues/comments/${COMMENT_ID}" -X PATCH -f body="$BODY"
-        else
-          echo "$BODY" | gh pr comment "$PR" --body-file -
-        fi
+        # On a pull request from a fork the token is read-only: commenting
+        # fails, and that must not stop the tests from running.
+        post() {
+          COMMENT_ID=$(gh api "repos/${{ github.repository }}/issues/${PR}/comments" --jq '.[] | select(.body | contains("<!-- dokkimi-test-results -->")) | .id' | tail -1)
+          if [ -n "$COMMENT_ID" ]; then
+            gh api "repos/${{ github.repository }}/issues/comments/${COMMENT_ID}" -X PATCH -f body="$BODY"
+          else
+            echo "$BODY" | gh pr comment "$PR" --body-file -
+          fi
+        }
+        post || echo "::warning::Couldn't post the PR comment (the token may be read-only, as on pull requests from forks)"
 
     - name: Free disk space
       shell: bash
@@ -70,11 +75,13 @@ runs:
 
     - name: Install Dokkimi CLI
       shell: bash
+      env:
+        DOKKIMI_VERSION: ${{ inputs.dokkimi-version }}
       run: |
-        if [ "${{ inputs.dokkimi-version }}" = "latest" ]; then
+        if [ "$DOKKIMI_VERSION" = "latest" ]; then
           npm install -g dokkimi
         else
-          npm install -g dokkimi@${{ inputs.dokkimi-version }}
+          npm install -g "dokkimi@$DOKKIMI_VERSION"
         fi
 
     - name: Run tests
@@ -86,9 +93,13 @@ runs:
         DOKKIMI_HTTP_TIMEOUT: ${{ inputs.timeout }}
         DOKKIMI_DEFAULT_VIEWPORT_WIDTH: ${{ inputs.viewport-width }}
         DOKKIMI_DEFAULT_VIEWPORT_HEIGHT: ${{ inputs.viewport-height }}
+        # Inputs reach the shell as variables, quoted, so a path with spaces
+        # stays one argument and nothing in an input is run as a command
+        TESTS: ${{ inputs.tests }}
+        JUNIT_DIR: ${{ inputs.junit-dir }}
       run: |
-        SLUG=$(echo "${{ inputs.tests }}" | sed 's|[^a-zA-Z0-9]|-|g' | sed 's|-\+|-|g' | sed 's|^-\|-$||g')
-        dokkimi run ${{ inputs.tests }} --ci --junit "${{ inputs.junit-dir }}/${SLUG}.xml"
+        SLUG=$(echo "$TESTS" | sed 's|[^a-zA-Z0-9]|-|g' | sed 's|-\+|-|g' | sed 's|^-\|-$||g')
+        dokkimi run "$TESTS" --ci --junit "$JUNIT_DIR/${SLUG}.xml"
 
     - name: Upload JUnit reports
       if: always()
@@ -102,24 +113,30 @@ runs:
     - name: Test report
       if: always() && inputs.report == 'true'
       shell: bash
-      run: dokkimi junit --summary --dir "${{ inputs.junit-dir }}" >> "$GITHUB_STEP_SUMMARY"
+      env:
+        JUNIT_DIR: ${{ inputs.junit-dir }}
+      run: dokkimi junit --summary --dir "$JUNIT_DIR" >> "$GITHUB_STEP_SUMMARY"
 
     - name: Comment on PR
       if: always() && inputs.report == 'true' && github.event_name == 'pull_request'
       shell: bash
       env:
         GH_TOKEN: ${{ github.token }}
+        JUNIT_DIR: ${{ inputs.junit-dir }}
       run: |
         PR=${{ github.event.pull_request.number }}
         RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-        SUMMARY=$(dokkimi junit --summary --dir "${{ inputs.junit-dir }}")
+        SUMMARY=$(dokkimi junit --summary --dir "$JUNIT_DIR")
         BODY=$(printf '%s\n\n[View full output](%s)' "$SUMMARY" "$RUN_URL")
-        COMMENT_ID=$(gh api "repos/${{ github.repository }}/issues/${PR}/comments" --jq '.[] | select(.body | contains("<!-- dokkimi-test-results -->")) | .id' | tail -1)
-        if [ -n "$COMMENT_ID" ]; then
-          gh api "repos/${{ github.repository }}/issues/comments/${COMMENT_ID}" -X PATCH -f body="$BODY"
-        else
-          echo "$BODY" | gh pr comment "$PR" --body-file -
-        fi
+        post() {
+          COMMENT_ID=$(gh api "repos/${{ github.repository }}/issues/${PR}/comments" --jq '.[] | select(.body | contains("<!-- dokkimi-test-results -->")) | .id' | tail -1)
+          if [ -n "$COMMENT_ID" ]; then
+            gh api "repos/${{ github.repository }}/issues/comments/${COMMENT_ID}" -X PATCH -f body="$BODY"
+          else
+            echo "$BODY" | gh pr comment "$PR" --body-file -
+          fi
+        }
+        post || echo "::warning::Couldn't post the PR comment (the token may be read-only, as on pull requests from forks)"
 
     - name: Dump failed results
       if: failure() && inputs.dump-retention-days != '0'
