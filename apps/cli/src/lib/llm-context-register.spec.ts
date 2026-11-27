@@ -6,18 +6,27 @@ import * as path from 'path';
 
 const mockFs: Record<string, string> = {};
 const mockExistsSync = jest.fn((p: string) => p in mockFs);
-const mockReadFileSync = jest.fn((p: string) => {
+const readMockFile = (p: string) => {
   if (p in mockFs) {
     return mockFs[p];
   }
-  throw new Error('ENOENT');
-});
+  throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' });
+};
+const mockReadFileSync = jest.fn(readMockFile);
 const mockWriteFileSync = jest.fn(
   (p: string, content: string, _encoding?: string) => {
     mockFs[p] = content;
   },
 );
 const mockMkdirSync = jest.fn();
+// The user's own files (CLAUDE.md, Copilot) are written through safe-write
+const mockSafeWrite = jest.fn((p: string, content: string) => {
+  mockFs[p] = content;
+});
+jest.mock('./safe-write', () => ({
+  createFile: (p: string, c: string) => mockSafeWrite(p, c),
+  replaceFile: (p: string, c: string) => mockSafeWrite(p, c),
+}));
 const mockStatSync = jest.fn();
 
 jest.mock('fs', () => ({
@@ -85,6 +94,7 @@ function clearMockFs(): void {
 describe('registerLlmContext', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockReadFileSync.mockImplementation(readMockFile);
     clearMockFs();
     mockConfig.DOKKIMI_VERSION = '1.2.3';
   });
@@ -118,11 +128,7 @@ describe('registerLlmContext', () => {
     );
 
     // Should write CLAUDE.md (via upsertSection)
-    expect(mockWriteFileSync).toHaveBeenCalledWith(
-      CLAUDE_MD_PATH,
-      expect.stringContaining('<!-- dokkimi -->'),
-      'utf-8',
-    );
+    expect(mockFs[CLAUDE_MD_PATH]).toContain('<!-- dokkimi -->');
 
     // Should write Cursor rules
     expect(mockWriteFileSync).toHaveBeenCalledWith(
@@ -132,11 +138,7 @@ describe('registerLlmContext', () => {
     );
 
     // Should write Copilot instructions
-    expect(mockWriteFileSync).toHaveBeenCalledWith(
-      COPILOT_PATH,
-      expect.stringContaining('<!-- dokkimi -->'),
-      'utf-8',
-    );
+    expect(mockFs[COPILOT_PATH]).toContain('<!-- dokkimi -->');
   });
 
   it('creates/updates Claude CLAUDE.md with Dokkimi section', () => {
@@ -144,7 +146,7 @@ describe('registerLlmContext', () => {
 
     registerLlmContext();
 
-    const claudeCall = mockWriteFileSync.mock.calls.find(
+    const claudeCall = mockSafeWrite.mock.calls.find(
       (c) => c[0] === CLAUDE_MD_PATH,
     );
     expect(claudeCall).toBeDefined();
@@ -172,7 +174,7 @@ describe('registerLlmContext', () => {
 
     registerLlmContext();
 
-    const copilotCall = mockWriteFileSync.mock.calls.find(
+    const copilotCall = mockSafeWrite.mock.calls.find(
       (c) => c[0] === COPILOT_PATH,
     );
     expect(copilotCall).toBeDefined();
@@ -223,11 +225,7 @@ describe('registerLlmContext', () => {
     );
 
     // Should update all LLM context files (full register)
-    expect(mockWriteFileSync).toHaveBeenCalledWith(
-      CLAUDE_MD_PATH,
-      expect.stringContaining('<!-- dokkimi -->'),
-      'utf-8',
-    );
+    expect(mockFs[CLAUDE_MD_PATH]).toContain('<!-- dokkimi -->');
   });
 
   it('ensures missing files are created even when version matches', () => {
@@ -249,11 +247,7 @@ describe('registerLlmContext', () => {
     );
 
     // Should write CLAUDE.md
-    expect(mockWriteFileSync).toHaveBeenCalledWith(
-      CLAUDE_MD_PATH,
-      expect.stringContaining('<!-- dokkimi -->'),
-      'utf-8',
-    );
+    expect(mockFs[CLAUDE_MD_PATH]).toContain('<!-- dokkimi -->');
 
     // Should write Cursor rules
     expect(mockWriteFileSync).toHaveBeenCalledWith(
@@ -263,11 +257,7 @@ describe('registerLlmContext', () => {
     );
 
     // Should write Copilot
-    expect(mockWriteFileSync).toHaveBeenCalledWith(
-      COPILOT_PATH,
-      expect.stringContaining('<!-- dokkimi -->'),
-      'utf-8',
-    );
+    expect(mockFs[COPILOT_PATH]).toContain('<!-- dokkimi -->');
   });
 
   it('replaces existing Dokkimi section in Claude CLAUDE.md on full register', () => {
@@ -278,7 +268,7 @@ describe('registerLlmContext', () => {
 
     registerLlmContext();
 
-    const claudeCall = mockWriteFileSync.mock.calls.find(
+    const claudeCall = mockSafeWrite.mock.calls.find(
       (c) => c[0] === CLAUDE_MD_PATH,
     );
     expect(claudeCall).toBeDefined();
@@ -290,6 +280,28 @@ describe('registerLlmContext', () => {
     // Other content preserved
     expect(content).toContain('# My Config');
     expect(content).toContain('# Other');
+  });
+
+  // Before, a CLAUDE.md that couldn't be read was replaced by the section
+  it("leaves a CLAUDE.md it can't read alone", () => {
+    mockFs[INSTRUCTIONS_SOURCE] = '# Instructions';
+    mockReadFileSync.mockImplementation((p: string) => {
+      if (p === CLAUDE_MD_PATH) {
+        throw Object.assign(new Error('EACCES'), { code: 'EACCES' });
+      }
+      if (p in mockFs) {
+        return mockFs[p];
+      }
+      throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' });
+    });
+
+    registerLlmContext();
+
+    const written = [
+      ...mockSafeWrite.mock.calls,
+      ...mockWriteFileSync.mock.calls,
+    ];
+    expect(written.map((c) => c[0])).not.toContain(CLAUDE_MD_PATH);
   });
 
   it('handles missing home directory gracefully', () => {

@@ -3,6 +3,7 @@ import * as path from 'path';
 import * as os from 'os';
 import { DOKKIMI_VERSION } from '@dokkimi/config';
 import { addMcpEntry, MCP_CONFIG_PATHS } from './mcp-config';
+import { createFile, replaceFile } from './safe-write';
 
 const DOKKIMI_DIR = path.join(os.homedir(), '.dokkimi');
 const INSTRUCTIONS_PATH = path.join(DOKKIMI_DIR, 'dokkimi-instructions.md');
@@ -33,31 +34,34 @@ function writeInstructions(content: string): void {
   fs.writeFileSync(INSTRUCTIONS_PATH, content, 'utf-8');
 }
 
+/**
+ * Adds or updates the Dokkimi section of a file that is the user's own (the
+ * global CLAUDE.md, Copilot instructions), leaving the rest as it was. A file
+ * that can't be read is left alone: before, it was replaced by the section.
+ */
 function upsertSection(filePath: string): void {
-  fs.mkdirSync(path.dirname(filePath), { recursive: true });
-
   const section = `${DOKKIMI_MARKER}\n# Dokkimi\n\n${HINT}\n${DOKKIMI_MARKER}`;
-  let content = '';
 
+  let content: string;
   try {
-    if (fs.existsSync(filePath)) {
-      content = fs.readFileSync(filePath, 'utf-8');
+    content = fs.readFileSync(filePath, 'utf-8');
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
+      throw err;
     }
-  } catch {
-    // Start fresh
+    createFile(filePath, section + '\n');
+    return;
   }
 
-  if (content.includes(DOKKIMI_MARKER)) {
-    const regex = new RegExp(
-      `${DOKKIMI_MARKER}[\\s\\S]*?${DOKKIMI_MARKER}`,
-      'g',
-    );
-    content = content.replace(regex, section);
-  } else {
-    content = content.trimEnd() + '\n\n' + section + '\n';
+  const updated = content.includes(DOKKIMI_MARKER)
+    ? content.replace(
+        new RegExp(`${DOKKIMI_MARKER}[\\s\\S]*?${DOKKIMI_MARKER}`, 'g'),
+        section,
+      )
+    : content.trimEnd() + '\n\n' + section + '\n';
+  if (updated !== content) {
+    replaceFile(filePath, updated);
   }
-
-  fs.writeFileSync(filePath, content, 'utf-8');
 }
 
 function hasDokkimiSection(filePath: string): boolean {

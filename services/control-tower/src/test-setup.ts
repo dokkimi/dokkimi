@@ -3,7 +3,7 @@ import { loadConfig } from '@dokkimi/config';
 import * as path from 'path';
 
 const configPath =
-  process.env.CONFIG_PATH ||
+  process.env.DOKKIMI_CONFIG_PATH ||
   path.resolve(__dirname, '../../../config', 'config.yaml');
 
 try {

@@ -1,5 +1,5 @@
-// Evaluated once at module load — APP_VERSION must be set before import
-const VERSION = process.env.APP_VERSION || 'latest';
+// Evaluated once at module load — DOKKIMI_APP_VERSION must be set before import
+const VERSION = process.env.DOKKIMI_APP_VERSION || 'latest';
 
 export const DEFAULT_CHROME_VERSION = '148.0.7778.56';
 

@@ -4,6 +4,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import {
   findBaselinesDir,
+  newBaselinesDir,
   listBaselineFiles,
   extractVisualMatchNames,
   uploadBaseline,
@@ -66,6 +67,16 @@ describe('baseline-upload', () => {
       expect(findBaselinesDir('/a/b/c/d/test.yaml')).toBeNull();
     });
 
+    it('never looks above .dokkimi/', () => {
+      // A repo's own baselines/ folder is not Dokkimi's
+      fsMock.existsSync.mockImplementation((p) => p === '/project/baselines');
+      fsMock.statSync.mockReturnValue({
+        isDirectory: () => true,
+      } as fs.Stats);
+
+      expect(findBaselinesDir('/project/.dokkimi/test.yaml')).toBeNull();
+    });
+
     it('returns null when candidate exists but is not a directory', () => {
       fsMock.existsSync.mockReturnValue(true);
       fsMock.statSync.mockReturnValue({
@@ -73,6 +84,23 @@ describe('baseline-upload', () => {
       } as fs.Stats);
 
       expect(findBaselinesDir('/project/test.yaml')).toBeNull();
+    });
+  });
+
+  describe('newBaselinesDir', () => {
+    it.each([
+      [
+        '/project/.dokkimi/myproj/definitions/test.yaml',
+        '/project/.dokkimi/myproj/baselines',
+      ],
+      [
+        '/project/.dokkimi/myproj/test.yaml',
+        '/project/.dokkimi/myproj/baselines',
+      ],
+      // Before, this one was created at the repo root: /project/baselines
+      ['/project/.dokkimi/test.yaml', '/project/.dokkimi/baselines'],
+    ])('%s → %s', (sourceFile, dir) => {
+      expect(newBaselinesDir(sourceFile)).toBe(dir);
     });
   });
 
@@ -364,8 +392,7 @@ describe('baseline-upload', () => {
     });
 
     it('uploads only files matching visual match names', async () => {
-      // findBaselinesDir will find baselines at same level
-      const baselinesDir = path.join('/project', 'baselines');
+      const baselinesDir = path.join('/project/.dokkimi/myproj', 'baselines');
       fsMock.existsSync.mockImplementation((p) => p === baselinesDir);
       fsMock.statSync.mockReturnValue({
         isDirectory: () => true,
@@ -406,7 +433,7 @@ describe('baseline-upload', () => {
       const result = await uploadBaselinesForDefinition(
         'http://localhost:19001',
         'inst-1',
-        '/project/definitions/test.yaml',
+        '/project/.dokkimi/myproj/definitions/test.yaml',
         definition,
       );
 

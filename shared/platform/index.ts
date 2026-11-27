@@ -8,8 +8,7 @@ const platform: Platform = process.platform === 'win32' ? windows : unix;
 
 export const isProcessAlive = platform.isProcessAlive.bind(platform);
 export const killProcess = platform.killProcess.bind(platform);
-export const findProcessesByPattern =
-  platform.findProcessesByPattern.bind(platform);
+export const processStartTime = platform.processStartTime.bind(platform);
 export const execSilent = platform.execSilent.bind(platform);
 export const isCommandAvailable = platform.isCommandAvailable.bind(platform);
 export const openFile = platform.openFile.bind(platform);

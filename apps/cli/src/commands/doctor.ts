@@ -13,6 +13,9 @@ import {
   getDiskSpaceAvailable,
 } from '@dokkimi/platform';
 
+// The same as "engines" in scripts/publish-package.json
+const MIN_NODE_MAJOR = 22;
+
 interface Check {
   name: string;
   pass: boolean;
@@ -321,15 +324,17 @@ export async function doctor(args: string[]): Promise<void> {
       : undefined,
   });
 
-  // Node.js
+  // Node.js: the minimum in the package's "engines"
   const nodeVersion = process.version;
   const nodeMajor = parseInt(nodeVersion.slice(1), 10);
+  const ok = nodeMajor >= MIN_NODE_MAJOR;
   checks.push({
     name: 'Node.js',
-    pass: nodeMajor >= 20,
-    detail: nodeMajor >= 20 ? nodeVersion : `${nodeVersion} (requires >= 20)`,
-    fix:
-      nodeMajor < 20 ? 'Install Node.js 20+: https://nodejs.org/' : undefined,
+    pass: ok,
+    detail: ok ? nodeVersion : `${nodeVersion} (requires >= ${MIN_NODE_MAJOR})`,
+    fix: ok
+      ? undefined
+      : `Install Node.js ${MIN_NODE_MAJOR}+: https://nodejs.org/`,
   });
 
   // Docker

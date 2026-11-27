@@ -19,7 +19,7 @@ Key sections:
 
 - **services** — ports and hosts for Control Tower, interceptor, test agent, chromium
 - **concurrency** — concurrency limits for test runs
-- **database** — default credentials and Dokkimi app database URL (SQLite locally, Prisma reads `DATABASE_URL` from env for cloud)
+- **database** — default credentials and Dokkimi app database URL (SQLite locally, `DOKKIMI_DATABASE_URL` overrides it, e.g. for cloud)
 - **storage** — local storage paths for run artifacts and init files
 - **logging** — format and level
 - **cors** — allowed origins for local development

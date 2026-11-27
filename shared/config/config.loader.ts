@@ -36,12 +36,13 @@ export class ConfigLoader {
     const defaultPath =
       possiblePaths.find((p) => fs.existsSync(p)) || possiblePaths[0];
 
-    const finalPath = configPath || process.env.CONFIG_PATH || defaultPath;
+    const finalPath =
+      configPath || process.env.DOKKIMI_CONFIG_PATH || defaultPath;
 
     if (!fs.existsSync(finalPath)) {
       throw new Error(
         `Configuration file not found: ${finalPath}\n` +
-          `Set CONFIG_PATH environment variable or ensure config/config.yaml exists.`,
+          `Set DOKKIMI_CONFIG_PATH environment variable or ensure config/config.yaml exists.`,
       );
     }
 
@@ -122,8 +123,10 @@ export class ConfigLoader {
    * Host and port of Control Tower are overridable; other ports come from the config file.
    */
   private applyEnvOverrides(config: DokkimiConfig): DokkimiConfig {
-    if (process.env.DATABASE_URL) {
-      config.database.url = process.env.DATABASE_URL;
+    // DOKKIMI_ names: generic ones like DATABASE_URL are often set for the
+    // user's own app, in the shell the CLI and daemon run in
+    if (process.env.DOKKIMI_DATABASE_URL) {
+      config.database.url = process.env.DOKKIMI_DATABASE_URL;
     }
     if (process.env.CONTROL_TOWER_HOST) {
       config.services.controlTower.host = process.env.CONTROL_TOWER_HOST;

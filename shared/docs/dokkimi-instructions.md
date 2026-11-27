@@ -2163,7 +2163,7 @@ If a specified definition wasn't part of the last run, a warning is printed to s
 
 ### `dokkimi baselines`
 
-Interactive TUI for reviewing and approving pending visual baselines from the last run (`--run` picks an earlier run from the history). When a test definition includes `screenshot` sub-steps with `match: true`, Dokkimi compares captures against baselines stored in `.dokkimi/<project>/baselines/`. New captures (no baseline yet) and failed diffs appear as pending.
+Interactive TUI for reviewing and approving pending visual baselines from the last run (`--run` picks an earlier run from the history). When a test definition includes `screenshot` sub-steps with `match: true`, Dokkimi compares captures against baselines stored in `.dokkimi/<project>/baselines/`, or `.dokkimi/baselines/` for a definition directly in `.dokkimi/`. New captures (no baseline yet) and failed diffs appear as pending.
 
 **Three-level navigation:** tests → baselines → detail.
 
@@ -2174,7 +2174,7 @@ Interactive TUI for reviewing and approving pending visual baselines from the la
 - `A` — approve all baselines at the current level
 - ESC / `q` / ← to go back
 
-Approved baselines are written to `.dokkimi/<project>/baselines/`. Also accessible via the `b` key after a run completes.
+Approved baselines are written there. A baseline that can't be written (for example, when the run's captures were cleaned up) is not approved. Also accessible via the `b` key after a run completes.
 
 ### `dokkimi config`
 

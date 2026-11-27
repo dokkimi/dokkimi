@@ -148,7 +148,7 @@ jobs:
       DOKKIMI_MAX_BOOTING_NAMESPACES: 2
       # CI must test the sidecar images built from this branch (tagged :latest
       # locally), not the published release images the version pin would select.
-      APP_VERSION: latest
+      DOKKIMI_APP_VERSION: latest
     steps:
       - uses: actions/checkout@v5
 

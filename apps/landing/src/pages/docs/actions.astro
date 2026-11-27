@@ -247,7 +247,7 @@ import CodeBlock from '../../components/CodeBlock.astro';
     "match": { "threshold": 0.05, "ignoreRegions": ["[data-testid='clock']"] }
   }
 }`} lang="json" />
-  <p>When <code>match</code> is set, Dokkimi compares the capture against a baseline stored in <code>.dokkimi/&lt;project&gt;/baselines/</code>. If no baseline exists yet (first run), or if the diff exceeds the threshold, it appears as a pending baseline. Review and approve pending baselines with <code>dokkimi baselines</code>.</p>
+  <p>When <code>match</code> is set, Dokkimi compares the capture against a baseline stored in <code>.dokkimi/&lt;project&gt;/baselines/</code> (<code>.dokkimi/baselines/</code> for a definition directly in <code>.dokkimi/</code>). If no baseline exists yet (first run), or if the diff exceeds the threshold, it appears as a pending baseline. Review and approve pending baselines with <code>dokkimi baselines</code>.</p>
 
   <div class="callout">
     <p><strong>Use <code>data-testid</code> selectors.</strong> CSS class selectors break when you restyle. Test IDs are stable and make your intent clear.</p>

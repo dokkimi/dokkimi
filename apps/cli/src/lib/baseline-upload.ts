@@ -2,30 +2,53 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 /**
- * Locates the baselines directory for a definition. By convention baselines
- * live at `<project-root>/baselines/<name>.png`, where the project root is
- * typically the parent of the directory containing the definition file
- * (e.g. `.dokkimi/<project>/definitions/x.yaml` → `.dokkimi/<project>/baselines/`).
- *
- * Walks upward from the source file looking for a `baselines/` directory.
- * Returns null if none is found within the project tree.
+ * The folders a definition's baselines directory can be in, nearest first:
+ * from the definition's folder up to the `.dokkimi/` folder holding it, and
+ * never above it, where a `baselines/` folder isn't Dokkimi's. A definition
+ * outside `.dokkimi/` only has its own folder.
+ */
+function baselineFolders(sourceFile: string): string[] {
+  const folders: string[] = [];
+  for (let dir = path.dirname(sourceFile); ; dir = path.dirname(dir)) {
+    folders.push(dir);
+    if (path.basename(dir) === '.dokkimi') {
+      return folders;
+    }
+    if (path.dirname(dir) === dir) {
+      return folders.slice(0, 1);
+    }
+  }
+}
+
+/**
+ * Locates the baselines directory for a definition: the nearest `baselines/`
+ * folder from the definition's folder up to `.dokkimi/`. Returns null if
+ * there is none.
  */
 export function findBaselinesDir(sourceFile: string): string | null {
-  let dir = path.dirname(sourceFile);
-  // Walk up at most 3 levels — covers <project>/definitions/<file> and
-  // <project>/<file> layouts without scanning the whole filesystem.
-  for (let i = 0; i < 3; i++) {
+  for (const dir of baselineFolders(sourceFile)) {
     const candidate = path.join(dir, 'baselines');
     if (fs.existsSync(candidate) && fs.statSync(candidate).isDirectory()) {
       return candidate;
     }
-    const parent = path.dirname(dir);
-    if (parent === dir) {
-      return null;
-    }
-    dir = parent;
   }
   return null;
+}
+
+/**
+ * Where a definition's baselines directory is created when it has none: in
+ * its project, the folder under `.dokkimi/` holding it
+ * (`.dokkimi/<project>/baselines/`), or `.dokkimi/baselines/` for a
+ * definition directly in `.dokkimi/`.
+ */
+export function newBaselinesDir(sourceFile: string): string {
+  const folders = baselineFolders(sourceFile);
+  const top = folders[folders.length - 1];
+  const project =
+    path.basename(top) === '.dokkimi' && folders.length > 1
+      ? folders[folders.length - 2]
+      : top;
+  return path.join(project, 'baselines');
 }
 
 /**

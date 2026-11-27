@@ -112,19 +112,19 @@ dokkimi run auth --watch`} lang="bash" />
 
   <h2>dokkimi baselines</h2>
   <p>Interactive TUI for reviewing and approving pending visual baselines from the last run. Uses the alternate screen buffer. Use <code>--run</code> to pick an earlier run from the history.</p>
-  <p>When a test definition includes <code>screenshot</code> sub-steps with <code>match: true</code>, Dokkimi compares captures against baselines stored in <code>.dokkimi/&lt;project&gt;/baselines/</code>. New captures (no baseline yet) and failed diffs appear as pending baselines.</p>
+  <p>When a test definition includes <code>screenshot</code> sub-steps with <code>match: true</code>, Dokkimi compares captures against baselines stored in <code>.dokkimi/&lt;project&gt;/baselines/</code> (<code>.dokkimi/baselines/</code> for a definition directly in <code>.dokkimi/</code>). New captures (no baseline yet) and failed diffs appear as pending baselines.</p>
 
   <h3>Navigation</h3>
   <p>Three-level drill-down: tests → baselines → detail.</p>
   <ul>
     <li>Arrow keys + Enter to navigate</li>
-    <li><code>y</code> / <code>a</code> ��� approve a baseline (writes the file immediately)</li>
+    <li><code>y</code> / <code>a</code> — approve a baseline (writes the file immediately)</li>
     <li><code>s</code> — skip a baseline (marks as skipped, no file written)</li>
     <li><code>o</code> / →  / Enter — open images in your editor (detail view)</li>
     <li><code>A</code> — approve all baselines at the current level</li>
     <li>ESC / <code>q</code> / ← to go back</li>
   </ul>
-  <p>Approved baselines are written to <code>.dokkimi/&lt;project&gt;/baselines/</code>. Commit the changes to git so they travel with the test definitions.</p>
+  <p>Approved baselines are written there. A baseline that can't be written (for example, when the run's captures were cleaned up) is not approved. Commit the changes to git so they travel with the test definitions.</p>
   <p>Also accessible via the <code>b</code> key after a run completes (when pending baselines are detected).</p>
 
   <h2>dokkimi dump</h2>
@@ -208,7 +208,7 @@ dokkimi junit --summary                    # Markdown summary instead of XML`} l
   <h2>dokkimi doctor</h2>
   <p>Checks your environment is ready to run tests:</p>
   <ul>
-    <li>Node.js version (20+ required)</li>
+    <li>Node.js version (22+ required)</li>
     <li>Docker daemon is running</li>
     <li>Docker has sufficient resources</li>
     <li>Dokkimi internal components are deployed</li>
@@ -241,6 +241,7 @@ dokkimi validate .dokkimi/auth.json  # Validate a specific file`} lang="bash" />
 
   <h3>dokkimi shutdown</h3>
   <p>Stops all running Dokkimi services without restarting them.</p>
+  <p>After an upgrade, the next command restarts Control Tower at the new version, unless tests are running; then it is restarted on a later command.</p>
 
   <h3>dokkimi config</h3>
   <p>Interactive settings editor. Opens a full-screen menu with categories for concurrency (max parallel environments, max booting environments) and telemetry. Settings are saved to <code>~/.dokkimi/config.json</code>.</p>

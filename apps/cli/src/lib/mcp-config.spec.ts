@@ -59,6 +59,10 @@ describe('addMcpEntry', () => {
     file = path.join(dir, '.cursor', 'mcp.json');
     addMcpEntry(file);
     expect(read()).toEqual({ mcpServers: { dokkimi: ENTRY } });
+    if (process.platform !== 'win32') {
+      // It can come to hold the credentials of the user's other servers
+      expect(mode(file)).toBe(0o600);
+    }
   });
 
   it('adds the entry and keeps everything else', () => {

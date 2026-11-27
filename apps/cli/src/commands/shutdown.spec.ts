@@ -2,11 +2,6 @@ jest.mock('@dokkimi/service-manager', () => ({
   shutdownServices: jest.fn(),
 }));
 
-jest.mock('@dokkimi/platform', () => ({
-  findProcessesByPattern: jest.fn(() => []),
-  killProcess: jest.fn(),
-}));
-
 import { shutdownServices } from '@dokkimi/service-manager';
 import { shutdown } from './shutdown';
 

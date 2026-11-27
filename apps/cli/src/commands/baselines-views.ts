@@ -181,9 +181,14 @@ async function detailView(
       ? '\x1b[33m[NEW]\x1b[0m'
       : '\x1b[31m[CHANGED]\x1b[0m';
 
+  let notice = '';
   while (true) {
     process.stdout.write('\x1b[2J\x1b[H');
     process.stdout.write(`\x1b[1m${item.artifact.name}\x1b[0m  ${tag}\n\n`);
+    if (notice) {
+      process.stdout.write(`\x1b[31m${notice}\x1b[0m\n\n`);
+      notice = '';
+    }
 
     const hints = [
       'y/a approve',
@@ -196,7 +201,11 @@ async function detailView(
     const action = await waitForDetailAction();
 
     if (action === 'approve') {
-      writeBaseline(ctx, item);
+      const error = writeBaseline(ctx, item);
+      if (error) {
+        notice = `Not approved: ${error}`;
+        continue;
+      }
       await updateVerdict(ctx.ctUrl, item.artifact.id, 'approved');
       return 'approved';
     } else if (action === 'skip') {

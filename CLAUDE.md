@@ -38,7 +38,7 @@ To expose the dev CLI as `dokkimi` on your PATH: `yarn link` (after `yarn dev:cl
 ```bash
 # TypeScript
 yarn workspace control-tower test                    # All CT unit tests
-yarn workspace control-tower test -- --testPathPattern=runs  # Single test file/pattern
+yarn workspace control-tower test --testPathPatterns=runs  # Single test file/pattern
 yarn workspace @dokkimi/definition-validator test    # Validator tests
 
 # Go (run from each service directory)
@@ -112,7 +112,7 @@ Build order matters: `shared/config → shared/platform → shared/telemetry →
 
 ### Sidecar Image Tags
 
-`services/control-tower/src/constants/image-tags.ts` resolves sidecar images using `APP_VERSION` env var, falling back to `:latest`. When running locally via CLI, `APP_VERSION` is unset so `:latest` is used.
+`services/control-tower/src/constants/image-tags.ts` resolves sidecar images using the `DOKKIMI_APP_VERSION` env var, falling back to `:latest`. The CLI starts Control Tower with `DOKKIMI_APP_VERSION` set to its own version; set `DOKKIMI_APP_VERSION=latest` to test locally built sidecars.
 
 ### Database
 

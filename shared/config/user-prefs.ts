@@ -4,6 +4,10 @@ import * as os from 'os';
 
 const PREFS_FILE = path.join(os.homedir(), '.dokkimi', 'config.json');
 
+export function prefsFilePath(): string {
+  return PREFS_FILE;
+}
+
 export interface TelemetryPrefs {
   distinctId: string;
   enabled: boolean;
@@ -27,49 +31,69 @@ export interface UserPrefs {
   projects?: Record<string, ProjectPrefs>;
 }
 
-export function getUserPrefs(): UserPrefs {
+/**
+ * The prefs file. broken: it exists but can't be read as JSON (e.g. a typo
+ * after a hand edit). It is then never written, so that a fix by hand loses
+ * nothing, and telemetry is off.
+ */
+function readPrefsFile(): { prefs: UserPrefs; broken: boolean } {
+  let raw: string;
   try {
-    if (!fs.existsSync(PREFS_FILE)) {
-      return {};
-    }
-    const raw = fs.readFileSync(PREFS_FILE, 'utf-8');
+    raw = fs.readFileSync(PREFS_FILE, 'utf-8');
+  } catch (err) {
+    const missing = (err as NodeJS.ErrnoException).code === 'ENOENT';
+    return { prefs: {}, broken: !missing };
+  }
+  try {
     const parsed = JSON.parse(raw);
     if (
-      typeof parsed !== 'object' ||
-      parsed === null ||
-      Array.isArray(parsed)
+      typeof parsed === 'object' &&
+      parsed !== null &&
+      !Array.isArray(parsed)
     ) {
-      return {};
+      return { prefs: parsed as UserPrefs, broken: false };
     }
-    return parsed as UserPrefs;
-  } catch {
-    return {};
-  }
+  } catch {}
+  return { prefs: {}, broken: true };
 }
 
+export function getUserPrefs(): UserPrefs {
+  return readPrefsFile().prefs;
+}
+
+/** Writes the prefs file atomically. Throws when it can't be read or written. */
 export function writeUserPrefs(prefs: UserPrefs): void {
+  if (readPrefsFile().broken) {
+    throw new Error(
+      `${PREFS_FILE} can't be read, so settings aren't saved. Fix or delete it.`,
+    );
+  }
+  fs.mkdirSync(path.dirname(PREFS_FILE), { recursive: true });
+  const tmp = `${PREFS_FILE}.${process.pid}.tmp`;
   try {
-    const dir = path.dirname(PREFS_FILE);
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
-    }
-    fs.writeFileSync(PREFS_FILE, JSON.stringify(prefs, null, 2) + '\n');
-  } catch {
-    // Non-critical — skip silently
+    fs.writeFileSync(tmp, JSON.stringify(prefs, null, 2) + '\n');
+    fs.renameSync(tmp, PREFS_FILE);
+  } catch (err) {
+    fs.rmSync(tmp, { force: true });
+    throw err;
   }
 }
 
 export function updateUserPrefs(
   updater: (prefs: UserPrefs) => UserPrefs,
 ): UserPrefs {
-  const current = getUserPrefs();
-  const updated = updater(current);
+  const updated = updater(getUserPrefs());
   writeUserPrefs(updated);
   return updated;
 }
 
 export function getTelemetryPrefs(): TelemetryPrefs | undefined {
-  return getUserPrefs().telemetry;
+  const { prefs, broken } = readPrefsFile();
+  if (broken) {
+    // Whether the user opted out is unknown: assume they did
+    return { distinctId: '', enabled: false, firstRunNoticeSeen: true };
+  }
+  return prefs.telemetry;
 }
 
 export function setTelemetryPrefs(telemetry: TelemetryPrefs): void {

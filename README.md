@@ -36,7 +36,7 @@ yarn add -D dokkimi
 
 ## Prerequisites
 
-- Node.js 20+
+- Node.js 22+
 - Docker
 
 Run `dokkimi doctor` after installing to verify your setup.

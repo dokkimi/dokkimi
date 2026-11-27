@@ -3,6 +3,7 @@ import { BadRequestException } from '@nestjs/common';
 import { ReadinessStatus } from '@prisma/client';
 import { HealthService } from './health.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { DOKKIMI_VERSION } from '@dokkimi/config';
 
 describe('HealthService', () => {
   let service: HealthService;
@@ -82,45 +83,33 @@ describe('HealthService', () => {
       expect(result.checks.prisma.error).toBe('Prisma connection failed');
     });
 
-    it('should include version if APP_VERSION is set', async () => {
-      const originalVersion = process.env.APP_VERSION;
-      process.env.APP_VERSION = '1.0.0';
-
+    it('reports the code version, not the image tag', async () => {
+      const originalVersion = process.env.DOKKIMI_APP_VERSION;
+      process.env.DOKKIMI_APP_VERSION = 'latest';
       mockPrismaService.client.$queryRaw.mockResolvedValue([{ '1': 1 }]);
       mockPrismaService.run.findFirst.mockResolvedValue(null);
 
       const result = await service.getHealthStatus();
 
-      expect(result.version).toBe('1.0.0');
-
+      expect(result.version).toBe(DOKKIMI_VERSION);
       if (originalVersion !== undefined) {
-        process.env.APP_VERSION = originalVersion;
+        process.env.DOKKIMI_APP_VERSION = originalVersion;
       } else {
-        delete process.env.APP_VERSION;
+        delete process.env.DOKKIMI_APP_VERSION;
       }
     });
 
-    it('should fall back to npm_package_version when APP_VERSION is not set', async () => {
-      const originalAppVersion = process.env.APP_VERSION;
-      const originalNpmVersion = process.env.npm_package_version;
-      delete process.env.APP_VERSION;
-      process.env.npm_package_version = '2.3.4';
-
+    it('reports whether a run is active', async () => {
       mockPrismaService.client.$queryRaw.mockResolvedValue([{ '1': 1 }]);
       mockPrismaService.run.findFirst.mockResolvedValue(null);
+      expect((await service.getHealthStatus()).activeRun).toBe(false);
 
-      const result = await service.getHealthStatus();
-
-      expect(result.version).toBe('2.3.4');
-
-      if (originalAppVersion !== undefined) {
-        process.env.APP_VERSION = originalAppVersion;
-      }
-      if (originalNpmVersion !== undefined) {
-        process.env.npm_package_version = originalNpmVersion;
-      } else {
-        delete process.env.npm_package_version;
-      }
+      mockPrismaService.run.findFirst.mockResolvedValue({ id: 'run-1' });
+      expect((await service.getHealthStatus()).activeRun).toBe(true);
+      expect(mockPrismaService.run.findFirst).toHaveBeenCalledWith({
+        where: { status: { in: ['PENDING', 'RUNNING'] } },
+        select: { id: true },
+      });
     });
 
     it('should return unhealthy when all checks fail', async () => {

@@ -282,18 +282,20 @@ Logs without a `logId` (older sidecars) skip dedup and behave as before.
 
 The CLI uses `@dokkimi/service-manager` to manage Control Tower as a background daemon:
 
-1. **Startup**: `dokkimi run` calls `ensureServicesRunning()` which:
+1. **Startup**: `dokkimi run` calls `ensureServicesRunning()` which, holding `~/.dokkimi/daemon.lock`:
    - Checks Docker is running (auto-starts Docker on macOS)
    - Runs Prisma migrations if needed
-   - Health-checks each service at its configured port
-   - Spawns any unhealthy services as detached child processes
-   - Writes PIDs to `~/.dokkimi/daemon.json`
+   - Health-checks Control Tower at its configured port. One the CLI started that doesn't answer is given 20 seconds (it may be busy) before it is restarted
+   - Restarts one at another version (e.g. after an upgrade) only when no run is active; otherwise it is used and a warning printed
+   - Spawns it, if needed, as a detached child process, and writes its PID and start time to `~/.dokkimi/daemon.json`
 
-2. **Health checks**: Each service exposes `GET /health` returning `{ status, service }`. The service-manager polls these to verify readiness.
+   A PID identifies a process only together with its start time: a PID is reused once its process ends, often after a reboot. The CLI only kills, or waits on, a PID from `daemon.json` or `daemon.lock` whose process started at the recorded time.
+
+2. **Health checks**: Control Tower's `GET /health` returns `{ status, service, version, activeRun }`; `status` is `unhealthy` (still HTTP 200) when its database fails, and counts as not ready.
 
 3. **Logs**: Each service writes to `~/.dokkimi/logs/{service}.log` via a rotating file writer (10 MB max, 1 backup).
 
-4. **Shutdown**: `dokkimi shutdown` sends SIGTERM to each process group, with SIGKILL fallback after 3 seconds.
+4. **Shutdown**: `dokkimi shutdown` sends SIGTERM to the daemon's process group, with SIGKILL fallback after 3 seconds (Windows: `taskkill /T`, then `/F`), and fails if it is still running.
 
 ---
 
@@ -313,7 +315,7 @@ Before any run, the CLI resolves `.dokkimi/` definition files:
 
 ## Config
 
-Configuration lives in `config/config.yaml`. Loaded at startup by `@dokkimi/config` (`CONFIG_PATH` overrides the location). Services read their port, database URL, timeouts, and feature flags from this config.
+Configuration lives in `config/config.yaml`. Loaded at startup by `@dokkimi/config` (`DOKKIMI_CONFIG_PATH` overrides the location, `DOKKIMI_DATABASE_URL` the database URL). Services read their port, database URL, timeouts, and feature flags from this config.
 
 User-level project config lives in `.dokkimi/config.yaml`:
 

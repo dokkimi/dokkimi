@@ -20,6 +20,7 @@ import {
   checkHealth,
   ensureDockerRunning,
   runPrismaMigrate,
+  type Health,
 } from './environment';
 
 // ---------------------------------------------------------------------------
@@ -27,7 +28,10 @@ import {
 // ---------------------------------------------------------------------------
 
 const SERVICE_DIRECTORY = 'control-tower';
-const SERVICE_LABEL = 'Control Tower';
+
+// How long a running daemon that doesn't answer is waited for before it is
+// restarted: it may be busy, or still starting
+const UNRESPONSIVE_GRACE_MS = 20000;
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -73,16 +77,36 @@ export async function ensureServicesRunning(
     runPrismaMigrate(appRoot, config);
 
     const state = readDaemonState();
-    const health = await checkHealth(url);
-
-    if (health.healthy) {
-      return;
+    const pid = getControlTowerPid(state);
+    let health = await checkHealth(url);
+    if (!health.healthy && pid !== null) {
+      health = await waitForHealth(url, UNRESPONSIVE_GRACE_MS, signal);
     }
 
-    const pid = getControlTowerPid(state);
-    if (pid !== null && isProcessAlive(pid)) {
-      console.log(`[Dokkimi] Stopping stale process (pid ${pid})`);
-      await killProcess(pid);
+    if (health.healthy) {
+      if (health.version === DOKKIMI_VERSION || !isLocal) {
+        return;
+      }
+      // An older (or newer) daemon, e.g. still running after an upgrade:
+      // restart it, unless that would end a run
+      if (pid === null || health.activeRun) {
+        const running = `[Dokkimi] Control Tower ${health.version ?? '(unknown version)'} is running, not ${DOKKIMI_VERSION}.`;
+        console.warn(
+          pid === null
+            ? `${running} It wasn't started by this CLI, so it is used; stop it to switch.`
+            : `${running} It is running tests, so it is used for now; it is restarted on a later command once they're done.`,
+        );
+        return;
+      }
+      console.log(
+        `[Dokkimi] Restarting Control Tower ${health.version ?? '(unknown version)'} as ${DOKKIMI_VERSION}`,
+      );
+      await stopProcess(pid);
+    } else if (pid !== null) {
+      console.log(
+        `[Dokkimi] Restarting unresponsive Control Tower (pid ${pid})`,
+      );
+      await stopProcess(pid);
     }
 
     console.log('[Dokkimi] Starting...');
@@ -107,8 +131,8 @@ export async function ensureServicesRunning(
         ...process.env,
         LOG_FILE: logPath,
         // Pin sidecar images to this release. Devs testing locally built
-        // sidecars can override with APP_VERSION=latest.
-        APP_VERSION: process.env.APP_VERSION ?? DOKKIMI_VERSION,
+        // sidecars can override with DOKKIMI_APP_VERSION=latest.
+        DOKKIMI_APP_VERSION: process.env.DOKKIMI_APP_VERSION ?? DOKKIMI_VERSION,
       },
     });
 
@@ -119,32 +143,16 @@ export async function ensureServicesRunning(
       throw new Error('Failed to start Dokkimi');
     }
 
-    const startedAt = state?.startedAt ?? new Date().toISOString();
     writeDaemonState({
-      startedAt,
+      startedAt: new Date().toISOString(),
       pid: proc.pid,
+      pidStartedAt: Date.now(),
     });
 
-    const deadline = Date.now() + timeoutMs;
-    let pollCount = 0;
-
-    while (Date.now() < deadline) {
-      signal?.throwIfAborted();
-      const result = await checkHealth(url);
-      if (result.healthy) {
-        console.log('[Dokkimi] Ready.');
-        return;
-      }
-      pollCount++;
-      if (pollCount % 5 === 0) {
-        const elapsed = Math.round(
-          (Date.now() - (deadline - timeoutMs)) / 1000,
-        );
-        console.log(`[Dokkimi] Still starting... (${elapsed}s elapsed)`);
-      }
-      await new Promise((resolve) => setTimeout(resolve, 1000));
+    if ((await waitForHealth(url, timeoutMs, signal, true)).healthy) {
+      console.log('[Dokkimi] Ready.');
+      return;
     }
-
     throw new Error(
       'Timed out waiting for Dokkimi to start. ' +
         'Check logs at ~/.dokkimi/logs/ for details.',
@@ -159,36 +167,17 @@ export async function shutdownServices(): Promise<void> {
 
   try {
     const state = readDaemonState();
-    if (!state) {
-      console.log('[Dokkimi] Not running.');
+    const pid = getControlTowerPid(state);
+    if (pid === null) {
+      // No state, or its process has ended (its pid may be another's now)
+      deleteDaemonState();
+      console.log('[Dokkimi] No Control Tower started by this CLI is running.');
       return;
     }
 
-    writeDaemonState({ ...state, shuttingDown: true });
-
+    writeDaemonState({ ...state!, shuttingDown: true });
     console.log('[Dokkimi] Stopping...');
-
-    const pidsToKill: Array<{ name: string; pid: number }> = [];
-    if (typeof state.pid === 'number') {
-      pidsToKill.push({ name: SERVICE_LABEL, pid: state.pid });
-    }
-    if (state.services) {
-      for (const [name, entry] of Object.entries(state.services)) {
-        pidsToKill.push({ name, pid: entry.pid });
-      }
-    }
-
-    await Promise.all(
-      pidsToKill.map(async ({ pid }) => {
-        const { forceKilled } = await killProcess(pid);
-        if (forceKilled) {
-          console.log(
-            `[Dokkimi] Process (pid ${pid}) did not exit gracefully — force-killed.`,
-          );
-        }
-      }),
-    );
-
+    await stopProcess(pid);
     deleteDaemonState();
     console.log('[Dokkimi] Stopped.');
   } finally {
@@ -213,6 +202,48 @@ export async function getServiceStatus(
     port: svc.port,
     detail: health.detail,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+/** Polls health until healthy or timeoutMs has passed; returns the last check */
+async function waitForHealth(
+  url: string,
+  timeoutMs: number,
+  signal?: AbortSignal,
+  reportProgress = false,
+): Promise<Health> {
+  const start = Date.now();
+  let health = await checkHealth(url);
+  for (
+    let polls = 1;
+    !health.healthy && Date.now() - start < timeoutMs;
+    polls++
+  ) {
+    signal?.throwIfAborted();
+    if (reportProgress && polls % 5 === 0) {
+      const elapsed = Math.round((Date.now() - start) / 1000);
+      console.log(`[Dokkimi] Still starting... (${elapsed}s elapsed)`);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+    health = await checkHealth(url);
+  }
+  return health;
+}
+
+/** Stops the daemon process, and throws if it is still running after */
+async function stopProcess(pid: number): Promise<void> {
+  const { forceKilled } = await killProcess(pid);
+  if (forceKilled) {
+    console.log(
+      `[Dokkimi] Process (pid ${pid}) did not exit gracefully — force-killed.`,
+    );
+  }
+  if (isProcessAlive(pid)) {
+    throw new Error(`Control Tower (pid ${pid}) could not be stopped`);
+  }
 }
 
 export function resolveAppRoot(callerDirname: string): string {
