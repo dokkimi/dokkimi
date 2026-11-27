@@ -12,6 +12,7 @@ import (
 const (
 	sslRequestCode    = 80877103
 	cancelRequestCode = 80877102
+	gssRequestCode    = 80877104
 
 	// Client message types
 	msgQuery     byte = 'Q'
@@ -54,7 +55,8 @@ func readStartupMessage(r io.Reader) (msgLen int32, raw []byte, err error) {
 		return 0, nil, fmt.Errorf("read startup length: %w", err)
 	}
 	msgLen = int32(binary.BigEndian.Uint32(lenBuf[:]))
-	if msgLen < 4 || msgLen > 10000 {
+	// Every startup message has at least a protocol version or request code
+	if msgLen < 8 || msgLen > 10000 {
 		return 0, nil, fmt.Errorf("invalid startup message length: %d", msgLen)
 	}
 
@@ -68,11 +70,12 @@ func readStartupMessage(r io.Reader) (msgLen int32, raw []byte, err error) {
 
 // isSSLRequest checks if a startup message is an SSL request
 func isSSLRequest(raw []byte) bool {
-	if len(raw) != 8 {
-		return false
-	}
-	code := binary.BigEndian.Uint32(raw[4:8])
-	return code == sslRequestCode
+	return len(raw) == 8 && binary.BigEndian.Uint32(raw[4:8]) == sslRequestCode
+}
+
+// isGSSRequest checks if a startup message asks for GSSAPI encryption
+func isGSSRequest(raw []byte) bool {
+	return len(raw) == 8 && binary.BigEndian.Uint32(raw[4:8]) == gssRequestCode
 }
 
 // isCancelRequest checks if a startup message is a cancel request

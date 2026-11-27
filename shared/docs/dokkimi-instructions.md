@@ -412,6 +412,8 @@ Redis:
 
 **Reserved database name:** The `dokkimi_internal` database is reserved for Dokkimi's internal use (readiness checks). Do not use this name in your init scripts or application code.
 
+**Query logging:** Every query your services run is logged by a proxy in front of the database. A query with several statements (`INSERT ...; SELECT ...`, or a MySQL `CALL`) is one entry: it failed if any statement failed, and its `data` and `rowsAffected` are those of its last statement that returned rows, or of its last statement when none did. A MongoDB write the server rejected (`writeErrors`, `writeConcernError`) is logged as failed. Compressed traffic (MongoDB snappy, zlib, zstd) is logged like any other. NaN and Infinity are logged as the strings `"NaN"`, `"Infinity"` and `"-Infinity"`. Limitation: a single PostgreSQL message over 16 MB (for example a query parameter or a row that large) closes the connection.
+
 **Connecting services to databases:** Use the database item's `name` as the hostname in your service's environment variables:
 
 ```json
@@ -1756,14 +1758,14 @@ All assertion paths start with `$.` and resolve against the unified root context
 
 **For database query results (self block only):**
 
-| Path                        | Description                                    |
-| --------------------------- | ---------------------------------------------- |
-| `$.response.success`        | Boolean — did the query succeed?               |
-| `$.response.data`           | Array of result rows                           |
-| `$.response.data[0].column` | Specific column from a result row              |
-| `$.response.rowsAffected`   | Number of affected rows (integer)              |
-| `$.response.error`          | Error message if query failed (string or null) |
-| `$.responseTime`            | Query execution time in milliseconds           |
+| Path                        | Description                                            |
+| --------------------------- | ------------------------------------------------------ |
+| `$.response.success`        | Boolean — did the query succeed?                       |
+| `$.response.data`           | Array of result rows                                   |
+| `$.response.data[0].column` | Specific column from a result row                      |
+| `$.response.rowsAffected`   | Rows a write changed, or a read returned (0 when none) |
+| `$.response.error`          | Error message if query failed (string or null)         |
+| `$.responseTime`            | Query execution time in milliseconds                   |
 
 **Inside match blocks:**
 

@@ -249,3 +249,29 @@ tests:
               - path: $.response.error
                 operator: contains
                 value: nonexistent_table_xyz
+
+  - name: rowsAffected is 0 for a write that changes nothing, and the row count for a read
+    steps:
+      - name: Update a row that does not exist
+        action:
+          type: dbQuery
+          database: mysql-db
+          query: "UPDATE products SET name = name WHERE name = 'Nothing'"
+        assertions:
+          - assertions:
+              - path: $.response.success
+                operator: eq
+                value: true
+              - path: $.response.rowsAffected
+                operator: eq
+                value: 0
+      - name: Read one row
+        action:
+          type: dbQuery
+          database: mysql-db
+          query: "SELECT id FROM products WHERE name = 'Widget'"
+        assertions:
+          - assertions:
+              - path: $.response.rowsAffected
+                operator: eq
+                value: 1

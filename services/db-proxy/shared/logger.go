@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"log"
+	"math"
 	"net/http"
 	"time"
 )
@@ -22,7 +23,7 @@ type DatabaseLogMessage struct {
 	Params         map[string]interface{}   `json:"params,omitempty"`
 	Success        bool                     `json:"success"`
 	Data           []map[string]interface{} `json:"data,omitempty"`
-	RowsAffected   *int64                   `json:"rowsAffected,omitempty"`
+	RowsAffected   int64                    `json:"rowsAffected"` // rows changed by a write, or returned by a read
 	Error          string                   `json:"error,omitempty"`
 	Duration       *int                     `json:"duration,omitempty"`
 	Timestamp      string                   `json:"timestamp,omitempty"`
@@ -61,6 +62,12 @@ func (l *QueryLogger) SetTestAgentURL(url string) {
 // Log queues a database log message for async delivery to LPS
 func (l *QueryLogger) Log(message DatabaseLogMessage) {
 	message.LogID = newLogID()
+	for i, row := range message.Data {
+		message.Data[i] = JSONSafe(row).(map[string]interface{})
+	}
+	if message.Params != nil {
+		message.Params = JSONSafe(message.Params).(map[string]interface{})
+	}
 
 	// Send the assertion-path copy immediately, decoupled from the LPS worker:
 	// a slow LPS upload ahead in the queue must never delay the log the
@@ -170,6 +177,38 @@ func (l *QueryLogger) sendToTestAgent(body []byte) {
 		log.Printf("[QueryLogger] Test-agent rejected log with status %d — not retrying", status)
 		return
 	}
+}
+
+// JSONSafe returns v with every NaN and Infinity, which JSON can't hold,
+// replaced by its text ("NaN", "Infinity", "-Infinity"), looking inside maps
+// and slices. Without it the whole log can't be encoded and is lost.
+func JSONSafe(v interface{}) interface{} {
+	switch val := v.(type) {
+	case float64:
+		switch {
+		case math.IsNaN(val):
+			return "NaN"
+		case math.IsInf(val, 1):
+			return "Infinity"
+		case math.IsInf(val, -1):
+			return "-Infinity"
+		}
+	case float32:
+		return JSONSafe(float64(val))
+	case map[string]interface{}:
+		for k, item := range val {
+			val[k] = JSONSafe(item)
+		}
+	case []interface{}:
+		for i, item := range val {
+			val[i] = JSONSafe(item)
+		}
+	case []map[string]interface{}:
+		for i, item := range val {
+			val[i] = JSONSafe(item).(map[string]interface{})
+		}
+	}
+	return v
 }
 
 // newLogID returns a random 128-bit hex id. The test-agent uses it to

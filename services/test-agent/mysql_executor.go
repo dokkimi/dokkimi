@@ -115,7 +115,7 @@ func (e *DatabaseQueryExecutor) executeMysqlQuery(
 		if data == nil {
 			data = []map[string]interface{}{}
 		}
-		result = &DBQueryResult{Success: true, Data: data, Duration: duration}
+		result = &DBQueryResult{Success: true, Data: data, RowsAffected: int64(len(data)), Duration: duration}
 	} else {
 		res, err := db.ExecContext(ctx, query, args...)
 		if err != nil {

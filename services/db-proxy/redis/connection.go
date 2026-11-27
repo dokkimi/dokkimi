@@ -274,13 +274,12 @@ func (pc *proxyConnection) logCommand(pq pendingCommand, response *respValue) {
 		DatabaseName:   pc.config.InstanceItemName,
 		Query:          pq.command,
 		Success:        success,
+		RowsAffected:   int64(len(data)),
 		Duration:       &durationMs,
 		Timestamp:      time.Now().Format(time.RFC3339Nano),
 	}
 	if len(data) > 0 {
 		msg.Data = data
-		ra := int64(len(data))
-		msg.RowsAffected = &ra
 	}
 	if errMsg != "" {
 		msg.Error = errMsg

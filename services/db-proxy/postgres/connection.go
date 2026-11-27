@@ -11,13 +11,30 @@ import (
 	"github.com/dokkimi/dokkimi/services/db-proxy/shared"
 )
 
+// Kinds of pending entry, by the message that created it
+const (
+	kindExecute = iota // an Execute: answered by one result
+	kindSimple         // a simple Query: one or more statements, answered by the time of its ReadyForQuery
+	kindParse          // a Parse: answered by ParseComplete, or an error that is logged
+)
+
 // pendingQuery tracks a query waiting for its response from upstream
 type pendingQuery struct {
+	kind      int
 	sql       string
 	startTime time.Time
 	formats   []int16 // result format codes from Bind (extended protocol)
 	group     int     // number of sync points (Query or Sync) sent before it
 	stmt      string  // prepared statement it executes (extended protocol)
+
+	// A simple Query's result so far: its last result set (data not nil),
+	// or its last result when none returned rows. After an error the server
+	// runs none of its later statements, so an error is the result.
+	answered     bool
+	success      bool
+	rowsAffected int64
+	errMsg       string
+	data         []map[string]interface{}
 }
 
 // describeRequest is a Describe the client sent, waiting for its
@@ -101,7 +118,7 @@ func (pc *proxyConnection) relayClientToUpstream() {
 			query := extractSimpleQuery(frame)
 			pc.mu.Lock()
 			if query != "" {
-				pc.pending = append(pc.pending, pendingQuery{sql: query, startTime: time.Now(), group: pc.syncSent})
+				pc.pending = append(pc.pending, pendingQuery{kind: kindSimple, sql: query, startTime: time.Now(), group: pc.syncSent})
 			}
 			pc.syncSent++ // a simple query is its own sync point
 			pc.mu.Unlock()
@@ -127,6 +144,9 @@ func (pc *proxyConnection) relayClientToUpstream() {
 			if query != "" {
 				pc.mu.Lock()
 				pc.stmtCache[stmtName] = query
+				// A statement that can't be prepared is answered with an
+				// error and never executed: it is logged as this entry.
+				pc.pending = append(pc.pending, pendingQuery{kind: kindParse, sql: query, startTime: time.Now(), group: pc.syncSent})
 				pc.mu.Unlock()
 			}
 
@@ -142,7 +162,7 @@ func (pc *proxyConnection) relayClientToUpstream() {
 			pc.mu.Lock()
 			stmtName := pc.activeStmt
 			if query, ok := pc.stmtCache[stmtName]; ok {
-				pc.pending = append(pc.pending, pendingQuery{sql: query, startTime: time.Now(), formats: pc.activeFormats, group: pc.syncSent, stmt: stmtName})
+				pc.pending = append(pc.pending, pendingQuery{kind: kindExecute, sql: query, startTime: time.Now(), formats: pc.activeFormats, group: pc.syncSent, stmt: stmtName})
 			}
 			pc.mu.Unlock()
 
@@ -174,6 +194,13 @@ func (pc *proxyConnection) relayUpstreamToClient() {
 		}
 
 		switch msgType {
+		case msgParseComplete:
+			pc.mu.Lock()
+			if len(pc.pending) > 0 && pc.pending[0].kind == kindParse {
+				pc.pending = pc.pending[1:]
+			}
+			pc.mu.Unlock()
+
 		case msgRowDescription, msgNoData:
 			// The reply to a Describe, or (simple query) the start of a result.
 			var cols []columnMeta
@@ -222,6 +249,9 @@ func (pc *proxyConnection) relayUpstreamToClient() {
 			_, rowsAffected := extractCommandTag(frame)
 			pc.mu.Lock()
 			data := pc.resultRows
+			if data == nil && pc.columns != nil {
+				data = []map[string]interface{}{} // a result set without rows
+			}
 			pc.resultRows = nil
 			pc.columns = nil
 			pc.mu.Unlock()
@@ -249,15 +279,20 @@ func (pc *proxyConnection) relayUpstreamToClient() {
 			pc.completeQuery(true, int64(len(data)), "", data)
 
 		case msgReadyForQuery:
-			// Everything sent before this sync point is done. After an error the
-			// server skips the rest of the group, so drop what it never answered,
-			// or every later query would be paired with the wrong reply.
+			// Everything sent before this sync point is done: a simple Query's
+			// statements have all been answered, so it is logged now. After an
+			// error the server skips the rest of the group, so drop what it never
+			// answered, or every later query would be paired with the wrong reply.
 			pc.mu.Lock()
 			pc.readySeen++
+			var done []pendingQuery
 			kept := pc.pending[:0]
 			for _, pq := range pc.pending {
-				if pq.group >= pc.readySeen {
+				switch {
+				case pq.group >= pc.readySeen:
 					kept = append(kept, pq)
+				case pq.kind == kindSimple && pq.answered:
+					done = append(done, pq)
 				}
 			}
 			pc.pending = kept
@@ -271,6 +306,9 @@ func (pc *proxyConnection) relayUpstreamToClient() {
 			pc.columns = nil
 			pc.resultRows = nil
 			pc.mu.Unlock()
+			for _, pq := range done {
+				pc.logQuery(pq, pq.success, pq.rowsAffected, pq.errMsg, pq.data)
+			}
 		}
 
 		if _, err := pc.clientConn.Write(frame); err != nil {
@@ -282,20 +320,35 @@ func (pc *proxyConnection) relayUpstreamToClient() {
 	}
 }
 
-// completeQuery pops the oldest pending query and logs it with response details
+// completeQuery records a statement's result for the oldest pending query.
+// An Execute or a failed Parse is logged at once. A simple Query keeps the
+// result and is logged at its ReadyForQuery, when all its statements are done.
+// data is nil for a result that isn't a result set.
 func (pc *proxyConnection) completeQuery(success bool, rowsAffected int64, errMsg string, data []map[string]interface{}) {
-	if pc.logger == nil {
-		return
-	}
-
 	pc.mu.Lock()
 	if len(pc.pending) == 0 {
+		pc.mu.Unlock()
+		return
+	}
+	if pq := &pc.pending[0]; pq.kind == kindSimple {
+		// A later statement without rows (e.g. COMMIT) doesn't replace a result set
+		if !success || data != nil || pq.data == nil {
+			pq.answered, pq.success, pq.rowsAffected, pq.errMsg, pq.data = true, success, rowsAffected, errMsg, data
+		}
 		pc.mu.Unlock()
 		return
 	}
 	pq := pc.pending[0]
 	pc.pending = pc.pending[1:]
 	pc.mu.Unlock()
+	pc.logQuery(pq, success, rowsAffected, errMsg, data)
+}
+
+// logQuery logs a query with its result
+func (pc *proxyConnection) logQuery(pq pendingQuery, success bool, rowsAffected int64, errMsg string, data []map[string]interface{}) {
+	if pc.logger == nil {
+		return
+	}
 
 	durationMs := int(time.Since(pq.startTime).Milliseconds())
 	msg := shared.DatabaseLogMessage{
@@ -305,11 +358,9 @@ func (pc *proxyConnection) completeQuery(success bool, rowsAffected int64, errMs
 		DatabaseName:   pc.config.InstanceItemName,
 		Query:          pq.sql,
 		Success:        success,
+		RowsAffected:   rowsAffected,
 		Duration:       &durationMs,
 		Timestamp:      time.Now().Format(time.RFC3339Nano),
-	}
-	if rowsAffected > 0 {
-		msg.RowsAffected = &rowsAffected
 	}
 	if errMsg != "" {
 		msg.Error = errMsg

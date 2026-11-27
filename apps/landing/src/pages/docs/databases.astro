@@ -129,6 +129,16 @@ import CodeBlock from '../../components/CodeBlock.astro';
   <p>Every DATABASE item is paired with a <strong>DB proxy sidecar</strong> — a transparent proxy that intercepts all database queries at the wire protocol level. This means every SQL query, MongoDB operation, or Redis command your services execute is captured and logged automatically, without any changes to your application code.</p>
   <p>You can inspect all captured queries after a run with <code>dokkimi inspect</code>, which shows every query alongside the HTTP traffic and console logs. This gives you full visibility into what your services actually did to the database during the test — not just what the API returned.</p>
   <p>This is particularly valuable for debugging: when a test fails, you can see the exact queries that ran, in order, and trace the issue to a specific database interaction rather than guessing from HTTP responses alone.</p>
+  <ul>
+    <li>A query with several statements (<code>INSERT ...; SELECT ...</code>, or a MySQL <code>CALL</code>) is one entry. It failed if any statement failed, and its <code>data</code> and <code>rowsAffected</code> are those of its last statement that returned rows, or of its last statement when none did.</li>
+    <li><code>rowsAffected</code> is the number of rows a write changed, or a read returned: 0 when none, never missing. For a MongoDB update it is the documents modified.</li>
+    <li>A MongoDB write the server rejected (<code>writeErrors</code>, <code>writeConcernError</code>) is logged as failed.</li>
+    <li>Compressed traffic (MongoDB snappy, zlib, zstd) is logged like any other.</li>
+    <li>NaN and Infinity are logged as the strings <code>"NaN"</code>, <code>"Infinity"</code> and <code>"-Infinity"</code>.</li>
+  </ul>
+  <div class="callout">
+    <p><strong>Limitation:</strong> a single PostgreSQL message over 16 MB (for example a query parameter or a row that large) closes the connection.</p>
+  </div>
   <div class="callout">
     <p><strong>DATABASE vs SERVICE.</strong> Infrastructure that needs query-level interception and logging should use the DATABASE item type. If you need a data store that Dokkimi doesn't support natively (like Elasticsearch or DynamoDB), you can run it as a <a href="/docs/services#infrastructure-services">SERVICE</a> — it works the same way, you just won't get automatic query logging.</p>
   </div>

@@ -32,10 +32,6 @@ type proxyConnection struct {
 	mu      sync.Mutex
 	pending map[int32]pendingQuery
 	cursors map[int64]*cursorAccumulator
-
-	// helloSeen tracks whether we've already stripped compression from a
-	// hello/isMaster response on this connection. Only needed once.
-	helloSeen bool
 }
 
 func newProxyConnection(client, upstream net.Conn, cfg *shared.Config, logger *shared.QueryLogger) *proxyConnection {
@@ -104,7 +100,7 @@ func (pc *proxyConnection) relayClientToUpstream() {
 			}
 		}
 
-		if _, err := pc.upstreamConn.Write(msg.raw); err != nil {
+		if _, err := pc.upstreamConn.Write(msg.wire); err != nil {
 			if !shared.IsConnClosed(err) {
 				log.Printf("upstream write error: %v", err)
 			}
@@ -123,14 +119,6 @@ func (pc *proxyConnection) relayUpstreamToClient() {
 			return
 		}
 
-		raw := msg.raw
-
-		// Strip compression from the first hello/isMaster response
-		if !pc.helloSeen && msg.opCode == opMsg {
-			pc.helloSeen = true
-			raw = stripCompressionFromHello(raw)
-		}
-
 		// Match response to pending request and log
 		if msg.opCode == opMsg && msg.responseTo != 0 {
 			pc.mu.Lock()
@@ -145,7 +133,7 @@ func (pc *proxyConnection) relayUpstreamToClient() {
 			}
 		}
 
-		if _, err := pc.clientConn.Write(raw); err != nil {
+		if _, err := pc.clientConn.Write(msg.wire); err != nil {
 			if !shared.IsConnClosed(err) {
 				log.Printf("client write error: %v", err)
 			}
@@ -162,7 +150,7 @@ func (pc *proxyConnection) relayUpstreamToClient() {
 				}
 				return
 			}
-			if _, err := pc.clientConn.Write(msg.raw); err != nil {
+			if _, err := pc.clientConn.Write(msg.wire); err != nil {
 				if !shared.IsConnClosed(err) {
 					log.Printf("client write error (moreToCome): %v", err)
 				}
@@ -179,7 +167,10 @@ func (pc *proxyConnection) logQuery(pq pendingQuery, response *mongoMessage) {
 
 	cmdName := pq.command.commandName
 	ri := extractResponseInfo(response, cmdName)
-	success := !ri.hasOk || ri.ok == 1
+	success := (!ri.hasOk || ri.ok == 1) && ri.writeError == ""
+	if ri.writeError != "" && ri.errmsg == "" {
+		ri.errmsg = ri.writeError
+	}
 
 	// For find commands with a live cursor, start accumulating batches
 	// instead of logging immediately.
@@ -222,6 +213,7 @@ func (pc *proxyConnection) logQuery(pq pendingQuery, response *mongoMessage) {
 					Query:          acc.query,
 					Success:        success,
 					Data:           acc.data,
+					RowsAffected:   int64(len(acc.data)),
 					Duration:       &durationMs,
 					Timestamp:      time.Now().Format(time.RFC3339Nano),
 				}
@@ -257,8 +249,14 @@ func (pc *proxyConnection) logQuery(pq pendingQuery, response *mongoMessage) {
 		Timestamp:      time.Now().Format(time.RFC3339Nano),
 	}
 
-	if ri.n > 0 {
-		msg.RowsAffected = &ri.n
+	// Rows changed by a write, or returned by a read
+	switch cmdName {
+	case "find", "getMore", "aggregate", "findAndModify":
+		msg.RowsAffected = int64(len(ri.data))
+	case "update":
+		msg.RowsAffected = ri.nModified
+	default:
+		msg.RowsAffected = ri.n
 	}
 	if ri.errmsg != "" {
 		msg.Error = ri.errmsg

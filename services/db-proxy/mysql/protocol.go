@@ -124,6 +124,30 @@ func extractOKAffectedRows(payload []byte) int64 {
 	return int64(val)
 }
 
+// serverMoreResultsExists is the status flag the server sets on a result
+// that more results follow (several statements, or a CALL)
+const serverMoreResultsExists = 0x0008
+
+// okMoreResults reports whether an OK packet says more results follow:
+// header, affected rows and last insert ID (length-encoded), status flags.
+func okMoreResults(payload []byte) bool {
+	pos := 1
+	for i := 0; i < 2; i++ {
+		_, n := readLenEncInt(payload[min(pos, len(payload)):])
+		if n == 0 {
+			return false
+		}
+		pos += n
+	}
+	return pos+2 <= len(payload) && binary.LittleEndian.Uint16(payload[pos:])&serverMoreResultsExists != 0
+}
+
+// eofMoreResults reports whether an EOF packet says more results follow:
+// header, warnings, status flags.
+func eofMoreResults(payload []byte) bool {
+	return len(payload) >= 5 && binary.LittleEndian.Uint16(payload[3:])&serverMoreResultsExists != 0
+}
+
 // readLenEncInt reads a length-encoded integer from a byte slice.
 // Returns the value and number of bytes consumed.
 func readLenEncInt(data []byte) (uint64, int) {

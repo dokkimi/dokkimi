@@ -41,9 +41,11 @@ func (p *Proxy) handleConnection(clientConn net.Conn) {
 			return
 		}
 
-		if isSSLRequest(raw) {
+		// Encryption would hide the traffic: refuse it, and the client goes on
+		// without it, with its next startup message
+		if isSSLRequest(raw) || isGSSRequest(raw) {
 			if _, err := clientConn.Write([]byte{'N'}); err != nil {
-				log.Printf("failed to deny SSL: %v", err)
+				log.Printf("failed to deny encryption: %v", err)
 				return
 			}
 			continue
