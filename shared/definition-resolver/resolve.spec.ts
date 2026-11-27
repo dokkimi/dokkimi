@@ -33,7 +33,10 @@ function minimalDef(
     healthCheck: '/health',
   };
   const finalItems = items.length > 0 ? items : [defaultItem];
-  return { name, items: finalItems, ...extra };
+  const tests = [
+    { name: 't', steps: [{ action: { type: 'wait', durationMs: 1 } }] },
+  ];
+  return { name, items: finalItems, tests, ...extra };
 }
 
 afterAll(() => {
@@ -146,7 +149,6 @@ describe('consumedFiles tracking', () => {
       'test.json',
       minimalDef('with-vars', [], {
         variables: { $ref: './shared/vars.json' },
-        tests: [],
       }),
     );
 
@@ -241,7 +243,7 @@ describe('build-time variable interpolation in items', () => {
       type: 'DATABASE',
       name: 'my-db',
       database: 'postgres',
-      password: '{{DB_PASSWORD}}',
+      dbPassword: '{{DB_PASSWORD}}',
     });
     const defPath = writeFile(
       dokkimiDir,
@@ -255,7 +257,7 @@ describe('build-time variable interpolation in items', () => {
 
     expect(result.errors.filter((e) => e.errors.length > 0)).toEqual([]);
     const item = (result.definitions[0].definition.items as any[])[0];
-    expect(item.password).toBe('changeme');
+    expect(item.dbPassword).toBe('changeme');
   });
 
   it('uses config.yaml env as baseline for variables', () => {
@@ -517,4 +519,45 @@ describe('build-time variable interpolation in items', () => {
     expect(errs[0].errors[0]).toContain('Invalid variable references');
     expect(errs[0].errors[0]).toContain('{{HOST}}');
   });
+});
+
+describe('files that are not definitions', () => {
+  // Before, a definition with a mistake in "name" or "items" was skipped like
+  // a fragment: no definitions, no errors, and `validate` said all was valid.
+  it.each([
+    [{ name: 123 }, 'missing or empty "name"'],
+    [{ item: [] }, 'definition: unknown property "item"'],
+  ])('reports a definition with %j', (broken, message) => {
+    const dokkimiDir = createTempDokkimi();
+    const { items: _items, ...def } = minimalDef('d');
+    writeFile(dokkimiDir, 'd.json', { ...def, ...broken });
+    const result = resolveDefinitions(dokkimiDir);
+    expect(result.definitions).toHaveLength(0);
+    expect(result.errors.flatMap((e) => e.errors)).toContain(message);
+  });
+
+  it('still skips fragments', () => {
+    const dokkimiDir = createTempDokkimi();
+    writeFile(dokkimiDir, 'shared/db.json', {
+      type: 'DATABASE',
+      name: 'db',
+      database: 'postgres',
+    });
+    writeFile(dokkimiDir, 'shared/vars.json', { items: [1, 2] });
+    writeFile(dokkimiDir, 'd.json', minimalDef('d'));
+    const result = resolveDefinitions(dokkimiDir);
+    expect(result.errors.flatMap((e) => e.errors)).toEqual([]);
+    expect(result.definitions).toHaveLength(1);
+  });
+});
+
+it('removes "$schema" before submitting', () => {
+  const dokkimiDir = createTempDokkimi();
+  writeFile(dokkimiDir, 'd.json', {
+    $schema: './dokkimi.schema.json',
+    ...minimalDef('d'),
+  });
+  const result = resolveDefinitions(dokkimiDir);
+  expect(result.errors.flatMap((e) => e.errors)).toEqual([]);
+  expect(result.definitions[0].definition).not.toHaveProperty('$schema');
 });

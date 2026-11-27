@@ -6,9 +6,7 @@ import {
   VALID_ITEM_TYPES,
   VALID_DATABASES,
   VALID_BROKERS,
-  VALID_HTTP_METHODS,
   VALID_MOCK_METHODS,
-  VALID_REQUEST_PROTOCOLS,
   PORT_MIN,
   PORT_MAX,
   MOCK_RESPONSE_STATUS_MIN,
@@ -555,52 +553,6 @@ function validateMockItem(
   }
 }
 
-function validateHttpRequestItem(
-  item: Record<string, unknown>,
-  label: string,
-  r: ValidationResult,
-): void {
-  if (
-    !item.requestMethod ||
-    !VALID_HTTP_METHODS.includes(
-      item.requestMethod as (typeof VALID_HTTP_METHODS)[number],
-    )
-  ) {
-    err(r, `${label}: HTTP_REQUEST requires valid "requestMethod"`);
-  }
-  if (!item.requestUrl || typeof item.requestUrl !== 'string') {
-    err(r, `${label}: HTTP_REQUEST requires "requestUrl" (string)`);
-  }
-  if (!item.requestTarget || typeof item.requestTarget !== 'string') {
-    err(r, `${label}: HTTP_REQUEST requires "requestTarget" (string)`);
-  }
-  if (item.requestProtocol !== undefined) {
-    if (
-      !VALID_REQUEST_PROTOCOLS.includes(
-        item.requestProtocol as (typeof VALID_REQUEST_PROTOCOLS)[number],
-      )
-    ) {
-      err(
-        r,
-        `${label}: requestProtocol must be one of: ${VALID_REQUEST_PROTOCOLS.join(', ')}`,
-      );
-    }
-  }
-}
-
-function validateDbQueryItem(
-  item: Record<string, unknown>,
-  label: string,
-  r: ValidationResult,
-): void {
-  if (!item.queryTarget || typeof item.queryTarget !== 'string') {
-    err(r, `${label}: DB_QUERY requires "queryTarget" (string)`);
-  }
-  if (!item.queryText || typeof item.queryText !== 'string') {
-    err(r, `${label}: DB_QUERY requires "queryText" (string)`);
-  }
-}
-
 // ---------------------------------------------------------------------------
 // Init file validation
 // ---------------------------------------------------------------------------
@@ -712,12 +664,6 @@ export function validateItem(
       break;
     case 'MOCK':
       validateMockItem(item, label, r);
-      break;
-    case 'HTTP_REQUEST':
-      validateHttpRequestItem(item, label, r);
-      break;
-    case 'DB_QUERY':
-      validateDbQueryItem(item, label, r);
       break;
   }
 }

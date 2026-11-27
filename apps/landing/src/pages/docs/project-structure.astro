@@ -20,7 +20,7 @@ import CodeBlock from '../../components/CodeBlock.astro';
   <p>Dokkimi distinguishes file types by their JSON shape, not by folder or naming convention:</p>
 
   <h3>Runnable definition</h3>
-  <p>Has top-level <code>name</code> (string) + <code>items</code> (array):</p>
+  <p>Has top-level <code>name</code> (string) + <code>items</code> (array), and needs at least one test in <code>tests</code>. A <code>$schema</code> key (for editors) is allowed and removed before the run:</p>
   <CodeBlock code={`{
   "name": "my-test-suite",
   "config": { "timeoutSeconds": 300 },
@@ -30,13 +30,14 @@ import CodeBlock from '../../components/CodeBlock.astro';
 }`} lang="json" />
 
   <h3>Shared fragment</h3>
-  <p>Any JSON file that does NOT have both <code>name</code> + <code>items</code>. Typically a single item object:</p>
+  <p>Any JSON file that does NOT have both <code>name</code> + <code>items</code>, and has no <code>tests</code>. A file with <code>tests</code> is a definition: if its <code>name</code> or <code>items</code> is wrong, that's reported as an error rather than the file being skipped. Typically a single item object:</p>
   <CodeBlock code={`{
   "type": "DATABASE",
   "name": "postgres-db",
   "database": "postgres"
 }`} lang="json" />
   <p>Fragments are not runnable on their own — they exist to be referenced via <a href="/docs/refs"><code>$ref</code></a> from runnable definitions.</p>
+  <p><strong>Unknown keys are errors.</strong> A key a definition or fragment doesn't support, usually a typo (<code>filter</code> for <code>where</code>, <code>step</code> for <code>steps</code>), fails validation rather than being ignored, because ignoring it would silently change what a test checks. So does an assertion block that checks nothing.</p>
 
   <h2>Definition config block</h2>
   <p>The optional <code>config</code> object in a definition holds run-level settings:</p>

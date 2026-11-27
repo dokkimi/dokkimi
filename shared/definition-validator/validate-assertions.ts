@@ -17,7 +17,6 @@ import {
 import {
   ValidationResult,
   err,
-  warn,
   checkUnknownKeys,
   validatePathFormat,
 } from './validate-helpers';
@@ -230,7 +229,7 @@ export function validateExtractRules(
         const validKeys = new Set(['path', 'from', 'transform']);
         for (const k of Object.keys(rule)) {
           if (!validKeys.has(k)) {
-            warn(r, `${eCtx}: unknown key "${k}"`);
+            err(r, `${eCtx}: unknown property "${k}"`);
           }
         }
         if (hasPattern) {
@@ -267,7 +266,7 @@ export function validateExtractRules(
         const validKeys = new Set(['path', 'pattern', 'group']);
         for (const k of Object.keys(rule)) {
           if (!validKeys.has(k)) {
-            warn(r, `${eCtx}: unknown key "${k}"`);
+            err(r, `${eCtx}: unknown property "${k}"`);
           }
         }
         if (typeof rule.path !== 'string' || !rule.path) {
@@ -400,6 +399,22 @@ export function validateAssertionBlock(
   r: ValidationResult,
 ): void {
   checkUnknownKeys(block, VALID_ASSERTION_BLOCK_KEYS, ctx, r);
+
+  // A block that checks nothing is a mistake, most often an assertion
+  // written without its block
+  const checks = ['match', 'extract', 'forEach', 'for', 'repeat'].some(
+    (k) => block[k] !== undefined,
+  );
+  const hasAssertions =
+    Array.isArray(block.assertions) && block.assertions.length > 0;
+  if (!checks && !hasAssertions) {
+    err(
+      r,
+      'path' in block || 'operator' in block || 'count' in block
+        ? `${ctx}: an assertion must be inside a block's "assertions" list: { assertions: [ { path, operator, value } ] }`
+        : `${ctx}: block checks nothing — give it "assertions", "match" or "extract"`,
+    );
+  }
 
   if (block.match !== undefined) {
     validateMatchCriteria(block.match, `${ctx}.match`, r);

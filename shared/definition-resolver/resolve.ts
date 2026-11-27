@@ -248,9 +248,13 @@ export function resolveDefinitions(target?: string): ResolverResult {
 
     const obj = parsed as Record<string, unknown>;
 
+    // A file with a string name and an items list is a definition. Others
+    // are fragments (items, actions, sub-steps, variables), skipped here and
+    // checked by the definitions using them, unless they have "tests": that
+    // is a definition with a mistake, which mustn't be skipped silently.
     const hasName = typeof obj.name === 'string';
     const hasItems = Array.isArray(obj.items);
-    if (!hasName || !hasItems) {
+    if ((!hasName || !hasItems) && obj.tests === undefined) {
       continue;
     }
 
@@ -331,9 +335,10 @@ export function resolveDefinitions(target?: string): ResolverResult {
       continue;
     }
 
-    // Build the fully resolved definition
+    // Build the fully resolved definition; "$schema" is only for editors
+    const { $schema: _schema, ...defFields } = obj;
     const resolvedDef: Record<string, unknown> = {
-      ...obj,
+      ...defFields,
       items: resolvedItems.map((ri) => ri.item),
     };
 

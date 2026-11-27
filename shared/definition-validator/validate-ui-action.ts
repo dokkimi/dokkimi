@@ -120,7 +120,7 @@ function validateUiSubStep(
       !VALID_UI_SUB_STEP_OPTIONAL_KEYS.has(k),
   );
   for (const k of unknownKeys) {
-    warn(r, `${ctx}: unknown sub-step key "${k}"`);
+    err(r, `${ctx}: unknown sub-step key "${k}"`);
   }
 
   // Optional per-sub-step timeout. Must be a positive integer (ms).

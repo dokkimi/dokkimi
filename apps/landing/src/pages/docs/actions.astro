@@ -113,7 +113,7 @@ import CodeBlock from '../../components/CodeBlock.astro';
     ]
   }
 }`} lang="json" />
-  <p>Each entry in <code>actions</code> is an <code>httpRequest</code> or <code>dbQuery</code>; <code>wait</code> and <code>ui</code> go in their own steps. All actions within <code>parallel</code> fire at the same time. Use this to test concurrent access patterns or to speed up independent setup steps. See <a href="/docs/tests-and-steps">Tests &amp; Steps</a> for more on parallel vs sequential execution.</p>
+  <p>Each entry in <code>actions</code> is an <code>httpRequest</code> or <code>dbQuery</code>, run once (no <code>forEach</code>, <code>for</code> or <code>repeat</code>; loop the step instead); <code>wait</code> and <code>ui</code> go in their own steps. All actions within <code>parallel</code> fire at the same time. Use this to test concurrent access patterns or to speed up independent setup steps. See <a href="/docs/tests-and-steps">Tests &amp; Steps</a> for more on parallel vs sequential execution.</p>
 
   <h2>Database Query</h2>
 
@@ -238,7 +238,7 @@ import CodeBlock from '../../components/CodeBlock.astro';
   </table>
 
   <h3>Visual regression with screenshots</h3>
-  <p>Screenshots captured during a test run are saved as artifacts. To enable visual regression testing, use the object form and add <code>match: true</code>:</p>
+  <p>Screenshots captured during a test run are saved as artifacts, by name, so each screenshot name must be unique within a definition. To enable visual regression testing, use the object form and add <code>match: true</code>:</p>
   <CodeBlock code={`{ "screenshot": { "name": "checkout-page", "match": true } }`} lang="json" />
   <p>To change the defaults, set <code>match</code> to an object instead. <code>threshold</code> is the fraction of pixels allowed to differ (0 to 1, default 0.01), and <code>ignoreRegions</code> lists selectors masked out before comparing:</p>
   <CodeBlock code={`{

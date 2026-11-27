@@ -82,7 +82,7 @@ describe('validateItem', () => {
       );
     });
 
-    it('warns on unknown properties', () => {
+    it('rejects unknown properties', () => {
       const r = makeResult();
       validateItem(
         {
@@ -97,9 +97,9 @@ describe('validateItem', () => {
         r,
         fs,
       );
-      expect(
-        r.warnings.some((w) => w.includes('unknown property "bogus"')),
-      ).toBe(true);
+      expect(r.errors.some((w) => w.includes('unknown property "bogus"'))).toBe(
+        true,
+      );
     });
 
     it('errors on maxCpu and maxMemory that are not positive', () => {
@@ -197,7 +197,7 @@ describe('validateItem', () => {
       expect(r.errors).toHaveLength(0);
     });
 
-    it('warns on stage on MOCK (unknown property)', () => {
+    it('rejects stage on MOCK (unknown property)', () => {
       const r = makeResult();
       validateItem(
         {
@@ -213,9 +213,9 @@ describe('validateItem', () => {
         r,
         fs,
       );
-      expect(
-        r.warnings.some((w) => w.includes('unknown property "stage"')),
-      ).toBe(true);
+      expect(r.errors.some((w) => w.includes('unknown property "stage"'))).toBe(
+        true,
+      );
     });
 
     it('errors on negative stage', () => {
@@ -547,7 +547,7 @@ describe('validateItem', () => {
       ).toBe(true);
     });
 
-    it('warns on port field', () => {
+    it('rejects port field', () => {
       const r = makeResult();
       validateItem(
         {
@@ -561,10 +561,10 @@ describe('validateItem', () => {
         r,
         fs,
       );
-      expect(r.warnings.some((w) => w.includes('"port"'))).toBe(true);
+      expect(r.errors.some((w) => w.includes('"port"'))).toBe(true);
     });
 
-    it('warns on healthCheck field', () => {
+    it('rejects healthCheck field', () => {
       const r = makeResult();
       validateItem(
         {
@@ -578,7 +578,7 @@ describe('validateItem', () => {
         r,
         fs,
       );
-      expect(r.warnings.some((w) => w.includes('"healthCheck"'))).toBe(true);
+      expect(r.errors.some((w) => w.includes('"healthCheck"'))).toBe(true);
     });
   });
 
@@ -1354,156 +1354,7 @@ describe('validateItem', () => {
       expect(r.errors.some((e) => e.includes('mutually exclusive'))).toBe(true);
     });
   });
-
-  describe('HTTP_REQUEST', () => {
-    it('validates a valid HTTP_REQUEST', () => {
-      const r = makeResult();
-      validateItem(
-        {
-          type: 'HTTP_REQUEST',
-          name: 'req',
-          requestMethod: 'GET',
-          requestUrl: '/api',
-          requestTarget: 'svc',
-        },
-        0,
-        '/f.json',
-        r,
-        fs,
-      );
-      expect(r.errors).toHaveLength(0);
-    });
-
-    it('errors on missing requestMethod', () => {
-      const r = makeResult();
-      validateItem(
-        {
-          type: 'HTTP_REQUEST',
-          name: 'req',
-          requestUrl: '/api',
-          requestTarget: 'svc',
-        },
-        0,
-        '/f.json',
-        r,
-        fs,
-      );
-      expect(
-        r.errors.some((e) => e.includes('requires valid "requestMethod"')),
-      ).toBe(true);
-    });
-
-    it('errors on missing requestUrl', () => {
-      const r = makeResult();
-      validateItem(
-        {
-          type: 'HTTP_REQUEST',
-          name: 'req',
-          requestMethod: 'GET',
-          requestTarget: 'svc',
-        },
-        0,
-        '/f.json',
-        r,
-        fs,
-      );
-      expect(r.errors.some((e) => e.includes('requires "requestUrl"'))).toBe(
-        true,
-      );
-    });
-
-    it('errors on missing requestTarget', () => {
-      const r = makeResult();
-      validateItem(
-        {
-          type: 'HTTP_REQUEST',
-          name: 'req',
-          requestMethod: 'GET',
-          requestUrl: '/api',
-        },
-        0,
-        '/f.json',
-        r,
-        fs,
-      );
-      expect(r.errors.some((e) => e.includes('requires "requestTarget"'))).toBe(
-        true,
-      );
-    });
-
-    it('errors on invalid requestProtocol', () => {
-      const r = makeResult();
-      validateItem(
-        {
-          type: 'HTTP_REQUEST',
-          name: 'req',
-          requestMethod: 'GET',
-          requestUrl: '/api',
-          requestTarget: 'svc',
-          requestProtocol: 'ftp',
-        },
-        0,
-        '/f.json',
-        r,
-        fs,
-      );
-      expect(
-        r.errors.some((e) => e.includes('requestProtocol must be one of')),
-      ).toBe(true);
-    });
-  });
-
-  describe('DB_QUERY', () => {
-    it('validates a valid DB_QUERY', () => {
-      const r = makeResult();
-      validateItem(
-        {
-          type: 'DB_QUERY',
-          name: 'query',
-          queryTarget: 'pg',
-          queryText: 'SELECT 1',
-        },
-        0,
-        '/f.json',
-        r,
-        fs,
-      );
-      expect(r.errors).toHaveLength(0);
-    });
-
-    it('errors on missing queryTarget', () => {
-      const r = makeResult();
-      validateItem(
-        { type: 'DB_QUERY', name: 'query', queryText: 'SELECT 1' },
-        0,
-        '/f.json',
-        r,
-        fs,
-      );
-      expect(r.errors.some((e) => e.includes('requires "queryTarget"'))).toBe(
-        true,
-      );
-    });
-
-    it('errors on missing queryText', () => {
-      const r = makeResult();
-      validateItem(
-        { type: 'DB_QUERY', name: 'query', queryTarget: 'pg' },
-        0,
-        '/f.json',
-        r,
-        fs,
-      );
-      expect(r.errors.some((e) => e.includes('requires "queryText"'))).toBe(
-        true,
-      );
-    });
-  });
 });
-
-// ---------------------------------------------------------------------------
-// validateInitFile
-// ---------------------------------------------------------------------------
 
 describe('validateInitFile', () => {
   it('passes when file exists', () => {

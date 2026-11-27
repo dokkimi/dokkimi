@@ -1,5 +1,5 @@
 import { validateDefinition } from './validate';
-import { makeMockFs, makeResult } from './test-helpers';
+import { makeMockFs, makeResult, ONE_TEST } from './test-helpers';
 
 function validateMock(
   mock: Record<string, unknown>,
@@ -8,6 +8,7 @@ function validateMock(
   const r = makeResult();
   validateDefinition(
     {
+      tests: ONE_TEST,
       name: 'def',
       items: [
         { type: 'SERVICE', name: 'svc', image: 'i', port: 1, healthCheck: '/' },

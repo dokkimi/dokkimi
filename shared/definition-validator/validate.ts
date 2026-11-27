@@ -66,7 +66,9 @@ export function validateDefinition(
 
   validateVariablesField(parsed.variables, 'definition', filePath, r, fs);
 
-  if (parsed.tests !== undefined) {
+  if (parsed.tests === undefined) {
+    err(r, 'a definition needs "tests"');
+  } else {
     validateTests(parsed.tests, r, filePath, fs);
   }
 

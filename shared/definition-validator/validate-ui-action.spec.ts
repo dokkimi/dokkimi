@@ -86,12 +86,10 @@ describe('ui sub-step dispatch', () => {
     expect(r.errors.some((e) => e.includes('multiple kind keys'))).toBe(true);
   });
 
-  it('warns on unknown auxiliary keys next to a valid kind', () => {
+  it('rejects unknown auxiliary keys next to a valid kind', () => {
     const r = makeResult();
     validateStep(stepWith([{ visit: '/', bogus: true }]), 'ctx', r);
-    expect(r.warnings.some((w) => w.includes('unknown sub-step key'))).toBe(
-      true,
-    );
+    expect(r.errors.some((w) => w.includes('unknown sub-step key'))).toBe(true);
   });
 
   it('errors when sub-step is not an object', () => {
@@ -221,14 +219,14 @@ describe('type sub-step', () => {
     ).toBe(true);
   });
 
-  it('warns on unknown keys inside type value', () => {
+  it('rejects unknown keys inside type value', () => {
     const r = makeResult();
     validateStep(
       stepWith([{ type: { selector: '#a', text: 'x', extra: 1 } }]),
       'ctx',
       r,
     );
-    expect(r.warnings.some((w) => w.includes('unknown property "extra"'))).toBe(
+    expect(r.errors.some((w) => w.includes('unknown property "extra"'))).toBe(
       true,
     );
   });

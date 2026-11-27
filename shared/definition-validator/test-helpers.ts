@@ -15,3 +15,8 @@ export function makeMockFs(files: Record<string, string> = {}): FileSystem {
     },
   };
 }
+
+/** The smallest valid "tests", for definitions that test something else */
+export const ONE_TEST = [
+  { name: 't', steps: [{ action: { type: 'wait', durationMs: 1 } }] },
+];

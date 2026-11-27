@@ -4,7 +4,6 @@ import {
   ValidationResult,
   FileSystem,
   err,
-  warn,
   MAX_REF_DEPTH,
 } from './validate-helpers';
 
@@ -304,7 +303,7 @@ function resolveActionRef(
     (k) => k !== 'action' && !FRAGMENT_META_KEYS.has(k),
   );
   if (unknownKeys.length > 0) {
-    warn(
+    err(
       r,
       `${ctx}.$ref: "${refValue}" has extra keys (${unknownKeys.join(', ')}) — only "action", "name", "description" are recognized`,
     );
@@ -417,7 +416,7 @@ function expandSubStepRefs(
       (k) => k !== 'steps' && !FRAGMENT_META_KEYS.has(k),
     );
     if (unknownKeys.length > 0) {
-      warn(
+      err(
         r,
         `${ctx}.steps[${i}].$ref: "${refValue}" has extra keys (${unknownKeys.join(', ')}) — only "steps", "name", "description" are recognized`,
       );

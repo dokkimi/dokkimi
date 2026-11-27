@@ -10,8 +10,6 @@ export const VALID_ITEM_TYPES = [
   'DATABASE',
   'BROKER',
   'MOCK',
-  'HTTP_REQUEST',
-  'DB_QUERY',
 ] as const;
 export type ItemType = (typeof VALID_ITEM_TYPES)[number];
 
@@ -37,8 +35,6 @@ export const VALID_HTTP_METHODS = [
 /** HTTP methods valid for MOCK items (includes wildcard) */
 export const VALID_MOCK_METHODS = [...VALID_HTTP_METHODS, '*'] as const;
 
-export const VALID_REQUEST_PROTOCOLS = ['http', 'https'] as const;
-
 export const PORT_MIN = 1;
 export const PORT_MAX = 65535;
 
@@ -50,6 +46,8 @@ export const MOCK_RESPONSE_STATUS_MAX = 599;
 // ---------------------------------------------------------------------------
 
 export const VALID_DEFINITION_KEYS = new Set([
+  // For editors; removed before the definition is submitted
+  '$schema',
   'name',
   'description',
   'items',
@@ -147,27 +145,6 @@ export const VALID_ITEM_KEYS: Record<string, Set<string>> = {
     'mockRequestBodyMatches',
     'mockResponseHeaders',
     'mockResponseBody',
-  ]),
-  HTTP_REQUEST: new Set([
-    'type',
-    'name',
-    'description',
-    '$ref',
-    'requestMethod',
-    'requestProtocol',
-    'requestUrl',
-    'requestHeaders',
-    'requestBody',
-    'requestTarget',
-  ]),
-  DB_QUERY: new Set([
-    'type',
-    'name',
-    'description',
-    '$ref',
-    'queryTarget',
-    'queryText',
-    'queryParams',
   ]),
 };
 

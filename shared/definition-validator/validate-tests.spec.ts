@@ -31,15 +31,24 @@ describe('validateTests', () => {
 
   it.each([
     [{ name: 'no steps' }, 'a test needs "steps"'],
-    [
-      { name: 'typo', stpes: [{ action: { type: 'wait', durationMs: 1 } }] },
-      'a test needs "steps"',
-    ],
     [{ name: 'empty', steps: [] }, 'a test needs at least one step'],
   ])('rejects a test that runs nothing: %j', (test, message) => {
     const r = makeResult();
     validateTests([test], r, defFile, mockFs);
     expect(r.errors).toEqual([`tests[0]: ${message}`]);
+  });
+
+  it('rejects a misspelled "steps"', () => {
+    const r = makeResult();
+    const test = {
+      name: 'typo',
+      stpes: [{ action: { type: 'wait', durationMs: 1 } }],
+    };
+    validateTests([test], r, defFile, mockFs);
+    expect(r.errors).toEqual([
+      'tests[0]: unknown property "stpes"',
+      'tests[0]: a test needs "steps"',
+    ]);
   });
 
   it('accepts steps next to a test-level loop', () => {
@@ -65,10 +74,10 @@ describe('validateTests', () => {
     expect(r.errors[0]).toContain('"tests" must be an array');
   });
 
-  it('warns on legacy object format', () => {
+  it('rejects the old object format', () => {
     const r = makeResult();
     validateTests({ legacy: true }, r, defFile, mockFs);
-    expect(r.warnings.some((w) => w.includes('legacy'))).toBe(true);
+    expect(r.errors).toEqual(['"tests" must be an array of test definitions']);
   });
 
   it('errors when test entry is not an object', () => {
@@ -85,7 +94,7 @@ describe('validateTests', () => {
     );
   });
 
-  it('warns on unknown test keys', () => {
+  it('rejects unknown test keys', () => {
     const r = makeResult();
     validateTests(
       [{ name: 'test', steps: [], bogus: true }],
@@ -93,7 +102,7 @@ describe('validateTests', () => {
       defFile,
       mockFs,
     );
-    expect(r.warnings.some((w) => w.includes('unknown property "bogus"'))).toBe(
+    expect(r.errors.some((w) => w.includes('unknown property "bogus"'))).toBe(
       true,
     );
   });
@@ -643,7 +652,7 @@ describe('validateStep', () => {
     expect(r.errors[0]).toContain('missing "action" object');
   });
 
-  it('warns on unknown step keys', () => {
+  it('rejects unknown step keys', () => {
     const r = makeResult();
     validateStep(
       {
@@ -653,7 +662,7 @@ describe('validateStep', () => {
       'ctx',
       r,
     );
-    expect(r.warnings.some((w) => w.includes('unknown property "bogus"'))).toBe(
+    expect(r.errors.some((w) => w.includes('unknown property "bogus"'))).toBe(
       true,
     );
   });
@@ -801,10 +810,10 @@ describe('validateStep', () => {
   });
 
   describe('unknown action type', () => {
-    it('warns on unknown action type', () => {
+    it('rejects unknown action type', () => {
       const r = makeResult();
       validateStep({ action: { type: 'unknown' } }, 'ctx', r);
-      expect(r.warnings.some((w) => w.includes('unknown action type'))).toBe(
+      expect(r.errors.some((w) => w.includes('unknown action type'))).toBe(
         true,
       );
     });

@@ -91,6 +91,10 @@ export function warn(r: ValidationResult, msg: string) {
   r.warnings.push(msg);
 }
 
+/**
+ * An unknown key is an error: it is usually a typo (`filter` for `where`,
+ * `step` for `steps`), and ignoring it silently changes what a test checks.
+ */
 export function checkUnknownKeys(
   obj: Record<string, unknown>,
   validKeys: Set<string>,
@@ -99,7 +103,37 @@ export function checkUnknownKeys(
 ): void {
   for (const key of Object.keys(obj)) {
     if (!validKeys.has(key)) {
-      warn(r, `${ctx}: unknown property "${key}"`);
+      err(r, `${ctx}: unknown property "${key}"`);
+    }
+  }
+}
+
+type FieldType = 'string' | 'boolean' | 'integer' | 'object';
+
+/**
+ * Fields that are present must have their type: the test agent can't read a
+ * definition with any field of the wrong type, and fails to start.
+ */
+export function checkFieldTypes(
+  obj: Record<string, unknown>,
+  types: Record<string, FieldType>,
+  ctx: string,
+  r: ValidationResult,
+): void {
+  for (const [key, type] of Object.entries(types)) {
+    const v = obj[key];
+    if (v === undefined) {
+      continue;
+    }
+    const ok =
+      type === 'integer'
+        ? Number.isInteger(v)
+        : type === 'object'
+          ? typeof v === 'object' && v !== null && !Array.isArray(v)
+          : typeof v === type;
+    if (!ok) {
+      const article = type === 'integer' || type === 'object' ? 'an' : 'a';
+      err(r, `${ctx}: "${key}" must be ${article} ${type}`);
     }
   }
 }

@@ -12,6 +12,7 @@ import {
   err,
   warn,
   checkUnknownKeys,
+  checkFieldTypes,
   MAX_REF_DEPTH,
 } from './validate-helpers';
 import {
@@ -202,6 +203,17 @@ export function validateStep(
   }
 
   checkUnknownKeys(step, VALID_STEP_KEYS, ctx, r);
+  checkFieldTypes(
+    step,
+    {
+      name: 'string',
+      description: 'string',
+      stopOnFailure: 'boolean',
+      extract: 'object',
+    },
+    ctx,
+    r,
+  );
 
   // When a step-level loop is present, action lives inside the loop body
   const hasLoopModifier =
@@ -268,6 +280,21 @@ export function validateStep(
     ) {
       err(r, `${ctx}.action: "timeout" must be a positive integer (ms)`);
     }
+    checkFieldTypes(action, { headers: 'object' }, `${ctx}.action`, r);
+    if (
+      action.headers &&
+      typeof action.headers === 'object' &&
+      !Array.isArray(action.headers)
+    ) {
+      for (const [h, v] of Object.entries(action.headers)) {
+        if (typeof v !== 'string') {
+          err(
+            r,
+            `${ctx}.action.headers: "${h}" must be a string — quote it: "${String(v)}"`,
+          );
+        }
+      }
+    }
   } else if (action.type === 'dbQuery') {
     checkUnknownKeys(action, VALID_ACTION_KEYS.dbQuery, `${ctx}.action`, r);
     if (typeof action.database !== 'string') {
@@ -279,6 +306,12 @@ export function validateStep(
     if (typeof action.query !== 'string') {
       err(r, `${ctx}.action: dbQuery requires "query" (string)`);
     }
+    checkFieldTypes(
+      action,
+      { params: 'object', timeout: 'integer' },
+      `${ctx}.action`,
+      r,
+    );
   } else if (action.type === 'wait') {
     checkUnknownKeys(action, VALID_ACTION_KEYS.wait, `${ctx}.action`, r);
     if (
@@ -304,6 +337,15 @@ export function validateStep(
           `${ctx}.action.actions[${ai}]`,
           r,
         );
+        // The test agent runs each sub-action once
+        for (const loop of ['forEach', 'for', 'repeat']) {
+          if (subAction && typeof subAction === 'object' && loop in subAction) {
+            err(
+              r,
+              `${ctx}.action.actions[${ai}]: "${loop}" can't be used inside parallel — loop the step instead`,
+            );
+          }
+        }
       }
       // The test agent runs only httpRequest and dbQuery inside parallel
       for (let ai = 0; ai < action.actions.length; ai++) {
@@ -317,7 +359,10 @@ export function validateStep(
       }
     }
   } else if (action.type) {
-    warn(r, `${ctx}.action: unknown action type "${action.type}"`);
+    err(
+      r,
+      `${ctx}.action: unknown action type "${action.type}" — expected httpRequest, dbQuery, wait, ui or parallel`,
+    );
   } else {
     err(r, `${ctx}.action: missing "type"`);
   }
@@ -385,16 +430,16 @@ export function validateTests(
   fs: FileSystem,
 ): void {
   if (!Array.isArray(tests)) {
-    if (typeof tests === 'object' && tests !== null) {
-      warn(
-        r,
-        'tests: object format detected (legacy). Consider migrating to V3 array format.',
-      );
-    } else {
-      err(r, '"tests" must be an array of test definitions');
-    }
+    err(r, '"tests" must be an array of test definitions');
     return;
   }
+  if (tests.length === 0) {
+    err(r, 'a definition needs at least one test');
+    return;
+  }
+
+  // Screenshots are stored per definition, as screenshot/<name>.png
+  const screenshotNames = new Map<string, string>();
 
   for (let ti = 0; ti < tests.length; ti++) {
     const test = tests[ti] as Record<string, unknown>;
@@ -408,6 +453,12 @@ export function validateTests(
     if (typeof test.name !== 'string' || test.name.length === 0) {
       err(r, `${ctx}: missing or empty "name"`);
     }
+    checkFieldTypes(
+      test,
+      { description: 'string', stopOnFailure: 'boolean' },
+      ctx,
+      r,
+    );
 
     const { timeoutSeconds, ...knownTestKeys } = test;
     if (timeoutSeconds !== undefined) {
@@ -464,24 +515,26 @@ export function validateTests(
       // instance directory; two captures sharing a name within one test
       // would silently overwrite each other in storage. Covers both plain
       // screenshot primitives and visualMatch captures (same folder).
-      validateScreenshotNameUniqueness(test.steps, ctx, r);
+      validateScreenshotNameUniqueness(test.steps, ctx, screenshotNames, r);
     }
   }
 }
 
+/**
+ * seen: name → first location, across the definition's tests. Screenshots
+ * are stored as screenshot/<name>.png per definition; two captures sharing a
+ * name would overwrite each other (and make the baseline lookup ambiguous
+ * when `match` is set).
+ */
 function validateScreenshotNameUniqueness(
   steps: unknown,
   ctx: string,
+  seen: Map<string, string>,
   r: ValidationResult,
 ): void {
   if (!Array.isArray(steps)) {
     return;
   }
-  // name → first-occurrence location. Screenshots are stored as
-  // screenshot/<name>.png under the artifact directory; two captures sharing
-  // a name within one test would silently overwrite each other (and would
-  // ambiguate the baseline lookup when `match` is set).
-  const seen = new Map<string, string>();
   for (let si = 0; si < steps.length; si++) {
     const step = steps[si] as {
       action?: { type?: string; steps?: unknown[] };
@@ -503,7 +556,7 @@ function validateScreenshotNameUniqueness(
       if (prior) {
         err(
           r,
-          `${here}: duplicate screenshot name "${name}" — also used at ${prior}. Each artifact name must be unique within a test (artifacts are stored as screenshot/<name>.png and would overwrite each other).`,
+          `${here}: duplicate screenshot name "${name}" — also used at ${prior}. Each screenshot name must be unique within a definition (screenshots are stored as screenshot/<name>.png and would overwrite each other).`,
         );
       } else {
         seen.set(name, here);

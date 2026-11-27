@@ -625,7 +625,7 @@ describe('resolveActionRefs', () => {
     expect(r.warnings).toHaveLength(0);
   });
 
-  it('warns on unrecognized keys in fragment file', () => {
+  it('rejects unrecognized keys in fragment file', () => {
     const fs = makeMockFs({
       '/shared/extra.json': JSON.stringify({
         steps: [{ visit: '/home' }],
@@ -637,9 +637,8 @@ describe('resolveActionRefs', () => {
 
     resolveActionRefs(def, '/defs/test.json', r, fs);
 
-    expect(r.errors).toHaveLength(0);
-    expect(r.warnings).toHaveLength(1);
-    expect(r.warnings[0]).toContain('extra keys');
+    expect(r.errors).toHaveLength(1);
+    expect(r.errors[0]).toContain('extra keys');
   });
 
   it('handles empty steps array in fragment', () => {
@@ -883,7 +882,7 @@ describe('resolveActionRefs — action-level $ref', () => {
     expect(r.warnings).toHaveLength(0);
   });
 
-  it('warns on unrecognized keys in action fragment', () => {
+  it('rejects unrecognized keys in action fragment', () => {
     const fs = makeMockFs({
       '/shared/extra.json': JSON.stringify({
         action: { type: 'httpRequest', method: 'GET', url: 'svc/api' },
@@ -895,10 +894,9 @@ describe('resolveActionRefs — action-level $ref', () => {
 
     resolveActionRefs(def, '/defs/test.json', r, fs);
 
-    expect(r.errors).toHaveLength(0);
-    expect(r.warnings).toHaveLength(1);
-    expect(r.warnings[0]).toContain('extra keys');
-    expect(r.warnings[0]).toContain('foo');
+    expect(r.errors).toHaveLength(1);
+    expect(r.errors[0]).toContain('extra keys');
+    expect(r.errors[0]).toContain('foo');
   });
 
   it('overrides can change the database target', () => {
