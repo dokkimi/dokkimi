@@ -1,5 +1,5 @@
 import { formatDuration } from './formatting';
-import { fetchJson, sleep } from './cli-utils';
+import { fetchJson, sleep, LOST_CONTACT_MS } from './cli-utils';
 import type {
   RunStatusResponse,
   RunStatusInstance,
@@ -45,6 +45,7 @@ export async function pollForCompletionCI(
   }
 
   let latestStatus: RunStatusResponse | null = null;
+  let lastAnswerAt = runStart;
 
   while (true) {
     if (abort?.signal.aborted) {
@@ -67,12 +68,30 @@ export async function pollForCompletionCI(
       };
     }
 
+    // Before, a run whose Dokkimi died was polled until the timeout
+    if (Date.now() - lastAnswerAt > LOST_CONTACT_MS) {
+      console.log('');
+      console.log(
+        `[Dokkimi] \x1b[31mLost contact with Dokkimi: no answer for ${LOST_CONTACT_MS / 1000}s\x1b[0m`,
+      );
+      printStuckInstances(latestStatus);
+      return {
+        passed: false,
+        runId,
+        instances: [
+          ...(latestStatus?.instances ?? []),
+          ...skipped.filter((s) => !printedInstances.has(s.id)),
+        ],
+      };
+    }
+
     try {
       const result = await fetchJson<RunStatusResponse>(
         `${ctUrl}/runs/${runId}/status`,
       );
       if (result) {
         const now = Date.now();
+        lastAnswerAt = now;
         for (const inst of result.instances) {
           if (inst.status !== 'PENDING' && !instanceStartedAt.has(inst.id)) {
             instanceStartedAt.set(inst.id, now);

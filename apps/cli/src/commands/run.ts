@@ -1,4 +1,4 @@
-import { fetchJson, fetchAction } from '../lib/cli-utils';
+import { fetchJson, stopRun } from '../lib/cli-utils';
 import { loadConfig, buildServiceUrl } from '@dokkimi/config';
 import { checkForUpdate } from '../lib/update-check';
 import { type RunOnceResult } from '../lib/run-display';
@@ -137,7 +137,7 @@ export async function run(args: string[]): Promise<void> {
       await inFlight;
     } catch {}
     if (lastResult?.runId) {
-      await fetchAction(`${ctUrl}/runs/stop`, 'POST').catch(() => {});
+      await stopRun(ctUrl, lastResult.runId);
     }
     if (process.stdin.isTTY) {
       process.stdin.setRawMode(false);
@@ -175,7 +175,7 @@ export async function run(args: string[]): Promise<void> {
     }
     const runId = lastResult.runId;
     console.log('\x1b[90mStopping previous run...\x1b[0m');
-    await fetchAction(`${ctUrl}/runs/stop`, 'POST').catch(() => {});
+    await stopRun(ctUrl, runId);
 
     const maxWaitMs = 30_000;
     const pollIntervalMs = 500;
@@ -474,7 +474,7 @@ export async function run(args: string[]): Promise<void> {
       }).catch(() => {});
     }
     if (result?.runId) {
-      await fetchAction(`${ctUrl}/runs/stop`, 'POST');
+      await stopRun(ctUrl, result.runId);
     }
     process.exit(result?.passed ? 0 : 1);
   }
@@ -497,7 +497,7 @@ export async function run(args: string[]): Promise<void> {
       }).catch(() => {});
     }
     if (result?.runId) {
-      await fetchAction(`${ctUrl}/runs/stop`, 'POST');
+      await stopRun(ctUrl, result.runId);
     }
     process.exit(result?.passed ? 0 : 1);
   }

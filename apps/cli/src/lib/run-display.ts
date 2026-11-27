@@ -1,6 +1,6 @@
 import { formatDuration } from './formatting';
 import { enterAltScreen, exitAltScreen } from './terminal';
-import { fetchJson, sleep } from './cli-utils';
+import { fetchJson, sleep, LOST_CONTACT_MS } from './cli-utils';
 import {
   TERMINAL_INSTANCE_STATUSES,
   SPINNER_FRAMES,
@@ -57,8 +57,10 @@ export async function pollForCompletion(
   runId: string,
   abort?: AbortController,
   skippedInstances?: RunStatusInstance[],
+  timeoutMs?: number,
 ): Promise<RunOnceResult> {
   const runStart = Date.now();
+  let lastAnswerAt = runStart;
   const instanceStartedAt = new Map<string, number>();
   const instanceCompletedAt = new Map<string, number>();
   let tick = 0;
@@ -77,6 +79,7 @@ export async function pollForCompletion(
       );
       if (result) {
         const now = Date.now();
+        lastAnswerAt = now;
         for (const inst of result.instances) {
           // Track when each instance leaves PENDING (actually starts deploying)
           if (inst.status !== 'PENDING' && !instanceStartedAt.has(inst.id)) {
@@ -114,7 +117,15 @@ export async function pollForCompletion(
   try {
     // Render loop runs fast for smooth spinner + timer
     while (true) {
-      if (abort?.signal.aborted) {
+      // Before, a run whose Dokkimi died or never ended was polled forever
+      const endedBy = abort?.signal.aborted
+        ? `\x1b[33mStopped after ${formatDuration(Date.now() - runStart)}\x1b[0m`
+        : timeoutMs && Date.now() - runStart > timeoutMs
+          ? `\x1b[31mTimed out after ${formatDuration(timeoutMs)}\x1b[0m`
+          : Date.now() - lastAnswerAt > LOST_CONTACT_MS
+            ? `\x1b[31mLost contact with Dokkimi: no answer for ${LOST_CONTACT_MS / 1000}s. Check it with \`dokkimi status\`.\x1b[0m`
+            : null;
+      if (endedBy) {
         if (isTTY) {
           exitAltScreen();
           process.stdout.write('\x1b[u\x1b[J');
@@ -137,9 +148,7 @@ export async function pollForCompletion(
           console.log(lines.join('\n'));
         }
         console.log('');
-        console.log(
-          `\x1b[33mStopped after ${formatDuration(Date.now() - runStart)}\x1b[0m`,
-        );
+        console.log(endedBy);
         console.log('');
         return { passed: false, runId, instances: allInstances };
       }

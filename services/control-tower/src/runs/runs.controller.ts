@@ -11,6 +11,7 @@ import {
 import { RunsService } from './runs.service';
 import { CreateRunDto } from './dto/create-run.dto';
 import { SubmitInstanceDto } from './dto/submit-instance.dto';
+import { StopRunDto } from './dto/stop-run.dto';
 import { RunStorageService } from '../storage/run-storage.service';
 import { SubmissionRejectedInterceptor } from './submission-rejected.interceptor';
 
@@ -84,12 +85,14 @@ export class RunsController {
 
   /**
    * POST /runs/stop
-   * Stops the current run. Namespaces are torn down but DB logs and storage
-   * files are preserved for post-run analysis.
+   * Stops the active run, or with { runId } only that run, if it is active
+   * (so `dokkimi run` never stops another terminal's run). Namespaces are
+   * torn down but DB logs and storage files are preserved for post-run
+   * analysis.
    */
   @Post('stop')
-  stopCurrentRun() {
-    return this.runsService.stopCurrentRun();
+  stopCurrentRun(@Body() dto: StopRunDto) {
+    return this.runsService.stopCurrentRun(dto?.runId);
   }
 
   /**

@@ -406,6 +406,21 @@ describe('RunsService', () => {
       });
     });
 
+    // Before, `dokkimi run` stopped whichever run was active, even another
+    // terminal's
+    it('stops only the run asked for', async () => {
+      mockPrisma.run.findFirst.mockResolvedValue(null);
+
+      const result = await service.stopCurrentRun('run-2');
+
+      expect(mockPrisma.run.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'run-2', status: { in: ['PENDING', 'RUNNING'] } },
+        }),
+      );
+      expect(result).toEqual({ status: 'NO_ACTIVE_RUN' });
+    });
+
     it('should return NO_ACTIVE_RUN when nothing is running', async () => {
       mockPrisma.run.findFirst.mockResolvedValue(null);
 

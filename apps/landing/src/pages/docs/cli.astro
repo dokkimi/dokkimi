@@ -72,7 +72,7 @@ dokkimi run auth --watch`} lang="bash" />
       <tr><td><code>--watch, -w</code></td><td>Re-run automatically when definition files change</td></tr>
       <tr><td><code>--ci</code></td><td>CI-optimized output (no interactive UI, prints the run ID, exits with code 0/1)</td></tr>
       <tr><td><code>--failed</code></td><td>Re-run only definitions that failed in the last run</td></tr>
-      <tr><td><code>--timeout &lt;seconds&gt;</code></td><td>Fail if not complete within the timeout (default: 600 in CI mode)</td></tr>
+      <tr><td><code>--timeout=&lt;seconds&gt;</code></td><td>Fail if not complete within the timeout (default: 600 in CI mode). A run also fails if Dokkimi stops answering for 30 seconds.</td></tr>
       <tr><td><code>--junit &lt;path&gt;</code></td><td>Write a JUnit XML report to the given path after the run completes</td></tr>
     </tbody>
   </table>
@@ -227,7 +227,7 @@ dokkimi validate .dokkimi/auth.json  # Validate a specific file`} lang="bash" />
   <p>Scaffolds a <code>.dokkimi/</code> folder with a <code>config.yaml</code>, an example definition, a shared Postgres fragment, and an init script.</p>
 
   <h3>dokkimi stop</h3>
-  <p>Stops the current test run without cleaning up resources or history. If no run is active, reports that there is nothing to stop. Use <code>--json</code> for machine-readable output.</p>
+  <p>Stops the current test run, whichever terminal started it, without cleaning up resources or history. If no run is active, reports that there is nothing to stop. Use <code>--json</code> for machine-readable output. (When <code>dokkimi run</code> exits, it stops only its own run.)</p>
 
   <h3>dokkimi status</h3>
   <p>Shows the current state of Dokkimi services and any running test instances. Use <code>--json</code> for machine-readable output.</p>

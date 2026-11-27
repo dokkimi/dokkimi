@@ -1,6 +1,8 @@
 jest.mock('./cli-utils', () => ({
   fetchJson: jest.fn(),
   sleep: jest.fn(),
+  // More than the 1s poll interval, as the real 30s is
+  LOST_CONTACT_MS: 1500,
 }));
 jest.mock('./terminal', () => ({
   enterAltScreen: jest.fn(),
@@ -62,6 +64,40 @@ beforeEach(() => {
 });
 
 describe('pollForCompletion', () => {
+  // Before, a run whose Dokkimi died was polled forever
+  it('gives up when Dokkimi stops answering', async () => {
+    mockFetchJson.mockResolvedValue(null);
+
+    const result = await pollForCompletion('http://ct:19001', 'run-1');
+
+    expect(result.passed).toBe(false);
+    expect(console.log).toHaveBeenCalledWith(
+      expect.stringContaining('Lost contact with Dokkimi'),
+    );
+  });
+
+  // Before, --timeout was only used in CI mode
+  it('ends at the timeout', async () => {
+    mockFetchJson.mockResolvedValue({
+      runId: 'run-1',
+      status: 'RUNNING',
+      instances: [{ id: 'i1', name: 'test-a', status: 'RUNNING' }],
+    });
+
+    const result = await pollForCompletion(
+      'http://ct:19001',
+      'run-1',
+      undefined,
+      undefined,
+      20,
+    );
+
+    expect(result.passed).toBe(false);
+    expect(console.log).toHaveBeenCalledWith(
+      expect.stringContaining('Timed out'),
+    );
+  });
+
   it('returns passed=true when run status is COMPLETED', async () => {
     mockFetchJson.mockResolvedValue({
       runId: 'run-1',

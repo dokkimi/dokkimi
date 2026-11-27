@@ -8,6 +8,7 @@ import {
   formatUptime,
   formatAge,
   sleep,
+  stopRun,
 } from './cli-utils';
 
 // ---------------------------------------------------------------------------
@@ -77,6 +78,27 @@ describe('fetchAction', () => {
     mockFetch.mockRejectedValue(new Error('Connection refused'));
     const result = await fetchAction('http://localhost/api', 'POST');
     expect(result).toBe(false);
+  });
+});
+
+// Before, `dokkimi run` stopped whichever run was active, even another
+// terminal's
+describe('stopRun', () => {
+  it('asks to stop only its own run', async () => {
+    mockFetch.mockResolvedValue({ ok: true });
+    expect(await stopRun('http://ct', 'run-1')).toBe(true);
+    expect(mockFetch).toHaveBeenCalledWith(
+      'http://ct/runs/stop',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({ runId: 'run-1' }),
+      }),
+    );
+  });
+
+  it("returns false when Dokkimi can't be reached", async () => {
+    mockFetch.mockRejectedValue(new Error('Connection refused'));
+    expect(await stopRun('http://ct', 'run-1')).toBe(false);
   });
 });
 

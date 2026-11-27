@@ -7,6 +7,7 @@ import type { RunStatusInstance, RunStatusResponse } from './run-display';
 jest.mock('./cli-utils', () => ({
   fetchJson: jest.fn(),
   sleep: jest.fn(() => Promise.resolve()),
+  LOST_CONTACT_MS: 50,
 }));
 
 jest.mock('./formatting', () => ({
@@ -54,6 +55,18 @@ describe('pollForCompletionCI', () => {
 
   afterEach(() => {
     logSpy.mockRestore();
+  });
+
+  // Before, a run whose Dokkimi died was polled until the timeout
+  it('gives up when Dokkimi stops answering', async () => {
+    mockFetchJson.mockResolvedValue(null);
+
+    const result = await pollForCompletionCI('http://ct', 'run-1');
+
+    expect(result.passed).toBe(false);
+    expect(logSpy).toHaveBeenCalledWith(
+      expect.stringContaining('Lost contact with Dokkimi'),
+    );
   });
 
   it('returns passed=true when all instances COMPLETED', async () => {

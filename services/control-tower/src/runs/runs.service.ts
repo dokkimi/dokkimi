@@ -392,9 +392,10 @@ export class RunsService implements OnApplicationBootstrap {
     };
   }
 
-  async stopCurrentRun() {
+  async stopCurrentRun(runId?: string) {
     const activeRun = await this.prisma.run.findFirst({
       where: {
+        ...(runId ? { id: runId } : {}),
         status: { in: [RunStatus.PENDING, RunStatus.RUNNING] },
       },
       orderBy: { createdAt: 'desc' },

@@ -7,6 +7,9 @@ import { DockerRegistryService } from '../namespace-lifecycle/docker/docker-regi
 import { DockerClientService } from '../namespace-lifecycle/docker/docker-client.service';
 import { getMaxRunHistory } from '@dokkimi/config';
 
+/** How long a run's definitions may take to arrive from the CLI */
+const SUBMIT_GRACE_MS = 2 * 60 * 1000;
+
 @Injectable()
 export class RunCleanupService {
   private readonly logger = new Logger(RunCleanupService.name);
@@ -123,7 +126,10 @@ export class RunCleanupService {
     });
 
     for (const run of activeRuns) {
-      const hasLiveInstance = await this.hasLiveContainers(run.instances);
+      const hasLiveInstance = await this.hasLiveContainers(
+        run.instances,
+        run.createdAt,
+      );
       if (!hasLiveInstance) {
         this.logger.warn(
           `Run ${run.id} is ${run.status} but has no live containers — marking as FAILED`,
@@ -143,10 +149,21 @@ export class RunCleanupService {
 
   private async hasLiveContainers(
     instances: NamespaceInstance[],
+    runCreatedAt: Date,
   ): Promise<boolean> {
     for (const instance of instances) {
+      // A pending instance waits for its definition from the CLI, then for
+      // a deployment slot. One the CLI never submitted (it timed out, or
+      // was stopped) would keep the run alive forever and block every
+      // later run: after a while, it no longer counts.
       if (instance.status === InstanceStatus.PENDING) {
-        return true;
+        if (
+          Date.now() - runCreatedAt.getTime() < SUBMIT_GRACE_MS ||
+          (await this.runStorage.hasDefinition(instance.id))
+        ) {
+          return true;
+        }
+        continue;
       }
       if (
         instance.status === InstanceStatus.STARTING ||

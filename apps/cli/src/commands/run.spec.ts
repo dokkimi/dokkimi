@@ -17,6 +17,8 @@ jest.mock('../lib/cli-utils', () => ({
   fetchJson: jest.fn(),
   fetchPostWithError: jest.fn(),
   fetchAction: jest.fn(),
+  stopRun: jest.fn(),
+  TIMEOUT_CREATE_RUN: 120000,
 }));
 jest.mock('../lib/run-display', () => ({
   pollForCompletion: jest.fn(),
@@ -55,7 +57,12 @@ import { run } from './run';
 import { resolveDefinitions } from '@dokkimi/definition-resolver';
 import { ensureServicesRunning } from '@dokkimi/service-manager';
 import { trackEvent } from '@dokkimi/telemetry';
-import { fetchJson, fetchPostWithError, fetchAction } from '../lib/cli-utils';
+import {
+  fetchJson,
+  fetchPostWithError,
+  fetchAction,
+  stopRun,
+} from '../lib/cli-utils';
 import { loadConfig, buildServiceUrl } from '@dokkimi/config';
 import { pollForCompletion } from '../lib/run-display';
 import { pollForCompletionCI } from '../lib/ci-display';
@@ -70,6 +77,7 @@ const mockBuildServiceUrl = buildServiceUrl as jest.Mock;
 const mockFetchJson = fetchJson as jest.Mock;
 const mockFetchPostWithError = fetchPostWithError as jest.Mock;
 const mockFetchAction = fetchAction as jest.Mock;
+const mockStopRun = stopRun as jest.Mock;
 const mockPollForCompletion = pollForCompletion as jest.Mock;
 const mockPollForCompletionCI = pollForCompletionCI as jest.Mock;
 const mockUploadBaselines = uploadBaselinesForDefinition as jest.Mock;
@@ -172,12 +180,14 @@ describe('run', () => {
     expect(mockFetchPostWithError).toHaveBeenCalledWith(
       'http://localhost:19001/runs',
       { definitions: ['test-a'] },
+      120000,
     );
     expect(mockPollForCompletion).toHaveBeenCalledWith(
       'http://localhost:19001',
       'run-1',
       expect.any(AbortController),
       [],
+      undefined,
     );
   });
 
@@ -319,6 +329,7 @@ describe('run', () => {
           { registry: 'ghcr.io', username: 'user', password: 'pass' },
         ],
       },
+      120000,
     );
   });
 
@@ -383,8 +394,9 @@ describe('run', () => {
     const _sigintListeners = process.listenerCount('SIGINT');
     // Run in non-TTY mode so it exits immediately
     await expect(run(['--ci'])).rejects.toThrow('process.exit');
-    // fetchAction should be called for /runs/stop (CI cleanup)
-    expect(mockFetchAction).toHaveBeenCalledWith(
+    // Its own run is stopped (CI cleanup), and only it
+    expect(mockStopRun).toHaveBeenCalledWith('http://localhost:19001', 'run-1');
+    expect(mockFetchAction).not.toHaveBeenCalledWith(
       'http://localhost:19001/runs/stop',
       'POST',
     );
@@ -503,6 +515,7 @@ describe('run', () => {
     expect(mockFetchPostWithError).toHaveBeenCalledWith(
       'http://localhost:19001/runs',
       { definitions: ['test-a'] },
+      120000,
     );
   });
 
@@ -558,6 +571,7 @@ describe('run', () => {
     expect(mockFetchPostWithError).toHaveBeenCalledWith(
       'http://localhost:19001/runs',
       { definitions: ['test-a', 'test-b', 'test-c'] },
+      120000,
     );
   });
 

@@ -1,6 +1,10 @@
 import * as path from 'path';
 import { resolveDefinitions } from '@dokkimi/definition-resolver';
-import { fetchJson, fetchPostWithError } from '../lib/cli-utils';
+import {
+  fetchJson,
+  fetchPostWithError,
+  TIMEOUT_CREATE_RUN,
+} from '../lib/cli-utils';
 import { type DokkimiConfig } from '@dokkimi/config';
 import { warnIfVersionMismatch } from '../lib/version';
 import {
@@ -136,9 +140,13 @@ export async function executeRun(
     createBody.registryCredentials = registryCredentials;
   }
 
+  // Creating a run first cleans up earlier runs. Before, the CLI gave up
+  // after 10s while Control Tower went on and created the run, which then
+  // blocked every later run.
   const createResult = await fetchPostWithError<CreateRunResponse>(
     `${ctUrl}/runs`,
     createBody,
+    TIMEOUT_CREATE_RUN,
   );
 
   if ('error' in createResult) {
@@ -208,7 +216,7 @@ export async function executeRun(
         timeoutMs,
         definitions.length + skippedInstances.length,
       )
-    : await pollForCompletion(ctUrl, runId, abort, skippedInstances);
+    : await pollForCompletion(ctUrl, runId, abort, skippedInstances, timeoutMs);
   return {
     ...pollResult,
     hasUiSteps,
