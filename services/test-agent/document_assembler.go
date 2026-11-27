@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
-	"math"
 	"reflect"
 	"strings"
 	"time"
@@ -123,6 +122,9 @@ func FindDirectRequestLog(httpLogs []HttpLogMessage, action StepAction, stepExec
 		if logTime.Before(startTime) || logTime.After(endTime) {
 			continue
 		}
+		if log.Origin != nil && *log.Origin != "" {
+			continue // made by a service, not by the test agent
+		}
 		if log.Method != action.Method {
 			continue
 		}
@@ -145,24 +147,15 @@ func FindDirectRequestLog(httpLogs []HttpLogMessage, action StepAction, stepExec
 		candidates = append(candidates, log)
 	}
 
-	if len(candidates) == 0 {
-		return nil
-	}
-	if len(candidates) == 1 {
-		return candidates[0]
-	}
-
-	mid := stepExecMidpoint(stepExec)
-	best := candidates[0]
-	bestDist := math.Abs(float64(parseLogTimestamp(best.Timestamp).UnixMilli() - mid))
-	for _, c := range candidates[1:] {
-		dist := math.Abs(float64(parseLogTimestamp(c.Timestamp).UnixMilli() - mid))
-		if dist < bestDist {
-			best = c
-			bestDist = dist
+	// The step's last request: an action loop sends it several times, and
+	// extract and assertions run once, on the last response.
+	var latest *HttpLogMessage
+	for _, c := range candidates {
+		if latest == nil || !httpLogTime(c).Before(httpLogTime(latest)) {
+			latest = c
 		}
 	}
-	return best
+	return latest
 }
 
 // FindDirectDatabaseLog finds the database log for a dbQuery action.
@@ -189,24 +182,15 @@ func FindDirectDatabaseLog(dbLogs []DatabaseLogMessage, action StepAction, stepE
 		candidates = append(candidates, log)
 	}
 
-	if len(candidates) == 0 {
-		return nil
-	}
-	if len(candidates) == 1 {
-		return candidates[0]
-	}
-
-	mid := stepExecMidpoint(stepExec)
-	best := candidates[0]
-	bestDist := math.Abs(float64(parseLogTimestamp(best.Timestamp).UnixMilli() - mid))
-	for _, c := range candidates[1:] {
-		dist := math.Abs(float64(parseLogTimestamp(c.Timestamp).UnixMilli() - mid))
-		if dist < bestDist {
-			best = c
-			bestDist = dist
+	// The step's last query, as for HTTP requests (an action loop runs it
+	// several times; extract and assertions use the last result).
+	var latest *DatabaseLogMessage
+	for _, c := range candidates {
+		if latest == nil || !parseLogTimestamp(c.Timestamp).Before(parseLogTimestamp(latest.Timestamp)) {
+			latest = c
 		}
 	}
-	return best
+	return latest
 }
 
 // queriesMatch reports whether a logged query is the step's own query. They
@@ -269,18 +253,6 @@ func stepTimeWindow(stepExec StepExecution) (time.Time, time.Time, error) {
 	// logs that arrive slightly after the step response returns.
 	end = end.Add(timestampBufferMs * time.Millisecond)
 	return start, end, nil
-}
-
-func stepExecMidpoint(stepExec StepExecution) int64 {
-	start, startErr := time.Parse(time.RFC3339Nano, stepExec.StartTime)
-	end, endErr := time.Parse(time.RFC3339Nano, stepExec.EndTime)
-	if startErr != nil {
-		log.Printf("Warning: failed to parse step StartTime %q: %v", stepExec.StartTime, startErr)
-	}
-	if endErr != nil {
-		log.Printf("Warning: failed to parse step EndTime %q: %v", stepExec.EndTime, endErr)
-	}
-	return (start.UnixMilli() + end.UnixMilli()) / 2
 }
 
 func parseLogTimestamp(ts string) time.Time {
