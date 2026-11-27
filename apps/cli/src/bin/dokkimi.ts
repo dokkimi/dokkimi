@@ -146,10 +146,10 @@ async function main() {
       command,
       duration_ms: Date.now() - commandStart,
       error_type: err instanceof Error ? err.constructor.name : 'Unknown',
-      error_message:
-        err instanceof Error
-          ? err.message.slice(0, 200)
-          : String(err).slice(0, 200),
+      // Not the message, which can hold file paths and names
+      ...(typeof (err as { code?: unknown })?.code === 'string'
+        ? { error_code: (err as { code: string }).code }
+        : {}),
     });
     throw err;
   }
