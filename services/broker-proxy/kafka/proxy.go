@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"log"
 	"net"
 	"sync"
@@ -41,6 +42,11 @@ func (p *Proxy) Serve() error {
 	for {
 		clientConn, err := p.listener.Accept()
 		if err != nil {
+			// Shutdown closed the listener. Before, that error made main exit
+			// at once, so the logger never sent what it still had queued
+			if errors.Is(err, net.ErrClosed) {
+				return nil
+			}
 			return err
 		}
 		p.wg.Add(1)

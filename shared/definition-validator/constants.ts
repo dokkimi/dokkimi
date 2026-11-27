@@ -22,6 +22,20 @@ export const VALID_DATABASES = [
 
 export const VALID_BROKERS = ['amqp', 'kafka'] as const;
 
+/**
+ * Ports the broker itself uses inside its container, which it shares with
+ * the Dokkimi proxy listening on the item's `port`: Control Tower's
+ * broker-config.service.ts (internal ports, Kafka's controller) and
+ * RabbitMQ's epmd (4369) and distribution port (internal + 20000).
+ */
+export const BROKER_RESERVED_PORTS: Record<
+  (typeof VALID_BROKERS)[number],
+  number[]
+> = {
+  amqp: [4369, 10672, 30672],
+  kafka: [9093, 19092],
+};
+
 export const VALID_HTTP_METHODS = [
   'GET',
   'POST',

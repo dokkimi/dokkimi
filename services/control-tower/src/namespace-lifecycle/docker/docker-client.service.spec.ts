@@ -91,6 +91,77 @@ describe('DockerClientService', () => {
       expect(mockNetwork.remove).toHaveBeenCalled();
     });
 
+    // Before, every container was force-removed (SIGKILL), so sidecars lost
+    // the logs still queued for Control Tower
+    it('stops running sidecars before removing anything', async () => {
+      const calls: string[] = [];
+      mockDocker.listContainers.mockResolvedValue([
+        {
+          Id: 'icp',
+          State: 'running',
+          Labels: { 'io.dokkimi.role': 'interceptor' },
+        },
+        {
+          Id: 'dbp',
+          State: 'running',
+          Labels: { 'io.dokkimi.role': 'db-proxy' },
+        },
+        {
+          Id: 'agent',
+          State: 'running',
+          Labels: { 'io.dokkimi.role': 'test-agent' },
+        },
+        {
+          Id: 'svc',
+          State: 'running',
+          Labels: { 'io.dokkimi.role': 'service' },
+        },
+        {
+          Id: 'gone',
+          State: 'exited',
+          Labels: { 'io.dokkimi.role': 'broker-proxy' },
+        },
+      ]);
+      mockDocker.getContainer.mockImplementation((id: string) => ({
+        stop: jest.fn(async (opts: { t: number }) => {
+          calls.push(`stop ${id} ${opts.t}`);
+        }),
+        remove: jest.fn(async () => {
+          calls.push(`remove ${id}`);
+        }),
+      }));
+
+      await service.removeAllContainers('inst-1');
+
+      const stops = calls.filter((c) => c.startsWith('stop'));
+      expect(stops.sort()).toEqual([
+        'stop agent 10',
+        'stop dbp 10',
+        'stop icp 10',
+      ]);
+      expect(calls.slice(0, 3).every((c) => c.startsWith('stop'))).toBe(true);
+      expect(calls.filter((c) => c.startsWith('remove'))).toHaveLength(5);
+      mockDocker.getContainer.mockReturnValue(mockContainer);
+    });
+
+    it('still removes a sidecar whose stop fails', async () => {
+      mockDocker.listContainers.mockResolvedValue([
+        {
+          Id: 'icp',
+          State: 'running',
+          Labels: { 'io.dokkimi.role': 'interceptor' },
+        },
+      ]);
+      mockContainer.stop.mockRejectedValueOnce(new Error('already stopping'));
+
+      await service.removeAllContainers('inst-1');
+
+      expect(mockContainer.remove).toHaveBeenCalledWith({
+        force: true,
+        v: true,
+      });
+    });
+
     it('retries a network that still has endpoints, and accepts one already gone', async () => {
       jest.useFakeTimers();
       mockDocker.listContainers.mockResolvedValue([]);

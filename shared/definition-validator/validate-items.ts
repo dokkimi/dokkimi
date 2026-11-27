@@ -6,6 +6,7 @@ import {
   VALID_ITEM_TYPES,
   VALID_DATABASES,
   VALID_BROKERS,
+  BROKER_RESERVED_PORTS,
   VALID_MOCK_METHODS,
   PORT_MIN,
   PORT_MAX,
@@ -355,6 +356,14 @@ function validateBrokerItem(
     }
   }
   validatePort(item.port, 'port', label, r);
+  const reserved =
+    BROKER_RESERVED_PORTS[item.broker as (typeof VALID_BROKERS)[number]];
+  if (reserved?.includes(item.port as number)) {
+    err(
+      r,
+      `${label}: "port" ${item.port} is used by the broker inside its container; pick another (reserved for ${item.broker}: ${reserved.join(', ')})`,
+    );
+  }
   if (item.healthCheck !== undefined && typeof item.healthCheck !== 'string') {
     err(r, `${label}: "healthCheck" must be a string`);
   }

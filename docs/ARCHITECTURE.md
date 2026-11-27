@@ -146,6 +146,8 @@ User runs: dokkimi run [target]
 
 **Crashes:** from the deployment of stage 0 until teardown, CT asks Docker every 3 seconds for the instance's exited containers of any role (`DockerDeployerService.monitorForCrashedContainers`). If one has exited while the test is still going, the instance is marked `FAILED` with the exit code and last log lines, torn down, and the run continues or completes. A failed check is retried 3 seconds later. When a container exits right away and the deployment fails, the error shows that container's exit code and logs. A stage that fails to deploy, at any stage, fails the instance with its error (`DockerDeployerService` handles it for every stage).
 
+**Teardown:** CT first stops the running sidecars that send logs (interceptors, DB and broker proxies, test agent) with SIGTERM and 10 seconds' grace, so each sends the logs still queued, then force-removes every container of the instance and its network. The test agent also sends its queued events before it reports the run complete.
+
 **Status changes** that can race check the current status in the same query: `markRunning` (only from `STARTING`), `failIfActive` and the test result (only while `STARTING` or `RUNNING`, and without a test result). So a finished test can't be marked as failed, and a crash message isn't lost.
 
 ---
@@ -212,10 +214,12 @@ All variants log asynchronously via a buffered channel (capacity 1000) and POST 
 
 The broker proxy follows the same sidecar pattern as DB Proxy but for message brokers. It sits between the application and the broker, transparently relaying all wire protocol frames while inspecting specific operations for logging.
 
-| Variant | Internal Port | Wire Protocol            | Logged Operations            | Health Check                        |
-| ------- | ------------- | ------------------------ | ---------------------------- | ----------------------------------- |
-| AMQP    | 10672         | AMQP 0-9-1 frame parsing | Basic.Publish, Basic.Deliver | TCP connect to upstream broker port |
-| Kafka   | 19092         | Kafka binary protocol    | Produce, Fetch               | TCP connect to upstream broker port |
+| Variant | Proxy Port (default) | Internal Port | Wire Protocol            | Logged Operations            | Health Check                        |
+| ------- | -------------------- | ------------- | ------------------------ | ---------------------------- | ----------------------------------- |
+| AMQP    | 5672                 | 10672         | AMQP 0-9-1 frame parsing | Basic.Publish, Basic.Deliver | TCP connect to upstream broker port |
+| Kafka   | 9092                 | 19092         | Kafka binary protocol    | Produce, Fetch               | TCP connect to upstream broker port |
+
+The broker shares the proxy's network namespace. The proxy listens on the item's `port` (the default above), which is the port services connect to; Kafka advertises it, so clients reconnect through the proxy. The broker always listens on the internal port. The validator rejects a `port` the broker uses itself (`BROKER_RESERVED_PORTS`).
 
 The proxy forwards every message unchanged via raw TCP relay before inspecting it. Only produce/publish and deliver/fetch operations are parsed to extract message metadata and body. Message logs are POSTed to both Control Tower (`/logs/message`) and the test agent (`/logs/message`), following the same dual-delivery pattern as HTTP logs.
 

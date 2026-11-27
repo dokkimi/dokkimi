@@ -156,26 +156,41 @@ describe('DockerLogCollectorService', () => {
       expect(mockConsoleLogProcessor.processRawLogs).not.toHaveBeenCalled();
     });
 
-    it('should handle incomplete header as raw text', async () => {
-      await service.startCollecting('inst-1', 'c1', 'api');
-      const partial = Buffer.from('short');
-      capturedCallback!(partial);
+    // Before, the start of a split frame was logged as text (with its
+    // header bytes) and the rest was parsed as a garbled frame
+    it('joins a frame split anywhere across chunks', async () => {
+      const all = Buffer.concat([
+        buildDockerFrame(1, '2026-06-12T15:29:02.213456789Z first line\n'),
+        buildDockerFrame(2, '2026-06-12T15:29:02.213456790Z second line\n'),
+      ]);
+      for (let cut = 1; cut < all.length; cut++) {
+        mockConsoleLogProcessor.processRawLogs.mockClear();
+        await service.startCollecting('inst-1', `c${cut}`, 'api');
+        capturedCallback!(all.subarray(0, cut));
+        capturedCallback!(all.subarray(cut));
 
-      expect(mockConsoleLogProcessor.processRawLogs).toHaveBeenCalledWith(
-        expect.objectContaining({ log: 'short' }),
-      );
+        expect(
+          mockConsoleLogProcessor.processRawLogs.mock.calls.map(
+            ([m]: [{ log: string; stream: string }]) => [m.log, m.stream],
+          ),
+        ).toEqual([
+          ['first line', 'stdout'],
+          ['second line', 'stderr'],
+        ]);
+      }
     });
 
-    it('should handle incomplete payload gracefully', async () => {
+    it('waits for the rest of an incomplete frame', async () => {
       await service.startCollecting('inst-1', 'c1', 'api');
-      const header = Buffer.alloc(8);
-      header[0] = 1;
-      header.writeUInt32BE(100, 4); // claims 100 bytes but only 5 follow
-      const truncated = Buffer.concat([header, Buffer.from('hello')]);
-      capturedCallback!(truncated);
+      const frame = buildDockerFrame(1, 'hello world\n');
+      capturedCallback!(frame.subarray(0, 3));
+      capturedCallback!(frame.subarray(3, 12));
+      expect(mockConsoleLogProcessor.processRawLogs).not.toHaveBeenCalled();
 
+      capturedCallback!(frame.subarray(12));
+      expect(mockConsoleLogProcessor.processRawLogs).toHaveBeenCalledTimes(1);
       expect(mockConsoleLogProcessor.processRawLogs).toHaveBeenCalledWith(
-        expect.objectContaining({ log: 'hello' }),
+        expect.objectContaining({ log: 'hello world' }),
       );
     });
 

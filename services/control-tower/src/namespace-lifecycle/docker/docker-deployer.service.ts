@@ -568,8 +568,12 @@ export class DockerDeployerService {
     this.clearCrashMonitor(instanceId);
     this.deploymentSessions.delete(instanceId);
     this.deployments.delete(instanceId);
-    this.logCollector.stopCollecting(instanceId);
-    await this.dockerClient.removeNetwork(instanceId);
+    try {
+      // Collect logs until the containers are gone, so shutdown lines arrive
+      await this.dockerClient.removeNetwork(instanceId);
+    } finally {
+      this.logCollector.stopCollecting(instanceId);
+    }
     this.dockerConfig.cleanupConfigDir(instanceId);
     this.logger.log(`Teardown complete for instance ${instanceId}`);
   }

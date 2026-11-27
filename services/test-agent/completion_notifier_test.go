@@ -5,7 +5,10 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
+	"sync"
 	"testing"
+	"time"
 )
 
 func TestNewCompletionNotifier(t *testing.T) {
@@ -80,5 +83,40 @@ func TestCompletionNotifier_NotifyCompletion_Failure(t *testing.T) {
 
 	if err == nil {
 		t.Error("Expected error for 500 response, got nil")
+	}
+}
+
+// Before, completion was reported with events still queued; Control Tower
+// then tore the run down and they were lost
+func TestCompletionNotifier_SendsQueuedEventsFirst(t *testing.T) {
+	var mu sync.Mutex
+	var order []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/logs/test-execution" {
+			time.Sleep(20 * time.Millisecond) // a slow Control Tower
+		}
+		mu.Lock()
+		order = append(order, r.URL.Path)
+		mu.Unlock()
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	logger := NewTestExecutionLogger(server.URL, "inst", 5*time.Second)
+	defer logger.Stop()
+	for i := 0; i < 5; i++ {
+		logger.LogEvent("STEP_COMPLETED", "step", nil, nil)
+	}
+
+	notifier := NewCompletionNotifier(server.URL+"/test-complete", logger)
+	if err := notifier.NotifyCompletion("inst", "success", "", nil); err != nil {
+		t.Fatalf("NotifyCompletion() error = %v", err)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	want := []string{"/logs/test-execution", "/logs/test-execution", "/logs/test-execution", "/logs/test-execution", "/logs/test-execution", "/test-complete"}
+	if strings.Join(order, ",") != strings.Join(want, ",") {
+		t.Errorf("requests = %v, want %v", order, want)
 	}
 }

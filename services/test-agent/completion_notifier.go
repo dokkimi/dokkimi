@@ -31,6 +31,10 @@ func NewCompletionNotifier(url string, testExecutionLogger *TestExecutionLogger)
 
 // NotifyCompletion notifies Control Tower that tests have completed via HTTP POST.
 func (n *CompletionNotifier) NotifyCompletion(testRunID string, status string, message string, stepExecutions []StepExecution) error {
+	// Send the queued events first: Control Tower tears the run down once it
+	// hears the run is complete, and the events left in the queue were lost
+	n.testExecutionLogger.Flush()
+
 	notification := TestCompletionNotification{
 		TestRunID:      testRunID,
 		Status:         status,

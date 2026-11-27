@@ -34,6 +34,18 @@ export interface ContainerInfo {
 const DOKKIMI_NETWORK_PREFIX = 'dokkimi-run-';
 const DOKKIMI_LABEL = 'io.dokkimi.managed';
 
+/** Sidecars that queue logs for Control Tower */
+const LOG_SENDING_ROLES = [
+  'interceptor',
+  'service-interceptor',
+  'chromium-interceptor',
+  'db-proxy',
+  'broker-proxy',
+  'test-agent',
+];
+/** Their loggers give up draining after 5s; the agent may also finish a step */
+const SIDECAR_STOP_SECONDS = 10;
+
 @Injectable()
 export class DockerClientService implements OnApplicationBootstrap {
   private readonly logger = new Logger(DockerClientService.name);
@@ -297,6 +309,23 @@ export class DockerClientService implements OnApplicationBootstrap {
     if (containers.length === 0) {
       return;
     }
+
+    // Stop the sidecars first: on SIGTERM they send the logs still queued.
+    // A forced removal kills them with those logs.
+    await Promise.all(
+      containers
+        .filter(
+          (c) =>
+            c.State === 'running' &&
+            LOG_SENDING_ROLES.includes(c.Labels?.['io.dokkimi.role'] ?? ''),
+        )
+        .map((c) =>
+          this.docker
+            .getContainer(c.Id)
+            .stop({ t: SIDECAR_STOP_SECONDS })
+            .catch(() => undefined),
+        ),
+    );
 
     await Promise.all(
       containers.map(async (c) => {

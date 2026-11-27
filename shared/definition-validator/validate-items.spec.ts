@@ -956,6 +956,45 @@ describe('validateItem', () => {
       );
     });
 
+    it.each([
+      ['amqp', 10672],
+      ['amqp', 30672],
+      ['amqp', 4369],
+      ['kafka', 19092],
+      ['kafka', 9093],
+    ])('errors on a %s port the broker uses itself (%d)', (broker, port) => {
+      const r = makeResult();
+      validateItem(
+        { type: 'BROKER', name: 'b', broker, port },
+        0,
+        '/f.json',
+        r,
+        fs,
+      );
+      expect(
+        r.errors.some((e) =>
+          e.includes(`"port" ${port} is used by the broker`),
+        ),
+      ).toBe(true);
+    });
+
+    it('accepts the native ports', () => {
+      for (const [broker, port] of [
+        ['amqp', 5672],
+        ['kafka', 9092],
+      ] as const) {
+        const r = makeResult();
+        validateItem(
+          { type: 'BROKER', name: 'b', broker, port },
+          0,
+          '/f.json',
+          r,
+          fs,
+        );
+        expect(r.errors).toHaveLength(0);
+      }
+    });
+
     it('accepts valid port', () => {
       const r = makeResult();
       validateItem(

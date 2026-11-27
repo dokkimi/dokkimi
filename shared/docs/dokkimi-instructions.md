@@ -604,17 +604,17 @@ A message broker instance with a transparent proxy sidecar that captures all pub
 
 **Optional fields:**
 
-| Field         | Type              | Default | Description                                                                                |
-| ------------- | ----------------- | ------- | ------------------------------------------------------------------------------------------ |
-| `description` | string            | —       | Human-readable description (max 500 chars)                                                 |
-| `image`       | string            | —       | Custom Docker image (e.g. `"rabbitmq:3.13-management"`, `"apache/kafka:3.9"`)              |
-| `port`        | integer (1-65535) | —       | Native broker port (default: 5672 for AMQP, 9092 for Kafka)                                |
-| `healthCheck` | string            | —       | Health check endpoint or `"tcp"`                                                           |
-| `env`         | array             | —       | Environment variables: `[{ "name": "KEY", "value": "VALUE" }, ...]`                        |
-| `command`     | string[]          | —       | Override Docker image CMD                                                                  |
-| `stage`       | integer (≥ 0)     | `0`     | Deployment stage. Items deploy in stage order — stage N+1 starts after stage N is healthy. |
-| `maxCpu`      | number (> 0)      | —       | Limit on CPU cores (e.g., `0.5`). No limit when unset                                      |
-| `maxMemory`   | number (≥ 6)      | —       | Limit on memory in MB. The container is killed if it uses more. No limit when unset        |
+| Field         | Type              | Default | Description                                                                                                                                                |
+| ------------- | ----------------- | ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `description` | string            | —       | Human-readable description (max 500 chars)                                                                                                                 |
+| `image`       | string            | —       | Custom Docker image (e.g. `"rabbitmq:3.13-management"`, `"apache/kafka:3.9"`)                                                                              |
+| `port`        | integer (1-65535) | —       | Port services connect to (default: 5672 for AMQP, 9092 for Kafka). Not 4369, 10672 or 30672 (AMQP), or 9093 or 19092 (Kafka): the broker uses those itself |
+| `healthCheck` | string            | —       | Health check endpoint or `"tcp"`                                                                                                                           |
+| `env`         | array             | —       | Environment variables: `[{ "name": "KEY", "value": "VALUE" }, ...]`                                                                                        |
+| `command`     | string[]          | —       | Override Docker image CMD                                                                                                                                  |
+| `stage`       | integer (≥ 0)     | `0`     | Deployment stage. Items deploy in stage order — stage N+1 starts after stage N is healthy.                                                                 |
+| `maxCpu`      | number (> 0)      | —       | Limit on CPU cores (e.g., `0.5`). No limit when unset                                                                                                      |
+| `maxMemory`   | number (≥ 6)      | —       | Limit on memory in MB. The container is killed if it uses more. No limit when unset                                                                        |
 
 **Broker engine details:**
 

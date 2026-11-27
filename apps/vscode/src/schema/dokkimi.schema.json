@@ -433,7 +433,7 @@
         },
         "port": {
           "type": "integer",
-          "description": "Port the broker listens on inside the container.",
+          "description": "Port services connect to (default: 5672 for AMQP, 9092 for Kafka). Not 4369, 10672 or 30672 (AMQP), or 9093 or 19092 (Kafka): the broker uses those itself.",
           "minimum": 1,
           "maximum": 65535
         },

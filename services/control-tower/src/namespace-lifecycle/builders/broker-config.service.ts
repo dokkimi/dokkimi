@@ -15,6 +15,7 @@ export class BrokerConfigService {
 
     // Internal ports must stay outside Linux's ephemeral range (32768-60999):
     // an outgoing connection can be given one before the broker uses it.
+    // The validator's BROKER_RESERVED_PORTS keeps users' ports off them.
     const configs: Record<string, BrokerConfig> = {
       amqp: {
         image: version ? `rabbitmq:${version}` : imgs.amqp,
