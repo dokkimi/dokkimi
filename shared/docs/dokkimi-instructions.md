@@ -34,6 +34,8 @@ A common convention (but not required) is:
 
 ## Two File Types (Shape Detection)
 
+YAML anchors and merge keys (`<<: *base`) work in YAML files. A file with nothing but comments is skipped.
+
 Dokkimi distinguishes file types by their JSON shape, not by folder or naming convention:
 
 **Runnable definition** — has top-level `name` (string) + `items` (array), and needs at least one test in `tests`. A `$schema` key (for editors) is allowed and removed before the run:
@@ -96,10 +98,10 @@ env:
 
 ### Fields
 
-| Field     | Type   | Description                                                                                           |
-| --------- | ------ | ----------------------------------------------------------------------------------------------------- |
-| `dokkimi` | string | Target Dokkimi version. The CLI warns if your installed version is older.                             |
-| `env`     | object | Flat `string → string` map of build-time values. Keys must be alphanumeric + underscores (`/^\w+$/`). |
+| Field     | Type   | Description                                                                                                                                                                                                            |
+| --------- | ------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `dokkimi` | string | Target Dokkimi version. The CLI warns if your installed version is older.                                                                                                                                              |
+| `env`     | object | Flat `string → string` map of build-time values. Keys must be alphanumeric + underscores (`/^\w+$/`). Values must be strings: quote numbers and booleans (`TAG: "1.10"`), since YAML has already read `1.10` as `1.1`. |
 
 ### Build-time interpolation: `${{VAR}}`
 
@@ -135,7 +137,7 @@ These are related but distinct systems:
 | `{{VAR}}`  | Build time | Definition resolver | Item fields — merged map of `config.yaml` env + definition-level `variables` |
 | `{{VAR}}`  | Runtime    | Test agent          | Test steps — `variables` / `extract` / loop variables                        |
 
-In **item fields** (env values, images, passwords, etc.), `{{VAR}}` resolves at build time against a merged variables map: config.yaml `env` entries are loaded first, then definition-level `variables` are merged on top (overwriting collisions). Unresolved `{{VAR}}` in items is an error — items are fully resolved before they reach Control Tower.
+In **item fields** (env values, images, passwords, etc.), `{{VAR}}` resolves at build time against a merged variables map: config.yaml `env` entries are loaded first, then definition-level `variables` are merged on top (overwriting collisions). Unresolved `{{VAR}}` in items is an error — items are fully resolved before they reach Control Tower. A variable may be a string, number or boolean, and is used as its text. Values are filled in before the definition is validated, so a field with a format (`version`, `healthCheck`) can come from a variable or `${{VAR}}`.
 
 In **test steps** (action URLs, headers, body, queries, assertion values), `{{VAR}}` resolves at runtime by the test agent. Definition-level and test-level variables, loop variables, and extracted variables all resolve at runtime.
 
@@ -232,17 +234,17 @@ A containerized application deployed with an interceptor sidecar for traffic cap
 
 **Optional fields:**
 
-| Field         | Type          | Default | Description                                                                                                                        |
-| ------------- | ------------- | ------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| `description` | string        | —       | Human-readable description (max 500 chars)                                                                                         |
-| `image`       | string        | —       | Docker image URI (e.g., `"my-service:latest"`).                                                                                    |
-| `command`     | string[]      | —       | Override Docker image's default CMD (e.g., `["server", "/data"]`)                                                                  |
-| `entrypoint`  | string[]      | —       | Override Docker image's ENTRYPOINT (e.g., `["/bin/sh", "-c", "..."]`)                                                              |
-| `mountFiles`  | array         | —       | Files to mount into the container (read-only). Each entry: `{ "source": "../path/to/file", "target": "/absolute/container/path" }` |
-| `env`         | array         | —       | Environment variables: `[{ "name": "KEY", "value": "VALUE" }, ...]`                                                                |
-| `stage`       | integer (≥ 0) | `0`     | Deployment stage. Items deploy in stage order — stage N+1 starts after stage N is healthy. Sort key, not index (gaps are fine).    |
-| `maxCpu`      | number (> 0)  | —       | Limit on CPU cores (e.g., `0.5`). No limit when unset                                                                              |
-| `maxMemory`   | number (≥ 6)  | —       | Limit on memory in MB. The container is killed if it uses more. No limit when unset                                                |
+| Field         | Type          | Default | Description                                                                                                                                                                              |
+| ------------- | ------------- | ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `description` | string        | —       | Human-readable description (max 500 chars)                                                                                                                                               |
+| `image`       | string        | —       | Docker image URI (e.g., `"my-service:latest"`).                                                                                                                                          |
+| `command`     | string[]      | —       | Override Docker image's default CMD (e.g., `["server", "/data"]`)                                                                                                                        |
+| `entrypoint`  | string[]      | —       | Override Docker image's ENTRYPOINT (e.g., `["/bin/sh", "-c", "..."]`)                                                                                                                    |
+| `mountFiles`  | array         | —       | Files to mount into the container (read-only). Each entry: `{ "source": "../path/to/file", "target": "/absolute/container/path" }`; each source is a file (not a folder), at most 7.5 MB |
+| `env`         | array         | —       | Environment variables: `[{ "name": "KEY", "value": "VALUE" }, ...]`                                                                                                                      |
+| `stage`       | integer (≥ 0) | `0`     | Deployment stage. Items deploy in stage order — stage N+1 starts after stage N is healthy. Sort key, not index (gaps are fine).                                                          |
+| `maxCpu`      | number (> 0)  | —       | Limit on CPU cores (e.g., `0.5`). No limit when unset                                                                                                                                    |
+| `maxMemory`   | number (≥ 6)  | —       | Limit on memory in MB. The container is killed if it uses more. No limit when unset                                                                                                      |
 
 **Full example:**
 
@@ -339,7 +341,7 @@ A managed database instance. Dokkimi provisions the database container, sets up 
 | `dbUser`        | string        | `"dokkimi"` | Database username                                                                                           |
 | `dbPassword`    | string        | `"dokkimi"` | Database password                                                                                           |
 | `noAuth`        | boolean       | `false`     | Skip all authentication. Database starts without credentials. Cannot combine with dbName/dbUser/dbPassword. |
-| `initFilePath`  | string        | —           | Relative path from this file to a single init script                                                        |
+| `initFilePath`  | string        | —           | Relative path from this file to a single init script (a file, at most 7.5 MB)                               |
 | `initFilePaths` | string[]      | —           | Relative paths to multiple init scripts (executed in order). Use one or the other, not both.                |
 | `stage`         | integer (≥ 0) | `0`         | Deployment stage. Items deploy in stage order — stage N+1 starts after stage N is healthy.                  |
 | `maxCpu`        | number (> 0)  | —           | Limit on CPU cores (e.g., `0.5`). No limit when unset                                                       |
@@ -724,6 +726,7 @@ Items can reference shared fragments using `$ref` with a relative path. Addition
 Rules:
 
 - Path is relative to the file containing the `$ref`
+- File paths in an item (`initFilePath`, `initFilePaths`, `mountFiles` sources) are relative to the file that writes them: an override in the definition to the definition, a path in a fragment to the fragment
 - For multi-ref, fragments merge left-to-right; inline override fields win over all fragments (shallow merge, no deep merging for objects)
 - Refs are recursive — a fragment can `$ref` another fragment, which can `$ref` another, and so on. Overrides at each level are applied outward (innermost base is loaded first, then each layer's overrides are shallow-merged on top). Circular references are detected and reported as errors.
 - `$ref` is stripped before sending to the backend

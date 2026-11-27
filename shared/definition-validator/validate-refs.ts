@@ -29,6 +29,43 @@ function getByDotPath(obj: Record<string, unknown>, dotPath: string): unknown {
     );
 }
 
+/**
+ * Rewrites an item's file paths (initFilePath, initFilePaths, mountFiles
+ * sources), written relative to the file `from`, to be relative to `to`.
+ * Each path is relative to the file that declares it: an override's path to
+ * the definition, a fragment's to the fragment.
+ */
+function rebasePaths(
+  item: Record<string, unknown>,
+  from: string,
+  to: string,
+): Record<string, unknown> {
+  const fromDir = path.dirname(from);
+  const toDir = path.dirname(to);
+  if (fromDir === toDir) {
+    return item;
+  }
+  const rebase = (p: unknown) =>
+    typeof p === 'string' && p !== '' && !path.isAbsolute(p)
+      ? path.relative(toDir, path.resolve(fromDir, p))
+      : p;
+  const out = { ...item };
+  if (out.initFilePath !== undefined) {
+    out.initFilePath = rebase(out.initFilePath);
+  }
+  if (Array.isArray(out.initFilePaths)) {
+    out.initFilePaths = out.initFilePaths.map(rebase);
+  }
+  if (Array.isArray(out.mountFiles)) {
+    out.mountFiles = out.mountFiles.map((m) =>
+      m && typeof m === 'object' && !Array.isArray(m)
+        ? { ...m, source: rebase((m as Record<string, unknown>).source) }
+        : m,
+    );
+  }
+  return out;
+}
+
 function expandRefSpreads(
   arr: unknown[],
   refContent: Record<string, unknown>,
@@ -79,7 +116,6 @@ export function resolveRefs(
 
       // Resolve and merge left-to-right
       let refContent: Record<string, unknown> = {};
-      let lastRefPath: string | null = null;
       let hasError = false;
       for (const ref of refs) {
         if (typeof ref !== 'string') {
@@ -124,11 +160,19 @@ export function resolveRefs(
               hasError = true;
               continue;
             }
-            refContent = { ...refContent, ...innerResolved[0].item };
-            lastRefPath = innerResolved[0].sourceFile;
+            refContent = {
+              ...refContent,
+              ...rebasePaths(
+                innerResolved[0].item,
+                innerResolved[0].sourceFile,
+                defFilePath,
+              ),
+            };
           } else {
-            refContent = { ...refContent, ...parsed };
-            lastRefPath = refPath;
+            refContent = {
+              ...refContent,
+              ...rebasePaths(parsed, refPath, defFilePath),
+            };
           }
         } catch {
           err(r, `items[${i}]: $ref "${ref}" could not be parsed`);
@@ -151,7 +195,8 @@ export function resolveRefs(
         }
       }
 
-      resolved.push({ item: merged, sourceFile: lastRefPath || defFilePath });
+      // Every file path is now relative to the definition file
+      resolved.push({ item: merged, sourceFile: defFilePath });
     } else {
       resolved.push({ item, sourceFile: defFilePath });
     }
@@ -221,16 +266,18 @@ export function resolveActionRefs(
           fs,
           visited,
         );
-        if (resolved) {
-          step.action = resolved;
+        if (!resolved) {
+          continue;
         }
-        continue;
+        step.action = resolved;
       }
 
-      // 2. UI sub-step refs: splice $ref entries inside action.steps
-      if (action.type === 'ui' && Array.isArray(action.steps)) {
-        action.steps = expandSubStepRefs(
-          action.steps as unknown[],
+      // 2. UI sub-step refs: splice $ref entries inside the action's steps,
+      // including steps an action fragment's override writes inline
+      const ui = step.action as Record<string, unknown>;
+      if (ui.type === 'ui' && Array.isArray(ui.steps)) {
+        ui.steps = expandSubStepRefs(
+          ui.steps as unknown[],
           ctx,
           defFilePath,
           r,
@@ -327,6 +374,21 @@ function resolveActionRef(
       return null;
     }
     resolvedAction = inner;
+  }
+
+  // Sub-step refs in the fragment, relative to it
+  if (resolvedAction.type === 'ui' && Array.isArray(resolvedAction.steps)) {
+    resolvedAction = {
+      ...resolvedAction,
+      steps: expandSubStepRefs(
+        resolvedAction.steps as unknown[],
+        ctx,
+        refPath,
+        r,
+        fs,
+        new Set([...visited, refPath]),
+      ),
+    };
   }
 
   const { $ref: _, ...overrides } = action;

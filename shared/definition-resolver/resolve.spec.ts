@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
-import { resolveDefinitions } from './resolve';
+import { resolveDefinitions, MAX_FILE_BYTES } from './resolve';
 
 function createTempDokkimi(): string {
   const tmp = fs.realpathSync(
@@ -560,4 +560,141 @@ it('removes "$schema" before submitting', () => {
   const result = resolveDefinitions(dokkimiDir);
   expect(result.errors.flatMap((e) => e.errors)).toEqual([]);
   expect(result.definitions[0].definition).not.toHaveProperty('$schema');
+});
+
+describe('values are validated as they will run', () => {
+  // Before, "{{PG}}" and "${{HC}}" were checked as written and rejected, and
+  // a number variable was "unresolved"
+  it('fills in variables and config env before validating', () => {
+    const dokkimiDir = createTempDokkimi();
+    writeFile(dokkimiDir, 'config.yaml', 'env:\n  HC: /health\n');
+    writeFile(
+      dokkimiDir,
+      'd.json',
+      minimalDef(
+        'd',
+        [
+          {
+            type: 'SERVICE',
+            name: 'svc',
+            image: 'x:1',
+            port: 3000,
+            healthCheck: '${{HC}}',
+            env: [{ name: 'PORT', value: '{{PORT}}' }],
+          },
+          {
+            type: 'DATABASE',
+            name: 'db',
+            database: 'postgres',
+            version: '{{PG}}',
+          },
+        ],
+        { variables: { PG: '16', PORT: 3000 } },
+      ),
+    );
+    const result = resolveDefinitions(dokkimiDir);
+    expect(result.errors.flatMap((e) => e.errors)).toEqual([]);
+    const items = result.definitions[0].definition.items as any[];
+    expect(items[0].healthCheck).toBe('/health');
+    expect(items[0].env[0].value).toBe('3000');
+    expect(items[1].version).toBe('16');
+  });
+
+  it('reports a bad value that came from a variable', () => {
+    const dokkimiDir = createTempDokkimi();
+    writeFile(
+      dokkimiDir,
+      'd.json',
+      minimalDef(
+        'd',
+        [
+          {
+            type: 'DATABASE',
+            name: 'db',
+            database: 'postgres',
+            version: '{{PG}}',
+          },
+        ],
+        { variables: { PG: 'latest' } },
+      ),
+    );
+    const errors = resolveDefinitions(dokkimiDir).errors.flatMap(
+      (e) => e.errors,
+    );
+    expect(
+      errors.some((e) => e.includes('"version" must start with a digit')),
+    ).toBe(true);
+  });
+});
+
+// Before, an override's path was resolved from the fragment's folder
+it('reads an init file override from the definition, not the fragment', () => {
+  const dokkimiDir = createTempDokkimi();
+  writeFile(dokkimiDir, 'shared/pg.json', {
+    type: 'DATABASE',
+    name: 'db',
+    database: 'postgres',
+  });
+  writeFile(dokkimiDir, 'shared/seed.sql', '-- shared seed');
+  writeFile(dokkimiDir, 'defs/seed.sql', '-- definition seed');
+  writeFile(
+    dokkimiDir,
+    'defs/d.json',
+    minimalDef('d', [
+      { $ref: '../shared/pg.json', initFilePath: './seed.sql' },
+    ]),
+  );
+  const result = resolveDefinitions(dokkimiDir);
+  expect(result.errors.flatMap((e) => e.errors)).toEqual([]);
+  expect(
+    result.definitions[0].initFiles.map((f) => f.content.toString()),
+  ).toEqual(['-- definition seed']);
+});
+
+// Before, a directory crashed the resolver with EISDIR
+it.each([
+  ['mountFiles', { mountFiles: [{ source: './conf', target: '/etc/conf' }] }],
+])('reports a directory given in %s', (_field, extra) => {
+  const dokkimiDir = createTempDokkimi();
+  fs.mkdirSync(path.join(dokkimiDir, 'conf'));
+  writeFile(
+    dokkimiDir,
+    'd.json',
+    minimalDef('d', [
+      {
+        type: 'SERVICE',
+        name: 'svc',
+        image: 'x:1',
+        port: 3000,
+        healthCheck: '/health',
+        ...extra,
+      },
+    ]),
+  );
+  const errors = resolveDefinitions(dokkimiDir).errors.flatMap((e) => e.errors);
+  expect(errors).toEqual([
+    'Mount file "./conf" is not a file — mount each file separately',
+  ]);
+});
+
+// Before, Control Tower rejected the run with a 400 after it was submitted
+it('reports an init file over the limit before submitting', () => {
+  const dokkimiDir = createTempDokkimi();
+  writeFile(dokkimiDir, 'big.sql', 'x'.repeat(MAX_FILE_BYTES + 1));
+  writeFile(
+    dokkimiDir,
+    'd.json',
+    minimalDef('d', [
+      {
+        type: 'DATABASE',
+        name: 'db',
+        database: 'postgres',
+        initFilePath: './big.sql',
+      },
+    ]),
+  );
+  const errors = resolveDefinitions(dokkimiDir).errors.flatMap((e) => e.errors);
+  expect(errors).toEqual([
+    'Init file "./big.sql" is 7.6 MB; files are limited to 7.5 MB',
+  ]);
 });

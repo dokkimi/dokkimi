@@ -60,15 +60,17 @@ export function loadDokkimiConfig(
 
     // Parse dokkimi version field
     if (obj.dokkimi !== undefined) {
-      if (typeof obj.dokkimi !== 'string' && typeof obj.dokkimi !== 'number') {
+      if (typeof obj.dokkimi !== 'string') {
         errors.push({
           file: configPath,
-          errors: ['"dokkimi" field must be a version string (e.g. "0.1.0")'],
+          errors: [
+            `"dokkimi" must be a version string — quote it: dokkimi: "${String(obj.dokkimi)}"`,
+          ],
           warnings: [],
         });
         return empty;
       }
-      config.dokkimi = String(obj.dokkimi);
+      config.dokkimi = obj.dokkimi;
     }
 
     // Parse env map
@@ -95,15 +97,21 @@ export function loadDokkimiConfig(
           });
           return empty;
         }
-        if (typeof value !== 'string' && typeof value !== 'number') {
+        // A YAML number has already lost its text (1.10 is read as 1.1),
+        // so env values, which are text, must be quoted
+        if (typeof value !== 'string') {
           errors.push({
             file: configPath,
-            errors: [`env key "${key}" must be a string, got ${typeof value}`],
+            errors: [
+              typeof value === 'number' || typeof value === 'boolean'
+                ? `env "${key}" must be a string — quote it: ${key}: "${String(value)}"`
+                : `env "${key}" must be a string, got ${value === null ? 'null' : typeof value}`,
+            ],
             warnings: [],
           });
           return empty;
         }
-        config.env[key] = String(value);
+        config.env[key] = value;
       }
     }
 

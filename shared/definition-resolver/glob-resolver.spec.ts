@@ -266,4 +266,20 @@ describe('scanDefinitionFiles', () => {
     const files = scanDefinitionFiles(tmp).map((f) => path.basename(f));
     expect(files).toEqual(['keep.json']);
   });
+
+  // Before, folder patterns never matched: only files were checked
+  it.each([
+    'experiments/',
+    'experiments',
+    'definitions/experiments/',
+    '**/experiments',
+  ])('skips a folder ignored with %s', (pattern) => {
+    touch(tmp, 'definitions/keep.json');
+    touch(tmp, 'definitions/experiments/a.json');
+    touch(tmp, 'definitions/experiments/deep/b.json');
+    fs.writeFileSync(path.join(tmp, '.dokignore'), `${pattern}\n`);
+
+    const files = scanDefinitionFiles(tmp).map((f) => path.relative(tmp, f));
+    expect(files).toEqual([path.join('definitions', 'keep.json')]);
+  });
 });

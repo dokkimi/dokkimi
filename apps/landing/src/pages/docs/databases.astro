@@ -32,7 +32,7 @@ import CodeBlock from '../../components/CodeBlock.astro';
       <tr><td><code>dbUser</code></td><td>string</td><td><code>dokkimi</code></td><td>Database username</td></tr>
       <tr><td><code>dbPassword</code></td><td>string</td><td><code>dokkimi</code></td><td>Database password</td></tr>
       <tr><td><code>noAuth</code></td><td>boolean</td><td><code>false</code></td><td>Skip all authentication. Database starts without credentials. Cannot combine with <code>dbName</code>, <code>dbUser</code>, or <code>dbPassword</code>.</td></tr>
-      <tr><td><code>initFilePath</code></td><td>string</td><td>—</td><td>Relative path to a single init script</td></tr>
+      <tr><td><code>initFilePath</code></td><td>string</td><td>—</td><td>Relative path to a single init script (a file, at most 7.5 MB)</td></tr>
       <tr><td><code>initFilePaths</code></td><td>string[]</td><td>—</td><td>Relative paths to multiple init scripts (executed in order). Use one or the other, not both.</td></tr>
       <tr><td><code>stage</code></td><td>integer</td><td><code>0</code></td><td>Deployment stage — controls <a href="/docs/project-structure#staged-bootup-order">bootup order</a></td></tr>
       <tr><td><code>maxCpu</code></td><td>number</td><td>—</td><td>Limit on CPU cores (e.g., 0.5). No limit when unset</td></tr>

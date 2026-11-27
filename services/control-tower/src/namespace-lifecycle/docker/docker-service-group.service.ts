@@ -1,4 +1,3 @@
-import * as path from 'path';
 import { Injectable, Logger } from '@nestjs/common';
 import {
   getConfig,
@@ -18,7 +17,10 @@ import {
 } from '../../constants/image-tags';
 import { DefinitionItem, BrowserConfig } from '../deployment-context.types';
 import { envArrayToRecord } from './env.utils';
-import { RunStorageService } from '../../storage/run-storage.service';
+import {
+  RunStorageService,
+  mountFileName,
+} from '../../storage/run-storage.service';
 import * as fs from 'fs';
 
 @Injectable()
@@ -214,11 +216,10 @@ export class DockerServiceGroupService {
         instanceId,
         item.name,
       );
-      for (const mf of item.mountFiles) {
-        const safeName = path
-          .basename(mf.source)
-          .replace(/[^a-zA-Z0-9_.-]/g, '_');
-        mountFileBinds.push(`${mountDir}/${safeName}:${mf.target}:ro`);
+      for (const [i, mf] of item.mountFiles.entries()) {
+        mountFileBinds.push(
+          `${mountDir}/${mountFileName(i, mf.source)}:${mf.target}:ro`,
+        );
       }
     }
 

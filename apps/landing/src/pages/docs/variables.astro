@@ -156,7 +156,7 @@ import CodeBlock from '../../components/CodeBlock.astro';
     <li><strong>Test-level <code>variables</code></strong> — per-test overrides</li>
     <li><strong><code>extract</code> on steps</strong> — runtime extraction (overwrites all hardcoded values)</li>
   </ol>
-  <p>In <strong>item fields</strong> (build time), the resolver assembles one flat map seeded with <a href="/docs/project-structure">config.yaml</a> <code>env</code> entries, then definition-level <code>variables</code> are merged on top. All <code>&#123;&#123;VAR&#125;&#125;</code> in items resolve against this merged map. For keys not overridden by a definition variable, <code>&#123;&#123;FOO&#125;&#125;</code> and <code>$&#123;&#123;FOO&#125;&#125;</code> resolve to the same value. Unresolved references are errors.</p>
+  <p>In <strong>item fields</strong> (build time), the resolver assembles one flat map seeded with <a href="/docs/project-structure">config.yaml</a> <code>env</code> entries, then definition-level <code>variables</code> are merged on top. All <code>&#123;&#123;VAR&#125;&#125;</code> in items resolve against this merged map. For keys not overridden by a definition variable, <code>&#123;&#123;FOO&#125;&#125;</code> and <code>$&#123;&#123;FOO&#125;&#125;</code> resolve to the same value. Unresolved references are errors. A variable may be a string, number or boolean, and is used as its text. Values are filled in before the definition is validated, so a field with a format (<code>version</code>, <code>healthCheck</code>) can come from a variable.</p>
 
   <h2>Scoping rules</h2>
   <ul>

@@ -153,6 +153,7 @@ items:
   <h2>Rules</h2>
   <ul>
     <li>Paths are relative to the file containing the <code>$ref</code></li>
+    <li>File paths in an item (<code>initFilePath</code>, <code>initFilePaths</code>, <code>mountFiles</code> sources) are relative to the file that writes them: an override in the definition to the definition, a path in a fragment to the fragment</li>
     <li>For multi-ref, fragments merge left-to-right; inline override fields win</li>
     <li>Refs are recursive — fragments can <code>$ref</code> other fragments, with circular reference detection</li>
     <li>Maximum ref chain depth is 10 levels</li>

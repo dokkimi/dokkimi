@@ -40,10 +40,14 @@ export function scanDefinitionFiles(
         continue;
       }
       const full = path.join(dir, entry.name);
+      // .dokignore patterns use "/", as in .gitignore
+      const rel = path.relative(relRoot, full).split(path.sep).join('/');
       if (entry.isDirectory()) {
-        walk(full);
+        // An ignored folder (`experiments/`) skips everything in it
+        if (!isIgnored(rel, entry.name)) {
+          walk(full);
+        }
       } else if (isDefinitionFile(entry.name)) {
-        const rel = path.relative(relRoot, full);
         if (isIgnored(rel, entry.name)) {
           continue;
         }
@@ -66,7 +70,8 @@ export function loadDokignore(dokkimiDir: string): IgnoreRules {
   const exact = new Set<string>();
   const globs: string[] = [];
   for (const line of content.split('\n')) {
-    const trimmed = line.trim();
+    // A trailing "/" marks a folder; folders are matched like files
+    const trimmed = line.trim().replace(/\/+$/, '');
     if (!trimmed || trimmed.startsWith('#')) {
       continue;
     }

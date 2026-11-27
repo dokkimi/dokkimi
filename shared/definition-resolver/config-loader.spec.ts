@@ -99,14 +99,16 @@ describe('loadDokkimiConfig', () => {
     expect(errors[0].errors[0]).toMatch(/dokkimi.*version string/);
   });
 
-  it('coerces numeric dokkimi version to string', () => {
+  it('rejects a numeric dokkimi version', () => {
     fs.writeFileSync(
       path.join(tmp, 'config.json'),
       JSON.stringify({ dokkimi: 1 }),
     );
     const result = loadDokkimiConfig(tmp, errors);
-    expect(result.dokkimi).toBe('1');
-    expect(errors).toEqual([]);
+    expect(result).toEqual({ env: {} });
+    expect(errors[0].errors).toEqual([
+      '"dokkimi" must be a version string — quote it: dokkimi: "1"',
+    ]);
   });
 
   it('reports error when env is an array', () => {
@@ -129,23 +131,31 @@ describe('loadDokkimiConfig', () => {
     expect(errors[0].errors[0]).toMatch(/env key.*alphanumeric/);
   });
 
-  it('reports error when env value is not string or number', () => {
+  it('reports error when env value is not a string', () => {
     fs.writeFileSync(
       path.join(tmp, 'config.json'),
-      JSON.stringify({ env: { KEY: true } }),
+      JSON.stringify({ env: { KEY: { a: 1 } } }),
     );
     const result = loadDokkimiConfig(tmp, errors);
     expect(result).toEqual({ env: {} });
-    expect(errors[0].errors[0]).toMatch(/env key "KEY" must be a string/);
+    expect(errors[0].errors[0]).toBe('env "KEY" must be a string, got object');
   });
 
-  it('coerces numeric env values to string', () => {
-    fs.writeFileSync(
-      path.join(tmp, 'config.json'),
-      JSON.stringify({ env: { PORT: 3000 } }),
-    );
+  // A YAML number has already lost its text: TAG: 1.10 is read as 1.1.
+  // Before, it was used as "1.1".
+  it.each([
+    ['TAG: 1.10', 'env "TAG" must be a string — quote it: TAG: "1.1"'],
+    ['DEBUG: true', 'env "DEBUG" must be a string — quote it: DEBUG: "true"'],
+  ])('rejects an env value that is not quoted: %s', (line, message) => {
+    fs.writeFileSync(path.join(tmp, 'config.yaml'), `env:\n  ${line}\n`);
     const result = loadDokkimiConfig(tmp, errors);
-    expect(result.env.PORT).toBe('3000');
+    expect(result).toEqual({ env: {} });
+    expect(errors[0].errors).toEqual([message]);
+  });
+
+  it('accepts a quoted env value as written', () => {
+    fs.writeFileSync(path.join(tmp, 'config.yaml'), 'env:\n  TAG: "1.10"\n');
+    expect(loadDokkimiConfig(tmp, errors).env.TAG).toBe('1.10');
     expect(errors).toEqual([]);
   });
 });

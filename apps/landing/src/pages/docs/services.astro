@@ -40,7 +40,7 @@ import CodeBlock from '../../components/CodeBlock.astro';
 
   <h2>Mount files</h2>
   <p>Mount config files, scripts, keys, or any other file into the container at a specific path. This eliminates the need for wrapper Dockerfiles that exist solely to <code>COPY</code> files into the image.</p>
-  <p>Each entry has a <code>source</code> (relative path from the definition file to the file on disk) and a <code>target</code> (absolute path inside the container). Files are mounted read-only.</p>
+  <p>Each entry has a <code>source</code> (relative path to the file on disk, from the file that writes it) and a <code>target</code> (absolute path inside the container). Each source is a file, not a folder, of at most 7.5 MB. Files are mounted read-only.</p>
   <CodeBlock code={`{
   "type": "SERVICE",
   "name": "my-service",
