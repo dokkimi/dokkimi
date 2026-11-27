@@ -191,6 +191,19 @@ describe('validateExtractRules', () => {
       ).toBe(true);
     });
 
+    it.each([
+      ['(?i)order-(\\d+)', 0],
+      ['order-(?=\\d)', 1],
+    ])('checks pattern %s as Go would', (pattern, errors) => {
+      const r = makeResult();
+      validateExtractRules(
+        { x: { path: '$.response.body.id', pattern } },
+        'ctx',
+        r,
+      );
+      expect(r.errors).toHaveLength(errors);
+    });
+
     it('errors when group is negative', () => {
       const r = makeResult();
       validateExtractRules(
@@ -237,7 +250,7 @@ describe('validateExtractRules', () => {
       );
     });
 
-    it('warns on unknown keys in regex rule', () => {
+    it('rejects unknown keys in regex rule', () => {
       const r = makeResult();
       validateExtractRules(
         {
@@ -246,7 +259,7 @@ describe('validateExtractRules', () => {
         'ctx',
         r,
       );
-      expect(r.warnings.some((w) => w.includes('unknown key "bogus"'))).toBe(
+      expect(r.errors.some((w) => w.includes('unknown property "bogus"'))).toBe(
         true,
       );
     });
@@ -434,10 +447,10 @@ describe('validateCountAssertion', () => {
     );
   });
 
-  it('warns on unknown keys', () => {
+  it('rejects unknown keys', () => {
     const r = makeResult();
     validateCountAssertion({ operator: 'eq', value: 1, extra: true }, 'ctx', r);
-    expect(r.warnings.some((w) => w.includes('unknown property'))).toBe(true);
+    expect(r.errors.some((w) => w.includes('unknown property'))).toBe(true);
   });
 });
 
@@ -637,10 +650,10 @@ describe('validateMatchCriteria', () => {
     );
   });
 
-  it('warns on unknown keys', () => {
+  it('rejects unknown keys', () => {
     const r = makeResult();
     validateMatchCriteria({ path: '$.traffic', bogus: true }, 'ctx', r);
-    expect(r.warnings.some((w) => w.includes('unknown property'))).toBe(true);
+    expect(r.errors.some((w) => w.includes('unknown property'))).toBe(true);
   });
 });
 
@@ -731,10 +744,10 @@ describe('validateAssertionBlock', () => {
     ).toBe(true);
   });
 
-  it('warns on unknown keys', () => {
+  it('rejects unknown keys', () => {
     const r = makeResult();
     validateAssertionBlock({ bogus: true }, 'ctx', r);
-    expect(r.warnings.some((w) => w.includes('unknown property "bogus"'))).toBe(
+    expect(r.errors.some((w) => w.includes('unknown property "bogus"'))).toBe(
       true,
     );
   });

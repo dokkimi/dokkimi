@@ -45,13 +45,7 @@ func main() {
 
 	healthChecker := shared.NewHealthCheckerWithFunc(cfg, func(ctx context.Context) error {
 		creds := cfg.DatabaseCredentials
-		var connStr string
-		if creds.DBUser != "" && creds.DBPassword != "" {
-			connStr = fmt.Sprintf("mongodb://%s:%s@localhost:%s/%s?authSource=admin",
-				creds.DBUser, creds.DBPassword, cfg.DatabasePort, creds.DBName)
-		} else {
-			connStr = fmt.Sprintf("mongodb://localhost:%s/%s", cfg.DatabasePort, creds.DBName)
-		}
+		connStr := shared.MongoURL(creds.DBUser, creds.DBPassword, "localhost", cfg.DatabasePort, creds.DBName)
 
 		client, err := mongo.Connect(options.Client().ApplyURI(connStr))
 		if err != nil {

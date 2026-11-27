@@ -90,7 +90,7 @@ func main() {
 	// runs don't need this; if a UI step arrives and the executor is unset, the
 	// test-agent fails that step loudly with a clear message.
 	if cfg.BrowserURL != "" {
-		artifactUploader := NewArtifactUploader(cfg.ControlTowerURL, instanceId, cfg.RequestTimeout)
+		artifactUploader := NewArtifactUploader(cfg.ControlTowerURL, instanceId, 30*time.Second)
 		visualMatcher := NewVisualMatcher(cfg.BaselinesPath)
 		uiExecutor := NewUIStepExecutor(
 			cfg.BrowserURL,
@@ -151,9 +151,27 @@ func main() {
 
 		if !healthChecked {
 			stages := configMapData.ExpectedItemStages
+			if len(stages) == 0 {
+				stages = [][]string{{}} // nothing to wait for but the deployment
+			}
 			deadline := time.Now().Add(timeout)
 
 			for stageIdx := range stages {
+				// CT answers once the stage is deployed. It starts stage 0 by itself.
+				log.Printf("Requesting CT to deploy stage %d", stageIdx)
+				if err := callCTRunStage(cfg.ControlTowerURL, instanceId, stageIdx, time.Until(deadline)); err != nil {
+					failureMessage := fmt.Sprintf("Failed to deploy stage %d: %v", stageIdx, err)
+					log.Printf("%s, aborting test execution", failureMessage)
+					testExecutionLogger.LogEvent("STAGE_DEPLOY_FAILED", failureMessage, nil, nil)
+					completionNotifier.NotifyCompletion(
+						req.TestRunID,
+						"failure",
+						failureMessage,
+						nil,
+					)
+					return
+				}
+
 				if stageIdx > 0 {
 					healthTracker.Reset(stages[stageIdx])
 				}
@@ -196,24 +214,6 @@ func main() {
 				}
 
 				log.Printf("Stage %d healthy", stageIdx)
-
-				// Call CT to deploy the next stage (unless this is the final stage)
-				if stageIdx < len(stages)-1 {
-					nextStage := stageIdx + 1
-					log.Printf("Requesting CT to deploy stage %d", nextStage)
-					if err := callCTRunStage(cfg.ControlTowerURL, instanceId, nextStage); err != nil {
-						failureMessage := fmt.Sprintf("Failed to deploy stage %d: %v", nextStage, err)
-						log.Printf("%s, aborting test execution", failureMessage)
-						testExecutionLogger.LogEvent("STAGE_DEPLOY_FAILED", failureMessage, nil, nil)
-						completionNotifier.NotifyCompletion(
-							req.TestRunID,
-							"failure",
-							failureMessage,
-							nil,
-						)
-						return
-					}
-				}
 			}
 
 			log.Printf("All stages healthy, all items reported ready")
@@ -278,10 +278,14 @@ func main() {
 
 		if execErr != nil {
 			log.Printf("Test execution failed: %v", execErr)
+			message := fmt.Sprintf("Test execution failed: %v", execErr)
+			if testCtx.Err() == context.DeadlineExceeded {
+				message = fmt.Sprintf("Timed out after %ds (config.timeoutSeconds): %v", runConfig.TimeoutSeconds, execErr)
+			}
 			notificationErr := completionNotifier.NotifyCompletion(
 				req.TestRunID,
 				"failure",
-				fmt.Sprintf("Test execution failed: %v", execErr),
+				message,
 				stepExecutions,
 			)
 			if notificationErr != nil {
@@ -293,10 +297,10 @@ func main() {
 		log.Printf("Execution complete, notifying Control Tower...")
 		status := "success"
 		message := ""
-		if vf := testExecutor.VisualFailures(); len(vf) > 0 {
+		if failures := append(append([]string{}, testExecutor.ContinuedFailures()...), testExecutor.VisualFailures()...); len(failures) > 0 {
 			status = "failure"
-			message = strings.Join(vf, "\n")
-			log.Printf("Visual match failures detected: %s", message)
+			message = strings.Join(failures, "\n")
+			log.Printf("Failures detected: %s", message)
 		}
 		if notifyErr := completionNotifier.NotifyCompletion(req.TestRunID, status, message, stepExecutions); notifyErr != nil {
 			log.Printf("Failed to notify Control Tower: %v", notifyErr)
@@ -501,12 +505,13 @@ func buildItemIdToNameMap(configMapData *ConfigMapData) map[string]string {
 	return m
 }
 
-// callCTRunStage tells Control Tower to deploy the next stage of items.
-func callCTRunStage(ctURL string, instanceId string, stage int) error {
+// callCTRunStage tells Control Tower to deploy a stage of items, and returns once
+// it is deployed.
+func callCTRunStage(ctURL string, instanceId string, stage int, timeout time.Duration) error {
 	body := fmt.Sprintf(`{"stage":%d}`, stage)
 	url := fmt.Sprintf("%s/instances/%s/run-stage", ctURL, instanceId)
 
-	client := &http.Client{Timeout: 30 * time.Second}
+	client := &http.Client{Timeout: max(timeout, time.Millisecond)}
 	resp, err := client.Post(url, "application/json", strings.NewReader(body))
 	if err != nil {
 		return fmt.Errorf("HTTP request failed: %w", err)

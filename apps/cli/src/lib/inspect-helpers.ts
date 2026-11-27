@@ -141,12 +141,13 @@ export function deriveGroupStatuses(
   return result;
 }
 
+/** Each step's status from its assertions, by step index (as deriveGroupStatuses) */
 export function deriveStepAssertionStatuses(
   assertions: AssertionResult[],
-): Map<string, string> {
-  const map = new Map<string, string>();
+): Map<number, string> {
+  const map = new Map<number, string>();
   for (const a of assertions) {
-    const key = `${a.stepIndex}`;
+    const key = a.stepIndex;
     if (a.resultKind === 'SKIPPED' || a.resultKind === 'NOT_VALIDATED') {
       if (!map.has(key)) {
         map.set(key, a.resultKind);

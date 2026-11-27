@@ -74,6 +74,41 @@ export class NamespaceInstanceService {
   }
 
   /**
+   * Marks an instance as running, unless it failed or was stopped meanwhile
+   * @returns whether it did
+   */
+  async markRunning(instanceId: string): Promise<boolean> {
+    const { count } = await this.prisma.namespaceInstance.updateMany({
+      where: { id: instanceId, status: InstanceStatus.STARTING },
+      data: { status: InstanceStatus.RUNNING, startedAt: new Date() },
+    });
+    return count > 0;
+  }
+
+  /**
+   * Marks an instance as failed, unless its test is over or it is being stopped
+   * @returns whether it did
+   */
+  async failIfActive(
+    instanceId: string,
+    errorMessage: string,
+  ): Promise<boolean> {
+    const { count } = await this.prisma.namespaceInstance.updateMany({
+      where: {
+        id: instanceId,
+        status: { in: [InstanceStatus.STARTING, InstanceStatus.RUNNING] },
+        testStatus: null,
+      },
+      data: {
+        status: InstanceStatus.FAILED,
+        errorMessage,
+        stoppedAt: new Date(),
+      },
+    });
+    return count > 0;
+  }
+
+  /**
    * Updates instance Docker network name
    */
   async updateInstanceDockerNetwork(instanceId: string, dockerNetwork: string) {

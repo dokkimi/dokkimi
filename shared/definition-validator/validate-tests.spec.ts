@@ -15,8 +15,57 @@ describe('validateTests', () => {
 
   it('validates a minimal valid test', () => {
     const r = makeResult();
-    validateTests([{ name: 'my-test', steps: [] }], r, defFile, mockFs);
+    validateTests(
+      [
+        {
+          name: 'my-test',
+          steps: [{ action: { type: 'wait', durationMs: 1 } }],
+        },
+      ],
+      r,
+      defFile,
+      mockFs,
+    );
     expect(r.errors).toHaveLength(0);
+  });
+
+  it.each([
+    [{ name: 'no steps' }, 'a test needs "steps"'],
+    [{ name: 'empty', steps: [] }, 'a test needs at least one step'],
+  ])('rejects a test that runs nothing: %j', (test, message) => {
+    const r = makeResult();
+    validateTests([test], r, defFile, mockFs);
+    expect(r.errors).toEqual([`tests[0]: ${message}`]);
+  });
+
+  it('rejects a misspelled "steps"', () => {
+    const r = makeResult();
+    const test = {
+      name: 'typo',
+      stpes: [{ action: { type: 'wait', durationMs: 1 } }],
+    };
+    validateTests([test], r, defFile, mockFs);
+    expect(r.errors).toEqual([
+      'tests[0]: unknown property "stpes"',
+      'tests[0]: a test needs "steps"',
+    ]);
+  });
+
+  it('accepts steps next to a test-level loop', () => {
+    const r = makeResult();
+    validateTests(
+      [
+        {
+          name: 'loop',
+          forEach: { items: [1, 2], as: 'x' },
+          steps: [{ action: { type: 'wait', durationMs: 1 } }],
+        },
+      ],
+      r,
+      defFile,
+      mockFs,
+    );
+    expect(r.errors).toEqual([]);
   });
 
   it('errors when tests is not an array', () => {
@@ -25,10 +74,10 @@ describe('validateTests', () => {
     expect(r.errors[0]).toContain('"tests" must be an array');
   });
 
-  it('warns on legacy object format', () => {
+  it('rejects the old object format', () => {
     const r = makeResult();
     validateTests({ legacy: true }, r, defFile, mockFs);
-    expect(r.warnings.some((w) => w.includes('legacy'))).toBe(true);
+    expect(r.errors).toEqual(['"tests" must be an array of test definitions']);
   });
 
   it('errors when test entry is not an object', () => {
@@ -45,7 +94,7 @@ describe('validateTests', () => {
     );
   });
 
-  it('warns on unknown test keys', () => {
+  it('rejects unknown test keys', () => {
     const r = makeResult();
     validateTests(
       [{ name: 'test', steps: [], bogus: true }],
@@ -53,7 +102,7 @@ describe('validateTests', () => {
       defFile,
       mockFs,
     );
-    expect(r.warnings.some((w) => w.includes('unknown property "bogus"'))).toBe(
+    expect(r.errors.some((w) => w.includes('unknown property "bogus"'))).toBe(
       true,
     );
   });
@@ -62,7 +111,13 @@ describe('validateTests', () => {
     it('accepts valid variables', () => {
       const r = makeResult();
       validateTests(
-        [{ name: 'test', variables: { myVar: 'value' } }],
+        [
+          {
+            name: 'test',
+            variables: { myVar: 'value' },
+            steps: [{ action: { type: 'wait', durationMs: 1 } }],
+          },
+        ],
         r,
         defFile,
         mockFs,
@@ -97,6 +152,7 @@ describe('validateTests', () => {
         [
           {
             name: 'test',
+            steps: [{ action: { type: 'wait', durationMs: 1 } }],
             variables: {
               num: 42,
               arr: [1, 2, 3],
@@ -242,7 +298,33 @@ describe('validateTests', () => {
       );
     });
 
-    it('accepts a single UI action in a parallel action', () => {
+    it('accepts httpRequest and dbQuery inside parallel', () => {
+      const r = makeResult();
+      validateTests(
+        [
+          {
+            name: 'test',
+            steps: [
+              {
+                action: {
+                  type: 'parallel',
+                  actions: [
+                    { type: 'httpRequest', method: 'GET', url: '/api' },
+                    { type: 'dbQuery', database: 'db', query: 'SELECT 1' },
+                  ],
+                },
+              },
+            ],
+          },
+        ],
+        r,
+        defFile,
+        mockFs,
+      );
+      expect(r.errors.some((e) => e.includes('inside parallel'))).toBe(false);
+    });
+
+    it('errors on ui and wait inside parallel', () => {
       const r = makeResult();
       validateTests(
         [
@@ -258,7 +340,7 @@ describe('validateTests', () => {
                       target: 'frontend-svc',
                       steps: [{ visit: '/' }],
                     },
-                    { type: 'httpRequest', method: 'GET', url: '/api' },
+                    { type: 'wait', durationMs: 10 },
                   ],
                 },
               },
@@ -269,47 +351,40 @@ describe('validateTests', () => {
         defFile,
         mockFs,
       );
-      expect(r.errors.some((e) => e.includes('more than one UI action'))).toBe(
-        false,
+      expect(r.errors).toEqual(
+        expect.arrayContaining([
+          expect.stringContaining(
+            'actions[0]: "ui" can\'t run inside parallel',
+          ),
+          expect.stringContaining(
+            'actions[1]: "wait" can\'t run inside parallel',
+          ),
+        ]),
       );
     });
 
-    it('errors on two UI actions in a parallel action', () => {
+    it('errors on timeoutSeconds on a test', () => {
       const r = makeResult();
       validateTests(
         [
           {
             name: 'test',
-            steps: [
-              {
-                action: {
-                  type: 'parallel',
-                  actions: [
-                    {
-                      type: 'ui',
-                      target: 'frontend-svc',
-                      steps: [{ visit: '/' }],
-                    },
-                    {
-                      type: 'ui',
-                      target: 'admin-svc',
-                      steps: [{ visit: '/' }],
-                    },
-                  ],
-                },
-              },
-            ],
+            timeoutSeconds: 60,
+            steps: [{ action: { type: 'wait', durationMs: 10 } }],
           },
         ],
         r,
         defFile,
         mockFs,
       );
-      expect(
-        r.errors.some((e) =>
-          e.includes('parallel cannot have more than one UI action'),
-        ),
-      ).toBe(true);
+      expect(r.errors).toEqual(
+        expect.arrayContaining([
+          expect.stringContaining(
+            '"timeoutSeconds" is not supported on a test',
+          ),
+        ]),
+      );
+      expect(r.warnings.some((w) => w.includes('timeoutSeconds'))).toBe(false);
     });
   });
 
@@ -577,7 +652,7 @@ describe('validateStep', () => {
     expect(r.errors[0]).toContain('missing "action" object');
   });
 
-  it('warns on unknown step keys', () => {
+  it('rejects unknown step keys', () => {
     const r = makeResult();
     validateStep(
       {
@@ -587,7 +662,7 @@ describe('validateStep', () => {
       'ctx',
       r,
     );
-    expect(r.warnings.some((w) => w.includes('unknown property "bogus"'))).toBe(
+    expect(r.errors.some((w) => w.includes('unknown property "bogus"'))).toBe(
       true,
     );
   });
@@ -735,10 +810,10 @@ describe('validateStep', () => {
   });
 
   describe('unknown action type', () => {
-    it('warns on unknown action type', () => {
+    it('rejects unknown action type', () => {
       const r = makeResult();
       validateStep({ action: { type: 'unknown' } }, 'ctx', r);
-      expect(r.warnings.some((w) => w.includes('unknown action type'))).toBe(
+      expect(r.errors.some((w) => w.includes('unknown action type'))).toBe(
         true,
       );
     });
@@ -1161,5 +1236,29 @@ describe('resolveVariablesRef', () => {
       expect(result).toBeNull();
       expect(r.errors.some((e) => e.includes('circular'))).toBe(true);
     });
+  });
+});
+
+describe('httpRequest timeout', () => {
+  const errors = (timeout: unknown) => {
+    const r = makeResult();
+    validateStep(
+      {
+        action: { type: 'httpRequest', method: 'GET', url: 'api/x', timeout },
+      },
+      'step',
+      r,
+    );
+    return r.errors;
+  };
+
+  it('accepts a positive integer', () => {
+    expect(errors(60000)).toEqual([]);
+  });
+
+  it.each([0, -1, 1.5, '60s', null])('rejects %p', (timeout) => {
+    expect(errors(timeout)).toEqual([
+      'step.action: "timeout" must be a positive integer (ms)',
+    ]);
   });
 });

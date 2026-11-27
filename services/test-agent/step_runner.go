@@ -1,7 +1,9 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"time"
@@ -55,7 +57,9 @@ func (e *TestExecutor) executeStepAt(ctx context.Context, fs flatStep) (StepExec
 			repeat.ForEach, repeat.For, repeat.Repeat)
 	}
 
-	result, loopErr := runLoop(plan, e.varCtx, func(iterIdx int, iter Iteration) (map[string]interface{}, error) {
+	var failures []string // iterations that failed without stopping the loop
+	var lastErr error     // of the last iteration, if it failed while polling with until
+	result, loopErr := runLoop(ctx, plan, e.varCtx, func(iterIdx int, iter Iteration) (map[string]interface{}, error) {
 		iter.SetupFn()
 		iterFS := fs
 		iterFS.loopLabel = fs.loopLabel + iter.Label
@@ -78,8 +82,13 @@ func (e *TestExecutor) executeStepAt(ctx context.Context, fs flatStep) (StepExec
 			hasUntil := repeat != nil && len(repeat.Until) > 0
 			stopOnFailure := iterStep.StopOnFailure == nil || *iterStep.StopOnFailure
 			if !stopOnFailure || hasUntil {
-				e.testExecutionLogger.LogEvent("STEP_WARNING",
-					fmt.Sprintf("%s failed at iteration %d (continuing): %v", label, iterIdx, err), &si, nil)
+				message := fmt.Sprintf("%s failed at iteration %d (continuing): %v", label, iterIdx, err)
+				e.testExecutionLogger.LogEvent("STEP_WARNING", message, &si, nil)
+				if !stopOnFailure {
+					failures = append(failures, message)
+				} else {
+					lastErr = err
+				}
 				return nil, nil
 			}
 			stepExec.EndTime = iterEnd
@@ -88,6 +97,7 @@ func (e *TestExecutor) executeStepAt(ctx context.Context, fs flatStep) (StepExec
 			return nil, err
 		}
 
+		lastErr = nil
 		iterExec := StepExecution{
 			StepIndex: si,
 			StartTime: iterStart,
@@ -118,8 +128,9 @@ func (e *TestExecutor) executeStepAt(ctx context.Context, fs flatStep) (StepExec
 					stepExec.EndTime = iterEnd
 					return nil, fmt.Errorf("assertion validation failed: %s", summary)
 				}
-				e.testExecutionLogger.LogEvent("STEP_WARNING",
-					fmt.Sprintf("%s (stopOnFailure=false, continuing)", summary), &si, nil)
+				message := fmt.Sprintf("%s (stopOnFailure=false, continuing)", summary)
+				e.testExecutionLogger.LogEvent("STEP_WARNING", message, &si, nil)
+				failures = append(failures, message)
 			}
 		}
 
@@ -127,11 +138,25 @@ func (e *TestExecutor) executeStepAt(ctx context.Context, fs flatStep) (StepExec
 	})
 
 	if loopErr != nil {
+		if stepExec.EndTime == "" { // the loop ended between iterations
+			stepExec.EndTime = time.Now().Format(time.RFC3339Nano)
+		}
 		return stepExec, loopErr
 	}
 
 	stepExec.EndTime = time.Now().Format(time.RFC3339Nano)
 	log.Printf("%s loop completed (%d iterations, completed=%v)", label, result.IterationsRan, result.Completed)
+	if lastErr != nil {
+		e.testExecutionLogger.LogEvent("STEP_FAILED",
+			fmt.Sprintf("%s failed at its last iteration: %v", label, lastErr), &si, nil)
+		return stepExec, lastErr
+	}
+	if len(failures) > 0 {
+		e.continuedFailures = append(e.continuedFailures, failures...)
+		e.testExecutionLogger.LogEvent("STEP_FAILED",
+			fmt.Sprintf("%s loop completed (%d iterations), %d failed", label, result.IterationsRan, len(failures)), &si, nil)
+		return stepExec, nil
+	}
 	e.testExecutionLogger.LogEvent("STEP_COMPLETED",
 		fmt.Sprintf("%s loop completed (%d iterations)", label, result.IterationsRan), &si, nil)
 	return stepExec, nil
@@ -188,8 +213,10 @@ func (e *TestExecutor) executeStepOnce(ctx context.Context, fs flatStep) (StepEx
 				e.testExecutionLogger.LogEvent("STEP_FAILED", summary, &si, nil)
 				return stepExec, fmt.Errorf("assertion validation failed: %s", summary)
 			}
-			e.testExecutionLogger.LogEvent("STEP_WARNING",
-				fmt.Sprintf("%s (stopOnFailure=false, continuing)", summary), &si, nil)
+			message := fmt.Sprintf("%s (stopOnFailure=false, continuing)", summary)
+			e.continuedFailures = append(e.continuedFailures, message)
+			e.testExecutionLogger.LogEvent("STEP_FAILED", message, &si, nil)
+			return stepExec, nil
 		}
 		log.Printf("%s", summary)
 	}
@@ -245,11 +272,17 @@ func (e *TestExecutor) executeAction(ctx context.Context, step TestStep, stepInd
 	case "httpRequest":
 		return e.executeAPIStep(ctx, resolvedAction, stepIndex)
 	case "dbQuery":
-		return e.executeDbQueryStep(ctx, resolvedAction, stepIndex)
+		resp, err := e.executeDbQueryStep(ctx, resolvedAction, stepIndex)
+		if err == nil && !assertsOnQueryOutcome(step) {
+			err = queryFailure(resolvedAction, resp)
+		}
+		return resp, err
 	case "wait":
 		log.Printf("Executing wait action: %d ms", resolvedAction.DurationMs)
 		e.testExecutionLogger.LogEvent("WAIT_STARTED", fmt.Sprintf("Waiting %d ms", resolvedAction.DurationMs), &stepIndex, nil)
-		time.Sleep(time.Duration(resolvedAction.DurationMs) * time.Millisecond)
+		if err := sleep(ctx, time.Duration(resolvedAction.DurationMs)*time.Millisecond); err != nil {
+			return nil, fmt.Errorf("wait: %w", err)
+		}
 		e.testExecutionLogger.LogEvent("WAIT_COMPLETED", fmt.Sprintf("Wait completed (%d ms)", resolvedAction.DurationMs), &stepIndex, nil)
 		return nil, nil
 	case "ui":
@@ -266,6 +299,22 @@ func (e *TestExecutor) executeAction(ctx context.Context, step TestStep, stepInd
 	}
 }
 
+// assertsOnQueryOutcome reports whether a step checks if its query failed, in
+// which case a failed query is a result like any other.
+func assertsOnQueryOutcome(step TestStep) bool {
+	assertions, _ := json.Marshal(step.Assertions)
+	return bytes.Contains(assertions, []byte(`"$.response.success"`)) ||
+		bytes.Contains(assertions, []byte(`"$.response.error"`))
+}
+
+// queryFailure returns an error if a query's result says it failed.
+func queryFailure(action StepAction, resp map[string]interface{}) error {
+	if success, _ := resp["success"].(bool); success {
+		return nil
+	}
+	return fmt.Errorf("dbQuery on %s failed: %v", action.Database, resp["error"])
+}
+
 // executeActionLoop runs the action portion of a step in a loop.
 // Extract + assertions run once after all iterations against the last response.
 func (e *TestExecutor) executeActionLoop(ctx context.Context, step TestStep, stepIndex int,
@@ -277,7 +326,7 @@ func (e *TestExecutor) executeActionLoop(ctx context.Context, step TestStep, ste
 	}
 
 	var lastResp map[string]interface{}
-	_, loopErr := runLoop(plan, e.varCtx, func(iterIdx int, iter Iteration) (map[string]interface{}, error) {
+	_, loopErr := runLoop(ctx, plan, e.varCtx, func(iterIdx int, iter Iteration) (map[string]interface{}, error) {
 		iter.SetupFn()
 		log.Printf("Action loop iteration %d %s", iterIdx, iter.Label)
 		resp, err := e.executeAction(ctx, step, stepIndex)
@@ -319,6 +368,9 @@ func (e *TestExecutor) executeParallelAction(ctx context.Context, action StepAct
 				resp, err = e.executeAPIStep(ctx, sa, stepIndex)
 			case "dbQuery":
 				resp, err = e.executeDbQueryStep(ctx, sa, stepIndex)
+				if err == nil {
+					err = queryFailure(sa, resp)
+				}
 			default:
 				err = fmt.Errorf("unsupported action type in parallel block: %s", sa.Type)
 			}

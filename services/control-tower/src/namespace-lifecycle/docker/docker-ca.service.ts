@@ -2,7 +2,12 @@ import { Injectable, Logger, OnApplicationBootstrap } from '@nestjs/common';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
+import * as tls from 'tls';
 import * as forge from 'node-forge';
+import {
+  buildJavaTruststore,
+  JAVA_TRUSTSTORE_PASSWORD,
+} from './java-truststore';
 
 const CA_DIR = path.join(os.homedir(), '.dokkimi', 'ca');
 const CA_CERT_PATH = path.join(CA_DIR, 'ca.crt');
@@ -17,7 +22,14 @@ export interface CaBundlePaths {
   caCertPath: string;
   caKeyPath: string;
   caBundlePath: string;
+  javaTruststorePath: string;
 }
+
+/** Points JVMs at the truststore; a user's own JAVA_TOOL_OPTIONS goes after */
+export const JAVA_TOOL_OPTIONS =
+  '-Djavax.net.ssl.trustStore=/ca-bundle/java-cacerts ' +
+  `-Djavax.net.ssl.trustStorePassword=${JAVA_TRUSTSTORE_PASSWORD} ` +
+  '-Djavax.net.ssl.trustStoreType=JKS';
 
 @Injectable()
 export class DockerCaService implements OnApplicationBootstrap {
@@ -72,12 +84,22 @@ export class DockerCaService implements OnApplicationBootstrap {
 
     fs.writeFileSync(caBundlePath, combinedBundle);
 
+    // A JVM ignores the bundle above and replaces its own truststore with
+    // the one it is pointed at, so this one holds the public roots (Node's)
+    // and the Dokkimi CA
+    const javaTruststorePath = path.join(configDir, 'java-cacerts');
+    fs.writeFileSync(
+      javaTruststorePath,
+      buildJavaTruststore([...tls.rootCertificates, dokkimiCaCert]),
+    );
+
     this.logger.log(`Prepared CA bundle for instance ${instanceId}`);
 
     return {
       caCertPath: CA_CERT_PATH,
       caKeyPath: CA_KEY_PATH,
       caBundlePath,
+      javaTruststorePath,
     };
   }
 
@@ -92,6 +114,7 @@ export class DockerCaService implements OnApplicationBootstrap {
     return [
       `${caBundlePaths.caCertPath}:/etc/ssl/certs/dokkimi-ca.crt:ro`,
       `${caBundlePaths.caBundlePath}:/ca-bundle/ca-bundle.crt:ro`,
+      `${caBundlePaths.javaTruststorePath}:/ca-bundle/java-cacerts:ro`,
     ];
   }
 
@@ -101,6 +124,9 @@ export class DockerCaService implements OnApplicationBootstrap {
       SSL_CERT_FILE: '/ca-bundle/ca-bundle.crt',
       REQUESTS_CA_BUNDLE: '/ca-bundle/ca-bundle.crt',
       CURL_CA_BUNDLE: '/ca-bundle/ca-bundle.crt',
+      // Before, JVM services had no way to trust the Dokkimi CA, so their
+      // HTTPS calls through the interceptor failed
+      JAVA_TOOL_OPTIONS,
     };
   }
 

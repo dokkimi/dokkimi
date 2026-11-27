@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/binary"
 	"encoding/json"
 	"log"
@@ -85,11 +86,22 @@ func (c *kafkaConnection) relayRequests() {
 			return
 		}
 
+		// Note the request before forwarding it: the broker can answer before
+		// this goroutine runs again, and the reply must find its request.
+		hdr, bodyStart, hdrErr := parseRequestHeader(payload)
+		if hdrErr == nil {
+			c.mu.Lock()
+			c.pending[hdr.CorrelationID] = pendingRequest{apiKey: hdr.APIKey, apiVersion: hdr.APIVersion}
+			c.mu.Unlock()
+		}
+
 		if _, err := c.upstream.Write(raw); err != nil {
 			return
 		}
 
-		c.inspectRequest(payload)
+		if hdrErr == nil {
+			c.inspectRequest(hdr, payload[bodyStart:])
+		}
 	}
 }
 
@@ -108,28 +120,16 @@ func (c *kafkaConnection) relayResponses() {
 	}
 }
 
-func (c *kafkaConnection) inspectRequest(payload []byte) {
-	hdr, bodyStart, err := parseRequestHeader(payload)
-	if err != nil {
+func (c *kafkaConnection) inspectRequest(hdr requestHeader, body []byte) {
+	if hdr.APIKey != apiProduce {
 		return
 	}
-
-	c.mu.Lock()
-	c.pending[hdr.CorrelationID] = pendingRequest{
-		apiKey:     hdr.APIKey,
-		apiVersion: hdr.APIVersion,
+	records, err := parseProduceRequest(body, hdr.APIVersion)
+	if err != nil {
+		log.Printf("Kafka produce v%d parse: %v", hdr.APIVersion, err)
 	}
-	c.mu.Unlock()
-
-	if hdr.APIKey == apiProduce {
-		records, err := parseProduceRequest(payload, bodyStart, hdr.APIVersion)
-		if err != nil {
-			log.Printf("Kafka produce parse: %v", err)
-			return
-		}
-		for _, rec := range records {
-			c.logRecord("produce", rec.Topic, rec.Partition, -1, rec.Key, rec.Value)
-		}
+	for _, rec := range records {
+		c.logRecord("produce", rec.Topic, rec.Partition, -1, rec.Key, rec.Value)
 	}
 }
 
@@ -149,11 +149,22 @@ func (c *kafkaConnection) inspectResponse(payload []byte) {
 		return
 	}
 
-	if req.apiKey == apiFetch {
-		records, err := parseFetchResponse(payload, req.apiVersion)
+	if req.apiKey != apiFetch && req.apiKey != apiMetadata {
+		return
+	}
+	body, err := responseBody(payload, req.apiKey, req.apiVersion)
+	if err != nil {
+		return
+	}
+	switch req.apiKey {
+	case apiMetadata:
+		if err := recordTopicNames(body, req.apiVersion); err != nil {
+			log.Printf("Kafka metadata v%d parse: %v", req.apiVersion, err)
+		}
+	case apiFetch:
+		records, err := parseFetchResponse(body, req.apiVersion)
 		if err != nil {
-			log.Printf("Kafka fetch parse: %v", err)
-			return
+			log.Printf("Kafka fetch v%d parse: %v", req.apiVersion, err)
 		}
 		for _, rec := range records {
 			c.logRecord("consume", rec.Topic, rec.Partition, rec.Offset, rec.Key, rec.Value)
@@ -164,7 +175,8 @@ func (c *kafkaConnection) inspectResponse(payload []byte) {
 func (c *kafkaConnection) logRecord(operation, topic string, partition int32, offset int64, key, value []byte) {
 	var body interface{}
 	contentType := ""
-	if err := json.Unmarshal(value, &body); err == nil {
+	if v, ok := decodeJSON(value); ok {
+		body = v
 		contentType = "application/json"
 	} else if len(value) > 0 {
 		body = string(value)
@@ -176,10 +188,15 @@ func (c *kafkaConnection) logRecord(operation, topic string, partition int32, of
 		"partition": partition,
 	}
 	if key != nil {
-		if keyObj := tryJSON(key); keyObj != nil {
-			metadata["key"] = keyObj
-		} else {
-			metadata["key"] = string(key)
+		// A key is an identifier: keep it as the exact text it was, so
+		// 1234567890123456789 doesn't become a rounded number. Only a JSON
+		// object or array key is shown parsed.
+		metadata["key"] = string(key)
+		if k, ok := decodeJSON(key); ok {
+			switch k.(type) {
+			case map[string]interface{}, []interface{}:
+				metadata["key"] = k
+			}
 		}
 	}
 	if offset >= 0 {
@@ -199,10 +216,14 @@ func (c *kafkaConnection) logRecord(operation, topic string, partition int32, of
 	})
 }
 
-func tryJSON(data []byte) interface{} {
+// decodeJSON parses data as JSON, keeping numbers exact (as json.Number), so
+// a large integer is logged as it was sent rather than rounded to a float.
+func decodeJSON(data []byte) (interface{}, bool) {
+	dec := json.NewDecoder(bytes.NewReader(data))
+	dec.UseNumber()
 	var v interface{}
-	if json.Unmarshal(data, &v) == nil {
-		return v
+	if dec.Decode(&v) != nil || dec.More() {
+		return nil, false
 	}
-	return nil
+	return v, true
 }

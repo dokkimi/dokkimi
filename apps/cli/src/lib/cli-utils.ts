@@ -8,6 +8,10 @@ import * as readline from 'readline';
 export const TIMEOUT_HEALTH = 3000;
 export const TIMEOUT_FETCH = 5000;
 export const TIMEOUT_ACTION = 10000;
+/** Creating a run first cleans up earlier runs, which can take a while */
+export const TIMEOUT_CREATE_RUN = 120000;
+/** How long the CLI waits for Dokkimi to answer before giving up on a run */
+export const LOST_CONTACT_MS = 30000;
 
 // ---------------------------------------------------------------------------
 // Display
@@ -56,6 +60,36 @@ export async function fetchJson<T>(
   }
 }
 
+/**
+ * Like fetchJson, but a failure throws, naming the URL and why: for callers
+ * that mustn't mistake a failed request for an empty result. A 404 returns
+ * null when `allow404` is set.
+ */
+export async function fetchJsonOrThrow<T>(
+  url: string,
+  opts: { allow404?: boolean; timeoutMs?: number } = {},
+): Promise<T | null> {
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      signal: AbortSignal.timeout(opts.timeoutMs ?? TIMEOUT_FETCH),
+    });
+  } catch (err) {
+    const timedOut = err instanceof DOMException && err.name === 'TimeoutError';
+    throw new Error(
+      `${timedOut ? 'Timed out' : 'Could not connect'} fetching ${url}`,
+      { cause: err },
+    );
+  }
+  if (res.status === 404 && opts.allow404) {
+    return null;
+  }
+  if (!res.ok) {
+    throw new Error(`HTTP ${res.status} fetching ${url}`);
+  }
+  return (await res.json()) as T;
+}
+
 export async function fetchAction(
   url: string,
   method: 'POST' | 'DELETE',
@@ -65,6 +99,24 @@ export async function fetchAction(
     const res = await fetch(url, {
       method,
       signal: AbortSignal.timeout(timeoutMs),
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Stops this run, if it is still active, and never another: a terminal's
+ * `dokkimi run` mustn't stop a run another terminal started.
+ */
+export async function stopRun(ctUrl: string, runId: string): Promise<boolean> {
+  try {
+    const res = await fetch(`${ctUrl}/runs/stop`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ runId }),
+      signal: AbortSignal.timeout(TIMEOUT_ACTION),
     });
     return res.ok;
   } catch {
@@ -154,8 +206,14 @@ export async function checkService(
       return { name, url, healthy: true };
     }
     return { name, url, healthy: false, detail: `HTTP ${res.status}` };
-  } catch {
-    return { name, url, healthy: false, detail: 'not reachable' };
+  } catch (err) {
+    const timedOut = err instanceof DOMException && err.name === 'TimeoutError';
+    return {
+      name,
+      url,
+      healthy: false,
+      detail: timedOut ? 'timed out' : 'not reachable',
+    };
   }
 }
 

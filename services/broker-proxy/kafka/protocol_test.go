@@ -84,51 +84,21 @@ func TestParseRequestHeader(t *testing.T) {
 	}
 }
 
-func TestParseRecordBatch(t *testing.T) {
-	// Build a minimal v2 record batch with one record
-	batch := buildTestRecordBatch(t, "hello-key", `{"msg":"hello"}`)
-
-	records := parseRecordBatch(batch, "test-topic", 0)
-	if len(records) != 1 {
-		t.Fatalf("expected 1 record, got %d", len(records))
+func TestReadRecords(t *testing.T) {
+	// A minimal v2 record batch with one record
+	records, err := readRecords(buildTestRecordBatch(t, "hello-key", `{"msg":"hello"}`), nil)
+	if err != nil || len(records) != 1 {
+		t.Fatalf("got %d records, %v; want 1", len(records), err)
 	}
-	if records[0].Topic != "test-topic" {
-		t.Errorf("Topic: got %q, want %q", records[0].Topic, "test-topic")
-	}
-	if records[0].Partition != 0 {
-		t.Errorf("Partition: got %d, want 0", records[0].Partition)
-	}
-	if string(records[0].Key) != "hello-key" {
-		t.Errorf("Key: got %q, want %q", string(records[0].Key), "hello-key")
-	}
-	if string(records[0].Value) != `{"msg":"hello"}` {
-		t.Errorf("Value: got %q, want %q", string(records[0].Value), `{"msg":"hello"}`)
+	if string(records[0].key) != "hello-key" || string(records[0].value) != `{"msg":"hello"}` {
+		t.Errorf("got key %q value %q", records[0].key, records[0].value)
 	}
 }
 
-func TestParseRecordBatch_NullKey(t *testing.T) {
-	batch := buildTestRecordBatch(t, "", `{"data":1}`)
-
-	records := parseRecordBatch(batch, "topic", 2)
-	if len(records) != 1 {
-		t.Fatalf("expected 1 record, got %d", len(records))
-	}
-	if records[0].Key != nil {
-		t.Errorf("expected nil key, got %q", string(records[0].Key))
-	}
-	if string(records[0].Value) != `{"data":1}` {
-		t.Errorf("Value: got %q", string(records[0].Value))
-	}
-}
-
-func TestParseRecordBatch_CompressedSkipped(t *testing.T) {
-	batch := buildTestRecordBatch(t, "k", "v")
-	// Set compression bits in attributes low byte (offset 22, big-endian uint16)
-	batch[22] = 0x01 // gzip
-
-	records := parseRecordBatch(batch, "topic", 0)
-	if len(records) != 0 {
-		t.Errorf("expected 0 records for compressed batch, got %d", len(records))
+func TestReadRecords_NullKey(t *testing.T) {
+	records, _ := readRecords(buildTestRecordBatch(t, "", `{"data":1}`), nil)
+	if len(records) != 1 || records[0].key != nil || string(records[0].value) != `{"data":1}` {
+		t.Errorf("got %+v", records)
 	}
 }
 

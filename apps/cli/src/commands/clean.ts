@@ -61,13 +61,22 @@ export async function clean(args: string[]): Promise<void> {
   // Check CT is running
   const ctCheck = await checkService('Dokkimi', ctUrl);
 
-  // Find orphaned Docker resources regardless of CT status
-  const orphanedContainers = findDokkimiContainers();
+  // A daemon that is slow or failing may still be running tests, so don't
+  // remove their containers from under it.
+  if (!ctCheck.healthy && ctCheck.detail !== 'not reachable') {
+    const error = `Dokkimi is running but not responding (${ctCheck.detail}). Try again, or run: dokkimi reboot`;
+    if (jsonMode) {
+      console.log(JSON.stringify({ success: false, error }));
+      return;
+    }
+    console.error(error);
+    process.exit(1);
+  }
 
   if (jsonMode) {
     const nothingToClean = ctCheck.healthy
-      ? await isNothingToCleanCT(ctUrl, orphanedContainers)
-      : orphanedContainers.length === 0;
+      ? await isNothingToCleanCT(ctUrl)
+      : findDokkimiContainers().length === 0;
 
     if (nothingToClean && !all) {
       console.log(JSON.stringify({ success: true }));
@@ -83,9 +92,9 @@ export async function clean(args: string[]): Promise<void> {
     let error: string | undefined;
     try {
       if (ctCheck.healthy) {
-        await cleanViaCT(ctUrl, true, orphanedContainers, all);
+        await cleanViaCT(ctUrl, true, all);
       } else {
-        await cleanDirectDocker(true, orphanedContainers);
+        await cleanDirectDocker(true, all, config.database.url);
       }
     } catch (err) {
       success = false;
@@ -103,31 +112,28 @@ export async function clean(args: string[]): Promise<void> {
   }
 
   if (ctCheck.healthy) {
-    await cleanViaCT(ctUrl, force, orphanedContainers, all);
+    await cleanViaCT(ctUrl, force, all);
   } else {
-    await cleanDirectDocker(force, orphanedContainers);
+    await cleanDirectDocker(force, all, config.database.url);
   }
 }
 
-async function isNothingToCleanCT(
-  ctUrl: string,
-  orphanedContainers: string[],
-): Promise<boolean> {
+async function isNothingToCleanCT(ctUrl: string): Promise<boolean> {
   const projectPath = getProjectPath();
   const latestRun = await fetchJson<RunStatus>(
     latestRunUrl(ctUrl, projectPath),
   );
   const instanceCount = latestRun?.instances?.length ?? 0;
-  return instanceCount === 0 && orphanedContainers.length === 0;
+  return instanceCount === 0;
 }
 
 /**
- * Clean via CT API (graceful path), then clean any remaining Docker resources.
+ * Clean via CT API (graceful path), which removes the runs' containers and
+ * networks. With --all, also clean any remaining Docker resources.
  */
 async function cleanViaCT(
   ctUrl: string,
   force: boolean,
-  orphanedContainers: string[],
   all = false,
 ): Promise<void> {
   // --all: delete all runs across all projects via bulk endpoint
@@ -167,11 +173,8 @@ async function cleanViaCT(
     ? latestRun!.instances.filter((i) => TERMINAL_STATUSES.has(i.status))
     : [];
 
-  const totalToClean =
-    active.length + stopped.length + orphanedContainers.length;
-
-  if (totalToClean === 0) {
-    console.log('No instances or containers found. Nothing to clean.');
+  if (active.length + stopped.length === 0) {
+    console.log('No instances found. Nothing to clean.');
     process.exit(0);
   }
 
@@ -184,11 +187,6 @@ async function cleanViaCT(
   if (stopped.length > 0) {
     console.log(
       `Found ${stopped.length} stopped instance${stopped.length === 1 ? '' : 's'} to delete.`,
-    );
-  }
-  if (orphanedContainers.length > 0) {
-    console.log(
-      `Found ${orphanedContainers.length} orphaned Docker container${orphanedContainers.length === 1 ? '' : 's'}.`,
     );
   }
   console.log('');
@@ -252,7 +250,7 @@ async function cleanViaCT(
         if (Date.now() - startTime > MAX_POLL_TIME_MS) {
           console.log('');
           console.log(
-            '\x1b[33mTimeout waiting for graceful stop. Forcing Docker cleanup...\x1b[0m',
+            '\x1b[33mTimeout waiting for graceful stop. Deleting anyway...\x1b[0m',
           );
           break;
         }
@@ -273,8 +271,8 @@ async function cleanViaCT(
     await fetchAction(deleteUrl, 'DELETE');
   }
 
-  // Phase 2: Force-remove any remaining Docker containers and networks
-  cleanupDokkimiDockerResources();
+  // Phase 2: Remove this project's run artifacts
+  cleanupRunStorage(false);
 
   console.log('');
   console.log(
@@ -284,13 +282,16 @@ async function cleanViaCT(
 }
 
 /**
- * Clean directly via Docker when CT is not running.
+ * Clean directly via Docker when CT is not running. With --all, also delete
+ * every project's run data, which Control Tower would have done.
  */
 async function cleanDirectDocker(
   force: boolean,
-  containers: string[],
+  all: boolean,
+  databaseUrl: string,
 ): Promise<void> {
-  if (containers.length === 0) {
+  const containers = findDokkimiContainers();
+  if (containers.length === 0 && !all) {
     // Also check for orphaned networks
     const networks = findDokkimiNetworks();
     if (networks.length === 0) {
@@ -309,7 +310,11 @@ async function cleanDirectDocker(
   console.log('');
 
   if (!force) {
-    const answer = await prompt('Delete all Dokkimi Docker resources? (Y/n) ');
+    const answer = await prompt(
+      all
+        ? "Delete all Dokkimi Docker resources and every project's runs? (Y/n) "
+        : 'Delete all Dokkimi Docker resources? (Y/n) ',
+    );
     if (answer === 'n' || answer === 'no') {
       console.log('Aborted.');
       process.exit(0);
@@ -317,7 +322,11 @@ async function cleanDirectDocker(
   }
 
   const startTime = Date.now();
-  cleanupDokkimiDockerResources();
+  cleanupDokkimiDockerResources(all);
+  if (all) {
+    // Before, --all here kept other projects' runs and still reported success
+    deleteLocalRunDatabase(databaseUrl);
+  }
 
   console.log('');
   console.log(
@@ -333,7 +342,7 @@ async function cleanDirectDocker(
 function findDokkimiContainers(): string[] {
   try {
     const output = execSilent(
-      'docker ps -a --filter "label=dokkimi" --format "{{.Names}}"',
+      'docker ps -a --filter "label=io.dokkimi.managed" --format "{{.Names}}"',
       { timeout: 10000 },
     );
     return output.split('\n').filter(Boolean);
@@ -345,7 +354,7 @@ function findDokkimiContainers(): string[] {
 function findDokkimiNetworks(): string[] {
   try {
     const output = execSilent(
-      'docker network ls --filter "label=dokkimi" --format "{{.Name}}"',
+      'docker network ls --filter "label=io.dokkimi.managed" --format "{{.Name}}"',
       { timeout: 10000 },
     );
     return output.split('\n').filter(Boolean);
@@ -395,6 +404,27 @@ function cleanupDokkimiDockerResources(all = false): void {
   cleanupRunStorage(all);
 }
 
+/**
+ * Deletes the local run database, which holds only run data, when Dokkimi is
+ * not running: Control Tower recreates it on its next start. Only the default
+ * file in ~/.dokkimi; a DOKKIMI_DATABASE_URL elsewhere is left alone.
+ */
+function deleteLocalRunDatabase(databaseUrl: string): void {
+  const file = databaseUrl.startsWith('file:') ? databaseUrl.slice(5) : null;
+  if (!file || path.dirname(path.resolve(file)) !== DOKKIMI_DIR) {
+    return;
+  }
+  for (const suffix of ['', '-wal', '-shm', '-journal']) {
+    try {
+      fs.rmSync(`${file}${suffix}`, { force: true });
+    } catch (e: unknown) {
+      console.warn(
+        `Warning: could not remove ${file}${suffix}: ${(e as Error).message}`,
+      );
+    }
+  }
+}
+
 function cleanupRunStorage(all: boolean): void {
   const legacyDirs = [
     path.join(DOKKIMI_DIR, 'storage'),
@@ -430,7 +460,12 @@ function cleanupRunStorage(all: boolean): void {
   if (projectPath) {
     const dir = projectRunsDir(projectPath);
     try {
-      fs.rmSync(dir, { recursive: true });
+      // Only this project's runs: nested projects keep theirs in here too
+      for (const name of fs.readdirSync(dir)) {
+        if (/^\d{8}-\d{6}$/.test(name)) {
+          fs.rmSync(path.join(dir, name), { recursive: true });
+        }
+      }
     } catch (e: unknown) {
       if ((e as NodeJS.ErrnoException)?.code !== 'ENOENT') {
         console.warn(

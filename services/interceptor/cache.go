@@ -32,15 +32,15 @@ func (c *MockCache) GetMocks() []MockEndpoint {
 	return c.mocks
 }
 
-// SetMocks updates cached mock endpoints and compiles body-match regexes
+// SetMocks updates cached mock endpoints and compiles body-match regexes. A
+// mock whose regex doesn't compile never matches.
 func (c *MockCache) SetMocks(mocks []MockEndpoint) {
 	for i := range mocks {
 		if mocks[i].RequestBodyMatches != nil {
 			compiled, err := regexp.Compile(*mocks[i].RequestBodyMatches)
 			if err != nil {
-				log.Printf("[MockCache] Invalid regex in mock %q %s: %v — body regex disabled for this mock",
+				log.Printf("[MockCache] Invalid regex in mock %q %s: %v — this mock will never match",
 					mocks[i].Method, mocks[i].Path, err)
-				mocks[i].RequestBodyMatches = nil
 				continue
 			}
 			mocks[i].compiledBodyRegex = compiled

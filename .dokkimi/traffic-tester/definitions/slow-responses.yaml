@@ -1,0 +1,68 @@
+name: slow-responses
+description: Responses that take longer than 30 seconds, from mocks and from services, over HTTP and HTTPS
+config:
+  timeoutSeconds: 120
+items:
+  - $ref: ../shared/service-a.yaml
+  - $ref: ../shared/service-b.json
+  - type: MOCK
+    name: slow
+    mockTarget: slow.example.com
+    mockPath: /*
+    mockDelayMs: 35000
+    mockResponseBody: { slow: true }
+tests:
+  - name: Slow responses arrive
+    steps:
+      - name: A step waits for a slow mock
+        action:
+          type: parallel
+          actions:
+            - {
+                type: httpRequest,
+                method: GET,
+                url: slow.example.com/x,
+                timeout: 60000,
+              }
+            - type: httpRequest
+              method: POST
+              url: service-a/call
+              timeout: 60000
+              headers: { Content-Type: application/json }
+              body:
+                requests:
+                  - method: POST
+                    baseURL: http://service-b
+                    url: /slow
+                    data:
+                      requests:
+                        - {
+                            method: GET,
+                            baseURL: 'https://slow.example.com',
+                            url: /x,
+                          }
+        assertions:
+          - match:
+              path: $.traffic
+              where:
+                - { path: $$.to, operator: eq, value: slow.example.com }
+                - { path: $$.response.status, operator: eq, value: 200 }
+                - { path: $$.response.body.slow, operator: eq, value: true }
+              count: 2
+          - match:
+              path: $.traffic
+              where:
+                - { path: $$.to, operator: eq, value: service-b }
+                - { path: $$.response.status, operator: eq, value: 200 }
+              count: 1
+          - match:
+              path: $.traffic
+              where:
+                - { path: $$.to, operator: eq, value: service-a }
+                - { path: $$.response.status, operator: eq, value: 200 }
+                - {
+                    path: '$$.response.body.results[0].results[0].slow',
+                    operator: eq,
+                    value: true,
+                  }
+              count: 1

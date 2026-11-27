@@ -1,4 +1,4 @@
-import { fetchJson, fetchAction } from '../lib/cli-utils';
+import { fetchJson, stopRun } from '../lib/cli-utils';
 import { loadConfig, buildServiceUrl } from '@dokkimi/config';
 import { checkForUpdate } from '../lib/update-check';
 import { type RunOnceResult } from '../lib/run-display';
@@ -7,7 +7,9 @@ import { baselines } from './baselines';
 import { trackEvent } from '@dokkimi/telemetry';
 import { detectTargetType, trackRunError } from './run-helpers';
 import { writeJUnitXml } from '../lib/junit';
-import { executeRun, parseJUnitFlag, readFailedNames } from './run-executor';
+import { executeRun, readFailedNames } from './run-executor';
+import { outcomeOf } from '../lib/outcome';
+import { countOutcomes } from '@dokkimi/config';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -63,10 +65,10 @@ export async function run(args: string[]): Promise<void> {
       '  --ci                 CI-friendly output (no interactive UI, exit with 0/1)',
     );
     console.log(
-      '  --failed             Re-run only definitions that failed in the last run',
+      "  --failed             Re-run only definitions that didn't pass in the last run",
     );
     console.log(
-      '  --timeout=SECONDS    Fail after SECONDS if not complete (default: 600 in CI)',
+      '  --timeout SECONDS    Fail after SECONDS if not complete (default: 600 in CI)',
     );
     console.log(
       '  --junit <path>       Write JUnit XML report to <path> after run completes',
@@ -82,26 +84,25 @@ export async function run(args: string[]): Promise<void> {
 
   checkForUpdate();
 
-  const ciMode = args.includes('--ci');
-  const watchMode = args.includes('--watch') || args.includes('-w');
-  const failedOnly = args.includes('--failed');
-  const timeoutArg = args.find((a) => a.startsWith('--timeout='));
-  const timeoutMs = timeoutArg
-    ? parseInt(timeoutArg.split('=')[1], 10) * 1000
-    : ciMode
-      ? 10 * 60 * 1000
-      : undefined;
-  const junitPath = parseJUnitFlag(args);
-  const target = args.find(
-    (a) => !a.startsWith('-') && !a.startsWith('--timeout'),
-  );
+  const parsed = parseRunArgs(args);
+  if ('error' in parsed) {
+    console.error(`${parsed.error}\nRun 'dokkimi run --help' for usage.`);
+    process.exit(1);
+  }
+  const { ciMode, watchMode, failedOnly, junitPath, target } = parsed;
+  const timeoutMs =
+    parsed.timeoutSeconds !== undefined
+      ? parsed.timeoutSeconds * 1000
+      : ciMode
+        ? 10 * 60 * 1000
+        : undefined;
 
   const config = loadConfig();
   const ctUrl = buildServiceUrl(config.services.controlTower);
 
   let initialFilterNames: string[] | undefined;
   if (failedOnly) {
-    const failedNames = await readFailedNames(ctUrl);
+    const failedNames = await readFailedNames(ctUrl, target);
     if (failedNames.length === 0) {
       console.error('No failed definitions found in the last run.');
       process.exit(1);
@@ -137,22 +138,14 @@ export async function run(args: string[]): Promise<void> {
       await inFlight;
     } catch {}
     if (lastResult?.runId) {
-      await fetchAction(`${ctUrl}/runs/stop`, 'POST').catch(() => {});
+      await stopRun(ctUrl, lastResult.runId);
     }
     if (process.stdin.isTTY) {
       process.stdin.setRawMode(false);
     }
-    if (junitPath && lastResult?.runId) {
-      await writeJUnitXml({
-        ctUrl,
-        runId: lastResult.runId,
-        instances: lastResult.instances,
-        outputPath: junitPath,
-        durationMs: Date.now() - runStartTime,
-      }).catch(() => {});
-    }
+    const reported = await writeReport(lastResult);
     console.log('');
-    process.exit(lastResult?.passed === false ? 1 : 0);
+    process.exit(lastResult?.passed === false || !reported ? 1 : 0);
   }
 
   // ---------------------------------------------------------------------------
@@ -175,7 +168,7 @@ export async function run(args: string[]): Promise<void> {
     }
     const runId = lastResult.runId;
     console.log('\x1b[90mStopping previous run...\x1b[0m');
-    await fetchAction(`${ctUrl}/runs/stop`, 'POST').catch(() => {});
+    await stopRun(ctUrl, runId);
 
     const maxWaitMs = 30_000;
     const pollIntervalMs = 500;
@@ -238,32 +231,27 @@ export async function run(args: string[]): Promise<void> {
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       console.error(`\n\x1b[31m${msg}\x1b[0m\n`);
-      lastResult = { passed: false, runId: null, instances: [] };
+      lastResult = { passed: false, runId: null, runStatus: '', instances: [] };
       trackRunError(err);
       return;
     }
 
     // Track run result
     if (lastResult.runId) {
-      const passed = lastResult.instances.filter(
-        (i) =>
-          (i.testStatus ?? i.status) === 'PASSED' ||
-          (i.testStatus ?? i.status) === 'COMPLETED',
+      const { runStatus, instances } = lastResult;
+      const counts = countOutcomes(
+        runStatus,
+        instances.filter((i) => outcomeOf(runStatus, i) !== 'invalid'),
       );
-      const failed = lastResult.instances.filter(
-        (i) => (i.testStatus ?? i.status) === 'FAILED',
-      );
-      const skipped = lastResult.instances.filter(
-        (i) => (i.testStatus ?? i.status) === 'SKIPPED',
-      );
-      const errorFileCount = lastResult.instances.filter(
-        (i) => i.errorMessage === 'Invalid definition',
+      const errorFileCount = instances.filter(
+        (i) => outcomeOf(runStatus, i) === 'invalid',
       ).length;
       trackEvent('cli_run_result', {
-        definition_count: lastResult.instances.length,
-        passed_count: passed.length,
-        failed_count: failed.length,
-        skipped_count: skipped.length,
+        definition_count: instances.length,
+        passed_count: counts.passed,
+        failed_count: counts.failed,
+        cancelled_count: counts.cancelled,
+        not_run_count: counts['not-run'],
         error_file_count: errorFileCount,
         duration_ms: Date.now() - runStart,
         watch_mode: watchMode,
@@ -291,13 +279,38 @@ export async function run(args: string[]): Promise<void> {
     }
   }
 
+  /**
+   * Writes the JUnit report when one was asked for, even when no run started:
+   * before, a stale report from an earlier run was left in place, and a
+   * failed write was ignored. Returns false when the write failed.
+   */
+  async function writeReport(result: RunOnceResult | null): Promise<boolean> {
+    if (!junitPath) {
+      return true;
+    }
+    try {
+      await writeJUnitXml({
+        ctUrl,
+        runId: result?.runId ?? null,
+        runStatus: result?.runStatus ?? '',
+        instances: result?.instances ?? [],
+        outputPath: junitPath,
+        durationMs: Date.now() - runStartTime,
+      });
+      return true;
+    } catch (err) {
+      console.error(
+        `\x1b[31mCould not write the JUnit report to ${junitPath}: ${err instanceof Error ? err.message : String(err)}\x1b[0m`,
+      );
+      return false;
+    }
+  }
+
   function printHint(): void {
     if (!process.stdout.isTTY || !lastResult?.runId) {
       return;
     }
-    const hasFailures = lastResult.instances.some(
-      (i) => (i.testStatus ?? i.status) === 'FAILED',
-    );
+    const hasFailures = rerunnableNames(lastResult).length > 0;
     const failedHint = hasFailures ? ', f to re-run failed' : '';
     const baselinesHint = hasPendingBaselines ? ', b to review baselines' : '';
     if (watchMode) {
@@ -386,9 +399,7 @@ export async function run(args: string[]): Promise<void> {
     } else if (key === 'r') {
       scheduleTrigger(undefined, 'manual_rerun');
     } else if (key === 'f') {
-      const failedNames = (lastResult?.instances ?? [])
-        .filter((i) => (i.testStatus ?? i.status) === 'FAILED')
-        .map((i) => i.name);
+      const failedNames = lastResult ? rerunnableNames(lastResult) : [];
       if (failedNames.length === 0) {
         return;
       }
@@ -464,19 +475,11 @@ export async function run(args: string[]): Promise<void> {
   // CI mode: exit immediately with appropriate code
   if (ciMode) {
     const result = lastResult as RunOnceResult | null;
-    if (junitPath && result?.runId) {
-      await writeJUnitXml({
-        ctUrl,
-        runId: result.runId,
-        instances: result.instances,
-        outputPath: junitPath,
-        durationMs: Date.now() - runStartTime,
-      }).catch(() => {});
-    }
+    const reported = await writeReport(result);
     if (result?.runId) {
-      await fetchAction(`${ctUrl}/runs/stop`, 'POST');
+      await stopRun(ctUrl, result.runId);
     }
-    process.exit(result?.passed ? 0 : 1);
+    process.exit(result?.passed && reported ? 0 : 1);
   }
 
   // Nothing to run and not watching for changes: exit immediately
@@ -487,20 +490,76 @@ export async function run(args: string[]): Promise<void> {
   // Non-TTY without watch: exit immediately with appropriate code
   if (!process.stdout.isTTY && !watchMode) {
     const result = lastResult as RunOnceResult | null;
-    if (junitPath && result?.runId) {
-      await writeJUnitXml({
-        ctUrl,
-        runId: result.runId,
-        instances: result.instances,
-        outputPath: junitPath,
-        durationMs: Date.now() - runStartTime,
-      }).catch(() => {});
-    }
+    const reported = await writeReport(result);
     if (result?.runId) {
-      await fetchAction(`${ctUrl}/runs/stop`, 'POST');
+      await stopRun(ctUrl, result.runId);
     }
-    process.exit(result?.passed ? 0 : 1);
+    process.exit(result?.passed && reported ? 0 : 1);
   }
 
   // TTY / watch: keyboard listener (and optionally watcher) keeps process alive
+}
+
+/** Definitions that can run again: every one that didn't pass, but valid */
+function rerunnableNames(result: RunOnceResult): string[] {
+  return result.instances
+    .filter((i) => {
+      const outcome = outcomeOf(result.runStatus, i);
+      return outcome !== 'passed' && outcome !== 'invalid';
+    })
+    .map((i) => i.name);
+}
+
+interface RunArgs {
+  ciMode: boolean;
+  watchMode: boolean;
+  failedOnly: boolean;
+  timeoutSeconds?: number;
+  junitPath: string | null;
+  target?: string;
+}
+
+/**
+ * Before, an unknown option, or `--timeout 900` with a space, was taken for
+ * the target or ignored, and the run "passed" with nothing run.
+ */
+export function parseRunArgs(args: string[]): RunArgs | { error: string } {
+  const parsed: RunArgs = {
+    ciMode: false,
+    watchMode: false,
+    failedOnly: false,
+    junitPath: null,
+  };
+  const targets: string[] = [];
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+    if (arg === '--ci') {
+      parsed.ciMode = true;
+    } else if (arg === '--watch' || arg === '-w') {
+      parsed.watchMode = true;
+    } else if (arg === '--failed') {
+      parsed.failedOnly = true;
+    } else if (arg === '--timeout' || arg.startsWith('--timeout=')) {
+      const value = arg === '--timeout' ? args[++i] : arg.slice(10);
+      if (!value || !/^\d+$/.test(value)) {
+        return { error: '--timeout needs a whole number of seconds' };
+      }
+      parsed.timeoutSeconds = Number(value);
+    } else if (arg === '--junit') {
+      const value = args[++i];
+      if (!value || value.startsWith('-')) {
+        return { error: '--junit needs a file path' };
+      }
+      parsed.junitPath = value;
+    } else if (arg.startsWith('-')) {
+      return { error: `Unknown option: ${arg}` };
+    } else {
+      targets.push(arg);
+    }
+  }
+  if (targets.length > 1) {
+    return { error: `Only one target can be run, got: ${targets.join(' ')}` };
+  }
+  parsed.target = targets[0];
+  return parsed;
 }

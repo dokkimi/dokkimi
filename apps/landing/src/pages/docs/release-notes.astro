@@ -7,6 +7,94 @@ import CodeBlock from '../../components/CodeBlock.astro';
   <h1>Release Notes</h1>
   <p class="subtitle">What's new in each release.</p>
 
+  <h2>v0.5.11</h2>
+  <p><time datetime="2026-11-23">November 23, 2026</time></p>
+
+  <h3>AI tool configs are safe from overwrites</h3>
+  <p>Dokkimi registers its MCP server in <code>~/.claude.json</code> and <code>~/.cursor/mcp.json</code>. If one of those files couldn't be parsed, or several Dokkimi processes started at once, Dokkimi could replace it with a file containing only its own entry. This release fixes that.</p>
+  <ul>
+    <li><strong>Unusable files are left untouched</strong> &mdash; If a config file can't be read, parsed, or safely replaced, Dokkimi doesn't change it, and registers the next time you run a command after it's fixed.</li>
+    <li><strong>Existing entries are kept</strong> &mdash; A <code>dokkimi</code> MCP entry you already have, including a customized one, is never overwritten.</li>
+    <li><strong>Atomic updates</strong> &mdash; When Dokkimi does add or remove its entry, the file is replaced in one step, so another program never reads a half-written file. Permissions, ownership, and symlinks are preserved.</li>
+    <li><strong><code>dokkimi doctor</code> checks registration</strong> &mdash; A new <code>MCP Config</code> check explains why Dokkimi isn't registered, and a warning appears in your terminal at most once a day.</li>
+    <li><strong><code>dokkimi uninstall</code></strong> &mdash; No longer re-registers before removing its entries, and tells you about any file it skipped.</li>
+  </ul>
+  <p>If your other MCP servers or Claude Code settings disappeared unexpectedly, this may have been the cause. If your config file is bind-mounted (for example, into a dev container), add the <code>dokkimi</code> entry manually.</p>
+
+  <h3>Requests go where they should</h3>
+  <p>The interceptor now decides where a request goes the same way for services, workers, test steps, and the UI test browser: by its exact host.</p>
+  <ul>
+    <li><strong>Unmocked calls reach the real host</strong> &mdash; A service's call to a host with no mock was sent back to that service. A call to <code>api.stripe.com</code> went to your own service if it was named <code>api</code>, and a call to any external <code>/health</code> was answered by Dokkimi. They now go to the real host, over the scheme the service used, with its certificate checked.</li>
+    <li><strong>Mocks apply to every request</strong> &mdash; A test step's request skipped mocks. A mock without a <code>mockOrigin</code>, or with <code>*</code>, now applies to steps too, for external hosts and for your own services.</li>
+    <li><strong>URLs arrive as they were sent</strong> &mdash; Requests got a trailing <code>?</code>, encoded characters such as <code>%2F</code> were decoded, and a service calling <code>http://api/api/users</code> reached <code>/users</code>.</li>
+    <li><strong>No more random 502s</strong> &mdash; The interceptor reused its connections to services. A POST sent just as the service closed one failed with a 502 the service never sent. Every request now gets a new connection.</li>
+    <li><strong>No added headers</strong> &mdash; Responses without a <code>Content-Type</code> or <code>Date</code> got them on the way, and requests without an <code>Accept-Encoding</code> or <code>User-Agent</code>, including those of test steps, reached the service with <code>gzip</code> and <code>Go-http-client/1.1</code>. Nothing is added now, so a service now only compresses its response if the caller asks for it.</li>
+    <li><strong>Responses that break off stay broken</strong> &mdash; If a service crashed halfway through a response, the caller got a complete 500 the service never sent, and nothing was captured. The caller now gets the status and the part that arrived, then a broken connection, and the same is captured. A test step whose response breaks off fails.</li>
+    <li><strong>A misspelled service name fails right away</strong> &mdash; A step calling a service that doesn't exist hung until the definition timed out. It now fails right away, with an error that says so.</li>
+    <li><strong>Captured traffic is accurate</strong> &mdash; Brotli, Zstandard and deflate response bodies are decompressed like gzip ones, request bodies are decompressed too, <code>$$.request.url</code> has the scheme the caller used, and calls to external hosts are logged with that host.</li>
+  </ul>
+  <p>Tests that can change: suites with unmocked calls will reach the internet, mocks may now match a step's own request, a different mock may win, and an assertion that expects <code>http://</code> in the URL of an HTTPS call needs <code>https://</code>.</p>
+
+  <h3>Tests that checked nothing</h3>
+  <p>These tests passed without running or checking anything. They now fail, so a suite that passed before can fail after upgrading.</p>
+  <ul>
+    <li><strong>Loops on a test run</strong> &mdash; A <code>forEach</code>, <code>for</code> or <code>repeat</code> on a test ran none of its steps. Put <code>steps</code> next to the loop, as the docs show; inside it is now an error. A loop can also use the test's own <code>variables</code>.</li>
+    <li><strong>A test needs steps</strong> &mdash; A test without <code>steps</code>, or with a misspelled key such as <code>stpes</code>, is now a validation error.</li>
+    <li><strong><code>stopOnFailure: false</code> still fails</strong> &mdash; It let the next steps run, and also let the test pass. The test now fails, after its other steps have run. On a test, it is the default for its steps instead of being ignored, and the failed step shows as failed in <code>dokkimi inspect</code>.</li>
+    <li><strong>Failed queries fail</strong> &mdash; A <code>dbQuery</code> that failed, such as one with a typo in its SQL, passed unless an assertion caught it, also inside <code>parallel</code>. It now fails the step, unless the step checks <code>$.response.success</code> or <code>$.response.error</code>.</li>
+    <li><strong>Undelivered requests fail</strong> &mdash; When Dokkimi couldn't deliver a step's request, for example to a host that refuses connections, the step got a 502 from Dokkimi and passed without assertions. It now fails, with the reason. A 502 from your service is still a normal response.</li>
+    <li><strong>The time limit applies to waits</strong> &mdash; A <code>wait</code> or a loop's <code>delayMs</code> ran past <code>config.timeoutSeconds</code>, and a test could pass after it. They now stop at the limit, and the test fails with "Timed out after …".</li>
+    <li><strong>Polling fails if the last try failed</strong> &mdash; A <code>repeat</code> with <code>until</code> whose last iteration failed, for example because no request got through, passed.</li>
+    <li><strong>A <code>match</code> needs a match</strong> &mdash; Without a <code>count</code>, it passed when nothing matched. It now needs at least one, as documented, and waits for late logs like an explicit count does.</li>
+  </ul>
+
+  <h3>Definition fields</h3>
+  <p>Fields that were documented but did nothing are now validation errors, so a definition using one fails validation until it's removed.</p>
+  <ul>
+    <li><strong>Resource limits work</strong> &mdash; <code>maxCpu</code> and <code>maxMemory</code> were accepted and ignored. They now limit the service, worker, database or broker container. A container that uses more memory than <code>maxMemory</code> is killed.</li>
+    <li><strong>Removed fields are errors</strong> &mdash; <code>minCpu</code>, <code>minMemory</code> and <code>uiPath</code> on items, and <code>timeoutSeconds</code> on a test (use <code>config.timeoutSeconds</code>), never did anything.</li>
+    <li><strong><code>wait</code> and <code>ui</code> inside <code>parallel</code></strong> &mdash; These failed when the test ran. They are now validation errors; put them in their own steps.</li>
+  </ul>
+
+  <h3>Mocks</h3>
+  <ul>
+    <li><strong>The most specific mock wins</strong> &mdash; Mocks were ranked by points that added up, so unrelated fields could tie, an omitted <code>mockOrigin</code> counted as a specific one, and a longer prefix didn't win. They are now compared by target, then origin, path, method, and body. See <a href="/docs/mocks#precedence">Mock precedence</a>.</li>
+    <li><strong><code>mockOrigin</code> can name a worker</strong> &mdash; It never matched one. <code>chromium</code> names the UI test browser.</li>
+    <li><strong>Regexes are checked as Go regexes</strong> &mdash; <code>(?i)</code> was rejected, and a <code>mockRequestBodyMatches</code> with lookaround was accepted but made its mock match every body. Lookaround and backreferences are now validation errors there and in <code>extract</code> patterns.</li>
+    <li><strong>Mocks that can't work are errors</strong> &mdash; Such as a URL or <code>*.example.com</code> as the target, a wildcard in the middle of a path, a <code>mockOrigin</code> that isn't in the definition, another spelling of a service's name (<code>MY_SERVICE</code>), or a fractional <code>mockDelayMs</code>. They were accepted and never matched, or stopped the interceptor from starting. So is the top-level <code>mocks</code> array, which never did anything: use MOCK items.</li>
+    <li><strong>Also fixed</strong> &mdash; Hosts are matched in any case, request bodies are decompressed and matched in full instead of the first 1&nbsp;MB, path variables match exactly one segment, so trailing and doubled slashes matter there too, paths match however they are encoded, a target can include <code>:443</code> or <code>:80</code>, response header numbers and lists are sent as written, and mocked responses no longer carry an <code>X-Mocked</code> header.</li>
+  </ul>
+
+  <h3>Timeouts</h3>
+  <ul>
+    <li><strong>Slow responses are no longer cut off</strong> &mdash; The interceptor ended every call after 30 seconds, and mocks with longer delays never answered. A response can now take as long as the caller waits for it.</li>
+    <li><strong>The HTTP timeout setting works</strong> &mdash; <code>DOKKIMI_HTTP_TIMEOUT</code> and the GitHub Action's <code>timeout</code> did nothing. They now set how long a test step waits for a response, 30 seconds by default. A step's own <code>timeout</code> can also be longer than 30 seconds.</li>
+  </ul>
+
+  <h3>Crashes</h3>
+  <ul>
+    <li><strong>Every container is watched</strong> &mdash; Only services, workers and databases were. If a broker crashed, the definition failed after its timeout with &ldquo;not ready&rdquo;, or with a confusing failure in a later step, and if Dokkimi's own test agent did, the run never ended. The definition now fails within seconds with the container's exit code and last log lines, even if no step uses it.</li>
+    <li><strong>Tests start after the deployment</strong> &mdash; A quick test could finish while a container was still being started, and then a run whose tests all passed failed.</li>
+    <li><strong>A failed later stage ends the run</strong> &mdash; If a service of <code>stage: 1</code> or later couldn't be started, the run never ended and showed no reason.</li>
+    <li><strong>A service that exits right away shows why</strong> &mdash; The error was &ldquo;cannot join network namespace of a non running container&rdquo;. It is now the service's exit code and last log lines.</li>
+    <li><strong>One failed call to Docker doesn't end crash detection</strong> &mdash; After one, a definition could pass although a service had crashed.</li>
+  </ul>
+
+  <h3>Brokers</h3>
+  <ul>
+    <li><strong>Brokers no longer fail to start at random</strong> &mdash; RabbitMQ and Kafka ran on internal ports that another connection could be using, and the definition failed with &ldquo;not ready&rdquo;.</li>
+  </ul>
+
+  <h3>CLI and AI tools</h3>
+  <ul>
+    <li><strong><code>run_tests</code> reports the run it started</strong> &mdash; If no run started, for example because the definition was invalid, the MCP tool returned the previous run's results, often as a success. It now fails and returns the CLI's output.</li>
+    <li><strong><code>dokkimi run</code> says why definitions are invalid</strong> &mdash; When none of them can run, their errors are printed. With <code>--ci</code> it also prints the run's ID.</li>
+    <li><strong><code>dokkimi dump</code> and <code>dokkimi inspect</code> keep your ids</strong> &mdash; They removed every <code>id</code> from your data, so different values could look the same.</li>
+    <li><strong><code>dokkimi clean</code> keeps other projects' saved runs</strong> &mdash; Cleaning a project also deleted the saved runs of projects in its subfolders.</li>
+    <li><strong><code>dokkimi clean</code> and <code>dokkimi uninstall</code> remove leftover containers and networks</strong> &mdash; They looked for the wrong Docker label and found none. <code>clean</code> stops with an error if Dokkimi is running but not responding.</li>
+    <li><strong><code>dokkimi init</code> creates a valid example</strong> &mdash; The example definition failed validation.</li>
+  </ul>
+
   <h2>v0.5.10</h2>
   <p><time datetime="2026-09-16">September 16, 2026</time></p>
 
@@ -276,10 +364,10 @@ items:
   <h3>Unified root context (<code>$</code>)</h3>
   <p>All assertion paths, extract paths, and variable references now resolve against a single document root:</p>
   <ul>
-    <li><code>$.response.</code> &mdash; HTTP response data</li>
+    <li><code>$.response.</code> &mdash; the step's response (HTTP response, or a <code>dbQuery</code>'s result)</li>
     <li><code>$.variables.</code> &mdash; extracted and global variables</li>
     <li><code>$.request.</code> &mdash; the original request</li>
-    <li><code>$.database.</code> &mdash; database query results</li>
+    <li><code>$.traffic</code>, <code>$.consoleLogs</code>, <code>$.dbLogs</code>, <code>$.timeline</code> &mdash; data captured during the step</li>
   </ul>
   <p>This replaces the previous fragmented context where different path prefixes resolved against different objects.</p>
 
@@ -304,7 +392,7 @@ items:
 
   <h3>Assertion engine enhancements</h3>
   <ul>
-    <li><code>transform</code> field on assertions (e.g. <code>length</code>, <code>keys</code>, <code>values</code>, <code>flatten</code>, <code>unique</code>, <code>lowercase</code>)</li>
+    <li><code>transform</code> field on assertions: <code>length</code>, <code>type</code>, <code>keys</code>, <code>values</code>, <code>entries</code></li>
     <li>Scope-level <code>forEach</code> and <code>extract</code> on assertion blocks</li>
     <li>New operators and tighter validation</li>
     <li>Fixed <code>count</code> assertion retry logic for <code>gt</code> operator</li>

@@ -129,7 +129,10 @@ export class ConfigMapBuilderService {
         const dbType = item.database || 'postgres';
         const normalizedDbType = this.normalizeDatabaseType(dbType);
 
-        const { dbName, dbUser, dbPassword } = resolveDbCredentials(item);
+        const { dbName, dbUser, dbPassword } = resolveDbCredentials(
+          item,
+          dbType,
+        );
 
         databaseMap[item.containerName] = {
           type: normalizedDbType,
@@ -186,42 +189,6 @@ export class ConfigMapBuilderService {
         },
       },
       data,
-    };
-  }
-
-  /**
-   * Builds a ConfigMap containing database credentials
-   * Keys use sanitized service name, not user-friendly name
-   * Fallback to config.database.default* happens here in Control Tower
-   */
-  buildDbCredentialsConfigMap(
-    namespace: string,
-    databases: Array<{
-      name: string;
-      containerName: string; // IMPORTANT: Use containerName as the key
-      dbName?: string | null;
-      dbUser?: string | null;
-      dbPassword?: string | null;
-      noAuth?: boolean | null;
-    }>,
-  ): { metadata?: Record<string, unknown>; data?: Record<string, string> } {
-    const credentials: Record<string, object> = {};
-    for (const db of databases) {
-      credentials[db.containerName] = resolveDbCredentials(db);
-    }
-
-    return {
-      metadata: {
-        name: 'dokkimi-db-credentials',
-        namespace,
-        labels: {
-          'app.dokkimi.io/name': 'dokkimi',
-          'app.dokkimi.io/component': 'db-credentials',
-        },
-      },
-      data: {
-        'credentials.json': JSON.stringify(credentials, null, 2),
-      },
     };
   }
 

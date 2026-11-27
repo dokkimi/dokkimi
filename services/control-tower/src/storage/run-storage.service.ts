@@ -18,6 +18,16 @@ export interface ArtifactPath {
   uri: string;
 }
 
+/**
+ * The stored name of an item's mount file: its position, then its name, so
+ * that two sources with the same name (a/x.conf, b/x.conf) don't overwrite
+ * each other. Used where the file is written and where it is mounted.
+ */
+export function mountFileName(index: number, source: string): string {
+  const safeName = path.basename(source).replace(/[^a-zA-Z0-9_.-]/g, '_');
+  return `${String(index).padStart(2, '0')}_${safeName}`;
+}
+
 @Injectable()
 export class RunStorageService {
   private readonly logger = new Logger(RunStorageService.name);
@@ -179,11 +189,8 @@ export class RunStorageService {
       }
       const dir = await this.resolveMountFilesDir(instanceId, item.name);
       await fs.mkdir(dir, { recursive: true });
-      for (const mf of item.mountFiles) {
-        const safeName = path
-          .basename(mf.source)
-          .replace(/[^a-zA-Z0-9_.-]/g, '_');
-        const fullPath = path.join(dir, safeName);
+      for (const [i, mf] of item.mountFiles.entries()) {
+        const fullPath = path.join(dir, mountFileName(i, mf.source));
         if (!fullPath.startsWith(dir + path.sep)) {
           this.logger.warn(
             `Skipping mount file with unsafe name: "${mf.source}"`,

@@ -10,7 +10,11 @@ describe('TelemetryExceptionFilter', () => {
 
   beforeEach(() => {
     filter = new TelemetryExceptionFilter(mockTelemetry);
-    mockRequest = { url: '/api/test', method: 'POST' };
+    mockRequest = {
+      url: '/runs/latest?projectPath=%2FUsers%2Falice%2Fsecret-project',
+      route: { path: '/runs/latest' },
+      method: 'POST',
+    };
     mockResponse = { status: jest.fn().mockReturnThis(), json: jest.fn() };
     mockHost = {
       switchToHttp: () => ({
@@ -28,8 +32,7 @@ describe('TelemetryExceptionFilter', () => {
 
     expect(mockTelemetry.track).toHaveBeenCalledWith('service_error', {
       error_type: 'HttpException',
-      error_message: 'Not Found',
-      route: '/api/test',
+      route: '/runs/latest',
       method: 'POST',
       status_code: 404,
     });
@@ -53,7 +56,6 @@ describe('TelemetryExceptionFilter', () => {
       'service_error',
       expect.objectContaining({
         error_type: 'Error',
-        error_message: 'something broke',
         status_code: 500,
       }),
     );
@@ -69,23 +71,47 @@ describe('TelemetryExceptionFilter', () => {
     });
   });
 
-  it('tracks non-Error thrown values with String coercion', () => {
+  it('tracks non-Error thrown values as Unknown', () => {
     filter.catch('string-error', mockHost);
 
     expect(mockTelemetry.track).toHaveBeenCalledWith(
       'service_error',
-      expect.objectContaining({
-        error_type: 'Unknown',
-        error_message: 'string-error',
-      }),
+      expect.objectContaining({ error_type: 'Unknown' }),
     );
   });
 
-  it('truncates long error messages to 200 chars', () => {
-    const longMessage = 'x'.repeat(300);
-    filter.catch(new Error(longMessage), mockHost);
+  // Before, the event had the message and the URL with its query, which
+  // carry file paths and project names
+  it('sends neither the message nor the URL', () => {
+    filter.catch(
+      new Error("ENOENT: no such file, open '/Users/alice/secret-project/a'"),
+      mockHost,
+    );
 
-    const call = mockTelemetry.track.mock.calls[0][1];
-    expect(call.error_message).toHaveLength(200);
+    const sent = JSON.stringify(mockTelemetry.track.mock.calls[0][1]);
+    expect(sent).not.toContain('alice');
+    expect(sent).not.toContain('secret-project');
+  });
+
+  it('sends a string error code', () => {
+    filter.catch(
+      Object.assign(new Error('open /Users/alice/x'), { code: 'ENOENT' }),
+      mockHost,
+    );
+
+    expect(mockTelemetry.track).toHaveBeenCalledWith(
+      'service_error',
+      expect.objectContaining({ error_code: 'ENOENT' }),
+    );
+  });
+
+  it('names an unmatched route without its URL', () => {
+    mockRequest.route = undefined;
+    filter.catch(new HttpException('nope', 404), mockHost);
+
+    expect(mockTelemetry.track).toHaveBeenCalledWith(
+      'service_error',
+      expect.objectContaining({ route: 'unmatched' }),
+    );
   });
 });

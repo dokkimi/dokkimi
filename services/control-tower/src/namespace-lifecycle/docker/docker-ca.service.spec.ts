@@ -1,3 +1,4 @@
+import * as tls from 'tls';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -97,9 +98,12 @@ describe('DockerCaService', () => {
 
       const binds = service.getServiceCaBinds(bundlePaths);
 
-      expect(binds).toHaveLength(2);
+      expect(binds).toHaveLength(3);
       expect(binds[0]).toContain('dokkimi-ca.crt:ro');
       expect(binds[1]).toContain('ca-bundle.crt:ro');
+      expect(binds[2]).toBe(
+        `${bundlePaths.javaTruststorePath}:/ca-bundle/java-cacerts:ro`,
+      );
     });
   });
 
@@ -111,6 +115,32 @@ describe('DockerCaService', () => {
       expect(envVars.SSL_CERT_FILE).toBe('/ca-bundle/ca-bundle.crt');
       expect(envVars.REQUESTS_CA_BUNDLE).toBe('/ca-bundle/ca-bundle.crt');
       expect(envVars.CURL_CA_BUNDLE).toBe('/ca-bundle/ca-bundle.crt');
+      expect(envVars.JAVA_TOOL_OPTIONS).toBe(
+        '-Djavax.net.ssl.trustStore=/ca-bundle/java-cacerts ' +
+          '-Djavax.net.ssl.trustStorePassword=changeit ' +
+          '-Djavax.net.ssl.trustStoreType=JKS',
+      );
+    });
+  });
+
+  // Before, JVM services had no truststore with the Dokkimi CA
+  describe('Java truststore', () => {
+    it('holds the public roots and the Dokkimi CA', async () => {
+      await service.onApplicationBootstrap();
+      const { javaTruststorePath } =
+        service.prepareCaBundleForInstance(testInstanceId);
+
+      const jks = fs.readFileSync(javaTruststorePath);
+      expect(jks.readUInt32BE(0)).toBe(0xfeedfeed);
+      expect(jks.readUInt32BE(8)).toBe(tls.rootCertificates.length + 1);
+      // The Dokkimi CA's DER bytes are in it
+      const caDer = Buffer.from(
+        fs
+          .readFileSync(service.getCaPaths().certPath, 'utf-8')
+          .replace(/-----(BEGIN|END) CERTIFICATE-----|\s/g, ''),
+        'base64',
+      );
+      expect(jks.includes(caDer)).toBe(true);
     });
   });
 

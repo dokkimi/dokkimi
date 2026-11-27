@@ -7,7 +7,6 @@ import {
   instanceStatusBadge,
 } from '../lib/formatting';
 import {
-  stripIds,
   formatHttpLog,
   formatDbLog,
   formatConsoleLogs,
@@ -258,7 +257,7 @@ export async function showStepDetail(
 
     switch (picked.value.kind) {
       case 'raw-step': {
-        openInEditor(stripIds(step), `${filePrefix}-raw.json`);
+        openInEditor(step, `${filePrefix}-raw.json`);
         break;
       }
       case 'test-logs': {

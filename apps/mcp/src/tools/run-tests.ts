@@ -1,36 +1,41 @@
 import * as path from 'path';
 import { spawn } from 'child_process';
+import { stripVTControlCharacters } from 'util';
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { findDokkimiBin } from '../lib/find-bin';
 import { findDokkimiDir } from '../lib/dokkimi-dir';
 import { ctFetchOrNull } from '../lib/ct-client';
 import type { LatestRunResponse } from '../lib/ct-types';
+import { summarizeRun } from '../lib/run-outcomes';
 import { getAvailableUpdate, AvailableUpdate } from '../lib/update-status';
+
+type RunSummary = ReturnType<typeof summarizeRun>;
 
 interface RunResult {
   success: boolean;
   runId?: string;
-  summary: { total: number; passed: number; failed: number; skipped: number };
-  instances: {
-    id: string;
-    name: string;
-    status: string;
-    errorMessage?: string;
-  }[];
+  summary: RunSummary['summary'];
+  instances: RunSummary['instances'];
+  error?: string;
+  output?: string[];
   update?: AvailableUpdate;
 }
 
+// Printed by `dokkimi run --ci` once the run is created
+const RUN_ID_RE = /^\[Dokkimi\] Run (\S+)$/;
+const MAX_OUTPUT_LINES = 50;
+
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-async function buildRunResult(projectPath?: string): Promise<RunResult | null> {
+async function buildRunResult(
+  runId: string,
+  code: number | null,
+): Promise<RunResult | null> {
   // Brief retry — CT may still be finalizing the run status after the CLI exits.
   let run: LatestRunResponse | null = null;
   for (let attempt = 0; attempt < 3; attempt++) {
-    run = await ctFetchOrNull<LatestRunResponse>(
-      '/runs/latest',
-      projectPath ? { projectPath } : undefined,
-    );
+    run = await ctFetchOrNull<LatestRunResponse>(`/runs/${runId}/status`);
     if (run && run.status !== 'PENDING' && run.status !== 'RUNNING') {
       break;
     }
@@ -40,32 +45,14 @@ async function buildRunResult(projectPath?: string): Promise<RunResult | null> {
     return null;
   }
 
-  let passed = 0;
-  let failed = 0;
-  let skipped = 0;
-
-  const instances = run.instances.map((inst) => {
-    const status = inst.testStatus ?? inst.status;
-    if (status === 'PASSED' || status === 'COMPLETED') {
-      passed++;
-    } else if (status === 'FAILED') {
-      failed++;
-    } else if (status === 'SKIPPED') {
-      skipped++;
-    }
-
-    return {
-      id: inst.id,
-      name: inst.name,
-      status,
-      ...(inst.errorMessage ? { errorMessage: inst.errorMessage } : {}),
-    };
-  });
-
+  const { summary, instances } = summarizeRun(run);
   return {
-    success: failed === 0,
+    // Before, a cancelled run with nothing failed was a success
+    success:
+      code === 0 && summary.total > 0 && summary.passed === summary.total,
     runId: run.runId,
-    summary: { total: run.instances.length, passed, failed, skipped },
+    ...(code === 0 ? {} : { error: `dokkimi run exited with code ${code}` }),
+    summary,
     instances,
   };
 }
@@ -135,10 +122,18 @@ export function registerRunTests(server: McpServer): void {
           });
         }, TIMEOUT_MS);
 
+        let runId: string | null = null;
+        const output: string[] = [];
+
         const forwardLine = (line: string) => {
-          const trimmed = line.trim();
+          const trimmed = stripVTControlCharacters(line).trim();
           if (!trimmed) {
             return;
+          }
+          runId ??= RUN_ID_RE.exec(trimmed)?.[1] ?? null;
+          output.push(trimmed);
+          if (output.length > MAX_OUTPUT_LINES) {
+            output.shift();
           }
           sendNotification({
             method: 'notifications/message',
@@ -180,44 +175,42 @@ export function registerRunTests(server: McpServer): void {
           }
 
           let result: RunResult | null = null;
-          try {
-            result = await buildRunResult(projectPath);
-          } catch {}
-
-          if (result) {
-            const update = getAvailableUpdate();
-            if (update) {
-              result.update = update;
-            }
-            resolve({
-              content: [
-                {
-                  type: 'text' as const,
-                  text: JSON.stringify(result, null, 2),
-                },
-              ],
-              isError: !result.success,
-            });
-          } else {
-            resolve({
-              content: [
-                {
-                  type: 'text' as const,
-                  text: JSON.stringify(
-                    {
-                      success: code === 0,
-                      summary: { total: 0, passed: 0, failed: 0, skipped: 0 },
-                      instances: [],
-                      error: `dokkimi run exited with code ${code}`,
-                    },
-                    null,
-                    2,
-                  ),
-                },
-              ],
-              isError: code !== 0,
-            });
+          if (runId) {
+            try {
+              result = await buildRunResult(runId, code);
+            } catch {}
           }
+          result ??= {
+            success: false,
+            ...(runId ? { runId } : {}),
+            error: runId
+              ? `Could not read the results of run ${runId} (dokkimi run exited with code ${code})`
+              : `No run was started (dokkimi run exited with code ${code})`,
+            output,
+            summary: {
+              total: 0,
+              passed: 0,
+              failed: 0,
+              cancelled: 0,
+              notRun: 0,
+              running: 0,
+            },
+            instances: [],
+          };
+
+          const update = getAvailableUpdate();
+          if (update) {
+            result.update = update;
+          }
+          resolve({
+            content: [
+              {
+                type: 'text' as const,
+                text: JSON.stringify(result, null, 2),
+              },
+            ],
+            isError: !result.success,
+          });
         });
 
         child.on('error', (err) => {

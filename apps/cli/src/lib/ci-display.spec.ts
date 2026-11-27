@@ -7,6 +7,7 @@ import type { RunStatusInstance, RunStatusResponse } from './run-display';
 jest.mock('./cli-utils', () => ({
   fetchJson: jest.fn(),
   sleep: jest.fn(() => Promise.resolve()),
+  LOST_CONTACT_MS: 50,
 }));
 
 jest.mock('./formatting', () => ({
@@ -56,11 +57,23 @@ describe('pollForCompletionCI', () => {
     logSpy.mockRestore();
   });
 
+  // Before, a run whose Dokkimi died was polled until the timeout
+  it('gives up when Dokkimi stops answering', async () => {
+    mockFetchJson.mockResolvedValue(null);
+
+    const result = await pollForCompletionCI('http://ct', 'run-1');
+
+    expect(result.passed).toBe(false);
+    expect(logSpy).toHaveBeenCalledWith(
+      expect.stringContaining('Lost contact with Dokkimi'),
+    );
+  });
+
   it('returns passed=true when all instances COMPLETED', async () => {
     mockFetchJson.mockResolvedValueOnce(
       statusResponse('COMPLETED', [
-        inst('i1', 'svc-a', 'COMPLETED'),
-        inst('i2', 'svc-b', 'PASSED'),
+        inst('i1', 'svc-a', 'STOPPED', 'PASSED'),
+        inst('i2', 'svc-b', 'STOPPED', 'PASSED'),
       ]),
     );
 
@@ -74,8 +87,8 @@ describe('pollForCompletionCI', () => {
   it('returns passed=false when any instance FAILED', async () => {
     mockFetchJson.mockResolvedValueOnce(
       statusResponse('FAILED', [
-        inst('i1', 'svc-a', 'PASSED'),
-        inst('i2', 'svc-b', 'FAILED', undefined, 'assertion failed'),
+        inst('i1', 'svc-a', 'STOPPED', 'PASSED'),
+        inst('i2', 'svc-b', 'STOPPED', 'FAILED', 'assertion failed'),
       ]),
     );
 
@@ -91,8 +104,8 @@ describe('pollForCompletionCI', () => {
   it('prints per-instance results with [Dokkimi] prefix', async () => {
     mockFetchJson.mockResolvedValueOnce(
       statusResponse('COMPLETED', [
-        inst('i1', 'svc-a', 'PASSED'),
-        inst('i2', 'svc-b', 'COMPLETED'),
+        inst('i1', 'svc-a', 'STOPPED', 'PASSED'),
+        inst('i2', 'svc-b', 'STOPPED', 'PASSED'),
       ]),
     );
 
@@ -107,7 +120,7 @@ describe('pollForCompletionCI', () => {
   it('prints failure details for failed instances', async () => {
     mockFetchJson.mockResolvedValueOnce(
       statusResponse('FAILED', [
-        inst('i1', 'svc-fail', 'FAILED', undefined, 'test timed out'),
+        inst('i1', 'svc-fail', 'STOPPED', 'FAILED', 'test timed out'),
       ]),
     );
 
@@ -185,19 +198,20 @@ describe('pollForCompletionCI', () => {
     expect(mockFetchJson).not.toHaveBeenCalled();
   });
 
-  it('includes skipped instances in results', async () => {
-    const skippedInst = inst('s1', 'skipped-svc', 'SKIPPED');
+  // Before, a completed run passed next to an invalid definition
+  it('lists invalid definitions, and does not pass with them', async () => {
+    const skippedInst = inst('s1', 'skipped-svc', 'INVALID');
 
     mockFetchJson.mockResolvedValueOnce(
-      statusResponse('COMPLETED', [inst('i1', 'svc-a', 'PASSED')]),
+      statusResponse('COMPLETED', [inst('i1', 'svc-a', 'STOPPED', 'PASSED')]),
     );
 
     const result = await pollForCompletionCI('http://ct', 'run-1', undefined, [
       skippedInst,
     ]);
 
-    expect(result.passed).toBe(true);
-    // Skipped instance should appear in allInstances output
+    expect(result.passed).toBe(false);
+    // The invalid definition should appear in allInstances output
     expect(result.instances).toHaveLength(2);
     expect(result.instances.some((i) => i.name === 'skipped-svc')).toBe(true);
 
@@ -214,7 +228,7 @@ describe('pollForCompletionCI', () => {
         statusResponse('RUNNING', [inst('i1', 'svc-a', 'RUNNING')]),
       )
       .mockResolvedValueOnce(
-        statusResponse('COMPLETED', [inst('i1', 'svc-a', 'PASSED')]),
+        statusResponse('COMPLETED', [inst('i1', 'svc-a', 'STOPPED', 'PASSED')]),
       );
 
     const result = await pollForCompletionCI('http://ct', 'run-1');
@@ -227,8 +241,8 @@ describe('pollForCompletionCI', () => {
   it('prints summary with passed/failed counts', async () => {
     mockFetchJson.mockResolvedValueOnce(
       statusResponse('FAILED', [
-        inst('i1', 'svc-a', 'PASSED'),
-        inst('i2', 'svc-b', 'FAILED'),
+        inst('i1', 'svc-a', 'STOPPED', 'PASSED'),
+        inst('i2', 'svc-b', 'STOPPED', 'FAILED'),
       ]),
     );
     mockFetchJson.mockResolvedValueOnce([]); // assertions for svc-b
@@ -237,8 +251,7 @@ describe('pollForCompletionCI', () => {
     await pollForCompletionCI('http://ct', 'run-1');
 
     const allOutput = logSpy.mock.calls.map((c) => String(c[0])).join('\n');
-    expect(allOutput).toContain('1 passed');
-    expect(allOutput).toContain('1 failed');
-    expect(allOutput).toContain('svc-b');
+    expect(allOutput).toContain('1 of 2 definitions passed: 1 failed.');
+    expect(allOutput).toContain('Not passed: svc-b');
   });
 });

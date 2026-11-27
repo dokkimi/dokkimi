@@ -22,14 +22,15 @@ export class TelemetryExceptionFilter implements ExceptionFilter {
         ? exception.getStatus()
         : HttpStatus.INTERNAL_SERVER_ERROR;
 
-    const errorMessage =
-      exception instanceof Error ? exception.message : String(exception);
-
+    // Only what identifies the kind of error: before, the event had the URL
+    // with its query (project paths) and the message (file paths, names)
+    const code = (exception as { code?: unknown } | null)?.code;
     this.telemetry.track('service_error', {
       error_type:
         exception instanceof Error ? exception.constructor.name : 'Unknown',
-      error_message: errorMessage.slice(0, 200),
-      route: request.url,
+      ...(typeof code === 'string' ? { error_code: code } : {}),
+      route:
+        (request.route as { path?: string } | undefined)?.path ?? 'unmatched',
       method: request.method,
       status_code: status,
     });

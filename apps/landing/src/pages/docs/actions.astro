@@ -31,24 +31,28 @@ import CodeBlock from '../../components/CodeBlock.astro';
     <tbody>
       <tr><td><code>type</code></td><td><code>"httpRequest"</code></td><td>Yes</td><td>Action type</td></tr>
       <tr><td><code>method</code></td><td>enum</td><td>Yes</td><td><code>GET</code>, <code>POST</code>, <code>PUT</code>, <code>DELETE</code>, <code>PATCH</code>, <code>HEAD</code>, <code>OPTIONS</code></td></tr>
-      <tr><td><code>url</code></td><td>string</td><td>Yes</td><td><code>service-name/path</code> format — service name resolves to internal DNS</td></tr>
+      <tr><td><code>url</code></td><td>string</td><td>Yes</td><td><code>service-name/path</code> — the name of a SERVICE item and a path. A hostname works too; see below.</td></tr>
       <tr><td><code>headers</code></td><td>object</td><td>No</td><td>Request headers (values support <code>&#123;&#123;variables&#125;&#125;</code>)</td></tr>
       <tr><td><code>body</code></td><td>any JSON</td><td>No</td><td>Request body (string values support <code>&#123;&#123;variables&#125;&#125;</code>)</td></tr>
       <tr><td><code>formData</code></td><td>object</td><td>No</td><td>Multipart/form-data fields for file uploads. Cannot be combined with <code>body</code>.</td></tr>
       <tr><td><code>queryParams</code></td><td>object</td><td>No</td><td>URL query parameters. String values sent as-is; array values send repeated keys. Values support <code>&#123;&#123;variables&#125;&#125;</code>.</td></tr>
+      <tr><td><code>timeout</code></td><td>integer</td><td>No</td><td>How long to wait for the response, in milliseconds. Default <code>30000</code>, or <a href="/docs/ci">DOKKIMI_HTTP_TIMEOUT</a>.</td></tr>
     </tbody>
   </table>
 
   <div class="callout">
-    <p><strong>Use service names, not ports.</strong> The <code>url</code> field uses the format <code>service-name/path</code> — just the item name and the route. Dokkimi handles DNS and port resolution internally. Don't include ports, protocols, or hostnames.</p>
+    <p><strong>Use service names.</strong> The <code>url</code> field uses the format <code>service-name/path</code> — just the item name and the route. Dokkimi handles DNS and port resolution internally. A scheme (<code>http://</code> or <code>https://</code>) and a port are optional; see below.</p>
   </div>
 
   <p>For example, if your service item is named <code>api-gateway</code> and listens on port 3000:</p>
   <CodeBlock code={`// Correct
 "url": "api-gateway/api/users"
 
-// Wrong — don't include ports or protocols
+// Also correct — the scheme and port are optional
 "url": "http://api-gateway:3000/api/users"`} lang="javascript" />
+  <p>The request is checked against your <a href="/docs/mocks">mocks</a> first, like any other. A name with a dot that isn't one of your services, such as <code>api.stripe.com/v1/charges</code>, goes to that host. Any other unknown name gets a 502 response.</p>
+  <p>The request uses the scheme in the URL if there is one. Without one, a service gets the scheme it serves (normally HTTP) and an external host gets HTTPS. A port is used for an external host; one of your services is always reached on its own <code>port</code>. Characters a URL can't contain as they are, such as spaces, are percent-encoded when the request is sent; what's already encoded is sent as written.</p>
+  <p>If the response breaks off before it is complete, the step fails.</p>
 
   <h3>Form data (file uploads)</h3>
   <p>Use <code>formData</code> instead of <code>body</code> when the API expects <code>multipart/form-data</code> (e.g., file uploads). The <code>Content-Type</code> header is set automatically.</p>
@@ -109,7 +113,7 @@ import CodeBlock from '../../components/CodeBlock.astro';
     ]
   }
 }`} lang="json" />
-  <p>All actions within <code>parallel</code> fire at the same time. Use this to test concurrent access patterns or to speed up independent setup steps. See <a href="/docs/tests-and-steps">Tests &amp; Steps</a> for more on parallel vs sequential execution.</p>
+  <p>Each entry in <code>actions</code> is an <code>httpRequest</code> or <code>dbQuery</code>, run once (no <code>forEach</code>, <code>for</code> or <code>repeat</code>; loop the step instead); <code>wait</code> and <code>ui</code> go in their own steps. All actions within <code>parallel</code> fire at the same time. Use this to test concurrent access patterns or to speed up independent setup steps. See <a href="/docs/tests-and-steps">Tests &amp; Steps</a> for more on parallel vs sequential execution.</p>
 
   <h2>Database Query</h2>
 
@@ -121,6 +125,17 @@ import CodeBlock from '../../components/CodeBlock.astro';
     "query": "SELECT * FROM users WHERE email = '{{email}}'"
   }
 }`} lang="json" />
+
+  <p>To bind values instead of writing them into the SQL, use placeholders and <code>params</code>. Postgres uses <code>$1</code>, <code>$2</code>, &hellip;; MySQL uses <code>?</code>, filled in order. Keys are the placeholder numbers as strings:</p>
+  <CodeBlock code={`{
+  "action": {
+    "type": "dbQuery",
+    "database": "postgres-db",
+    "query": "SELECT * FROM users WHERE id = $1 AND status = $2",
+    "params": { "1": "{{userId}}", "2": "active" }
+  }
+}`} lang="json" />
+  <p>For MySQL, each <code>?</code> takes the next number, so <code>WHERE a = ? OR b = ?</code> needs both <code>"1"</code> and <code>"2"</code> even if the value is the same.</p>
 
   <h3>MongoDB</h3>
   <p>For MongoDB, the <code>query</code> field must be a JSON string with a specific structure:</p>
@@ -146,6 +161,17 @@ import CodeBlock from '../../components/CodeBlock.astro';
     </tbody>
   </table>
 
+  <h3>Redis</h3>
+  <p>For Redis, <code>query</code> is a Redis command, split on spaces. Wrap an argument that contains spaces in double quotes:</p>
+  <CodeBlock code={`{
+  "action": {
+    "type": "dbQuery",
+    "database": "redis-cache",
+    "query": "SET session:{{userId}} \\"logged in\\""
+  }
+}`} lang="json" />
+  <p>Each value in the reply becomes a row <code>&#123; "value": ... &#125;</code> in <code>$.response.data</code> (so <code>GET</code> gives one row, <code>LRANGE</code> one per element). <code>HGETALL</code> gives one row with the hash's fields. A missing key gives no rows.</p>
+
   <table>
     <thead>
       <tr><th>Field</th><th>Type</th><th>Required</th><th>Description</th></tr>
@@ -153,9 +179,11 @@ import CodeBlock from '../../components/CodeBlock.astro';
     <tbody>
       <tr><td><code>type</code></td><td><code>"dbQuery"</code></td><td>Yes</td><td>Action type</td></tr>
       <tr><td><code>database</code></td><td>string</td><td>Yes</td><td>Name of a DATABASE item in the definition</td></tr>
-      <tr><td><code>query</code></td><td>string</td><td>Yes</td><td>SQL query or MongoDB command JSON (supports <code>&#123;&#123;variables&#125;&#125;</code>)</td></tr>
+      <tr><td><code>query</code></td><td>string</td><td>Yes</td><td>SQL query, MongoDB command JSON, or Redis command (supports <code>&#123;&#123;variables&#125;&#125;</code>)</td></tr>
+      <tr><td><code>params</code></td><td>object</td><td>No</td><td>Values for SQL placeholders, keyed <code>"1"</code>, <code>"2"</code>, &hellip; (string values support <code>&#123;&#123;variables&#125;&#125;</code>)</td></tr>
     </tbody>
   </table>
+  <p>A query that fails fails the step, unless the step asserts on <code>$.response.success</code> or <code>$.response.error</code> to test the failure. Inside <code>parallel</code>, it always fails the step.</p>
 
   <h2>UI Action</h2>
   <p>Drive a real Chromium browser to test user-facing flows. When a definition contains UI actions, Dokkimi automatically attaches a headless Chromium sidecar to the test environment.</p>
@@ -181,7 +209,7 @@ import CodeBlock from '../../components/CodeBlock.astro';
     </thead>
     <tbody>
       <tr><td><code>type</code></td><td><code>"ui"</code></td><td>Yes</td><td>Action type</td></tr>
-      <tr><td><code>target</code></td><td>string</td><td>Yes</td><td>Name of a SERVICE item with a <code>uiPath</code> field.</td></tr>
+      <tr><td><code>target</code></td><td>string</td><td>Yes</td><td>Name of the SERVICE item that serves the UI.</td></tr>
       <tr><td><code>steps</code></td><td>array</td><td>Yes</td><td>Ordered list of browser interactions to perform.</td></tr>
     </tbody>
   </table>
@@ -199,20 +227,27 @@ import CodeBlock from '../../components/CodeBlock.astro';
       <tr><td><code>select</code></td><td><code>&#123; selector, value &#125;</code></td><td>Select an option from a dropdown.</td></tr>
       <tr><td><code>hover</code></td><td>string (selector)</td><td>Hover over an element.</td></tr>
       <tr><td><code>waitFor</code></td><td>string or <code>&#123; selector, text? &#125;</code></td><td>Wait until an element appears. Optionally check for text content.</td></tr>
-      <tr><td><code>screenshot</code></td><td>string (name)</td><td>Capture a screenshot.</td></tr>
+      <tr><td><code>screenshot</code></td><td>string (name) or <code>&#123; name, selector?, match? &#125;</code></td><td>Capture a screenshot of the viewport, or of one element with <code>selector</code>. <code>match</code> compares it against a baseline (see below).</td></tr>
       <tr><td><code>scroll</code></td><td><code>&#123; x?, y? &#125;</code></td><td>Scroll the page by the given offset.</td></tr>
       <tr><td><code>key</code></td><td>string (key name)</td><td>Press a keyboard key (e.g. <code>Enter</code>, <code>Escape</code>).</td></tr>
       <tr><td><code>upload</code></td><td><code>&#123; selector, files &#125;</code></td><td>Upload files to a file input.</td></tr>
-      <tr><td><code>drag</code></td><td><code>&#123; source, target &#125;</code></td><td>Drag from one element to another.</td></tr>
+      <tr><td><code>drag</code></td><td><code>&#123; from, to &#125;</code></td><td>Drag from the <code>from</code> element to the <code>to</code> element (both selectors).</td></tr>
       <tr><td><code>extract</code></td><td>object</td><td>Extract values from the page into variables. Keys are variable names, values are source objects with <code>from</code>, <code>selector</code>, etc.</td></tr>
       <tr><td><code>viewport</code></td><td><code>&#123; width, height &#125;</code></td><td>Set browser viewport dimensions (pixels).</td></tr>
     </tbody>
   </table>
 
   <h3>Visual regression with screenshots</h3>
-  <p>Screenshots captured during a test run are saved as artifacts. To enable visual regression testing, add <code>match: true</code> to the screenshot sub-step:</p>
-  <CodeBlock code={`{ "screenshot": "checkout-page", "match": true }`} lang="json" />
-  <p>When <code>match: true</code> is set, Dokkimi compares the capture against a baseline stored in <code>.dokkimi/&lt;project&gt;/baselines/</code>. If no baseline exists yet (first run), or if the diff exceeds the threshold, it appears as a pending baseline. Review and approve pending baselines with <code>dokkimi baselines</code>.</p>
+  <p>Screenshots captured during a test run are saved as artifacts, by name, so each screenshot name must be unique within a definition. To enable visual regression testing, use the object form and add <code>match: true</code>:</p>
+  <CodeBlock code={`{ "screenshot": { "name": "checkout-page", "match": true } }`} lang="json" />
+  <p>To change the defaults, set <code>match</code> to an object instead. <code>threshold</code> is the fraction of pixels allowed to differ (0 to 1, default 0.01), and <code>ignoreRegions</code> lists selectors masked out before comparing:</p>
+  <CodeBlock code={`{
+  "screenshot": {
+    "name": "checkout-page",
+    "match": { "threshold": 0.05, "ignoreRegions": ["[data-testid='clock']"] }
+  }
+}`} lang="json" />
+  <p>When <code>match</code> is set, Dokkimi compares the capture against a baseline stored in <code>.dokkimi/&lt;project&gt;/baselines/</code> (<code>.dokkimi/baselines/</code> for a definition directly in <code>.dokkimi/</code>). If no baseline exists yet (first run), or if the diff exceeds the threshold, it appears as a pending baseline. Review and approve pending baselines with <code>dokkimi baselines</code>.</p>
 
   <div class="callout">
     <p><strong>Use <code>data-testid</code> selectors.</strong> CSS class selectors break when you restyle. Test IDs are stable and make your intent clear.</p>

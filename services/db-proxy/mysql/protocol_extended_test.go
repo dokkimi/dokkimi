@@ -423,7 +423,7 @@ func TestParseTextRowValues_EdgeCases(t *testing.T) {
 	}
 }
 
-func TestStripDeprecateEOFFromGreeting(t *testing.T) {
+func TestHideCapabilitiesInGreeting(t *testing.T) {
 	// Build a minimal HandshakeV10 payload:
 	// protocol(1) + version(NUL-terminated) + conn_id(4) + auth1(8) + filler(1) +
 	// cap_lower(2) + charset(1) + status(2) + cap_upper(2) + ...
@@ -437,39 +437,112 @@ func TestStripDeprecateEOFFromGreeting(t *testing.T) {
 	payload = append(payload, 0xFF, 0xFF)             // cap_lower (all bits set)
 	payload = append(payload, 0x21)                   // charset
 	payload = append(payload, 0x02, 0x00)             // status flags
-	// cap_upper: set CLIENT_DEPRECATE_EOF (bit 24 = bit 8 of upper = bit 0 of upper byte 1)
-	payload = append(payload, 0xFF, 0xFF)          // all bits set in upper caps
-	payload = append(payload, make([]byte, 10)...) // remaining fields
+	payload = append(payload, 0xFF, 0xFF)             // cap_upper (all bits set)
+	payload = append(payload, make([]byte, 10)...)    // remaining fields
 
 	pkt := &mysqlPacket{sequenceID: 0, payload: payload}
-
-	nulPos := 1 + len(version) - 1 // position of NUL byte
-	upperCapOff := nulPos + 19
-
-	// Verify bit 24 is set before stripping
-	if pkt.payload[upperCapOff+1]&0x01 == 0 {
-		t.Fatal("CLIENT_DEPRECATE_EOF should be set before strip")
+	nulPos := len(version) // position of the version's NUL byte
+	caps := func() uint32 {
+		return uint32(binary.LittleEndian.Uint16(pkt.payload[nulPos+14:])) |
+			uint32(binary.LittleEndian.Uint16(pkt.payload[nulPos+19:]))<<16
 	}
 
-	stripDeprecateEOFFromGreeting(pkt)
+	hideCapabilitiesInGreeting(pkt)
 
-	// Bit 24 should be cleared
-	if pkt.payload[upperCapOff+1]&0x01 != 0 {
-		t.Error("CLIENT_DEPRECATE_EOF should be cleared after strip")
+	got := caps()
+	for name, bit := range map[string]uint32{
+		"CLIENT_COMPRESS": capCompress, "CLIENT_SSL": capSSL,
+		"CLIENT_DEPRECATE_EOF": capDeprecateEOF, "CLIENT_QUERY_ATTRIBUTES": capQueryAttributes,
+	} {
+		if got&bit != 0 {
+			t.Errorf("%s should be cleared", name)
+		}
 	}
-	// Other bits should remain
-	if pkt.payload[upperCapOff+1]&0xFE != 0xFE {
-		t.Errorf("other upper cap bits should be preserved, got %02x", pkt.payload[upperCapOff+1])
-	}
-	if pkt.payload[upperCapOff]&0xFF != 0xFF {
-		t.Error("lower byte of upper caps should be unchanged")
+	if want := uint32(0xFFFFFFFF) &^ hiddenCapabilities; got != want {
+		t.Errorf("other capability bits should be kept: got %08x, want %08x", got, want)
 	}
 
-	// Test with non-handshake packet (should be no-op)
+	// Not a handshake, or too short: no change, no panic
 	errPkt := &mysqlPacket{payload: []byte{0xFF, 0x01, 0x00}}
-	stripDeprecateEOFFromGreeting(errPkt)
+	hideCapabilitiesInGreeting(errPkt)
+	hideCapabilitiesInGreeting(&mysqlPacket{payload: []byte{0x0a}})
+}
 
-	// Test with too-short packet (should be no-op)
-	shortPkt := &mysqlPacket{payload: []byte{0x0a}}
-	stripDeprecateEOFFromGreeting(shortPkt)
+// binaryRow builds a binary result row with no NULLs from already-encoded values.
+func binaryRow(numCols int, values ...[]byte) []byte {
+	payload := append([]byte{0x00}, make([]byte, (numCols+7+2)/8)...)
+	for _, v := range values {
+		payload = append(payload, v...)
+	}
+	return payload
+}
+
+func le16(v uint16) []byte { b := make([]byte, 2); binary.LittleEndian.PutUint16(b, v); return b }
+func le64(v uint64) []byte { b := make([]byte, 8); binary.LittleEndian.PutUint64(b, v); return b }
+
+func TestParseBinaryRowValues_AllTypesMatchTextProtocol(t *testing.T) {
+	columns := []columnDef{
+		{name: "d", fieldType: fieldTypeDate},
+		{name: "dt", fieldType: fieldTypeDatetime, decimals: 3},
+		{name: "ts", fieldType: fieldTypeTimestamp},
+		{name: "tm", fieldType: fieldTypeTime},
+		{name: "y", fieldType: fieldTypeYear, flags: columnFlagUnsigned},
+		{name: "dec", fieldType: fieldTypeNewDecimal},
+		{name: "ut", fieldType: fieldTypeTiny, flags: columnFlagUnsigned},
+		{name: "ubig", fieldType: fieldTypeLongLong, flags: columnFlagUnsigned},
+		{name: "blob", fieldType: 0xfc},
+	}
+	row := binaryRow(len(columns),
+		[]byte{4, 0xe8, 0x07, 2, 3},                                   // 2024-02-03
+		[]byte{11, 0xe8, 0x07, 2, 3, 4, 5, 6, 0x48, 0x0a, 0x0c, 0x00}, // 2024-02-03 04:05:06.789000
+		[]byte{7, 0xe8, 0x07, 12, 31, 23, 59, 58},                     // 2024-12-31 23:59:58
+		[]byte{8, 1, 1, 0, 0, 0, 2, 3, 4},                             // -(1 day 02:03:04)
+		le16(2024),                                                    // YEAR
+		[]byte{5, '1', '2', '.', '3', '4'},                            // DECIMAL 12.34
+		[]byte{250},                                                   // TINYINT UNSIGNED
+		le64(math.MaxUint64),                                          // BIGINT UNSIGNED max
+		[]byte{3, 'b', 'i', 'n'},                                      // BLOB
+	)
+	got := parseBinaryRowValues(row, columns)
+	want := []interface{}{
+		"2024-02-03", "2024-02-03 04:05:06.789", "2024-12-31 23:59:58", "-26:03:04",
+		int64(2024), 12.34, int64(250), "18446744073709551615", "bin",
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("%s: got %#v, want %#v", columns[i].name, got[i], want[i])
+		}
+	}
+}
+
+// This row crashed the proxy: YEAR was read as a length-encoded string, so the
+// next column's bytes became a length that overflowed to a negative slice end.
+func TestParseBinaryRowValues_YearFollowedByBigint(t *testing.T) {
+	columns := []columnDef{{name: "y", fieldType: fieldTypeYear}, {name: "b", fieldType: fieldTypeLongLong}}
+	minusOne := int64(-1)
+	got := parseBinaryRowValues(binaryRow(2, le16(2046), le64(uint64(minusOne))), columns)
+	if got[0] != int64(2046) || got[1] != int64(-1) {
+		t.Errorf("got %#v, want [2046 -1]", got)
+	}
+}
+
+func TestReadLenEncString_HugeLengthIsRejected(t *testing.T) {
+	data := append([]byte{0xfe}, le64(math.MaxUint64)...)
+	if _, n, _ := readLenEncString(append(data, 'x')); n != 0 {
+		t.Errorf("a length beyond the data should be rejected, got n=%d", n)
+	}
+}
+
+func TestParseColumnDef_FlagsAndDecimals(t *testing.T) {
+	lenenc := func(s string) []byte { return append([]byte{byte(len(s))}, s...) }
+	var p []byte
+	for _, s := range []string{"def", "db", "t", "t", "dt", "dt"} {
+		p = append(p, lenenc(s)...)
+	}
+	p = append(p, 0x0c, 0x21, 0x00, 0x13, 0x00, 0x00, 0x00) // marker, charset, column length
+	p = append(p, fieldTypeDatetime, 0x20, 0x00, 3, 0, 0)   // type, flags, decimals, filler
+	col := parseColumnDef(p)
+	if col.name != "dt" || col.fieldType != fieldTypeDatetime || col.flags != columnFlagUnsigned || col.decimals != 3 {
+		t.Errorf("got %+v", col)
+	}
 }

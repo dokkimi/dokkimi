@@ -21,17 +21,33 @@ export interface ResolvedCredentials {
   dbPassword: string;
 }
 
+/**
+ * With noAuth, the user and database each engine has without credentials.
+ * Before, they were empty, and clients connecting as "" (Dokkimi's health
+ * checks, dbQuery) were refused, so the database never became ready.
+ */
+const NO_AUTH: Record<string, { dbUser: string; dbName: string }> = {
+  postgres: { dbUser: 'postgres', dbName: 'postgres' },
+  mysql: { dbUser: 'root', dbName: '' },
+};
+
 export function resolveDbCredentials(
   creds: DatabaseCredentials | undefined,
+  databaseType?: string,
 ): ResolvedCredentials {
   const config = getConfig();
-  const noAuth = creds?.noAuth === true;
+  if (creds?.noAuth === true) {
+    const engine = NO_AUTH[databaseType?.toLowerCase() ?? ''];
+    return {
+      dbName: engine?.dbName ?? '',
+      dbUser: engine?.dbUser ?? '',
+      dbPassword: '',
+    };
+  }
   return {
-    dbName: noAuth ? '' : (creds?.dbName ?? config.database.defaultName),
-    dbUser: noAuth ? '' : (creds?.dbUser ?? config.database.defaultUser),
-    dbPassword: noAuth
-      ? ''
-      : (creds?.dbPassword ?? config.database.defaultPassword),
+    dbName: creds?.dbName ?? config.database.defaultName,
+    dbUser: creds?.dbUser ?? config.database.defaultUser,
+    dbPassword: creds?.dbPassword ?? config.database.defaultPassword,
   };
 }
 
@@ -44,7 +60,10 @@ export class DatabaseConfigService {
   ): DatabaseConfig {
     const config = getConfig();
 
-    const { dbName, dbUser, dbPassword } = resolveDbCredentials(credentials);
+    const { dbName, dbUser, dbPassword } = resolveDbCredentials(
+      credentials,
+      databaseType,
+    );
     const noAuth = credentials?.noAuth === true;
     const imgs = config.images.databases;
 
@@ -63,8 +82,11 @@ export class DatabaseConfigService {
         image: version ? `mysql:${version}` : imgs.mysql,
         environment: {
           MYSQL_DATABASE: dbName,
-          MYSQL_USER: dbUser,
-          MYSQL_PASSWORD: dbPassword,
+          // The image refuses MYSQL_USER=root: root is set up by
+          // MYSQL_ROOT_PASSWORD, and the container exited
+          ...(dbUser === 'root'
+            ? {}
+            : { MYSQL_USER: dbUser, MYSQL_PASSWORD: dbPassword }),
           MYSQL_ROOT_PASSWORD: dbPassword,
           ...(noAuth ? { MYSQL_ALLOW_EMPTY_PASSWORD: 'yes' } : {}),
         },

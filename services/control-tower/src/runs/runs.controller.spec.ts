@@ -139,10 +139,15 @@ describe('RunsController', () => {
       const expected = { runId: 'run-1', status: 'CANCELLED' };
       mockRunsService.stopCurrentRun.mockResolvedValue(expected);
 
-      const result = await controller.stopCurrentRun();
+      const result = await controller.stopCurrentRun({});
 
-      expect(mockRunsService.stopCurrentRun).toHaveBeenCalled();
+      expect(mockRunsService.stopCurrentRun).toHaveBeenCalledWith(undefined);
       expect(result).toEqual(expected);
+    });
+
+    it('passes the run to stop', async () => {
+      await controller.stopCurrentRun({ runId: 'run-1' });
+      expect(mockRunsService.stopCurrentRun).toHaveBeenCalledWith('run-1');
     });
   });
 

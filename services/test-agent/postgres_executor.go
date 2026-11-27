@@ -26,8 +26,7 @@ func (e *DatabaseQueryExecutor) getPostgresPool(databaseName string) (*sql.DB, e
 	if port == 0 {
 		port = 5432
 	}
-	connStr := fmt.Sprintf("postgres://%s:%s@%s:%d/%s?sslmode=disable",
-		dbInfo.User, dbInfo.Password, databaseName, port, dbInfo.Database)
+	connStr := PostgresURL(dbInfo.User, dbInfo.Password, databaseName, strconv.Itoa(port), dbInfo.Database)
 
 	db, err := sql.Open("postgres", connStr)
 	if err != nil {
@@ -112,7 +111,7 @@ func (e *DatabaseQueryExecutor) executePostgresQuery(
 		if data == nil {
 			data = []map[string]interface{}{}
 		}
-		result = &DBQueryResult{Success: true, Data: data, Duration: duration}
+		result = &DBQueryResult{Success: true, Data: data, RowsAffected: int64(len(data)), Duration: duration}
 	} else {
 		res, err := db.ExecContext(ctx, query, args...)
 		if err != nil {

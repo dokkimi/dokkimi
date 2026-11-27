@@ -1,12 +1,17 @@
 package main
 
 import (
+	"bytes"
+	"compress/zlib"
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"math"
 
+	"github.com/golang/snappy"
+	"github.com/klauspost/compress/zstd"
 	"go.mongodb.org/mongo-driver/v2/bson"
 )
 
@@ -16,7 +21,8 @@ const (
 	opMsg        int32 = 2013
 	opCompressed int32 = 2012
 
-	headerSize = 16
+	headerSize     = 16
+	maxMessageSize = 48 * 1024 * 1024
 
 	flagChecksumPresent uint32 = 1 << 0
 	flagMoreToCome      uint32 = 1 << 1
@@ -34,7 +40,8 @@ const (
 )
 
 type mongoMessage struct {
-	raw        []byte
+	wire       []byte // the message as received, which is forwarded
+	raw        []byte // the message as read: wire, or its content when compressed
 	length     int32
 	requestID  int32
 	responseTo int32
@@ -53,12 +60,14 @@ type commandInfo struct {
 }
 
 type responseInfo struct {
-	ok       float64
-	n        int64
-	errmsg   string
-	hasOk    bool
-	data     []map[string]interface{}
-	cursorID int64
+	ok         float64
+	n          int64
+	nModified  int64
+	errmsg     string
+	writeError string // a write that failed although the command succeeded (ok: 1)
+	hasOk      bool
+	data       []map[string]interface{}
+	cursorID   int64
 }
 
 // readMessage reads a complete MongoDB wire protocol message from the reader.
@@ -69,7 +78,7 @@ func readMessage(r io.Reader) (*mongoMessage, error) {
 	}
 
 	length := int32(binary.LittleEndian.Uint32(header[0:4]))
-	if length < headerSize || length > 48*1024*1024 {
+	if length < headerSize || length > maxMessageSize {
 		return nil, fmt.Errorf("invalid message length: %d", length)
 	}
 
@@ -80,6 +89,7 @@ func readMessage(r io.Reader) (*mongoMessage, error) {
 	}
 
 	msg := &mongoMessage{
+		wire:       raw,
 		raw:        raw,
 		length:     length,
 		requestID:  int32(binary.LittleEndian.Uint32(raw[4:8])),
@@ -87,12 +97,79 @@ func readMessage(r io.Reader) (*mongoMessage, error) {
 		opCode:     int32(binary.LittleEndian.Uint32(raw[12:16])),
 	}
 
+	// A compressed message is read as the message it holds. One that can't
+	// be decompressed is still forwarded, but not logged.
+	if msg.opCode == opCompressed {
+		if inner, err := decompressMessage(raw); err == nil {
+			msg.raw = inner
+			msg.opCode = int32(binary.LittleEndian.Uint32(inner[12:16]))
+		} else {
+			log.Printf("compressed message not logged: %v", err)
+		}
+	}
+	raw = msg.raw
+
 	if msg.opCode == opMsg && len(raw) > headerSize+4 {
 		msg.flags = binary.LittleEndian.Uint32(raw[headerSize : headerSize+4])
 		msg.moreToCome = msg.flags&flagMoreToCome != 0
 	}
 
 	return msg, nil
+}
+
+// Compressors of OP_COMPRESSED
+const (
+	compressorNoop   = 0
+	compressorSnappy = 1
+	compressorZlib   = 2
+	compressorZstd   = 3
+)
+
+var zstdDecoder, _ = zstd.NewReader(nil)
+
+// decompressMessage returns the message an OP_COMPRESSED holds: header,
+// original opcode, uncompressed size, compressor, compressed body.
+func decompressMessage(raw []byte) ([]byte, error) {
+	const prefix = headerSize + 9
+	if len(raw) < prefix {
+		return nil, fmt.Errorf("compressed message too short: %d", len(raw))
+	}
+	opCode := binary.LittleEndian.Uint32(raw[headerSize:])
+	size := int32(binary.LittleEndian.Uint32(raw[headerSize+4:]))
+	if size < 0 || size > maxMessageSize-headerSize {
+		return nil, fmt.Errorf("invalid uncompressed size: %d", size)
+	}
+	data := raw[prefix:]
+
+	var body []byte
+	var err error
+	switch raw[headerSize+8] {
+	case compressorNoop:
+		body = data
+	case compressorSnappy:
+		body, err = snappy.Decode(nil, data)
+	case compressorZlib:
+		var r io.ReadCloser
+		if r, err = zlib.NewReader(bytes.NewReader(data)); err == nil {
+			body, err = io.ReadAll(io.LimitReader(r, int64(size)+1))
+		}
+	case compressorZstd:
+		body, err = zstdDecoder.DecodeAll(data, make([]byte, 0, size))
+	default:
+		return nil, fmt.Errorf("unknown compressor %d", raw[headerSize+8])
+	}
+	if err != nil {
+		return nil, err
+	}
+	if len(body) != int(size) {
+		return nil, fmt.Errorf("decompressed %d bytes, expected %d", len(body), size)
+	}
+
+	inner := make([]byte, headerSize, headerSize+len(body))
+	copy(inner, raw[:headerSize])
+	binary.LittleEndian.PutUint32(inner[0:4], uint32(headerSize+len(body)))
+	binary.LittleEndian.PutUint32(inner[12:16], opCode)
+	return append(inner, body...), nil
 }
 
 // extractCommandInfo extracts the command name, collection, and Kind 1
@@ -220,16 +297,49 @@ func extractResponseInfo(msg *mongoMessage, cmdName string) responseInfo {
 
 	docLen := int(binary.LittleEndian.Uint32(bsonDoc[0:4]))
 	if docLen >= 5 && docLen <= len(bsonDoc) {
+		var doc bson.D
+		if bson.Unmarshal(bsonDoc[:docLen], &doc) == nil {
+			for _, elem := range doc {
+				switch elem.Key {
+				case "nModified":
+					info.nModified = bsonNumToInt64(elem.Value)
+				case "writeErrors": // [{index, code, errmsg}, ...]
+					if errs, ok := elem.Value.(bson.A); ok && len(errs) > 0 {
+						info.writeError = errorMessage(errs[0])
+					}
+				case "writeConcernError": // {code, errmsg}
+					if info.writeError == "" {
+						info.writeError = errorMessage(elem.Value)
+					}
+				}
+			}
+		}
 		if cmdName == "find" || cmdName == "getMore" {
 			batch, cursorID := extractCursorBatch(bsonDoc[:docLen])
 			info.data = batch
 			info.cursorID = cursorID
 		} else {
 			info.data = extractResponseData(bsonDoc[:docLen], cmdName)
+			if cmdName == "aggregate" {
+				_, info.cursorID = extractCursorBatch(bsonDoc[:docLen])
+			}
 		}
 	}
 
 	return info
+}
+
+// errorMessage returns the errmsg of an error document, or a placeholder so
+// that an error without one still counts.
+func errorMessage(v interface{}) string {
+	if d, ok := v.(bson.D); ok {
+		for _, elem := range d {
+			if s, ok := elem.Value.(string); ok && elem.Key == "errmsg" && s != "" {
+				return s
+			}
+		}
+	}
+	return "write failed"
 }
 
 // extractCursorBatch extracts the batch of documents and cursor ID from a cursor
@@ -280,7 +390,7 @@ func extractResponseData(rawDoc []byte, cmdName string) []map[string]interface{}
 	}
 
 	switch cmdName {
-	case "find", "getMore":
+	case "find", "getMore", "aggregate":
 		batch, _ := extractCursorBatch(rawDoc)
 		if batch != nil {
 			return batch
@@ -317,19 +427,27 @@ func extractResponseData(rawDoc []byte, cmdName string) []map[string]interface{}
 		}
 		return []map[string]interface{}{row}
 
+	case "findAndModify":
+		// The document before or after the change, or null when nothing matched
+		for _, elem := range doc {
+			if elem.Key == "value" {
+				if d, ok := elem.Value.(bson.D); ok {
+					return []map[string]interface{}{bsonDToMap(d)}
+				}
+			}
+		}
+		return []map[string]interface{}{}
+
 	default:
 		return nil
 	}
 }
 
 // bsonDToMap converts a bson.D to map[string]interface{}, recursively converting
-// sub-documents and arrays. Strips the _id field since test assertions don't reference it.
+// sub-documents and arrays. ObjectIDs become hex strings when marshaled.
 func bsonDToMap(d bson.D) map[string]interface{} {
 	m := make(map[string]interface{}, len(d))
 	for _, elem := range d {
-		if elem.Key == "_id" {
-			continue
-		}
 		m[elem.Key] = bsonValueToGo(elem.Value)
 	}
 	return m
@@ -815,8 +933,12 @@ func reconstructGeneric(commandName, collection string, doc bson.D) string {
 		{key: "operation", value: commandName},
 		{key: "collection", value: collection},
 	}
-	knownFields := map[string]bool{
-		"filter": true, "document": true, "documents": true, "update": true,
+	// Fields worth logging, by their name on the wire and in the log.
+	// findAndModify calls its filter "query".
+	knownFields := map[string]string{
+		"filter": "filter", "query": "filter", "document": "document", "documents": "documents",
+		"update": "update", "pipeline": "pipeline", "sort": "sort", "remove": "remove",
+		"new": "new", "upsert": "upsert",
 	}
 	for _, elem := range doc {
 		if elem.Key == commandName || elem.Key == "$db" ||
@@ -824,8 +946,8 @@ func reconstructGeneric(commandName, collection string, doc bson.D) string {
 			elem.Key == "$readPreference" || elem.Key == "ordered" {
 			continue
 		}
-		if knownFields[elem.Key] {
-			pairs = append(pairs, orderedPair{key: elem.Key, value: bsonToInterface(elem.Value)})
+		if name, ok := knownFields[elem.Key]; ok {
+			pairs = append(pairs, orderedPair{key: name, value: bsonToInterface(elem.Value)})
 		}
 	}
 	return marshalOrdered(pairs)
@@ -865,9 +987,6 @@ func bsonToInterface(v interface{}) interface{} {
 	case bson.D:
 		pairs := make(orderedDoc, 0, len(val))
 		for _, elem := range val {
-			if elem.Key == "_id" {
-				continue
-			}
 			pairs = append(pairs, orderedPair{key: elem.Key, value: bsonToInterface(elem.Value)})
 		}
 		return pairs
@@ -897,6 +1016,27 @@ func extractGetMoreCursorID(rawBody []byte) int64 {
 	return 0
 }
 
+// extractKillCursorsIDs extracts the cursor IDs from a killCursors command:
+// {killCursors: "collection", cursors: [NumberLong(id), ...]}
+func extractKillCursorsIDs(rawBody []byte) []int64 {
+	var doc bson.D
+	if err := bson.Unmarshal(rawBody, &doc); err != nil {
+		return nil
+	}
+	for _, elem := range doc {
+		if elem.Key == "cursors" {
+			if arr, ok := elem.Value.(bson.A); ok {
+				ids := make([]int64, 0, len(arr))
+				for _, v := range arr {
+					ids = append(ids, bsonNumToInt64(v))
+				}
+				return ids
+			}
+		}
+	}
+	return nil
+}
+
 // isDriverInternalCommand returns true for commands we don't want to log.
 func isDriverInternalCommand(name string) bool {
 	switch name {
@@ -906,91 +1046,4 @@ func isDriverInternalCommand(name string) bool {
 		return true
 	}
 	return false
-}
-
-// shouldStripCompression checks if this is a hello/isMaster response that
-// advertises compression capabilities. Returns true if compression should
-// be stripped from the response.
-func isHelloResponse(msg *mongoMessage, cmdName string) bool {
-	return msg.opCode == opMsg && (cmdName == "hello" || cmdName == "isMaster" || cmdName == "ismaster")
-}
-
-// stripCompressionFromHello removes the "compression" field from a hello/isMaster
-// response so the driver and server don't negotiate compression. This ensures all
-// subsequent traffic is plain OP_MSG that the proxy can parse and log.
-// Returns modified raw bytes, or the original if stripping fails.
-func stripCompressionFromHello(raw []byte) []byte {
-	if len(raw) < headerSize+5 {
-		return raw
-	}
-
-	body := raw[headerSize:]
-	flags := body[:4]
-	if body[4] != 0 {
-		return raw
-	}
-	bsonStart := headerSize + 4 + 1 // header + flags + kind byte
-	bsonDoc := raw[bsonStart:]
-
-	if len(bsonDoc) < 5 {
-		return raw
-	}
-	docLen := int(binary.LittleEndian.Uint32(bsonDoc[0:4]))
-	if docLen < 5 || docLen > len(bsonDoc) {
-		return raw
-	}
-
-	// Scan for the "compression" field and remove it
-	pos := 4
-	for pos < docLen-1 {
-		elemStart := pos
-		elemType := bsonDoc[pos]
-		pos++
-
-		fieldName, newPos := readCString(bsonDoc, pos, docLen)
-		if fieldName == "" {
-			break
-		}
-		pos = newPos
-
-		nextPos := skipBSONValue(elemType, bsonDoc, pos, docLen)
-		if nextPos < 0 {
-			break
-		}
-
-		if fieldName == "compression" {
-			// Remove this element from the BSON document
-			elemEnd := nextPos
-			newDoc := make([]byte, 0, len(bsonDoc)-(elemEnd-elemStart))
-			newDoc = append(newDoc, bsonDoc[:elemStart]...)
-			newDoc = append(newDoc, bsonDoc[elemEnd:]...)
-
-			// Update BSON document length
-			newDocLen := len(newDoc)
-			binary.LittleEndian.PutUint32(newDoc[0:4], uint32(newDocLen))
-
-			// Rebuild the message
-			result := make([]byte, 0, headerSize+4+1+len(newDoc))
-			result = append(result, raw[:headerSize]...) // original header
-			result = append(result, flags...)            // flagBits
-			result = append(result, 0)                   // kind 0
-			result = append(result, newDoc...)
-
-			// Check if original had checksum
-			if binary.LittleEndian.Uint32(flags)&flagChecksumPresent != 0 {
-				// Append 4 zero bytes for checksum placeholder.
-				// The driver will recalculate if needed, or we can skip validation.
-				result = append(result, 0, 0, 0, 0)
-			}
-
-			// Update message length in header
-			binary.LittleEndian.PutUint32(result[0:4], uint32(len(result)))
-
-			return result
-		}
-
-		pos = nextPos
-	}
-
-	return raw
 }

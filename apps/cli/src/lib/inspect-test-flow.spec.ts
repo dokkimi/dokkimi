@@ -22,7 +22,6 @@ jest.mock('../lib/inspect-item-flow', () => ({
 }));
 
 jest.mock('../lib/editor', () => ({
-  stripIds: jest.fn((x: unknown) => x),
   openInEditor: jest.fn(),
   openFile: jest.fn(),
   formatTestExecutionLogs: jest.fn(() => 'formatted logs'),
@@ -290,14 +289,16 @@ describe('showTestStepsFlow', () => {
       deriveStepAssertionStatuses as jest.Mock;
 
     // Set up statuses for our two steps
+    // Both steps ran; the second one's assertions failed. Before, the
+    // assertion statuses were never found, so the run's status was shown.
     const groupStatusMap = new Map<number, string>();
     groupStatusMap.set(0, 'PASSED');
-    groupStatusMap.set(1, 'FAILED');
+    groupStatusMap.set(1, 'PASSED');
     mockDeriveGroupStatuses.mockReturnValue(groupStatusMap);
 
-    const assertionStatusMap = new Map<string, string>();
-    assertionStatusMap.set('0', 'PASSED');
-    assertionStatusMap.set('1', 'FAILED');
+    const assertionStatusMap = new Map<number, string>();
+    assertionStatusMap.set(0, 'PASSED');
+    assertionStatusMap.set(1, 'FAILED');
     mockDeriveStepAssertionStatuses.mockReturnValue(assertionStatusMap);
 
     mockFetchJson
@@ -321,6 +322,8 @@ describe('showTestStepsFlow', () => {
     expect(mockDeriveStepAssertionStatuses).toHaveBeenCalled();
     // Menu should have been presented
     expect(mockSelectMenu).toHaveBeenCalledTimes(1);
+    const labels = mockSelectMenu.mock.calls[0][0].map((i) => i.label);
+    expect(labels.some((l) => l.includes('FAILED'))).toBe(true);
   });
 
   it('shows error message for failed instance', async () => {

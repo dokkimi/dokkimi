@@ -433,7 +433,7 @@
         },
         "port": {
           "type": "integer",
-          "description": "Port the broker listens on inside the container.",
+          "description": "Port services connect to (default: 5672 for AMQP, 9092 for Kafka). Not 4369, 10672 or 30672 (AMQP), or 9093 or 19092 (Kafka): the broker uses those itself.",
           "minimum": 1,
           "maximum": 65535
         },
@@ -1126,6 +1126,11 @@
                     }
                   ]
                 }
+              },
+              "timeout": {
+                "type": "integer",
+                "minimum": 1,
+                "description": "How long to wait for the response, in milliseconds (default 30000)."
               },
               "formData": {
                 "type": "object",
@@ -1876,11 +1881,6 @@
     "LoopBodyProperties": {
       "description": "Properties that can appear inside any loop body. Which ones are valid depends on the level (test, step, assertion-block) — the CLI validator enforces level rules.",
       "properties": {
-        "steps": {
-          "type": "array",
-          "description": "Steps to execute per iteration (test-level loops).",
-          "items": { "$ref": "#/definitions/TestStep" }
-        },
         "action": { "$ref": "#/definitions/AnyAction" },
         "assertions": {
           "type": "array",
@@ -1911,7 +1911,7 @@
 
     "ForEachLoop": {
       "type": "object",
-      "description": "Iterate over an array of items. Each iteration sets the loop variable (as) to the current item. Place loop body content (steps, assertions, extract) inside this object.",
+      "description": "Iterate over an array of items. Each iteration sets the loop variable (as) to the current item. Place loop body content (assertions, extract) inside this object. On a test, put steps next to it.",
       "required": ["items", "as"],
       "additionalProperties": false,
       "allOf": [{ "$ref": "#/definitions/LoopBodyProperties" }],
@@ -1941,7 +1941,6 @@
           "description": "Milliseconds to wait between iterations.",
           "minimum": 0
         },
-        "steps": true,
         "action": true,
         "assertions": true,
         "extract": true,
@@ -1954,7 +1953,7 @@
 
     "ForLoop": {
       "type": "object",
-      "description": "Numeric range loop. Iterates from 'from' to 'to' (inclusive) with optional step. Place loop body content (steps, assertions, extract) inside this object.",
+      "description": "Numeric range loop. Iterates from 'from' to 'to' (inclusive) with optional step. Place loop body content (assertions, extract) inside this object. On a test, put steps next to it.",
       "required": ["from", "to", "as"],
       "additionalProperties": false,
       "allOf": [{ "$ref": "#/definitions/LoopBodyProperties" }],
@@ -1985,7 +1984,6 @@
           "description": "Milliseconds to wait between iterations.",
           "minimum": 0
         },
-        "steps": true,
         "action": true,
         "assertions": true,
         "extract": true,
@@ -1998,7 +1996,7 @@
 
     "RepeatLoop": {
       "type": "object",
-      "description": "Repeat a fixed number of times, optionally stopping early when 'until' assertions all pass. Place loop body content (steps, assertions, extract) inside this object.",
+      "description": "Repeat a fixed number of times, optionally stopping early when 'until' assertions all pass. Place loop body content (assertions, extract) inside this object. On a test, put steps next to it.",
       "required": ["count", "as"],
       "additionalProperties": false,
       "allOf": [{ "$ref": "#/definitions/LoopBodyProperties" }],
@@ -2026,7 +2024,6 @@
           "description": "Assertions checked after each iteration. When ALL pass, the loop stops early. The loop always executes at least once.",
           "items": { "$ref": "#/definitions/Assertion" }
         },
-        "steps": true,
         "action": true,
         "assertions": true,
         "extract": true,

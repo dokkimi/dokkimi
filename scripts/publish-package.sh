@@ -27,6 +27,48 @@ if [ "$VERSION" != "$REPO_VERSION" ]; then
   fi
 fi
 
+# Verify the staged build is this commit's. build-package.sh records the commit
+# it built; only the files the build itself changes (version files, formula)
+# may differ, and they must be committed.
+BUILD_CHANGED_FILES='^(VERSION|(.*/)?package\.json|shared/config/version\.ts|Formula/dokkimi\.rb)$'
+BUILT_FROM_FILE="$STAGE_DIR/.built-from"
+if [ ! -f "$BUILT_FROM_FILE" ]; then
+  echo ""
+  echo "  Error: the staged build doesn't record its commit. Rebuild with ./scripts/build-package.sh"
+  echo ""
+  exit 1
+fi
+BUILT_FROM=$(head -1 "$BUILT_FROM_FILE")
+if grep -q '^dirty$' "$BUILT_FROM_FILE"; then
+  echo ""
+  echo "  Error: the staged build was made with uncommitted changes, so it matches no commit."
+  echo "  Commit them, then rebuild with ./scripts/build-package.sh"
+  echo ""
+  exit 1
+fi
+if [ -n "$(git -C "$REPO_ROOT" status --porcelain)" ]; then
+  echo ""
+  echo "  Error: the working tree has uncommitted changes. Commit them first."
+  echo ""
+  exit 1
+fi
+if ! git -C "$REPO_ROOT" cat-file -e "${BUILT_FROM}^{commit}" 2>/dev/null; then
+  echo ""
+  echo "  Error: the staged build is from commit ${BUILT_FROM}, which isn't in this repo. Rebuild."
+  echo ""
+  exit 1
+fi
+CHANGED_SINCE_BUILD=$(git -C "$REPO_ROOT" diff --name-only "$BUILT_FROM" HEAD | grep -vE "$BUILD_CHANGED_FILES" || true)
+if [ -n "$CHANGED_SINCE_BUILD" ]; then
+  echo ""
+  echo "  Error: files changed since the staged build (from ${BUILT_FROM:0:7}):"
+  echo "$CHANGED_SINCE_BUILD" | sed 's/^/    /'
+  echo "  Rebuild with ./scripts/build-package.sh"
+  echo ""
+  exit 1
+fi
+PUBLISHED_COMMIT=$(git -C "$REPO_ROOT" rev-parse HEAD)
+
 # Verify the formula in the repo matches the version we're about to publish.
 # If it doesn't, build-package.sh either wasn't re-run after a version change,
 # or the formula update got lost — abort rather than publish something whose
@@ -112,11 +154,12 @@ if [ "$create_release" = "y" ] || [ "$create_release" = "yes" ]; then
   echo "" >> "$RELEASE_NOTES_FILE"
   echo "- " >> "$RELEASE_NOTES_FILE"
   ${EDITOR:-vi} "$RELEASE_NOTES_FILE"
-  gh release create "v${VERSION}" --title "v${VERSION}" --notes-file "$RELEASE_NOTES_FILE"
+  # Tag the commit that was published, not whatever main is now
+  gh release create "v${VERSION}" --target "$PUBLISHED_COMMIT" --title "v${VERSION}" --notes-file "$RELEASE_NOTES_FILE"
   rm -f "$RELEASE_NOTES_FILE"
   echo "  GitHub Release created."
 else
-  echo "  Skipped. Create one later with: gh release create v${VERSION}"
+  echo "  Skipped. Create one later with: gh release create v${VERSION} --target ${PUBLISHED_COMMIT}"
 fi
 
 echo ""

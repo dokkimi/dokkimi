@@ -257,6 +257,12 @@ func TestDatabaseQueryExecutor_LogQueryResult_Error(t *testing.T) {
 	if receivedLogMessage["data"] != nil {
 		t.Error("Expected data to be nil for error case")
 	}
+
+	// rowsAffected is a number even when it is 0
+	executor.logQueryResult(ctx, "postgresql", "test-db", "UPDATE users SET a = 1 WHERE false", nil, true, []map[string]interface{}{}, 0, "", 5)
+	if receivedLogMessage["rowsAffected"] != float64(0) {
+		t.Errorf("Expected rowsAffected 0, got %v", receivedLogMessage["rowsAffected"])
+	}
 }
 
 func TestDatabaseQueryExecutor_LogQueryResult_LogProcessorUnavailable(t *testing.T) {

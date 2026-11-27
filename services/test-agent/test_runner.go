@@ -13,6 +13,7 @@ import (
 func (e *TestExecutor) ExecuteTests(ctx context.Context, testConfig *TestConfig, startAtStep, stopBefore int) ([]StepExecution, error) {
 	log.Printf("Starting test execution for testRunId: %s (startAt=%d, stopBefore=%d)", testConfig.TestRunID, startAtStep, stopBefore)
 	e.testExecutionLogger.LogEvent("TEST_EXECUTION_STARTED", "Starting test execution", nil, nil)
+	e.continuedFailures = nil
 
 	steps := e.flattenSteps(testConfig, true)
 	log.Printf("Executing %d total step(s), running steps [%d, %d)", len(steps), startAtStep, stopBefore)
@@ -44,9 +45,26 @@ func (e *TestExecutor) ExecuteTests(ctx context.Context, testConfig *TestConfig,
 		groups[len(groups)-1].steps = append(groups[len(groups)-1].steps, fs)
 	}
 
+	// seedVariables starts a test with only the definition's and the test's variables
+	seedVariables := func(tg testGroup) {
+		e.varCtx.Reset()
+		if e.stepValidator != nil {
+			e.stepValidator.ResetStepTime()
+		}
+		for name, value := range testConfig.Variables {
+			e.varCtx.Set(name, value)
+		}
+		for name, value := range tg.testDef.Variables {
+			e.varCtx.Set(name, value)
+		}
+	}
+
 	for _, tg := range groups {
 		testDef := tg.testDef
 		hasLoop := testDef.ForEach != nil || testDef.For != nil || testDef.Repeat != nil
+		if hasLoop {
+			seedVariables(tg) // the loop's items may use them
+		}
 
 		plan, err := buildIterationPlan(testDef.ForEach, testDef.For, testDef.Repeat, e.varCtx)
 		if err != nil {
@@ -57,27 +75,12 @@ func (e *TestExecutor) ExecuteTests(ctx context.Context, testConfig *TestConfig,
 			plan.Iterations = []Iteration{{Label: "", SetupFn: func() {}}}
 		}
 
-		_, loopErr := runLoop(plan, e.varCtx, func(iterIdx int, iter Iteration) (map[string]interface{}, error) {
+		_, loopErr := runLoop(ctx, plan, e.varCtx, func(iterIdx int, iter Iteration) (map[string]interface{}, error) {
 			if tg.testIndex != lastTestIndex || hasLoop {
 				if !hasLoop || iterIdx == 0 {
 					lastTestIndex = tg.testIndex
 				}
-				e.varCtx.Reset()
-				if e.stepValidator != nil {
-					e.stepValidator.ResetStepTime()
-				}
-				if testConfig.Variables != nil {
-					for name, value := range testConfig.Variables {
-						e.varCtx.Set(name, value)
-					}
-				}
-				if len(tg.steps) > 0 {
-					if vars := tg.steps[0].testVariables; vars != nil {
-						for name, value := range vars {
-							e.varCtx.Set(name, value)
-						}
-					}
-				}
+				seedVariables(tg)
 				iter.SetupFn()
 			}
 
@@ -127,6 +130,7 @@ func (e *TestExecutor) ExecuteTests(ctx context.Context, testConfig *TestConfig,
 func (e *TestExecutor) ExecuteStep(ctx context.Context, testConfig *TestConfig, stepIndex int) ([]StepExecution, error) {
 	log.Printf("Debug: executing single step %d for testRunId: %s", stepIndex, testConfig.TestRunID)
 	e.testExecutionLogger.LogEvent("TEST_EXECUTION_STARTED", fmt.Sprintf("Debug: executing step %d", stepIndex), nil, nil)
+	e.continuedFailures = nil
 
 	steps := e.flattenSteps(testConfig, false)
 	if stepIndex < 0 || stepIndex >= len(steps) {

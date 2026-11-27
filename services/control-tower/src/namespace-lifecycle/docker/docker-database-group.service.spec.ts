@@ -1,4 +1,7 @@
-import { DockerDatabaseGroupService } from './docker-database-group.service';
+import {
+  DockerDatabaseGroupService,
+  postgresMajor,
+} from './docker-database-group.service';
 import { DefinitionItem } from '../deployment-context.types';
 import { buildDbProxyEnvVars } from '@dokkimi/config';
 
@@ -171,6 +174,22 @@ describe('DockerDatabaseGroupService', () => {
       expect(dbCall.networkMode).toBe('container:postgres-db-dbproxy-inst1');
     });
 
+    it('should pass maxCpu and maxMemory to the database container only', async () => {
+      await service.createDatabaseGroup(
+        'dokkimi-run-inst1',
+        'inst1',
+        buildDbItem({ maxCpu: 2, maxMemory: 1024 }),
+        'postgres-db',
+        'item-1',
+      );
+
+      const [proxyCall, dbCall] = mockDockerClient.runContainer.mock.calls.map(
+        (c) => c[0],
+      );
+      expect(dbCall).toMatchObject({ maxCpu: 2, maxMemory: 1024 });
+      expect(proxyCall.maxCpu).toBeUndefined();
+    });
+
     it('should set correct labels on both containers', async () => {
       await service.createDatabaseGroup(
         'dokkimi-run-inst1',
@@ -301,6 +320,26 @@ describe('DockerDatabaseGroupService', () => {
       expect(entrypoint).toContain('process.env.MONGO_INITDB_ROOT_USERNAME');
       expect(entrypoint).toContain('process.env.MONGO_INITDB_ROOT_PASSWORD');
       expect(entrypoint).not.toContain("user:'dokkimi'");
+    });
+
+    // Before, mongosh ran the init scripts against the "test" database
+    it('runs init scripts against the database dbName creates', async () => {
+      await service.createDatabaseGroup(
+        'dokkimi-run-inst1',
+        'inst1',
+        buildDbItem({
+          database: 'mongodb',
+          initFiles: [{ filename: 'seed.js', content: Buffer.from('') }],
+        }),
+        'mongo-db',
+        'item-1',
+      );
+
+      const entrypoint =
+        mockDockerClient.runContainer.mock.calls[1][0].entrypoint[2];
+      expect(entrypoint).toMatch(
+        /mongosh --port 27018 .*"\$\{MONGO_INITDB_DATABASE:-test\}" "\$f"/,
+      );
     });
 
     it('should use internal port 27018 in entrypoint', async () => {
@@ -465,6 +504,41 @@ describe('DockerDatabaseGroupService', () => {
           dbName: 'dokkimi',
         }),
       );
+    });
+  });
+
+  // Before, Postgres 18 refused to start with the tmpfs at
+  // /var/lib/postgresql/data
+  describe('Postgres tmpfs', () => {
+    it.each([
+      ['postgres:15', '/var/lib/postgresql/data'],
+      ['postgres:16-alpine', '/var/lib/postgresql/data'],
+      ['getlago/postgres-partman:15.0-alpine', '/var/lib/postgresql/data'],
+      ['postgres:18', '/var/lib/postgresql'],
+      ['postgres:latest', '/var/lib/postgresql'],
+      ['my-registry:5000/pg:dev', '/var/lib/postgresql'],
+    ])('%s mounts %s', async (image, mount) => {
+      mockDatabaseConfig.getConfig.mockReturnValue({ ...pgConfig(), image });
+      await service.createDatabaseGroup(
+        'dokkimi-run-inst1',
+        'inst1',
+        buildDbItem(),
+        'postgres-db',
+        'item-1',
+      );
+
+      const dbCall = mockDockerClient.runContainer.mock.calls[1][0];
+      expect(dbCall.tmpfs).toEqual({ [mount]: '' });
+    });
+
+    it.each([
+      ['postgres:18', 18],
+      ['postgres:16.4-alpine', 16],
+      ['registry:5000/team/pg:15', 15],
+      ['postgres@sha256:abc', null],
+      ['postgres', null],
+    ])('reads the major version of %s', (image, major) => {
+      expect(postgresMajor(image)).toBe(major);
     });
   });
 

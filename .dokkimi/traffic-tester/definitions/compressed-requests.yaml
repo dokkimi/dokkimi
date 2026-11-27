@@ -1,0 +1,199 @@
+name: compressed-requests
+description: Compressed request bodies match mocks, reach the service as sent, and are readable in captured traffic
+config:
+  timeoutSeconds: 120
+items:
+  # Sends a body with the encoding and to the host named by the path
+  - type: SERVICE
+    name: client
+    image: ghcr.io/dokkimi/traffic-tester:0.1.0
+    port: 4000
+    healthCheck: /health
+    command:
+      - node
+      - -e
+      - |
+        const zlib = require('zlib');
+        const compress = { gzip: zlib.gzipSync, br: zlib.brotliCompressSync, zstd: zlib.zstdCompressSync, deflate: zlib.deflateSync };
+        require('http').createServer(async (req, res) => {
+          const [, encoding, host] = req.url.split('/');
+          if (!compress[encoding]) {
+            return res.end();
+          }
+          const response = await fetch(`http://${host}/chat`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Content-Encoding': encoding },
+            body: compress[encoding](JSON.stringify({ q: 'classify', text: 'x'.repeat(500) })),
+          });
+          res.setHeader('Content-Type', 'application/json');
+          res.end(await response.text());
+        }).listen(4000);
+  # Decompresses what it receives
+  - type: SERVICE
+    name: receiver
+    image: ghcr.io/dokkimi/traffic-tester:0.1.0
+    port: 4000
+    healthCheck: /health
+    command:
+      - node
+      - -e
+      - |
+        const zlib = require('zlib');
+        const decompress = { gzip: zlib.gunzipSync, br: zlib.brotliDecompressSync, zstd: zlib.zstdDecompressSync, deflate: zlib.inflateSync };
+        require('http').createServer(async (req, res) => {
+          const encoding = req.headers['content-encoding'];
+          const chunks = [];
+          for await (const chunk of req) {
+            chunks.push(chunk);
+          }
+          res.setHeader('Content-Type', 'application/json');
+          res.end(JSON.stringify(encoding ? { encoding, ...JSON.parse(decompress[encoding](Buffer.concat(chunks))) } : {}));
+        }).listen(4000);
+  - type: MOCK
+    name: classify
+    mockTarget: ai.example.com
+    mockPath: /chat
+    mockRequestBodyMatches: classify.*x{500}
+    mockResponseBody: { mock: classify }
+  - type: MOCK
+    name: anything
+    mockTarget: ai.example.com
+    mockPath: /chat
+    mockResponseBody: { mock: anything }
+tests:
+  - name: Gzip
+    steps:
+      - name: The client sends the request to a mock
+        action:
+          { type: httpRequest, method: GET, url: client/gzip/ai.example.com }
+        assertions:
+          - assertions:
+              - { path: $.response.body.mock, operator: eq, value: classify }
+          - match:
+              path: $.traffic
+              where:
+                - { path: $$.origin, operator: eq, value: client }
+                - { path: $$.to, operator: eq, value: ai.example.com }
+              count: 1
+            assertions:
+              - path: $.match.request.body.q
+                operator: eq
+                value: classify
+      - name: The client sends the request to a service
+        action: { type: httpRequest, method: GET, url: client/gzip/receiver }
+        assertions:
+          - assertions:
+              - { path: $.response.body.encoding, operator: eq, value: gzip }
+              - { path: $.response.body.q, operator: eq, value: classify }
+          - match:
+              path: $.traffic
+              where:
+                - { path: $$.origin, operator: eq, value: client }
+                - { path: $$.to, operator: eq, value: receiver }
+              count: 1
+            assertions:
+              - path: $.match.request.body.q
+                operator: eq
+                value: classify
+  - name: Brotli
+    steps:
+      - name: The client sends the request to a mock
+        action:
+          { type: httpRequest, method: GET, url: client/br/ai.example.com }
+        assertions:
+          - assertions:
+              - { path: $.response.body.mock, operator: eq, value: classify }
+          - match:
+              path: $.traffic
+              where:
+                - { path: $$.origin, operator: eq, value: client }
+                - { path: $$.to, operator: eq, value: ai.example.com }
+              count: 1
+            assertions:
+              - path: $.match.request.body.q
+                operator: eq
+                value: classify
+      - name: The client sends the request to a service
+        action: { type: httpRequest, method: GET, url: client/br/receiver }
+        assertions:
+          - assertions:
+              - { path: $.response.body.encoding, operator: eq, value: br }
+              - { path: $.response.body.q, operator: eq, value: classify }
+          - match:
+              path: $.traffic
+              where:
+                - { path: $$.origin, operator: eq, value: client }
+                - { path: $$.to, operator: eq, value: receiver }
+              count: 1
+            assertions:
+              - path: $.match.request.body.q
+                operator: eq
+                value: classify
+  - name: Zstandard
+    steps:
+      - name: The client sends the request to a mock
+        action:
+          { type: httpRequest, method: GET, url: client/zstd/ai.example.com }
+        assertions:
+          - assertions:
+              - { path: $.response.body.mock, operator: eq, value: classify }
+          - match:
+              path: $.traffic
+              where:
+                - { path: $$.origin, operator: eq, value: client }
+                - { path: $$.to, operator: eq, value: ai.example.com }
+              count: 1
+            assertions:
+              - path: $.match.request.body.q
+                operator: eq
+                value: classify
+      - name: The client sends the request to a service
+        action: { type: httpRequest, method: GET, url: client/zstd/receiver }
+        assertions:
+          - assertions:
+              - { path: $.response.body.encoding, operator: eq, value: zstd }
+              - { path: $.response.body.q, operator: eq, value: classify }
+          - match:
+              path: $.traffic
+              where:
+                - { path: $$.origin, operator: eq, value: client }
+                - { path: $$.to, operator: eq, value: receiver }
+              count: 1
+            assertions:
+              - path: $.match.request.body.q
+                operator: eq
+                value: classify
+  - name: Deflate
+    steps:
+      - name: The client sends the request to a mock
+        action:
+          { type: httpRequest, method: GET, url: client/deflate/ai.example.com }
+        assertions:
+          - assertions:
+              - { path: $.response.body.mock, operator: eq, value: classify }
+          - match:
+              path: $.traffic
+              where:
+                - { path: $$.origin, operator: eq, value: client }
+                - { path: $$.to, operator: eq, value: ai.example.com }
+              count: 1
+            assertions:
+              - path: $.match.request.body.q
+                operator: eq
+                value: classify
+      - name: The client sends the request to a service
+        action: { type: httpRequest, method: GET, url: client/deflate/receiver }
+        assertions:
+          - assertions:
+              - { path: $.response.body.encoding, operator: eq, value: deflate }
+              - { path: $.response.body.q, operator: eq, value: classify }
+          - match:
+              path: $.traffic
+              where:
+                - { path: $$.origin, operator: eq, value: client }
+                - { path: $$.to, operator: eq, value: receiver }
+              count: 1
+            assertions:
+              - path: $.match.request.body.q
+                operator: eq
+                value: classify

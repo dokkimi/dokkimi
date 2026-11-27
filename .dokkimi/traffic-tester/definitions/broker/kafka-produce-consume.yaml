@@ -189,3 +189,82 @@ tests:
               - path: $.match.body.orderId
                 operator: eq
                 value: 123
+
+  - name: Messages produced separately are all logged when consumed together
+    # Each produce request is its own record batch; one fetch returns both
+    # batches back to back, and every one must be read, not just the first.
+    variables:
+      kafkaBrokers: kafka:9092
+    steps:
+      - name: Produce the first message
+        action:
+          type: httpRequest
+          method: POST
+          url: service-a/kafka/produce
+          headers:
+            Content-Type: application/json
+          body:
+            brokers:
+              - '{{kafkaBrokers}}'
+            topic: separate-batches
+            messages:
+              - value:
+                  part: 1
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 201
+
+      - name: Produce the second message
+        action:
+          type: httpRequest
+          method: POST
+          url: service-a/kafka/produce
+          headers:
+            Content-Type: application/json
+          body:
+            brokers:
+              - '{{kafkaBrokers}}'
+            topic: separate-batches
+            messages:
+              - value:
+                  part: 2
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 201
+
+      - name: Consume both and verify both consumes were logged
+        action:
+          type: httpRequest
+          method: POST
+          url: service-a/kafka/consume
+          headers:
+            Content-Type: application/json
+          body:
+            brokers:
+              - '{{kafkaBrokers}}'
+            topic: separate-batches
+            groupId: separate-batches-consumer
+            count: 2
+            fromBeginning: true
+        assertions:
+          - assertions:
+              - path: $.response.status
+                operator: eq
+                value: 201
+              - count: $.response.body.messages
+                operator: eq
+                value: 2
+          - match:
+              path: $.messageLogs
+              where:
+                - path: $$.topic
+                  operator: eq
+                  value: separate-batches
+                - path: $$.operation
+                  operator: eq
+                  value: consume
+              count: 2

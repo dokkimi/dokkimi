@@ -113,3 +113,21 @@ func TestLoadConfig(t *testing.T) {
 		})
 	}
 }
+
+func TestLoadConfig_HTTPTimeout(t *testing.T) {
+	t.Setenv("CONTROL_TOWER_URL", "http://localhost:19001")
+	t.Setenv("PORT", "8080")
+	for value, want := range map[string]time.Duration{"": 30 * time.Second, "60000": time.Minute, "500": 500 * time.Millisecond} {
+		t.Setenv("HTTP_TIMEOUT_MS", value)
+		cfg, err := LoadConfig()
+		if err != nil || cfg.RequestTimeout != want {
+			t.Errorf("HTTP_TIMEOUT_MS=%q: %+v, %v", value, cfg, err)
+		}
+	}
+	for _, value := range []string{"abc", "0", "-1", "1.5", "NaN"} {
+		t.Setenv("HTTP_TIMEOUT_MS", value)
+		if _, err := LoadConfig(); err == nil {
+			t.Errorf("HTTP_TIMEOUT_MS=%q was accepted", value)
+		}
+	}
+}

@@ -13,7 +13,6 @@ jest.mock('../lib/menu', () => ({
 }));
 
 jest.mock('../lib/editor', () => ({
-  stripIds: jest.fn((x: unknown) => x),
   formatConsoleLogs: jest.fn(() => 'formatted console'),
   formatPodLogs: jest.fn(() => 'formatted pods'),
   openInEditor: jest.fn(),

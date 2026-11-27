@@ -60,7 +60,7 @@ database:
   defaultUser: dokkimi
   defaultPassword: dokkimi
   defaultName: dokkimi
-  # Dokkimi app database URL (SQLite for local, override with DATABASE_URL for cloud)
+  # Dokkimi app database URL (SQLite for local, override with DOKKIMI_DATABASE_URL for cloud)
   url: file:~/.dokkimi/dokkimi.db
 
 # Storage paths

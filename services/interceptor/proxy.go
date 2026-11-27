@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 )
 
 // ProxyService handles HTTP proxying
@@ -21,6 +22,9 @@ type ProxyService struct {
 	servicePort string // port the local service listens on (e.g. "4000")
 }
 
+// connectTimeout is how long connecting to a host may take.
+const connectTimeout = 30 * time.Second
+
 // NewProxyService creates a new proxy service
 func NewProxyService(cfg *Config, mockManager *MockManager, urlMap func() UrlMap) *ProxyService {
 	// Create a custom dialer that bypasses dnsmasq by using Docker DNS directly
@@ -30,6 +34,7 @@ func NewProxyService(cfg *Config, mockManager *MockManager, urlMap func() UrlMap
 	if cfg.DNSIP != "" {
 		log.Printf("[Interceptor] Using custom DNS resolver: %s:53 (bypassing dnsmasq)", cfg.DNSIP)
 		dialer = &net.Dialer{
+			Timeout: connectTimeout,
 			Resolver: &net.Resolver{
 				PreferGo: true,
 				Dial: func(ctx context.Context, network, address string) (net.Conn, error) {
@@ -41,18 +46,21 @@ func NewProxyService(cfg *Config, mockManager *MockManager, urlMap func() UrlMap
 		}
 	} else {
 		log.Printf("[Interceptor] DNS IP not set, using system DNS resolver")
-		dialer = &net.Dialer{}
+		dialer = &net.Dialer{Timeout: connectTimeout}
 	}
 
 	transport := &http.Transport{
-		DialContext:         dialer.DialContext,
-		MaxIdleConns:        cfg.MaxIdleConns,
-		MaxIdleConnsPerHost: 10,
-		IdleConnTimeout:     cfg.IdleConnTimeout,
+		DialContext: dialer.DialContext,
+		// Negative: every request gets a new connection. A reused one may be closed
+		// by the service as a request is sent, which fails a POST. Unlike
+		// DisableKeepAlives, this doesn't add a "Connection: close" header.
+		MaxIdleConnsPerHost: -1,
+		// Don't ask for compression unless the caller does
+		DisableCompression: true,
 	}
 
+	// No timeout: once connected, a response may take as long as the caller waits
 	client := &http.Client{
-		Timeout:   cfg.RequestTimeout,
 		Transport: transport,
 		// Do not follow redirects inside the proxy. A transparent forwarding
 		// proxy must hand 3xx responses back to the caller so the caller's
@@ -73,22 +81,26 @@ func NewProxyService(cfg *Config, mockManager *MockManager, urlMap func() UrlMap
 	}
 }
 
-// HandleRequest processes an incoming HTTP request
-func (p *ProxyService) HandleRequest(r *http.Request) (*http.Response, error) {
+// HandleRequest processes an incoming HTTP request, and reports whether a mock
+// answered it.
+func (p *ProxyService) HandleRequest(r *http.Request) (*http.Response, bool, error) {
 	// Check for mock first
 	if mock := p.mockManager.FindMatch(r); mock != nil {
-		return p.mockManager.ApplyMock(mock)
+		resp, err := p.mockManager.ApplyMock(r.Context(), mock)
+		return resp, true, err
 	}
 
 	// Forward request to target
-	return p.forwardRequest(r)
+	resp, err := p.forwardRequest(r)
+	return resp, false, err
 }
 
 // forwardRequest forwards the request to the target service
 func (p *ProxyService) forwardRequest(r *http.Request) (*http.Response, error) {
-	// Extract target service name before getTargetURL modifies the path
-	urlMap := p.urlMap()
-	targetServiceName := extractServiceNameFromRequest(r, urlMap)
+	targetServiceName := targetService(r, p.urlMap())
+	if p.origin == "" && targetServiceName == "" && !strings.Contains(r.Host, ".") {
+		return nil, fmt.Errorf("no service named %q", r.Host)
+	}
 
 	// Determine target URL
 	targetURL := p.getTargetURL(r)
@@ -118,6 +130,11 @@ func (p *ProxyService) forwardRequest(r *http.Request) (*http.Response, error) {
 		}
 	}
 
+	// Keep Go from adding a User-Agent if the caller didn't send one
+	if _, sent := r.Header["User-Agent"]; !sent {
+		req.Header.Set("User-Agent", "")
+	}
+
 	// Set Host to the target URL's host so downstream interceptors can
 	// identify the service. Without this, the original Host header
 	// (e.g., "interceptor-service:80") would propagate and confuse routing.
@@ -136,7 +153,10 @@ func (p *ProxyService) forwardRequest(r *http.Request) (*http.Response, error) {
 
 	log.Printf("[Interceptor] Received response from %s: status=%d", targetURL, resp.StatusCode)
 
-	p.rewriteLocationHeader(resp, targetServiceName)
+	// A redirect from an external host is its own business.
+	if targetServiceName != "" {
+		p.rewriteLocationHeader(resp, targetServiceName)
+	}
 
 	return resp, nil
 }
@@ -197,125 +217,95 @@ func (p *ProxyService) rewriteLocationHeader(resp *http.Response, targetServiceN
 func (p *ProxyService) getTargetURL(r *http.Request) string {
 	urlMap := p.urlMap()
 
-	serviceName := extractServiceNameFromRequest(r, urlMap)
-
-	// If service name was found in path, remove the raw path[0] from the path for forwarding.
-	// The raw path[0] may differ from serviceName if normalization was applied (e.g., MY_SERVICE → my-service).
-	if serviceName != "" {
-		pathParts := strings.Split(strings.TrimPrefix(r.URL.Path, "/"), "/")
-		if len(pathParts) > 0 && (pathParts[0] == serviceName || normalizeForUrlMap(pathParts[0]) == serviceName) {
-			// Remove the raw path[0] from path for forwarding
-			if len(pathParts) > 1 {
-				r.URL.Path = "/" + strings.Join(pathParts[1:], "/")
-			} else {
-				r.URL.Path = "/"
-			}
-		}
+	// A host outside the environment: go to the real one.
+	serviceInfo, exists := urlMap[targetService(r, urlMap)]
+	if !exists {
+		return schemeUsed(r) + "://" + r.Host + r.URL.RequestURI()
 	}
 
-	// Per-service interceptor: if traffic is for our own service, use the urlMap URL.
-	if p.origin != "" && (serviceName == p.origin || serviceName == "") {
-		if serviceInfo, exists := urlMap[p.origin]; exists {
-			baseURL := resolveBaseURL(serviceInfo)
-			return baseURL + r.URL.Path + "?" + r.URL.RawQuery
+	baseURL := serviceInfo.URL
+	if baseURL == "" {
+		baseURL = r.Host
+	}
+	if !strings.HasPrefix(baseURL, "http://") && !strings.HasPrefix(baseURL, "https://") {
+		scheme := serviceInfo.Scheme
+		if scheme == "" {
+			scheme = "http"
+		}
+		baseURL = scheme + "://" + baseURL
+	}
+	// A test step that asked for a scheme gets it (the global interceptor only
+	// handles test steps; takeTargetFromPath set the scheme it asked for)
+	if p.origin == "" && r.URL.Scheme != "" {
+		if _, rest, ok := strings.Cut(baseURL, "://"); ok {
+			baseURL = r.URL.Scheme + "://" + rest
 		}
 	}
-
-	// Check if we have a URL mapping
-	if serviceInfo, exists := urlMap[serviceName]; exists {
-		baseURL := serviceInfo.URL
-		if baseURL == "" {
-			scheme := serviceInfo.Scheme
-			if scheme == "" {
-				scheme = "http"
-			}
-			baseURL = scheme + "://" + r.Host
-		}
-		if !strings.HasPrefix(baseURL, "http://") && !strings.HasPrefix(baseURL, "https://") {
-			scheme := serviceInfo.Scheme
-			if scheme == "" {
-				scheme = "http"
-			}
-			baseURL = scheme + "://" + baseURL
-		}
-		baseURL = appendServicePort(baseURL, serviceInfo.Port)
-		return baseURL + r.URL.Path + "?" + r.URL.RawQuery
-	}
-
-	// If path[0] looks like an external hostname (has 2+ dots, e.g., "api.stripe.com"),
-	// treat it as an external passthrough: strip path[0] and forward to it directly.
-	// This handles the case where the test-agent sends interceptorURL + "/api.stripe.com/v1/charges".
-	// Requires 2+ dots to avoid false positives on paths like "/api.v2/resource".
-	pathParts := strings.Split(strings.TrimPrefix(r.URL.Path, "/"), "/")
-	if len(pathParts) > 0 && pathParts[0] != "" && strings.Count(pathParts[0], ".") >= 2 {
-		externalHost := pathParts[0]
-		remainingPath := "/"
-		if len(pathParts) > 1 {
-			remainingPath = "/" + strings.Join(pathParts[1:], "/")
-		}
-		externalURL := "https://" + externalHost + remainingPath
-		if r.URL.RawQuery != "" {
-			externalURL += "?" + r.URL.RawQuery
-		}
-		log.Printf("[Interceptor] External passthrough: routing to %s", externalURL)
-		return externalURL
-	}
-
-	// Default fallback: forward to the original host
-	scheme := r.URL.Scheme
-	if scheme == "" {
-		scheme = "http"
-	}
-	return scheme + "://" + r.Host + r.URL.Path + "?" + r.URL.RawQuery
+	return appendServicePort(baseURL, serviceInfo.Port) + r.URL.RequestURI()
 }
 
-// extractServiceName extracts the service name from a hostname
-// e.g., "nginx-test.dokkimi-xxx.svc.cluster.local" -> "nginx-test"
-// e.g., "nginx-test" -> "nginx-test"
-func extractServiceName(hostname string) string {
-	if idx := strings.Index(hostname, "."); idx != -1 {
-		return hostname[:idx]
+// takeTargetFromPath moves the target of a test step's request, which is the
+// first segment of its path, to where it is for any other request: the Host.
+func takeTargetFromPath(r *http.Request, urlMap UrlMap) {
+	r.Host, _, _ = strings.Cut(strings.TrimPrefix(r.URL.Path, "/"), "/")
+	stripFirstSegment(r.URL)
+
+	// The scheme the step asked for, if any ("" means the target's default).
+	// The header is never forwarded.
+	requested := r.Header.Get(DokkimiSchemeHeader)
+	r.Header.Del(DokkimiSchemeHeader)
+	if requested != "http" && requested != "https" {
+		requested = ""
 	}
-	return hostname
+	r.URL.Scheme = requested
+
+	if targetService(r, urlMap) != "" {
+		return
+	}
+	if strings.Contains(r.Host, ".") {
+		if r.URL.Scheme == "" {
+			r.URL.Scheme = "https" // external APIs are almost always HTTPS
+		}
+		return
+	}
+	// Accept other spellings of a service name (e.g., MY_SERVICE → my-service)
+	if name := normalizeForUrlMap(r.Host); urlMap[name].Name != "" {
+		r.Host = name
+	}
 }
 
-// extractServiceNameFromRequest extracts the target service name from a request
-// by checking the Host header first (for service-to-service calls), then the path.
-// Returns the service name if it exists in the urlMap, empty string otherwise.
-func extractServiceNameFromRequest(r *http.Request, urlMap UrlMap) string {
-	// First try Host header - this is what services use when calling each other
-	// e.g., http://traffic-tester-2/test -> Host: traffic-tester-2
-	if r.Host != "" {
-		hostname := stripPortFromHost(r.Host)
-		// Look up directly in urlMap (hostname should match container name)
-		if _, exists := urlMap[hostname]; exists {
-			return hostname
-		}
-		// Also try extracting service name from FQDN
-		// e.g., "nginx-test.dokkimi-xxx.svc.cluster.local" -> "nginx-test"
-		serviceName := extractServiceName(hostname)
-		if serviceName != hostname {
-			if _, exists := urlMap[serviceName]; exists {
-				return serviceName
-			}
-		}
+// schemeUsed returns the scheme of a request received or made up by the interceptor.
+func schemeUsed(r *http.Request) string {
+	switch {
+	case r.TLS != nil:
+		return "https"
+	case r.URL.Scheme != "":
+		return r.URL.Scheme
+	default:
+		return "http"
 	}
+}
 
-	// Fallback: try path (for browser/ingress requests where service name is in path)
-	pathParts := strings.Split(strings.TrimPrefix(r.URL.Path, "/"), "/")
-	if len(pathParts) > 0 && pathParts[0] != "" {
-		if _, exists := urlMap[pathParts[0]]; exists {
-			return pathParts[0]
-		}
-		// Try normalized form (e.g., MY_SERVICE → my-service)
-		normalized := normalizeForUrlMap(pathParts[0])
-		if normalized != pathParts[0] {
-			if _, exists := urlMap[normalized]; exists {
-				return normalized
-			}
-		}
+// stripFirstSegment removes the first segment of a URL's path, keeping how the
+// rest is encoded.
+func stripFirstSegment(u *url.URL) {
+	strip := func(path string) string {
+		_, rest, _ := strings.Cut(strings.TrimPrefix(path, "/"), "/")
+		return "/" + rest
 	}
+	u.Path = strip(u.Path)
+	if u.RawPath != "" {
+		u.RawPath = strip(u.RawPath)
+	}
+}
 
+// targetService returns the service a request is for, or "" if its Host isn't
+// exactly the name of one.
+func targetService(r *http.Request, urlMap UrlMap) string {
+	name := stripPortFromHost(r.Host)
+	if _, exists := urlMap[name]; exists {
+		return name
+	}
 	return ""
 }
 
@@ -376,18 +366,4 @@ func appendServicePort(baseURL string, port int) string {
 	}
 	parsed.Host = parsed.Hostname() + ":" + fmt.Sprintf("%d", port)
 	return parsed.String()
-}
-
-// resolveBaseURL normalizes a ServiceInfo into a full base URL with scheme and
-// real service port for forwarding.
-func resolveBaseURL(info ServiceInfo) string {
-	baseURL := info.URL
-	if !strings.HasPrefix(baseURL, "http://") && !strings.HasPrefix(baseURL, "https://") {
-		scheme := info.Scheme
-		if scheme == "" {
-			scheme = "http"
-		}
-		baseURL = scheme + "://" + baseURL
-	}
-	return appendServicePort(baseURL, info.Port)
 }

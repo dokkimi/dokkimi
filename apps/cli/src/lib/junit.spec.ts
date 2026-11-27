@@ -50,6 +50,7 @@ describe('writeJUnitXml', () => {
     await writeJUnitXml({
       ctUrl: 'http://localhost:19001',
       runId: 'run-1',
+      runStatus: 'COMPLETED',
       instances: [
         {
           id: 'inst-1',
@@ -111,6 +112,7 @@ describe('writeJUnitXml', () => {
     await writeJUnitXml({
       ctUrl: 'http://localhost:19001',
       runId: 'run-1',
+      runStatus: 'COMPLETED',
       instances: [
         {
           id: 'inst-1',
@@ -140,6 +142,7 @@ describe('writeJUnitXml', () => {
     await writeJUnitXml({
       ctUrl: 'http://localhost:19001',
       runId: 'run-1',
+      runStatus: 'COMPLETED',
       instances: [
         {
           id: 'inst-1',
@@ -157,27 +160,62 @@ describe('writeJUnitXml', () => {
     expect(xml).toContain('Container crashed');
   });
 
-  it('marks skipped instances', async () => {
-    const outputPath = path.join(tmpDir, 'results.xml');
-    await writeJUnitXml({
+  // Before, these counted as passed (or, invalid, as skipped)
+  it.each([
+    ['CANCELLED', { status: 'STOPPED' }, 'Cancelled'],
+    ['FAILED', { status: 'STOPPED' }, 'Never ran'],
+    ['RUNNING', { status: 'RUNNING' }, 'Did not finish'],
+    ['COMPLETED', { status: 'INVALID' }, 'Invalid definition'],
+  ])(
+    'reports a definition of a %s run without a result as an error',
+    async (runStatus, state, message) => {
+      const xml = await generateJUnitXml({
+        ctUrl: 'http://localhost:19001',
+        runId: 'run-1',
+        runStatus,
+        instances: [{ id: 'i1', name: 'svc', ...state }],
+        durationMs: 500,
+      });
+
+      expect(xml).toContain('failures="0" errors="1" skipped="0"');
+      expect(xml).toContain(`<error message="${message}">`);
+    },
+  );
+
+  // Before, a control character made the report unreadable
+  it('strips characters XML does not allow', async () => {
+    const xml = await generateJUnitXml({
       ctUrl: 'http://localhost:19001',
       runId: 'run-1',
+      runStatus: 'FAILED',
       instances: [
         {
-          id: 'skipped-bad',
-          name: 'bad',
-          status: 'SKIPPED',
-          testStatus: 'SKIPPED',
-          errorMessage: 'Invalid definition',
+          id: 'i1',
+          name: 'svc',
+          status: 'FAILED',
+          errorMessage: 'bell\x07 and escape\x1b[31m',
         },
       ],
-      outputPath,
       durationMs: 500,
     });
 
-    const xml = fs.readFileSync(outputPath, 'utf-8');
-    expect(xml).toContain('skipped="1"');
-    expect(xml).toContain('<skipped/>');
+    // eslint-disable-next-line no-control-regex
+    expect(xml).not.toMatch(/[\x00-\x08\x0B\x0C\x0E-\x1F]/);
+    expect(xml).toContain('bell and escape[31m');
+  });
+
+  // Before, no report was written without a run, so a stale one stayed
+  it('writes a report without a run', async () => {
+    const xml = await generateJUnitXml({
+      ctUrl: 'http://localhost:19001',
+      runId: null,
+      runStatus: '',
+      instances: [{ id: 'invalid-bad', name: 'bad', status: 'INVALID' }],
+      durationMs: 0,
+    });
+
+    expect(xml).toContain('<testsuite name="dokkimi" tests="1"');
+    expect(xml).toContain('<error message="Invalid definition">');
   });
 
   it('returns XML string from generateJUnitXml', async () => {
@@ -186,6 +224,7 @@ describe('writeJUnitXml', () => {
     const xml = await generateJUnitXml({
       ctUrl: 'http://localhost:19001',
       runId: 'run-1',
+      runStatus: 'COMPLETED',
       instances: [
         {
           id: 'inst-1',
@@ -209,6 +248,7 @@ describe('writeJUnitXml', () => {
     await writeJUnitXml({
       ctUrl: 'http://localhost:19001',
       runId: 'run-1',
+      runStatus: 'COMPLETED',
       instances: [
         {
           id: 'inst-1',
@@ -265,7 +305,7 @@ describe('generateSummaryFromXmlDir', () => {
 
     const md = generateSummaryFromXmlDir(tmpDir);
     expect(md).toContain('<!-- dokkimi-test-results -->');
-    expect(md).toContain('| 3 | 2 | 1 | 0 | 15s |');
+    expect(md).toContain('| 3 | 2 | 1 | 0 | 0 | 15s |');
     // Group headers use filename, not suite name
     expect(md).toContain('#### suite-a (10s)');
     expect(md).toContain('#### suite-b (5s)');

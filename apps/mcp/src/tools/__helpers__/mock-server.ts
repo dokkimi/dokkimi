@@ -20,7 +20,7 @@ export function createMockServer(): MockServer {
     if (!cb) {
       throw new Error(`Tool "${name}" not registered`);
     }
-    return cb(params, { sendNotification: jest.fn() });
+    return cb(params, { sendNotification: async () => {} });
   };
 
   return { server, call };

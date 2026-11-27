@@ -99,7 +99,7 @@ import CodeBlock from '../../components/CodeBlock.astro';
     </thead>
     <tbody>
       <tr><td><code>path</code></td><td>string</td><td>Yes</td><td>JSONPath to the source value</td></tr>
-      <tr><td><code>pattern</code></td><td>string</td><td>Yes</td><td>Regex pattern (with capture groups)</td></tr>
+      <tr><td><code>pattern</code></td><td>string</td><td>Yes</td><td>Go regex with capture groups; no lookaround or backreferences. <code>(?i)</code> ignores case.</td></tr>
       <tr><td><code>group</code></td><td>number</td><td>No</td><td>Capture group index (default: <code>1</code>; use <code>0</code> for full match)</td></tr>
     </tbody>
   </table>
@@ -156,14 +156,14 @@ import CodeBlock from '../../components/CodeBlock.astro';
     <li><strong>Test-level <code>variables</code></strong> — per-test overrides</li>
     <li><strong><code>extract</code> on steps</strong> — runtime extraction (overwrites all hardcoded values)</li>
   </ol>
-  <p>In <strong>item fields</strong> (build time), the resolver assembles one flat map seeded with <a href="/docs/project-structure">config.yaml</a> <code>env</code> entries, then definition-level <code>variables</code> are merged on top. All <code>&#123;&#123;VAR&#125;&#125;</code> in items resolve against this merged map. For keys not overridden by a definition variable, <code>&#123;&#123;FOO&#125;&#125;</code> and <code>$&#123;&#123;FOO&#125;&#125;</code> resolve to the same value. Unresolved references are errors.</p>
+  <p>In <strong>item fields</strong> (build time), the resolver assembles one flat map seeded with <a href="/docs/project-structure">config.yaml</a> <code>env</code> entries, then definition-level <code>variables</code> are merged on top. All <code>&#123;&#123;VAR&#125;&#125;</code> in items resolve against this merged map. For keys not overridden by a definition variable, <code>&#123;&#123;FOO&#125;&#125;</code> and <code>$&#123;&#123;FOO&#125;&#125;</code> resolve to the same value. Unresolved references are errors. A variable may be a string, number or boolean, and is used as its text. Values are filled in before the definition is validated, so a field with a format (<code>version</code>, <code>healthCheck</code>) can come from a variable.</p>
 
   <h2>Scoping rules</h2>
   <ul>
     <li>Definition-level variables are seeded first, then test-level variables override</li>
     <li>Variables persist across all steps within a single test</li>
     <li>Extracted variables from step N are available in steps N+1, N+2, etc.</li>
-    <li>Within a <code>parallel</code> action, variable extraction order is non-deterministic</li>
+    <li>A <code>parallel</code> step extracts nothing: its sub-actions have no <code>extract</code>, and an <code>extract</code> on the step gets an empty response. Extract in a separate step</li>
     <li>Referencing an undefined variable causes an immediate error</li>
   </ul>
 

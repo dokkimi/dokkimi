@@ -359,10 +359,12 @@ describe('validateLoopModifiers', () => {
 describe('validateLoopBody', () => {
   // ── test level ──
 
-  it('test-level: allows steps in body', () => {
+  it('test-level: rejects steps in body', () => {
     const r = makeResult();
     validateLoopBody({ steps: [] }, 'ctx', r, 'test');
-    expect(r.errors).toHaveLength(0);
+    expect(r.errors).toEqual([
+      'ctx: put "steps" next to the loop, not inside it',
+    ]);
   });
 
   it('test-level: rejects action in body', () => {
@@ -487,32 +489,17 @@ describe('validateLoopBody', () => {
 
   // ── nested loops (tier drop) ──
 
-  it('test-level: nested forEach drops to step level', () => {
+  it('test-level: rejects nested loops', () => {
     const r = makeResult();
-    // Nested loop at test level should validate its body at step level,
-    // so action is allowed but steps is not
     validateLoopBody(
       { forEach: { items: [], as: 'x', action: { type: 'wait' } } },
       'ctx',
       r,
       'test',
     );
-    expect(r.errors).toHaveLength(0);
-  });
-
-  it('test-level: nested forEach rejects steps in nested body', () => {
-    const r = makeResult();
-    validateLoopBody(
-      { forEach: { items: [], as: 'x', steps: [] } },
-      'ctx',
-      r,
-      'test',
-    );
-    expect(
-      r.errors.some((e) =>
-        e.includes('"steps" is not allowed in a step-level loop body'),
-      ),
-    ).toBe(true);
+    expect(r.errors).toEqual([
+      'ctx: nested loops are not allowed inside a test-level loop',
+    ]);
   });
 
   it('step-level: nested for drops to assertion-block level', () => {
@@ -556,52 +543,7 @@ describe('validateLoopBody', () => {
     expect(
       r.errors.some((e) =>
         e.includes(
-          'nested loops are not allowed inside an assertion-block-level loop',
-        ),
-      ),
-    ).toBe(true);
-  });
-
-  it('test-level: double-nested forEach (test → step → assertion-block)', () => {
-    const r = makeResult();
-    // test-level forEach with a nested forEach inside (step-level) that has assertions
-    validateLoopBody(
-      {
-        forEach: {
-          items: [],
-          as: 'outer',
-          forEach: { items: [], as: 'inner', assertions: [] },
-        },
-      },
-      'ctx',
-      r,
-      'test',
-    );
-    expect(r.errors).toHaveLength(0);
-  });
-
-  it('test-level: triple nesting is rejected at assertion-block level', () => {
-    const r = makeResult();
-    validateLoopBody(
-      {
-        forEach: {
-          items: [],
-          as: 'a',
-          forEach: {
-            items: [],
-            as: 'b',
-            forEach: { items: [], as: 'c' },
-          },
-        },
-      },
-      'ctx',
-      r,
-      'test',
-    );
-    expect(
-      r.errors.some((e) =>
-        e.includes(
-          'nested loops are not allowed inside an assertion-block-level loop',
+          'nested loops are not allowed inside a assertion-block-level loop',
         ),
       ),
     ).toBe(true);
@@ -639,7 +581,7 @@ describe('validateLoopModifiers with level option', () => {
     ).toBe(true);
   });
 
-  it('test level via options allows steps in loop body', () => {
+  it('test level via options rejects steps in loop body', () => {
     const r = makeResult();
     validateLoopModifiers(
       { forEach: { items: [], as: 'x', steps: [] } },
@@ -647,7 +589,9 @@ describe('validateLoopModifiers with level option', () => {
       r,
       { level: 'test' },
     );
-    expect(r.errors).toHaveLength(0);
+    expect(r.errors).toEqual([
+      'ctx.forEach: put "steps" next to the loop, not inside it',
+    ]);
   });
 
   it('assertion-block level via options allows assertions but rejects action', () => {

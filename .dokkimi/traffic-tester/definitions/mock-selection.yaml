@@ -1,0 +1,464 @@
+name: mock-selection
+description: Which mock answers when several match, who mockOrigin names, and Go regexes
+config:
+  timeoutSeconds: 120
+items:
+  - $ref: ../shared/service-a.yaml
+  - type: WORKER
+    name: worker
+    image: ghcr.io/dokkimi/traffic-tester:0.1.0
+    command:
+      - node
+      - -e
+      - setInterval(() => fetch('http://origin.example.com/x').catch(() => {}), 300)
+  # An omitted origin is as general as "*", so the method decides
+  - type: MOCK
+    name: omitted-origin
+    mockTarget: general.example.com
+    mockPath: /*
+    mockResponseBody: { mock: omitted-origin }
+  - type: MOCK
+    name: get-method
+    mockOrigin: '*'
+    mockMethod: GET
+    mockTarget: general.example.com
+    mockPath: /*
+    mockResponseBody: { mock: get-method }
+  # The fields that decide, in order: target, origin, path, method, body
+  - type: MOCK
+    name: any-target
+    mockOrigin: service-a
+    mockMethod: POST
+    mockTarget: '*'
+    mockPath: /v1/chat
+    mockRequestBodyContains: classify
+    mockResponseBody: { mock: any-target }
+  - type: MOCK
+    name: target
+    mockTarget: order.example.com
+    mockPath: '*'
+    mockResponseBody: { mock: target }
+  - type: MOCK
+    name: path
+    mockTarget: path.example.com
+    mockPath: /v1/*
+    mockResponseBody: { mock: path }
+  - type: MOCK
+    name: longer-path
+    mockTarget: path.example.com
+    mockPath: /v1/chat/*
+    mockResponseBody: { mock: longer-path }
+  - type: MOCK
+    name: method-and-body
+    mockMethod: POST
+    mockTarget: path.example.com
+    mockPath: '*'
+    mockRequestBodyContains: classify
+    mockResponseBody: { mock: method-and-body }
+  - type: MOCK
+    name: body
+    mockTarget: body.example.com
+    mockPath: /v1/chat
+    mockRequestBodyContains: classify
+    mockResponseBody: { mock: body }
+  - type: MOCK
+    name: no-body
+    mockTarget: body.example.com
+    mockPath: /v1/chat
+    mockResponseBody: { mock: no-body }
+  # Origins
+  - type: MOCK
+    name: for-worker
+    mockOrigin: worker
+    mockTarget: origin.example.com
+    mockPath: /*
+    mockResponseBody: { mock: for-worker }
+  - type: MOCK
+    name: for-anyone
+    mockTarget: origin.example.com
+    mockPath: /*
+    mockResponseBody: { mock: for-anyone }
+  - type: MOCK
+    name: for-browser
+    mockOrigin: chromium
+    mockTarget: origin.example.com
+    mockPath: /*
+    mockResponseBody: { mock: for-browser }
+  # Host case and path variables
+  - type: MOCK
+    name: host-case
+    mockTarget: Case.Example.com
+    mockPath: /users/{id}/{what}
+    mockResponseBody: { mock: two-variables }
+  - type: MOCK
+    name: fewer-variables
+    mockTarget: case.example.COM
+    mockPath: /users/:id/orders
+    mockResponseBody: { mock: fewer-variables }
+  # Trailing and doubled slashes, and "=" next to a variable
+  - type: MOCK
+    name: variable
+    mockTarget: slash.example.com
+    mockPath: /users/{id}
+    mockResponseBody: { mock: variable }
+  - type: MOCK
+    name: variable-and-slash
+    mockTarget: slash.example.com
+    mockPath: /orders/:id/
+    mockResponseBody: { mock: variable-and-slash }
+  - type: MOCK
+    name: equals-sign
+    mockTarget: slash.example.com
+    mockPath: /a=b/{id}
+    mockResponseBody: { mock: equals-sign }
+  - type: MOCK
+    name: no-slash-match
+    mockTarget: slash.example.com
+    mockPath: /*
+    mockResponseBody: { mock: no-slash-match }
+  # Encoded paths, ports and response headers
+  - type: MOCK
+    name: encoded-segment
+    mockTarget: encoded.example.com
+    mockPath: /a%20b/{id}
+    mockResponseBody: { mock: encoded-segment }
+  - type: MOCK
+    name: port-and-headers
+    mockTarget: port.example.com:443
+    mockPath: /x
+    mockResponseHeaders: { X-Number: 1234567, Content-Type: [text/plain] }
+    mockResponseBody: port-and-headers
+  # Regex
+  - type: MOCK
+    name: regex
+    mockTarget: regex.example.com
+    mockPath: /*
+    mockRequestBodyMatches: (?i)"tool":\s*"SEARCH"
+    mockResponseBody: { mock: regex, ref: 'Order ABC-42' }
+  - type: MOCK
+    name: no-regex
+    mockTarget: regex.example.com
+    mockPath: /*
+    mockResponseBody: { mock: no-regex }
+tests:
+  - name: An omitted origin is a wildcard
+    steps:
+      - name: Service-a calls a mocked host
+        action:
+          type: httpRequest
+          method: POST
+          url: service-a/call
+          headers: { Content-Type: application/json }
+          body:
+            requests:
+              - { method: GET, baseURL: 'http://general.example.com', url: /x }
+              - { method: POST, baseURL: 'http://general.example.com', url: /x }
+        assertions:
+          - assertions:
+              - {
+                  path: '$.response.body.results[0].mock',
+                  operator: eq,
+                  value: get-method,
+                }
+              - {
+                  path: '$.response.body.results[1].mock',
+                  operator: eq,
+                  value: omitted-origin,
+                }
+  - name: The most specific mock answers
+    steps:
+      - name: Service-a calls mocked hosts
+        action:
+          type: httpRequest
+          method: POST
+          url: service-a/call
+          headers: { Content-Type: application/json }
+          body:
+            requests:
+              - {
+                  method: POST,
+                  baseURL: 'http://order.example.com',
+                  url: /v1/chat,
+                  data: { q: classify },
+                }
+              - {
+                  method: POST,
+                  baseURL: 'http://path.example.com',
+                  url: /v1/x,
+                  data: { q: classify },
+                }
+              - {
+                  method: POST,
+                  baseURL: 'http://path.example.com',
+                  url: /v1/chat/x,
+                  data: { q: classify },
+                }
+              - {
+                  method: POST,
+                  baseURL: 'http://path.example.com',
+                  url: /other,
+                  data: { q: classify },
+                }
+              - {
+                  method: POST,
+                  baseURL: 'http://body.example.com',
+                  url: /v1/chat,
+                  data: { q: classify },
+                }
+              - {
+                  method: POST,
+                  baseURL: 'http://body.example.com',
+                  url: /v1/chat,
+                  data: { q: else },
+                }
+        assertions:
+          - assertions:
+              - {
+                  path: '$.response.body.results[0].mock',
+                  operator: eq,
+                  value: target,
+                }
+              - {
+                  path: '$.response.body.results[1].mock',
+                  operator: eq,
+                  value: path,
+                }
+              - {
+                  path: '$.response.body.results[2].mock',
+                  operator: eq,
+                  value: longer-path,
+                }
+              - {
+                  path: '$.response.body.results[3].mock',
+                  operator: eq,
+                  value: method-and-body,
+                }
+              - {
+                  path: '$.response.body.results[4].mock',
+                  operator: eq,
+                  value: body,
+                }
+              - {
+                  path: '$.response.body.results[5].mock',
+                  operator: eq,
+                  value: no-body,
+                }
+  - name: mockOrigin can name a worker
+    steps:
+      - name: Service-a gets the general mock
+        action:
+          type: httpRequest
+          method: POST
+          url: service-a/call
+          headers: { Content-Type: application/json }
+          body:
+            requests:
+              - { method: GET, baseURL: 'http://origin.example.com', url: /x }
+        assertions:
+          - assertions:
+              - {
+                  path: '$.response.body.results[0].mock',
+                  operator: eq,
+                  value: for-anyone,
+                }
+      - name: The worker gets its own
+        action: { type: wait, durationMs: 1500 }
+        assertions:
+          - match:
+              path: $.traffic
+              where:
+                - { path: $$.origin, operator: eq, value: worker }
+                - {
+                    path: $$.response.body.mock,
+                    operator: eq,
+                    value: for-worker,
+                  }
+              count: { operator: gte, value: 1 }
+          - match:
+              path: $.traffic
+              where:
+                - { path: $$.origin, operator: eq, value: worker }
+                - {
+                    path: $$.response.body.mock,
+                    operator: eq,
+                    value: for-anyone,
+                  }
+              count: 0
+  - name: Go regex flags
+    steps:
+      - name: Case-insensitive body match and extract
+        action:
+          type: httpRequest
+          method: POST
+          url: regex.example.com/x
+          body: { tool: search }
+        extract:
+          orderId:
+            {
+              path: $.response.body.ref,
+              pattern: '(?i)order (?P<id>[a-z]+-\d+)',
+            }
+        assertions:
+          - assertions:
+              - { path: $.response.body.mock, operator: eq, value: regex }
+              - {
+                  path: $.response.body.ref,
+                  operator: eq,
+                  value: 'Order {{orderId}}',
+                }
+      - name: No body match
+        action:
+          type: httpRequest
+          method: POST
+          url: regex.example.com/x
+          body: { tool: other }
+        assertions:
+          - assertions:
+              - { path: $.response.body.mock, operator: eq, value: no-regex }
+  - name: mockOrigin can name the browser
+    steps:
+      - name: Visit a mocked host
+        action:
+          type: ui
+          target: service-a
+          steps:
+            - visit: http://origin.example.com/x
+        assertions:
+          - match:
+              path: $.traffic
+              where:
+                - { path: $$.origin, operator: eq, value: chromium }
+                - { path: $$.to, operator: eq, value: origin.example.com }
+                - {
+                    path: $$.response.body.mock,
+                    operator: eq,
+                    value: for-browser,
+                  }
+              count: { operator: gte, value: 1 }
+  - name: Host case and variables
+    steps:
+      - name: Service-a calls a mocked host
+        action:
+          type: httpRequest
+          method: POST
+          url: service-a/call
+          headers: { Content-Type: application/json }
+          body:
+            requests:
+              - {
+                  method: GET,
+                  baseURL: 'http://case.example.com',
+                  url: /users/1/orders,
+                }
+              - {
+                  method: GET,
+                  baseURL: 'http://case.example.com',
+                  url: /users/1/items,
+                }
+        assertions:
+          - assertions:
+              - {
+                  path: '$.response.body.results[0].mock',
+                  operator: eq,
+                  value: fewer-variables,
+                }
+              - {
+                  path: '$.response.body.results[1].mock',
+                  operator: eq,
+                  value: two-variables,
+                }
+  - name: Variables match whole segments
+    steps:
+      - name: Service-a calls a mocked host
+        action:
+          type: httpRequest
+          method: POST
+          url: service-a/call
+          headers: { Content-Type: application/json }
+          body:
+            requests:
+              - method: GET
+                baseURL: 'http://slash.example.com'
+                url: /users/1
+              - method: GET
+                baseURL: 'http://slash.example.com'
+                url: /users/1/
+              - method: GET
+                baseURL: 'http://slash.example.com'
+                url: /orders/1/
+              - method: GET
+                baseURL: 'http://slash.example.com'
+                url: /orders/1
+              - method: GET
+                baseURL: 'http://slash.example.com'
+                url: /users//1
+              - method: GET
+                baseURL: 'http://slash.example.com'
+                url: /a=b/1
+        assertions:
+          - assertions:
+              - path: '$.response.body.results[0].mock'
+                operator: eq
+                value: variable
+              - path: '$.response.body.results[1].mock'
+                operator: eq
+                value: no-slash-match
+              - path: '$.response.body.results[2].mock'
+                operator: eq
+                value: variable-and-slash
+              - path: '$.response.body.results[3].mock'
+                operator: eq
+                value: no-slash-match
+              - path: '$.response.body.results[4].mock'
+                operator: eq
+                value: no-slash-match
+              - path: '$.response.body.results[5].mock'
+                operator: eq
+                value: equals-sign
+  - name: Encoded paths, ports and response headers
+    steps:
+      - name: Service-a calls an encoded path
+        action:
+          type: httpRequest
+          method: POST
+          url: service-a/call
+          headers: { Content-Type: application/json }
+          body:
+            requests:
+              - method: GET
+                baseURL: 'https://encoded.example.com'
+                url: /a%20b/1%2F2
+        assertions:
+          - assertions:
+              - path: '$.response.body.results[0].mock'
+                operator: eq
+                value: encoded-segment
+      - name: A step calls a target with the usual port
+        action: { type: httpRequest, method: GET, url: port.example.com/x }
+        assertions:
+          - assertions:
+              - path: $.response.body
+                operator: eq
+                value: port-and-headers
+              - path: $.response.headers.x-number
+                operator: eq
+                value: '1234567'
+              - path: $.response.headers.content-type
+                operator: eq
+                value: text/plain
+      - name: Service-a calls it too
+        action:
+          type: httpRequest
+          method: POST
+          url: service-a/call
+          headers: { Content-Type: application/json }
+          body:
+            requests:
+              - method: GET
+                baseURL: 'https://port.example.com'
+                url: /x
+        assertions:
+          - assertions:
+              - path: '$.response.body.results[0]'
+                operator: eq
+                value: port-and-headers

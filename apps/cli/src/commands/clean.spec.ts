@@ -1,10 +1,18 @@
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
+
+let mockRunsDir = '/tmp/mock-dokkimi/runs/test/project';
+let mockDatabaseUrl = 'file:/tmp/mock-dokkimi/dokkimi.db';
+
 jest.mock('@dokkimi/config', () => ({
   loadConfig: jest.fn(() => ({
     services: { controlTower: { host: 'localhost', port: 19001 } },
+    database: { url: mockDatabaseUrl },
   })),
   buildServiceUrl: jest.fn(() => 'http://localhost:19001'),
   DOKKIMI_DIR: '/tmp/mock-dokkimi',
-  projectRunsDir: jest.fn(() => '/tmp/mock-dokkimi/runs/test/project'),
+  projectRunsDir: jest.fn(() => mockRunsDir),
 }));
 jest.mock('../lib/cli-utils', () => ({
   fetchJson: jest.fn(),
@@ -137,6 +145,7 @@ describe('clean', () => {
       healthy: false,
       name: 'ct',
       url: 'http://localhost',
+      detail: 'not reachable',
     });
     // 1. findDokkimiContainers in clean() -> container names
     // 2. findDokkimiContainers in cleanupDokkimiDockerResources -> container names
@@ -169,6 +178,7 @@ describe('clean', () => {
       healthy: false,
       name: 'ct',
       url: 'http://localhost',
+      detail: 'not reachable',
     });
     // findDokkimiContainers returns empty, findDokkimiNetworks returns empty
     mockExecSilent.mockReturnValue('');
@@ -179,5 +189,132 @@ describe('clean', () => {
     expect(consoleLogSpy).toHaveBeenCalledWith(
       expect.stringContaining('Nothing to clean'),
     );
+  });
+
+  // Before, --all with Dokkimi down kept every other project's runs, and
+  // the run history, while reporting success
+  describe('--all with Dokkimi down', () => {
+    const dir = '/tmp/mock-dokkimi';
+    const otherRun = path.join(dir, 'runs/other/project/20260101-000000');
+
+    beforeEach(() => {
+      mockCheckService.mockResolvedValue({
+        healthy: false,
+        name: 'ct',
+        url: 'http://localhost',
+        detail: 'not reachable',
+      });
+      fs.mkdirSync(otherRun, { recursive: true });
+      for (const f of ['dokkimi.db', 'dokkimi.db-wal', 'config.json']) {
+        fs.writeFileSync(path.join(dir, f), 'x');
+      }
+    });
+
+    afterEach(() => {
+      mockDatabaseUrl = `file:${dir}/dokkimi.db`;
+      fs.rmSync(dir, { recursive: true, force: true });
+    });
+
+    it("deletes every project's runs and the run database", async () => {
+      await clean(['--all', '--force']);
+
+      expect(fs.existsSync(path.join(dir, 'runs'))).toBe(false);
+      expect(fs.existsSync(path.join(dir, 'dokkimi.db'))).toBe(false);
+      expect(fs.existsSync(path.join(dir, 'dokkimi.db-wal'))).toBe(false);
+      // Settings stay
+      expect(fs.existsSync(path.join(dir, 'config.json'))).toBe(true);
+    });
+
+    it('leaves a database outside ~/.dokkimi alone', async () => {
+      mockDatabaseUrl = 'postgresql://db.example/dokkimi';
+      await clean(['--all', '--force']);
+
+      expect(fs.existsSync(path.join(dir, 'runs'))).toBe(false);
+      expect(fs.existsSync(path.join(dir, 'dokkimi.db'))).toBe(true);
+    });
+  });
+
+  describe('with containers of another project running', () => {
+    beforeEach(() => {
+      mockCheckService.mockResolvedValue({
+        healthy: true,
+        name: 'ct',
+        url: 'http://localhost',
+      });
+      mockExecSilent.mockImplementation((cmd: string) =>
+        cmd.includes('--filter "label=io.dokkimi.managed"') ? 'other' : '',
+      );
+    });
+
+    it('leaves them alone', async () => {
+      mockFetchJson.mockResolvedValue({
+        runId: 'run-1',
+        instances: [{ id: 'inst-1', name: 'test-1', status: 'STOPPED' }],
+      } as any);
+
+      await clean(['--force']);
+
+      expect(mockFetchAction).toHaveBeenCalledWith(
+        expect.stringContaining('/runs/all?projectPath='),
+        'DELETE',
+      );
+      expect(mockExecSilent).not.toHaveBeenCalled();
+    });
+
+    it('removes them with --all', async () => {
+      await clean(['--all', '--force']);
+
+      for (const cmd of ['docker rm -f other', 'docker network rm other']) {
+        expect(mockExecSilent).toHaveBeenCalledWith(cmd, expect.anything());
+      }
+    });
+  });
+
+  it('removes nothing when Dokkimi is running but not responding', async () => {
+    mockCheckService.mockResolvedValue({
+      healthy: false,
+      name: 'ct',
+      url: 'http://localhost',
+      detail: 'timed out',
+    });
+    const consoleErrorSpy = jest
+      .spyOn(console, 'error')
+      .mockImplementation(() => {});
+
+    await expect(clean(['--all', '--force'])).rejects.toThrow('process.exit');
+    expect(processExitSpy).toHaveBeenCalledWith(1);
+    expect(consoleErrorSpy).toHaveBeenCalledWith(
+      expect.stringContaining('not responding (timed out)'),
+    );
+    consoleErrorSpy.mockRestore();
+
+    await clean(['--json']);
+    expect(consoleLogSpy).toHaveBeenCalledWith(
+      expect.stringContaining('"success":false'),
+    );
+    expect(mockExecSilent).not.toHaveBeenCalled();
+  });
+
+  it("keeps the run data of projects nested in this one's folder", async () => {
+    mockRunsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'clean-'));
+    const own = path.join(mockRunsDir, '20261101-120000');
+    const nested = path.join(mockRunsDir, 'packages/api/20261101-120000');
+    fs.mkdirSync(own);
+    fs.mkdirSync(nested, { recursive: true });
+    mockCheckService.mockResolvedValue({
+      healthy: true,
+      name: 'ct',
+      url: 'http://localhost',
+    });
+    mockFetchJson.mockResolvedValue({
+      runId: 'run-1',
+      instances: [{ id: 'inst-1', name: 'test-1', status: 'STOPPED' }],
+    } as any);
+
+    await clean(['--force']);
+
+    expect(fs.existsSync(own)).toBe(false);
+    expect(fs.existsSync(nested)).toBe(true);
+    fs.rmSync(mockRunsDir, { recursive: true });
   });
 });

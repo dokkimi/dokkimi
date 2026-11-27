@@ -151,7 +151,7 @@ env:
   - name: DATABASE_URL
     value: postgresql://dokkimi:dokkimi@postgres-db:5432/dokkimi
   - name: USER_SERVICE_URL
-    value: http://user-service:3000
+    value: http://user-service
 ```
 
 Image tags and other values can be centralized in `.dokkimi/config.yaml` using `${{VAR}}` syntax — change once, apply everywhere. Definition-level `variables` can also be used in item fields with `{{VAR}}` syntax, letting you share passwords, hostnames, and other values across items without duplication.
@@ -171,7 +171,7 @@ Image tags and other values can be centralized in `.dokkimi/config.yaml` using `
 | `dokkimi doctor`            | Check prerequisites and system health             |
 | `dokkimi mcp`               | Start the MCP server (auto-registered on install) |
 | `dokkimi status`            | Show whether Dokkimi is running                   |
-| `dokkimi clean`             | Stop all instances and clean up resources         |
+| `dokkimi clean`             | Stop this project's instances, delete its runs    |
 | `dokkimi config`            | View and edit Dokkimi settings                    |
 | `dokkimi reboot`            | Restart Dokkimi services                          |
 | `dokkimi uninstall`         | Remove Dokkimi from your system                   |

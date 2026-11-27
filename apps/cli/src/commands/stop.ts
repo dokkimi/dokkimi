@@ -1,4 +1,4 @@
-import { fetchPost, checkService } from '../lib/cli-utils';
+import { fetchPostWithError, checkService } from '../lib/cli-utils';
 import { loadConfig, buildServiceUrl } from '@dokkimi/config';
 
 interface StopResult {
@@ -34,32 +34,25 @@ export async function stop(args: string[]): Promise<void> {
     return;
   }
 
-  try {
-    const result = await fetchPost<StopResult>(`${ctUrl}/runs/stop`, {});
-
+  // Before, any failure (an error status, a timeout, no connection) read as
+  // an empty result, and "Run stopped." was printed
+  const result = await fetchPostWithError<StopResult>(`${ctUrl}/runs/stop`, {});
+  if (result.error !== undefined) {
     if (jsonMode) {
-      console.log(JSON.stringify({ success: true, ...result }));
-      return;
-    }
-
-    if (result?.status === 'NO_ACTIVE_RUN') {
-      console.log('No active run to stop.');
+      console.log(JSON.stringify({ success: false, error: result.error }));
     } else {
-      console.log('Run stopped.');
+      console.error(`Failed to stop run: ${result.error}`);
     }
-  } catch (err) {
-    if (jsonMode) {
-      console.log(
-        JSON.stringify({
-          success: false,
-          error: err instanceof Error ? err.message : String(err),
-        }),
-      );
-      return;
-    }
-    console.error(
-      `Failed to stop run: ${err instanceof Error ? err.message : String(err)}`,
-    );
     process.exit(1);
   }
+
+  if (jsonMode) {
+    console.log(JSON.stringify({ success: true, ...result.data }));
+    return;
+  }
+  console.log(
+    result.data.status === 'NO_ACTIVE_RUN'
+      ? 'No active run to stop.'
+      : 'Run stopped.',
+  );
 }

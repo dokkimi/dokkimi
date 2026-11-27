@@ -6,12 +6,7 @@ import {
   instanceStatusBadge,
   describeAction,
 } from '../lib/formatting';
-import {
-  stripIds,
-  openInEditor,
-  openFile,
-  formatTestExecutionLogs,
-} from '../lib/editor';
+import { openInEditor, openFile, formatTestExecutionLogs } from '../lib/editor';
 import {
   InstanceMenuAction,
   buildInstanceMenuItems,
@@ -109,9 +104,8 @@ export async function showTestStepsFlow(
     for (let gi = suite.startIndex; gi <= suite.endIndex; gi++) {
       const group = flatGroups[gi];
       for (let si = 0; si < group.steps.length; si++) {
-        const sKey = `${gi}:${si}`;
         const status =
-          stepAssertionStatus.get(sKey) ?? groupStatus.get(gi) ?? 'PENDING';
+          stepAssertionStatus.get(gi) ?? groupStatus.get(gi) ?? 'PENDING';
         if (status === 'FAILED') {
           return 'FAILED';
         }
@@ -190,7 +184,7 @@ export async function showTestStepsFlow(
 
     switch (picked.value.kind) {
       case 'raw': {
-        openInEditor(stripIds(definition), `${instance.name}-definition.json`);
+        openInEditor(definition, `${instance.name}-definition.json`);
         break;
       }
       case 'test-logs': {
@@ -256,7 +250,7 @@ async function showSubstepsFlow(
   suite: { name: string; startIndex: number; endIndex: number },
   suiteNumber: number,
   groupStatus: Map<number, string>,
-  stepAssertionStatus: Map<string, string>,
+  stepAssertionStatus: Map<number, string>,
   assertionResults: AssertionResult[],
   execLogs: TestExecutionLog[],
   allHttpLogs: HttpLog[],
@@ -279,9 +273,8 @@ async function showSubstepsFlow(
     const group = flatGroups[gi];
     for (let si = 0; si < group.steps.length; si++) {
       const step = group.steps[si];
-      const sKey = `${gi}:${si}`;
       const status =
-        stepAssertionStatus.get(sKey) ?? groupStatus.get(gi) ?? 'PENDING';
+        stepAssertionStatus.get(gi) ?? groupStatus.get(gi) ?? 'PENDING';
       const badge = statusBadge(status);
       const stepName = step.name ?? describeAction(step);
       const stepLabel = `Step ${suiteNumber + 1}.${substepNum}`;

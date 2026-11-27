@@ -28,6 +28,7 @@ describe('RunCleanupService', () => {
   const mockRunStorage: any = {
     deleteInstance: jest.fn().mockResolvedValue(undefined),
     deleteRunDir: jest.fn().mockResolvedValue(undefined),
+    hasDefinition: jest.fn().mockResolvedValue(false),
   };
 
   const mockDockerClient: any = {
@@ -241,6 +242,7 @@ describe('RunCleanupService', () => {
         {
           id: 'stale-run',
           status: RunStatus.RUNNING,
+          createdAt: new Date(),
           instances: [{ id: 'inst-1', status: InstanceStatus.STOPPED }],
         },
       ]);
@@ -256,11 +258,48 @@ describe('RunCleanupService', () => {
       });
     });
 
+    // Before, an instance the CLI never submitted kept the run alive forever,
+    // and every later run was refused as "already in progress"
+    it('fails a run whose pending instance was never submitted', async () => {
+      mockRunStorage.hasDefinition.mockResolvedValue(false);
+      mockPrisma.run.findMany.mockResolvedValue([
+        {
+          id: 'abandoned-run',
+          status: RunStatus.PENDING,
+          createdAt: new Date(Date.now() - 3 * 60 * 1000),
+          instances: [{ id: 'inst-1', status: InstanceStatus.PENDING }],
+        },
+      ]);
+
+      await service.recoverStaleRuns();
+
+      expect(mockPrisma.run.update).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { id: 'abandoned-run' } }),
+      );
+    });
+
+    it('waits for a pending instance that has its definition', async () => {
+      mockRunStorage.hasDefinition.mockResolvedValue(true);
+      mockPrisma.run.findMany.mockResolvedValue([
+        {
+          id: 'queued-run',
+          status: RunStatus.RUNNING,
+          createdAt: new Date(Date.now() - 3 * 60 * 1000),
+          instances: [{ id: 'inst-1', status: InstanceStatus.PENDING }],
+        },
+      ]);
+
+      await service.recoverStaleRuns();
+
+      expect(mockPrisma.run.update).not.toHaveBeenCalled();
+    });
+
     it('leaves runs alone when instances are still PENDING', async () => {
       mockPrisma.run.findMany.mockResolvedValue([
         {
           id: 'active-run',
           status: RunStatus.RUNNING,
+          createdAt: new Date(),
           instances: [{ id: 'inst-1', status: InstanceStatus.PENDING }],
         },
       ]);
@@ -276,6 +315,7 @@ describe('RunCleanupService', () => {
         {
           id: 'active-run',
           status: RunStatus.RUNNING,
+          createdAt: new Date(),
           instances: [{ id: 'inst-1', status: InstanceStatus.RUNNING }],
         },
       ]);
@@ -292,6 +332,7 @@ describe('RunCleanupService', () => {
         {
           id: 'stale-run',
           status: RunStatus.RUNNING,
+          createdAt: new Date(),
           instances: [{ id: 'inst-1', status: InstanceStatus.STARTING }],
         },
       ]);

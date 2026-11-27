@@ -1,13 +1,13 @@
 import { formatDuration } from './formatting';
 import { enterAltScreen, exitAltScreen } from './terminal';
-import { fetchJson, sleep } from './cli-utils';
+import { fetchJson, sleep, LOST_CONTACT_MS } from './cli-utils';
 import {
-  TERMINAL_INSTANCE_STATUSES,
   SPINNER_FRAMES,
   categorizeInstances,
   formatInstanceLine,
   printSummary,
 } from './run-format';
+import { outcomeOf, runPassed } from './outcome';
 
 const ANSI_RE = /\x1b\[[0-9;]*[A-Za-z]/g;
 
@@ -34,6 +34,8 @@ export interface RunStatusResponse {
 export interface RunOnceResult {
   passed: boolean;
   runId: string | null;
+  /** The run's status when the CLI stopped following it ('' without a run) */
+  runStatus: string;
   instances: RunStatusInstance[];
   hasUiSteps?: boolean;
   baselinesUploaded?: number;
@@ -57,8 +59,10 @@ export async function pollForCompletion(
   runId: string,
   abort?: AbortController,
   skippedInstances?: RunStatusInstance[],
+  timeoutMs?: number,
 ): Promise<RunOnceResult> {
   const runStart = Date.now();
+  let lastAnswerAt = runStart;
   const instanceStartedAt = new Map<string, number>();
   const instanceCompletedAt = new Map<string, number>();
   let tick = 0;
@@ -77,14 +81,14 @@ export async function pollForCompletion(
       );
       if (result) {
         const now = Date.now();
+        lastAnswerAt = now;
         for (const inst of result.instances) {
           // Track when each instance leaves PENDING (actually starts deploying)
           if (inst.status !== 'PENDING' && !instanceStartedAt.has(inst.id)) {
             instanceStartedAt.set(inst.id, now);
           }
-          const displayStatus = inst.testStatus ?? inst.status;
           if (
-            TERMINAL_INSTANCE_STATUSES.has(displayStatus) &&
+            outcomeOf(result.status, inst) !== 'running' &&
             !instanceCompletedAt.has(inst.id)
           ) {
             instanceCompletedAt.set(inst.id, now);
@@ -114,13 +118,22 @@ export async function pollForCompletion(
   try {
     // Render loop runs fast for smooth spinner + timer
     while (true) {
-      if (abort?.signal.aborted) {
+      // Before, a run whose Dokkimi died or never ended was polled forever
+      const endedBy = abort?.signal.aborted
+        ? `\x1b[33mStopped after ${formatDuration(Date.now() - runStart)}\x1b[0m`
+        : timeoutMs && Date.now() - runStart > timeoutMs
+          ? `\x1b[31mTimed out after ${formatDuration(timeoutMs)}\x1b[0m`
+          : Date.now() - lastAnswerAt > LOST_CONTACT_MS
+            ? `\x1b[31mLost contact with Dokkimi: no answer for ${LOST_CONTACT_MS / 1000}s. Check it with \`dokkimi status\`.\x1b[0m`
+            : null;
+      if (endedBy) {
         if (isTTY) {
           exitAltScreen();
           process.stdout.write('\x1b[u\x1b[J');
         }
 
         const snapshot = latestStatus as RunStatusResponse | null;
+        const runStatus = snapshot?.status ?? '';
         const allInstances = snapshot
           ? [...snapshot.instances, ...skipped]
           : [...skipped];
@@ -128,6 +141,7 @@ export async function pollForCompletion(
           const spinner = SPINNER_FRAMES[tick % SPINNER_FRAMES.length];
           const lines = allInstances.map((inst) =>
             formatInstanceLine(
+              runStatus,
               inst,
               instanceStartedAt.get(inst.id),
               instanceCompletedAt.get(inst.id),
@@ -137,11 +151,9 @@ export async function pollForCompletion(
           console.log(lines.join('\n'));
         }
         console.log('');
-        console.log(
-          `\x1b[33mStopped after ${formatDuration(Date.now() - runStart)}\x1b[0m`,
-        );
+        console.log(endedBy);
         console.log('');
-        return { passed: false, runId, instances: allInstances };
+        return { passed: false, runId, runStatus, instances: allInstances };
       }
 
       // latestStatus is mutated asynchronously by the poll timer
@@ -166,6 +178,7 @@ export async function pollForCompletion(
           for (const inst of allInstances) {
             lines.push(
               formatInstanceLine(
+                current.status,
                 inst,
                 instanceStartedAt.get(inst.id),
                 instanceCompletedAt.get(inst.id),
@@ -181,8 +194,12 @@ export async function pollForCompletion(
             instanceStartedAt,
             instanceCompletedAt,
           );
-          const passed = current.status === 'COMPLETED';
-          return { passed, runId, instances: allInstances };
+          return {
+            passed: runPassed(current.status, allInstances),
+            runId,
+            runStatus: current.status,
+            instances: allInstances,
+          };
         }
 
         // Live render on alt screen — cursor home + clear, fits any size
@@ -195,7 +212,7 @@ export async function pollForCompletion(
 
         // Categorize
         const { inProgress, done, pendingCount, passedCount, failedCount } =
-          categorizeInstances(allInstances);
+          categorizeInstances(current.status, allInstances);
 
         const buf: string[] = [];
 
@@ -237,6 +254,7 @@ export async function pollForCompletion(
           for (const inst of shown) {
             buf.push(
               formatInstanceLine(
+                current.status,
                 inst,
                 instanceStartedAt.get(inst.id),
                 instanceCompletedAt.get(inst.id),

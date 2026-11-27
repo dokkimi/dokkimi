@@ -14,14 +14,14 @@ export type LoopLevel = 'test' | 'step' | 'assertion-block';
 
 /** Maps each level to the set of body keys it allows (besides nested loops). */
 const ALLOWED_BODY_KEYS: Record<LoopLevel, Set<string>> = {
-  test: new Set(['steps']),
+  test: new Set(), // the steps go next to the loop
   step: new Set(['action', 'match', 'assertions', 'extract']),
   'assertion-block': new Set(['match', 'assertions', 'extract']),
 };
 
 /** Maps each level to the next (child) level for nested loops. */
 const CHILD_LEVEL: Record<LoopLevel, LoopLevel | null> = {
-  test: 'step',
+  test: null,
   step: 'assertion-block',
   'assertion-block': null,
 };
@@ -49,7 +49,9 @@ export function validateLoopBody(
 
   // Check for disallowed content keys
   for (const key of Object.keys(loopObj)) {
-    if (ALL_BODY_CONTENT_KEYS.has(key) && !allowed.has(key)) {
+    if (level === 'test' && key === 'steps') {
+      err(r, `${ctx}: put "steps" next to the loop, not inside it`);
+    } else if (ALL_BODY_CONTENT_KEYS.has(key) && !allowed.has(key)) {
       err(r, `${ctx}: "${key}" is not allowed in a ${level}-level loop body`);
     }
   }
@@ -61,7 +63,7 @@ export function validateLoopBody(
       if (childLevel === null) {
         err(
           r,
-          `${ctx}: nested loops are not allowed inside an assertion-block-level loop`,
+          `${ctx}: nested loops are not allowed inside a ${level}-level loop`,
         );
       } else {
         // Recurse into the nested loop's body
@@ -179,29 +181,6 @@ export function validateLoopSiblingConflicts(
         r,
         `${ctx}: "extract" must be inside "${loopKey}" body, not a sibling`,
       );
-    }
-  }
-}
-
-/**
- * At test level, `steps` must be inside the loop body, never as a sibling.
- */
-export function validateTestLoopSiblingConflicts(
-  test: Record<string, unknown>,
-  ctx: string,
-  r: ValidationResult,
-): void {
-  for (const loopKey of LOOP_MODIFIER_KEYS) {
-    const loopValue = test[loopKey];
-    if (
-      !loopValue ||
-      typeof loopValue !== 'object' ||
-      Array.isArray(loopValue)
-    ) {
-      continue;
-    }
-    if (test.steps !== undefined) {
-      err(r, `${ctx}: "steps" must be inside "${loopKey}" body, not a sibling`);
     }
   }
 }

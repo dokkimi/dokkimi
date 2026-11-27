@@ -1,7 +1,7 @@
 import path from 'path';
 import fs from 'fs';
 import os from 'os';
-import { isProcessAlive } from '@dokkimi/platform';
+import { processStartTime } from '@dokkimi/platform';
 
 export const DOKKIMI_DIR = path.join(os.homedir(), '.dokkimi');
 export const DAEMON_JSON = path.join(DOKKIMI_DIR, 'daemon.json');
@@ -12,7 +12,8 @@ export interface DaemonState {
   startedAt: string;
   shuttingDown?: boolean;
   pid?: number;
-  services?: Record<string, { pid: number }>;
+  /** When the process with that pid was started (ms), to tell it from a later process given the same pid */
+  pidStartedAt?: number;
 }
 
 export function readDaemonState(): DaemonState | null {
@@ -41,14 +42,26 @@ export function deleteDaemonState(): void {
   } catch {}
 }
 
+/**
+ * Whether pid is still the process that started at startedAt (ms). A pid is
+ * reused once its process ends, often after a reboot: without this check,
+ * Dokkimi would kill, or wait on, whatever process has it now.
+ */
+export function isSameProcess(pid: number, startedAt: number): boolean {
+  const actual = processStartTime(pid);
+  // The OS reports the start to the second
+  return actual !== null && Math.abs(actual - startedAt) < 3000;
+}
+
+/** The daemon's pid, when that process is still running */
 export function getControlTowerPid(state: DaemonState | null): number | null {
-  if (!state) {
+  if (
+    typeof state?.pid !== 'number' ||
+    typeof state.pidStartedAt !== 'number'
+  ) {
     return null;
   }
-  if (typeof state.pid === 'number') {
-    return state.pid;
-  }
-  return state.services?.controlTower?.pid ?? null;
+  return isSameProcess(state.pid, state.pidStartedAt) ? state.pid : null;
 }
 
 export async function acquireLock(
@@ -62,7 +75,7 @@ export async function acquireLock(
     signal?.throwIfAborted();
     try {
       const fd = fs.openSync(DAEMON_LOCK, 'wx');
-      fs.writeSync(fd, String(process.pid));
+      fs.writeSync(fd, `${process.pid} ${Math.round(performance.timeOrigin)}`);
       fs.closeSync(fd);
       return () => {
         try {
@@ -74,12 +87,19 @@ export async function acquireLock(
         throw err;
       }
 
+      // The lock is stale when its holder has ended: its pid is gone, or now
+      // belongs to another process
       try {
-        const lockPid = parseInt(
-          fs.readFileSync(DAEMON_LOCK, 'utf8').trim(),
-          10,
-        );
-        if (!isNaN(lockPid) && !isProcessAlive(lockPid)) {
+        const [lockPid, lockStartedAt] = fs
+          .readFileSync(DAEMON_LOCK, 'utf8')
+          .trim()
+          .split(' ')
+          .map(Number);
+        if (
+          !isNaN(lockPid) &&
+          !isNaN(lockStartedAt) &&
+          !isSameProcess(lockPid, lockStartedAt)
+        ) {
           try {
             fs.unlinkSync(DAEMON_LOCK);
           } catch {}

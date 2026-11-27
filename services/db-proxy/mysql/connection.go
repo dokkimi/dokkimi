@@ -14,6 +14,10 @@ import (
 type pendingQuery struct {
 	sql       string
 	startTime time.Time
+
+	// The last result set of a query with several results, while more follow
+	resultSet    []map[string]interface{}
+	resultSetLen int64
 }
 
 // proxyConnection manages a single client↔upstream MySQL connection pair
@@ -195,13 +199,13 @@ func (pc *proxyConnection) processServerPacket(pkt *mysqlPacket) {
 
 	if pkt.isOK() {
 		rowsAffected := extractOKAffectedRows(pkt.payload)
-		pc.completeQueryLocked(true, rowsAffected, "", nil)
+		pc.completeQueryLocked(true, rowsAffected, "", nil, okMoreResults(pkt.payload))
 		return
 	}
 
 	if pkt.isERR() {
 		errMsg := extractErrorMessage(pkt.payload)
-		pc.completeQueryLocked(false, 0, errMsg, nil)
+		pc.completeQueryLocked(false, 0, errMsg, nil, false)
 		return
 	}
 
@@ -239,10 +243,13 @@ func (pc *proxyConnection) processResultSetPacket(pkt *mysqlPacket) {
 	// Phase 3: data rows until EOF or ERR
 	if pkt.isEOF() {
 		data := pc.resultRows
+		if data == nil {
+			data = []map[string]interface{}{} // a result set without rows
+		}
 		pc.inResultSet = false
 		pc.columns = nil
 		pc.resultRows = nil
-		pc.completeQueryLocked(true, int64(len(data)), "", data)
+		pc.completeQueryLocked(true, int64(len(data)), "", data, eofMoreResults(pkt.payload))
 		return
 	}
 
@@ -251,7 +258,7 @@ func (pc *proxyConnection) processResultSetPacket(pkt *mysqlPacket) {
 		pc.inResultSet = false
 		pc.columns = nil
 		pc.resultRows = nil
-		pc.completeQueryLocked(false, 0, errMsg, nil)
+		pc.completeQueryLocked(false, 0, errMsg, nil, false)
 		return
 	}
 
@@ -280,17 +287,31 @@ func (pc *proxyConnection) processResultSetPacket(pkt *mysqlPacket) {
 	pc.resultRows = append(pc.resultRows, row)
 }
 
-// completeQueryLocked pops the oldest pending query and logs it. Caller must hold pc.mu.
-func (pc *proxyConnection) completeQueryLocked(success bool, rowsAffected int64, errMsg string, data []map[string]interface{}) {
-	if pc.logger == nil {
-		return
-	}
-
+// completeQueryLocked records a result for the oldest pending query; data is
+// nil for a result that isn't a result set. A query can have several results
+// (statements separated by ";", or a CALL); the server marks all but the last
+// with "more results". It is logged with its last result set, or its last
+// result when none returned rows (a CALL always ends with a bare OK). An error
+// ends the results, so a failure anywhere is the logged result. Caller must
+// hold pc.mu.
+func (pc *proxyConnection) completeQueryLocked(success bool, rowsAffected int64, errMsg string, data []map[string]interface{}, more bool) {
 	if len(pc.pending) == 0 {
 		return
 	}
-	pq := pc.pending[0]
+	pq := &pc.pending[0]
+	if more {
+		if data != nil {
+			pq.resultSet, pq.resultSetLen = data, rowsAffected
+		}
+		return
+	}
+	if success && data == nil && pq.resultSet != nil {
+		data, rowsAffected = pq.resultSet, pq.resultSetLen
+	}
 	pc.pending = pc.pending[1:]
+	if pc.logger == nil {
+		return
+	}
 
 	durationMs := int(time.Since(pq.startTime).Milliseconds())
 	msg := shared.DatabaseLogMessage{
@@ -300,11 +321,9 @@ func (pc *proxyConnection) completeQueryLocked(success bool, rowsAffected int64,
 		DatabaseName:   pc.config.InstanceItemName,
 		Query:          pq.sql,
 		Success:        success,
+		RowsAffected:   rowsAffected,
 		Duration:       &durationMs,
 		Timestamp:      time.Now().Format(time.RFC3339Nano),
-	}
-	if rowsAffected > 0 {
-		msg.RowsAffected = &rowsAffected
 	}
 	if errMsg != "" {
 		msg.Error = errMsg

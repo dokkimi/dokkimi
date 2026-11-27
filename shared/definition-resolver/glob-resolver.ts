@@ -1,4 +1,5 @@
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 import { minimatch } from 'minimatch';
 import { isDefinitionFile } from '@dokkimi/definition-validator';
@@ -40,10 +41,14 @@ export function scanDefinitionFiles(
         continue;
       }
       const full = path.join(dir, entry.name);
+      // .dokignore patterns use "/", as in .gitignore
+      const rel = path.relative(relRoot, full).split(path.sep).join('/');
       if (entry.isDirectory()) {
-        walk(full);
+        // An ignored folder (`experiments/`) skips everything in it
+        if (!isIgnored(rel, entry.name)) {
+          walk(full);
+        }
       } else if (isDefinitionFile(entry.name)) {
-        const rel = path.relative(relRoot, full);
         if (isIgnored(rel, entry.name)) {
           continue;
         }
@@ -66,7 +71,8 @@ export function loadDokignore(dokkimiDir: string): IgnoreRules {
   const exact = new Set<string>();
   const globs: string[] = [];
   for (const line of content.split('\n')) {
-    const trimmed = line.trim();
+    // A trailing "/" marks a folder; folders are matched like files
+    const trimmed = line.trim().replace(/\/+$/, '');
     if (!trimmed || trimmed.startsWith('#')) {
       continue;
     }
@@ -83,10 +89,19 @@ export function loadDokignore(dokkimiDir: string): IgnoreRules {
   return { exact, globs };
 }
 
+/**
+ * `~/.dokkimi` holds Dokkimi's own data, run snapshots among them: it is not
+ * a project's `.dokkimi`. Before, from a folder under home with no project,
+ * it was taken for one, and old snapshots were run as definitions.
+ */
+export function isDokkimiDataDir(dir: string): boolean {
+  return path.resolve(dir) === path.join(os.homedir(), '.dokkimi');
+}
+
 export function findDokkimiDir(filePath: string): string | null {
   let dir = path.dirname(filePath);
   while (true) {
-    if (path.basename(dir) === '.dokkimi') {
+    if (path.basename(dir) === '.dokkimi' && !isDokkimiDataDir(dir)) {
       return dir;
     }
     const parent = path.dirname(dir);
@@ -103,7 +118,7 @@ export function findDokkimiDir(filePath: string): string | null {
  */
 export function findDokkimiDirFrom(dir: string): string | null {
   // Check if dir itself is .dokkimi
-  if (path.basename(dir) === '.dokkimi') {
+  if (path.basename(dir) === '.dokkimi' && !isDokkimiDataDir(dir)) {
     return dir;
   }
   // Check if dir is inside a .dokkimi tree
@@ -113,14 +128,22 @@ export function findDokkimiDirFrom(dir: string): string | null {
   }
   // Check if dir contains a .dokkimi child
   const child = path.join(dir, '.dokkimi');
-  if (fs.existsSync(child) && fs.statSync(child).isDirectory()) {
+  if (
+    !isDokkimiDataDir(child) &&
+    fs.existsSync(child) &&
+    fs.statSync(child).isDirectory()
+  ) {
     return child;
   }
   // Walk up looking for directories that contain .dokkimi
   let current = path.dirname(dir);
   while (true) {
     const candidate = path.join(current, '.dokkimi');
-    if (fs.existsSync(candidate) && fs.statSync(candidate).isDirectory()) {
+    if (
+      !isDokkimiDataDir(candidate) &&
+      fs.existsSync(candidate) &&
+      fs.statSync(candidate).isDirectory()
+    ) {
       return candidate;
     }
     const parent = path.dirname(current);
@@ -143,8 +166,8 @@ export function filterFilesByPattern(
   dokkimiDir: string,
   pattern: string,
 ): string[] {
-  const isGlob = /[*?{}[\]]/.test(pattern);
   const isRegex = pattern.startsWith('/') && pattern.lastIndexOf('/') > 0;
+  const isGlob = !isRegex && /[*?{}[\]]/.test(pattern);
 
   let regex: RegExp | null = null;
   if (isRegex) {

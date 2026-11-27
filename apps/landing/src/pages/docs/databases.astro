@@ -31,14 +31,12 @@ import CodeBlock from '../../components/CodeBlock.astro';
       <tr><td><code>dbName</code></td><td>string</td><td><code>dokkimi</code></td><td>Database/schema name</td></tr>
       <tr><td><code>dbUser</code></td><td>string</td><td><code>dokkimi</code></td><td>Database username</td></tr>
       <tr><td><code>dbPassword</code></td><td>string</td><td><code>dokkimi</code></td><td>Database password</td></tr>
-      <tr><td><code>noAuth</code></td><td>boolean</td><td><code>false</code></td><td>Skip all authentication. Database starts without credentials. Cannot combine with <code>dbName</code>, <code>dbUser</code>, or <code>dbPassword</code>.</td></tr>
-      <tr><td><code>initFilePath</code></td><td>string</td><td>—</td><td>Relative path to a single init script</td></tr>
+      <tr><td><code>noAuth</code></td><td>boolean</td><td><code>false</code></td><td>Skip all authentication. Database starts without credentials; connect as the engine's own user (Postgres: <code>postgres</code>, database <code>postgres</code>; MySQL: <code>root</code>, no database). Cannot combine with <code>dbName</code>, <code>dbUser</code>, or <code>dbPassword</code>.</td></tr>
+      <tr><td><code>initFilePath</code></td><td>string</td><td>—</td><td>Relative path to a single init script (a file, at most 7.5 MB). It runs against <code>dbName</code>.</td></tr>
       <tr><td><code>initFilePaths</code></td><td>string[]</td><td>—</td><td>Relative paths to multiple init scripts (executed in order). Use one or the other, not both.</td></tr>
-      <tr><td><code>minCpu</code></td><td>number</td><td>—</td><td>Minimum CPU cores</td></tr>
-      <tr><td><code>minMemory</code></td><td>number</td><td>—</td><td>Minimum memory in MB</td></tr>
-      <tr><td><code>maxCpu</code></td><td>number</td><td>—</td><td>Maximum CPU cores</td></tr>
-      <tr><td><code>maxMemory</code></td><td>number</td><td>—</td><td>Maximum memory in MB</td></tr>
       <tr><td><code>stage</code></td><td>integer</td><td><code>0</code></td><td>Deployment stage — controls <a href="/docs/project-structure#staged-bootup-order">bootup order</a></td></tr>
+      <tr><td><code>maxCpu</code></td><td>number</td><td>—</td><td>Limit on CPU cores (e.g., 0.5). No limit when unset</td></tr>
+      <tr><td><code>maxMemory</code></td><td>number</td><td>—</td><td>Limit on memory in MB (at least 6). The container is killed if it uses more. No limit when unset</td></tr>
     </tbody>
   </table>
 
@@ -131,6 +129,16 @@ import CodeBlock from '../../components/CodeBlock.astro';
   <p>Every DATABASE item is paired with a <strong>DB proxy sidecar</strong> — a transparent proxy that intercepts all database queries at the wire protocol level. This means every SQL query, MongoDB operation, or Redis command your services execute is captured and logged automatically, without any changes to your application code.</p>
   <p>You can inspect all captured queries after a run with <code>dokkimi inspect</code>, which shows every query alongside the HTTP traffic and console logs. This gives you full visibility into what your services actually did to the database during the test — not just what the API returned.</p>
   <p>This is particularly valuable for debugging: when a test fails, you can see the exact queries that ran, in order, and trace the issue to a specific database interaction rather than guessing from HTTP responses alone.</p>
+  <ul>
+    <li>A query with several statements (<code>INSERT ...; SELECT ...</code>, or a MySQL <code>CALL</code>) is one entry. It failed if any statement failed, and its <code>data</code> and <code>rowsAffected</code> are those of its last statement that returned rows, or of its last statement when none did.</li>
+    <li><code>rowsAffected</code> is the number of rows a write changed, or a read returned: 0 when none, never missing. For a MongoDB update it is the documents modified.</li>
+    <li>A MongoDB write the server rejected (<code>writeErrors</code>, <code>writeConcernError</code>) is logged as failed.</li>
+    <li>Compressed traffic (MongoDB snappy, zlib, zstd) is logged like any other.</li>
+    <li>NaN and Infinity are logged as the strings <code>"NaN"</code>, <code>"Infinity"</code> and <code>"-Infinity"</code>.</li>
+  </ul>
+  <div class="callout">
+    <p><strong>Limitation:</strong> a single PostgreSQL message over 16 MB (for example a query parameter or a row that large) closes the connection.</p>
+  </div>
   <div class="callout">
     <p><strong>DATABASE vs SERVICE.</strong> Infrastructure that needs query-level interception and logging should use the DATABASE item type. If you need a data store that Dokkimi doesn't support natively (like Elasticsearch or DynamoDB), you can run it as a <a href="/docs/services#infrastructure-services">SERVICE</a> — it works the same way, you just won't get automatic query logging.</p>
   </div>

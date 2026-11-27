@@ -145,10 +145,13 @@ export class DeploymentSchedulerService {
         inst.testStatus === 'FAILED';
 
       if (isTerminal) {
+        // A test's result is the instance's result; a teardown that failed
+        // after it (status FAILED) doesn't change it
         if (
-          inst.status === InstanceStatus.FAILED ||
-          inst.testStatus === 'FAILED' ||
-          (inst.status === InstanceStatus.STOPPED && !inst.testStatus)
+          inst.testStatus
+            ? inst.testStatus === 'FAILED'
+            : inst.status === InstanceStatus.FAILED ||
+              inst.status === InstanceStatus.STOPPED
         ) {
           anyFailed = true;
         }
@@ -184,8 +187,10 @@ export class DeploymentSchedulerService {
     const passedCount = run.instances.filter(
       (i) => i.testStatus === 'PASSED',
     ).length;
-    const failedCount = run.instances.filter(
-      (i) => i.testStatus === 'FAILED' || i.status === InstanceStatus.FAILED,
+    const failedCount = run.instances.filter((i) =>
+      i.testStatus
+        ? i.testStatus === 'FAILED'
+        : i.status === InstanceStatus.FAILED,
     ).length;
     const runDurationMs = run.createdAt
       ? Date.now() - new Date(run.createdAt).getTime()
@@ -208,41 +213,20 @@ export class DeploymentSchedulerService {
         this.checkRunCompletion(runId)
           .then(() => this.deployPendingInstances(runId))
           .catch((e) =>
-            this.logger.error(`Failed to handle crash for run ${runId}:`, e),
+            this.logger.error(
+              `Failed to handle failed instance of run ${runId}:`,
+              e,
+            ),
           );
       })
       .then(() => {
         this.logger.log(`Instance ${ctx.instanceId} deployed successfully`);
       })
-      .catch(async (err) => {
+      .catch((err) => {
         this.logger.error(
           `Deployment failed for instance ${ctx.instanceId}:`,
           err,
         );
-        try {
-          await this.prisma.namespaceInstance.update({
-            where: { id: ctx.instanceId },
-            data: {
-              status: InstanceStatus.FAILED,
-              errorMessage: err instanceof Error ? err.message : String(err),
-              stoppedAt: new Date(),
-            },
-          });
-        } catch (updateErr) {
-          this.logger.error(
-            `Failed to mark instance ${ctx.instanceId} as FAILED:`,
-            updateErr,
-          );
-        }
-        try {
-          await this.checkRunCompletion(runId);
-          await this.deployPendingInstances(runId);
-        } catch (e) {
-          this.logger.error(
-            `Failed to handle deployment failure for run ${runId}:`,
-            e,
-          );
-        }
       });
   }
 

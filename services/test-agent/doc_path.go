@@ -1,27 +1,22 @@
 package main
 
 import (
-	"reflect"
 	"regexp"
 	"strconv"
 	"strings"
-	"sync"
 )
 
-var lowerKeyCache sync.Map // uintptr → map[string]string
-
-func resetLowerKeyCache() {
-	lowerKeyCache = sync.Map{}
-}
-
-func getCachedLowerKeyMap(obj map[string]interface{}) map[string]string {
-	ptr := reflect.ValueOf(obj).Pointer()
-	if cached, ok := lowerKeyCache.Load(ptr); ok {
-		return cached.(map[string]string)
+// findKeyFold returns the key of obj that equals key ignoring case. When
+// several do, it returns the first in byte order, so the choice doesn't depend
+// on map iteration order.
+func findKeyFold(obj map[string]interface{}, key string) (string, bool) {
+	found, ok := "", false
+	for k := range obj {
+		if strings.EqualFold(k, key) && (!ok || k < found) {
+			found, ok = k, true
+		}
 	}
-	m := buildLowerKeyMap(obj)
-	lowerKeyCache.Store(ptr, m)
-	return m
+	return found, ok
 }
 
 // EvaluateDocPath resolves a dotted path against an assembled document.
@@ -83,14 +78,10 @@ func EvaluateDocPath(doc interface{}, path string, scopedCtx ...interface{}) (in
 			}
 			if v, exists := obj[seg]; exists {
 				value = v
+			} else if origKey, exists := findKeyFold(obj, seg); exists {
+				value = obj[origKey]
 			} else {
-				lowerSeg := strings.ToLower(seg)
-				lowerMap := getCachedLowerKeyMap(obj)
-				if origKey, exists := lowerMap[lowerSeg]; exists {
-					value = obj[origKey]
-				} else {
-					return nil, false
-				}
+				return nil, false
 			}
 		}
 	}
@@ -129,19 +120,6 @@ func parsePathSegments(path string) []string {
 		segments = append(segments, current.String())
 	}
 	return segments
-}
-
-// buildLowerKeyMap returns a map from lowercased key to the original key.
-// When multiple keys lowercase to the same string, the first one wins.
-func buildLowerKeyMap(obj map[string]interface{}) map[string]string {
-	m := make(map[string]string, len(obj))
-	for k := range obj {
-		lower := strings.ToLower(k)
-		if _, exists := m[lower]; !exists {
-			m[lower] = k
-		}
-	}
-	return m
 }
 
 func toMap(v interface{}) (map[string]interface{}, bool) {

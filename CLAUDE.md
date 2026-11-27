@@ -38,7 +38,7 @@ To expose the dev CLI as `dokkimi` on your PATH: `yarn link` (after `yarn dev:cl
 ```bash
 # TypeScript
 yarn workspace control-tower test                    # All CT unit tests
-yarn workspace control-tower test -- --testPathPattern=runs  # Single test file/pattern
+yarn workspace control-tower test --testPathPatterns=runs  # Single test file/pattern
 yarn workspace @dokkimi/definition-validator test    # Validator tests
 
 # Go (run from each service directory)
@@ -85,7 +85,7 @@ Go sidecars use `ghcr.io/dokkimi/<name>` prefix. Control Tower uses `dokkimi/con
 All backend logic lives in Control Tower as separate NestJS modules. Keep module public surface narrow — cross-module communication goes through explicitly re-exported services.
 
 - **`runs/` + `namespace/` + `namespace-lifecycle/`** — REST API and Docker orchestration
-- **`log-processing/`** — log ingestion (`POST /logs/{http,console,database,test-execution,test-validation}`), marked `@SkipThrottle()` for high-volume sidecar traffic
+- **`log-processing/`** — log ingestion (`POST /logs/{http,console,database,test-execution,test-validation}`) from the sidecars. Control Tower has no rate limit: it serves only the local CLI and sidecars
 - **`test-validation/`** — receives pre-validated assertion results from test-agent, stores them, handles `POST /test-complete`, then calls `RunsService.handleValidationComplete` in-process
 - **`health/`** — aggregated liveness + `POST /health/status` readiness endpoint for sidecars
 
@@ -112,7 +112,7 @@ Build order matters: `shared/config → shared/platform → shared/telemetry →
 
 ### Sidecar Image Tags
 
-`services/control-tower/src/constants/image-tags.ts` resolves sidecar images using `APP_VERSION` env var, falling back to `:latest`. When running locally via CLI, `APP_VERSION` is unset so `:latest` is used.
+`services/control-tower/src/constants/image-tags.ts` resolves sidecar images using the `DOKKIMI_APP_VERSION` env var, falling back to `:latest`. The CLI starts Control Tower with `DOKKIMI_APP_VERSION` set to its own version; set `DOKKIMI_APP_VERSION=latest` to test locally built sidecars.
 
 ### Database
 

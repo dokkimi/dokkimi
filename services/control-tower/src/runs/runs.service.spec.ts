@@ -1,3 +1,4 @@
+import { BadRequestException } from '@nestjs/common';
 import { InstanceStatus, RunStatus } from '@prisma/client';
 import { RunsService } from './runs.service';
 import { SubmitInstanceDto } from './dto/submit-instance.dto';
@@ -16,7 +17,9 @@ describe('RunsService', () => {
     },
     namespaceInstance: {
       findUnique: jest.fn(),
+      findMany: jest.fn(),
       update: jest.fn(),
+      updateMany: jest.fn(),
       delete: jest.fn(),
     },
     instanceItem: {
@@ -403,6 +406,21 @@ describe('RunsService', () => {
       });
     });
 
+    // Before, `dokkimi run` stopped whichever run was active, even another
+    // terminal's
+    it('stops only the run asked for', async () => {
+      mockPrisma.run.findFirst.mockResolvedValue(null);
+
+      const result = await service.stopCurrentRun('run-2');
+
+      expect(mockPrisma.run.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'run-2', status: { in: ['PENDING', 'RUNNING'] } },
+        }),
+      );
+      expect(result).toEqual({ status: 'NO_ACTIVE_RUN' });
+    });
+
     it('should return NO_ACTIVE_RUN when nothing is running', async () => {
       mockPrisma.run.findFirst.mockResolvedValue(null);
 
@@ -418,17 +436,22 @@ describe('RunsService', () => {
 
   describe('handleValidationComplete', () => {
     beforeEach(() => {
-      mockPrisma.namespaceInstance.update.mockResolvedValue({
-        id: 'inst-1',
+      mockPrisma.namespaceInstance.updateMany.mockResolvedValue({ count: 1 });
+      mockPrisma.namespaceInstance.findUnique.mockResolvedValue({
         runId: 'run-1',
       });
+      mockLifecycle.stopInstance.mockClear().mockResolvedValue(undefined);
     });
 
     it('should update instance test status to PASSED', async () => {
       await service.handleValidationComplete('inst-1', true);
 
-      expect(mockPrisma.namespaceInstance.update).toHaveBeenCalledWith({
-        where: { id: 'inst-1' },
+      expect(mockPrisma.namespaceInstance.updateMany).toHaveBeenCalledWith({
+        where: {
+          id: 'inst-1',
+          status: { in: ['STARTING', 'RUNNING'] },
+          testStatus: null,
+        },
         data: {
           testStatus: 'PASSED',
           testCompletedAt: expect.any(Date),
@@ -444,8 +467,12 @@ describe('RunsService', () => {
         'assertion failed',
       );
 
-      expect(mockPrisma.namespaceInstance.update).toHaveBeenCalledWith({
-        where: { id: 'inst-1' },
+      expect(mockPrisma.namespaceInstance.updateMany).toHaveBeenCalledWith({
+        where: {
+          id: 'inst-1',
+          status: { in: ['STARTING', 'RUNNING'] },
+          testStatus: null,
+        },
         data: {
           testStatus: 'FAILED',
           testCompletedAt: expect.any(Date),
@@ -460,6 +487,14 @@ describe('RunsService', () => {
       await service.handleValidationComplete('inst-1', true);
 
       expect(mockLifecycle.stopInstance).toHaveBeenCalledWith('inst-1');
+    });
+
+    it('should ignore the result of an instance that is already over', async () => {
+      mockPrisma.namespaceInstance.updateMany.mockResolvedValue({ count: 0 });
+
+      await service.handleValidationComplete('inst-1', true);
+
+      expect(mockLifecycle.stopInstance).not.toHaveBeenCalled();
     });
   });
 
@@ -856,6 +891,76 @@ describe('RunsService', () => {
       mockCleanup.recoverOrphanedRuns.mockRejectedValue(new Error('DB down'));
 
       await expect(service.onApplicationBootstrap()).resolves.not.toThrow();
+    });
+  });
+
+  // Before, a teardown error after a passed test left the run running
+  it('checks the run even when stopping the instance fails', async () => {
+    mockPrisma.namespaceInstance.updateMany.mockResolvedValue({ count: 1 });
+    mockPrisma.namespaceInstance.findUnique.mockResolvedValue({
+      runId: 'run-1',
+    });
+    mockLifecycle.stopInstance.mockRejectedValueOnce(
+      new Error('network has active endpoints'),
+    );
+    mockScheduler.handleInstancesStopped.mockClear();
+
+    await service.handleValidationComplete('inst-1', true);
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(mockScheduler.handleInstancesStopped).toHaveBeenCalledWith([
+      'run-1',
+    ]);
+  });
+
+  describe('rejectSubmission', () => {
+    const rejected = new BadRequestException([
+      'definition.items.0.property bogus should not exist',
+      'definition.name must be a string',
+    ]);
+
+    beforeEach(() => {
+      mockScheduler.handleInstancesStopped.mockClear();
+      mockPrisma.namespaceInstance.updateMany.mockResolvedValue({ count: 1 });
+      mockPrisma.namespaceInstance.findMany.mockResolvedValue([]);
+    });
+
+    it('fails the pending instance with the reason, and checks the run', async () => {
+      await service.rejectSubmission('run-1', 'inst-1', rejected);
+
+      expect(mockPrisma.namespaceInstance.updateMany).toHaveBeenCalledWith({
+        where: { id: 'inst-1', runId: 'run-1', status: 'PENDING' },
+        data: {
+          status: 'FAILED',
+          errorMessage:
+            'Definition rejected: definition.items.0.property bogus should not exist; definition.name must be a string',
+          stoppedAt: expect.any(Date),
+        },
+      });
+      expect(mockScheduler.handleInstancesStopped).toHaveBeenCalledWith([
+        'run-1',
+      ]);
+    });
+
+    // The CLI submits one at a time: an instance not submitted yet would
+    // count as failed, and end the run early
+    it('waits while another instance has no definition yet', async () => {
+      mockPrisma.namespaceInstance.findMany.mockResolvedValue([
+        { id: 'inst-2' },
+      ]);
+      mockRunStorage.hasDefinition.mockResolvedValue(false);
+
+      await service.rejectSubmission('run-1', 'inst-1', rejected);
+
+      expect(mockScheduler.handleInstancesStopped).not.toHaveBeenCalled();
+    });
+
+    it('leaves an instance that is no longer pending alone', async () => {
+      mockPrisma.namespaceInstance.updateMany.mockResolvedValue({ count: 0 });
+
+      await service.rejectSubmission('run-1', 'inst-1', rejected);
+
+      expect(mockScheduler.handleInstancesStopped).not.toHaveBeenCalled();
     });
   });
 });

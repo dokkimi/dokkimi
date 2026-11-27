@@ -49,7 +49,7 @@ RUN yarn workspace @dokkimi/config build && \
 FROM node:22-alpine
 
 ARG VERSION=dev
-ENV APP_VERSION=${VERSION}
+ENV DOKKIMI_APP_VERSION=${VERSION}
 ENV CONTROL_TOWER_HOST=0.0.0.0
 
 WORKDIR /app

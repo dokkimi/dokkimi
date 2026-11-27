@@ -1,5 +1,6 @@
 import {
   ConflictException,
+  HttpException,
   Injectable,
   Logger,
   NotFoundException,
@@ -249,6 +250,55 @@ export class RunsService implements OnApplicationBootstrap {
     return { instanceId, status: 'PENDING' };
   }
 
+  /**
+   * Fails a pending instance whose submission was rejected, with the reason,
+   * and ends the run if nothing else is left. The run isn't checked while
+   * another instance is still waiting for its definition: the CLI submits
+   * one at a time, and those would count as failed.
+   */
+  async rejectSubmission(
+    runId: string,
+    instanceId: string,
+    err: unknown,
+  ): Promise<void> {
+    const response =
+      err instanceof HttpException ? err.getResponse() : undefined;
+    const detail =
+      response && typeof response === 'object' && 'message' in response
+        ? (response as { message: unknown }).message
+        : err instanceof Error
+          ? err.message
+          : String(err);
+    const reason = Array.isArray(detail) ? detail.join('; ') : String(detail);
+    try {
+      const { count } = await this.prisma.namespaceInstance.updateMany({
+        where: { id: instanceId, runId, status: InstanceStatus.PENDING },
+        data: {
+          status: InstanceStatus.FAILED,
+          errorMessage: `Definition rejected: ${reason}`,
+          stoppedAt: new Date(),
+        },
+      });
+      if (count === 0) {
+        return;
+      }
+      const waiting = await this.prisma.namespaceInstance.findMany({
+        where: { runId, status: InstanceStatus.PENDING },
+        select: { id: true },
+      });
+      for (const inst of waiting) {
+        if (!(await this.runStorage.hasDefinition(inst.id))) {
+          return;
+        }
+      }
+      await this.scheduler.handleInstancesStopped([runId]);
+    } catch (e) {
+      this.logger.error(
+        `Failed to record the rejected submission of instance ${instanceId}: ${e}`,
+      );
+    }
+  }
+
   async getRunHistory(projectPath?: string, limit = 10) {
     const runs = await this.prisma.run.findMany({
       where: projectPath ? { projectPath } : undefined,
@@ -342,9 +392,10 @@ export class RunsService implements OnApplicationBootstrap {
     };
   }
 
-  async stopCurrentRun() {
+  async stopCurrentRun(runId?: string) {
     const activeRun = await this.prisma.run.findFirst({
       where: {
+        ...(runId ? { id: runId } : {}),
         status: { in: [RunStatus.PENDING, RunStatus.RUNNING] },
       },
       orderBy: { createdAt: 'desc' },
@@ -544,24 +595,44 @@ export class RunsService implements OnApplicationBootstrap {
     passed: boolean,
     error?: string,
   ) {
-    const instance = await this.prisma.namespaceInstance.update({
-      where: { id: instanceId },
+    const { count } = await this.prisma.namespaceInstance.updateMany({
+      where: {
+        id: instanceId,
+        status: { in: [InstanceStatus.STARTING, InstanceStatus.RUNNING] },
+        testStatus: null,
+      },
       data: {
         testStatus: passed ? 'PASSED' : 'FAILED',
         testCompletedAt: new Date(),
         errorMessage: error ?? null,
       },
     });
+    if (count === 0) {
+      this.logger.warn(
+        `Ignoring the test result of instance ${instanceId}: it is already over`,
+      );
+      return;
+    }
 
+    const instance = await this.prisma.namespaceInstance.findUnique({
+      where: { id: instanceId },
+      select: { runId: true },
+    });
+
+    // The run is checked even when the teardown fails: before, a teardown
+    // error after a passed test left the run running forever
     this.lifecycle
       .stopInstance(instanceId)
+      .catch((err) => {
+        this.logger.error(`Failed to stop instance ${instanceId}:`, err);
+      })
       .then(() => {
-        if (instance.runId) {
+        if (instance?.runId) {
           return this.scheduler.handleInstancesStopped([instance.runId]);
         }
       })
       .catch((err) => {
-        this.logger.error(`Failed to stop instance ${instanceId}:`, err);
+        this.logger.error(`Failed to finish instance ${instanceId}:`, err);
       });
   }
 

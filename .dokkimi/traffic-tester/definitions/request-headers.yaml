@@ -1,0 +1,84 @@
+name: request-headers
+description: A service receives only the headers the caller sent, so it compresses only if asked
+config:
+  timeoutSeconds: 120
+items:
+  # Answers with the headers it received, compressed if the caller accepts gzip
+  - type: SERVICE
+    name: echo
+    image: ghcr.io/dokkimi/traffic-tester:0.1.0
+    port: 4000
+    healthCheck: /health
+    command:
+      - node
+      - -e
+      - |
+        require('http').createServer((req, res) => {
+          const { 'accept-encoding': encoding = 'none', 'user-agent': agent = 'none' } = req.headers;
+          const body = JSON.stringify({ encoding, agent });
+          res.setHeader('Content-Type', 'application/json');
+          if (encoding.includes('gzip')) {
+            res.setHeader('Content-Encoding', 'gzip');
+            return res.end(require('zlib').gzipSync(body));
+          }
+          res.end(body);
+        }).listen(4000);
+  # Calls echo with no headers of its own, and answers with the result
+  - type: SERVICE
+    name: caller
+    image: ghcr.io/dokkimi/traffic-tester:0.1.0
+    port: 4000
+    healthCheck: /health
+    command:
+      - node
+      - -e
+      - |
+        const http = require('http');
+        http.createServer((req, res) => {
+          if (req.url === '/health') {
+            return res.end('ok');
+          }
+          http.get('http://echo/x', (response) => {
+            res.setHeader('Content-Type', 'application/json');
+            response.pipe(res);
+          });
+        }).listen(4000);
+tests:
+  - name: Between services
+    steps:
+      - name: Caller sends no headers
+        action: { type: httpRequest, method: GET, url: caller/x }
+        assertions:
+          - assertions:
+              - { path: $.response.body.encoding, operator: eq, value: none }
+              - { path: $.response.body.agent, operator: eq, value: none }
+          - match:
+              path: $.traffic
+              where:
+                - { path: $$.to, operator: eq, value: echo }
+                - { path: $$.response.body.encoding, operator: eq, value: none }
+                - { path: $$.response.headers.content-length, operator: exists }
+              count: 1
+  - name: From steps
+    steps:
+      - name: A step that doesn't ask for compression
+        action: { type: httpRequest, method: GET, url: echo/x }
+        assertions:
+          - assertions:
+              - { path: $.response.body.encoding, operator: eq, value: none }
+              - { path: $.response.headers.content-length, operator: exists }
+      - name: A step that does
+        action:
+          type: httpRequest
+          method: GET
+          url: echo/x
+          headers: { Accept-Encoding: gzip, User-Agent: step }
+        assertions:
+          - assertions:
+              - { path: $.response.body.encoding, operator: eq, value: gzip }
+              - { path: $.response.body.agent, operator: eq, value: step }
+              - {
+                  path: $.response.headers.content-encoding,
+                  operator: eq,
+                  value: gzip,
+                }

@@ -38,12 +38,17 @@ export class DockerBrokerGroupService {
     const brokerProxyName = `${containerName}-brokerproxy-${instanceId}`;
     const brokerContainerName = `${containerName}-broker-${instanceId}`;
 
-    const effectiveInternalPort = item.port || brokerCfg.internalPort;
+    // `port` is the one clients connect to, so the proxy listens on it. The
+    // broker, which shares the proxy's network namespace, stays on a fixed
+    // internal port: before, `port` moved the broker instead, so the proxy
+    // dialled itself (port equal to the native one) or was bypassed.
+    const proxyPort = item.port || brokerCfg.nativePort;
+    const internalPort = brokerCfg.internalPort;
 
     const brokerProxyEnvEntries = buildBrokerProxyEnvVars(config, {
       brokerType: item.broker,
-      brokerPort: String(effectiveInternalPort),
-      proxyPort: String(brokerCfg.nativePort),
+      brokerPort: String(internalPort),
+      proxyPort: String(proxyPort),
       instanceItemName: item.name,
       namespace: instanceId,
       namespaceItemId: instanceItemId,
@@ -55,12 +60,12 @@ export class DockerBrokerGroupService {
     const brokerEnv: Record<string, string> = { ...brokerCfg.environment };
     // Tell RabbitMQ to listen on the internal port
     if (item.broker.toLowerCase() === 'amqp') {
-      brokerEnv.RABBITMQ_NODE_PORT = String(effectiveInternalPort);
+      brokerEnv.RABBITMQ_NODE_PORT = String(internalPort);
     }
     // Kafka: configure listeners on internal port, advertise via proxy port
     if (item.broker.toLowerCase() === 'kafka') {
-      brokerEnv.KAFKA_LISTENERS = `PLAINTEXT://0.0.0.0:${effectiveInternalPort},CONTROLLER://localhost:9093`;
-      brokerEnv.KAFKA_ADVERTISED_LISTENERS = `PLAINTEXT://${containerName}:${brokerCfg.nativePort}`;
+      brokerEnv.KAFKA_LISTENERS = `PLAINTEXT://0.0.0.0:${internalPort},CONTROLLER://localhost:9093`;
+      brokerEnv.KAFKA_ADVERTISED_LISTENERS = `PLAINTEXT://${containerName}:${proxyPort}`;
     }
 
     if (item.env) {
@@ -83,7 +88,7 @@ export class DockerBrokerGroupService {
       networkName,
       networkAliases: [containerName],
       env: brokerProxyEnv,
-      exposedPorts: [brokerCfg.nativePort, effectiveInternalPort],
+      exposedPorts: [proxyPort, internalPort],
       labels: {
         'io.dokkimi.instance-id': instanceId,
         'io.dokkimi.role': 'broker-proxy',
@@ -97,13 +102,15 @@ export class DockerBrokerGroupService {
       networkName,
       networkMode: `container:${brokerProxyName}`,
       env: brokerEnv,
-      exposedPorts: [effectiveInternalPort],
+      exposedPorts: [internalPort],
       labels: {
         'io.dokkimi.instance-id': instanceId,
         'io.dokkimi.role': 'broker',
         'io.dokkimi.item-name': item.name,
       },
       ...(item.command ? { cmd: item.command } : {}),
+      maxCpu: item.maxCpu,
+      maxMemory: item.maxMemory,
     });
 
     this.logger.log(`Created broker group for ${item.name} (${item.broker})`);

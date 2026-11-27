@@ -3,6 +3,9 @@ package shared
 import (
 	"encoding/json"
 	"errors"
+	"math"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"testing"
@@ -339,4 +342,36 @@ func containsHelper(s, substr string) bool {
 		}
 	}
 	return false
+}
+
+// NaN and Infinity, which JSON can't hold, are logged as text. Before, the
+// whole log couldn't be encoded and was lost.
+func TestLog_NonFiniteNumbers(t *testing.T) {
+	got := make(chan map[string]interface{}, 1)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var m map[string]interface{}
+		json.NewDecoder(r.Body).Decode(&m)
+		got <- m
+	}))
+	defer srv.Close()
+	logger := NewQueryLogger(srv.URL, time.Second)
+	defer logger.Stop()
+
+	logger.Log(DatabaseLogMessage{
+		Query:  "SELECT 'NaN'::float8 AS a",
+		Data:   []map[string]interface{}{{"a": math.NaN(), "b": []interface{}{math.Inf(1)}, "c": map[string]interface{}{"d": math.Inf(-1)}, "e": 1.5}},
+		Params: map[string]interface{}{"p": math.NaN()},
+	})
+	select {
+	case m := <-got:
+		row := m["data"].([]interface{})[0].(map[string]interface{})
+		if row["a"] != "NaN" || row["b"].([]interface{})[0] != "Infinity" || row["c"].(map[string]interface{})["d"] != "-Infinity" || row["e"] != 1.5 {
+			t.Errorf("row logged as %v", row)
+		}
+		if m["params"].(map[string]interface{})["p"] != "NaN" || m["rowsAffected"] != float64(0) {
+			t.Errorf("logged as %v, want params.p NaN and rowsAffected 0", m)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("nothing was logged")
+	}
 }

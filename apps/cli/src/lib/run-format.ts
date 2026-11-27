@@ -1,17 +1,10 @@
 import { formatDuration, statusColor } from './formatting';
 import type { RunStatusInstance, RunStatusResponse } from './run-display';
+import { outcomeLabel, outcomeOf } from './outcome';
 
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
-
-export const TERMINAL_INSTANCE_STATUSES = new Set([
-  'PASSED',
-  'FAILED',
-  'STOPPED',
-  'COMPLETED',
-  'SKIPPED',
-]);
 
 export const SPINNER_FRAMES = ['⣶', '⣧', '⣏', '⡟', '⠿', '⢻', '⣹', '⣼'];
 
@@ -28,6 +21,7 @@ export interface CategorizedInstances {
 }
 
 export function categorizeInstances(
+  runStatus: string,
   instances: RunStatusInstance[],
 ): CategorizedInstances {
   const inProgress: RunStatusInstance[] = [];
@@ -37,18 +31,20 @@ export function categorizeInstances(
   let failedCount = 0;
 
   for (const inst of instances) {
-    const ds = inst.testStatus ?? inst.status;
-    if (ds === 'PENDING') {
-      pendingCount++;
-    } else if (TERMINAL_INSTANCE_STATUSES.has(ds)) {
-      done.push(inst);
-      if (ds === 'PASSED' || ds === 'COMPLETED') {
-        passedCount++;
-      } else if (ds === 'FAILED') {
-        failedCount++;
+    const outcome = outcomeOf(runStatus, inst);
+    if (outcome === 'running') {
+      if (inst.status === 'PENDING') {
+        pendingCount++;
+      } else {
+        inProgress.push(inst);
       }
+      continue;
+    }
+    done.push(inst);
+    if (outcome === 'passed') {
+      passedCount++;
     } else {
-      inProgress.push(inst);
+      failedCount++;
     }
   }
 
@@ -60,22 +56,22 @@ export function categorizeInstances(
 // ---------------------------------------------------------------------------
 
 export function formatInstanceLine(
+  runStatus: string,
   inst: RunStatusInstance,
   startedAt: number | undefined,
   completedAt: number | undefined,
   spinner: string,
 ): string {
   const name = inst.name.padEnd(30);
-  const displayStatus = inst.testStatus ?? inst.status;
-  const isTerminal = TERMINAL_INSTANCE_STATUSES.has(displayStatus);
+  const outcome = outcomeOf(runStatus, inst);
+  const displayStatus = outcomeLabel(runStatus, inst);
+  const isTerminal = outcome !== 'running';
   const color = statusColor(displayStatus);
 
   let prefix: string;
-  if (displayStatus === 'SKIPPED') {
-    prefix = '\x1b[90m–\x1b[0m';
-  } else if (!isTerminal) {
+  if (!isTerminal) {
     prefix = `\x1b[36m${spinner}\x1b[0m`;
-  } else if (displayStatus === 'PASSED' || displayStatus === 'COMPLETED') {
+  } else if (outcome === 'passed') {
     prefix = '\x1b[32m✔\x1b[0m';
   } else {
     prefix = '\x1b[31m✘\x1b[0m';
@@ -121,13 +117,6 @@ export function printSummary(
   instanceCompletedAt: Map<string, number>,
 ): void {
   console.log('');
-  const skippedCount = status.instances.filter(
-    (i) => (i.testStatus ?? i.status) === 'SKIPPED',
-  ).length;
-  const ran = status.instances.length - skippedCount;
-  const failed = status.instances.filter(
-    (i) => (i.testStatus ?? i.status) === 'FAILED',
-  ).length;
   const instanceDurations: number[] = [];
   for (const inst of status.instances) {
     const started = instanceStartedAt.get(inst.id);
@@ -143,21 +132,40 @@ export function printSummary(
       `avg ${formatDuration(Math.round(instanceDurations.reduce((a, b) => a + b, 0) / instanceDurations.length))}`,
     );
   }
-  if (skippedCount > 0) {
-    statParts.push(`${skippedCount} skipped`);
-  }
   const stats = `\x1b[90m(${statParts.join(', ')})\x1b[0m`;
 
-  if (status.status === 'CANCELLED') {
-    console.log(`\x1b[33mRun cancelled.\x1b[0m  ${stats}`);
-  } else if (failed === 0) {
-    console.log(
-      `\x1b[32m${ran} of ${ran} definition${ran === 1 ? '' : 's'} passed.\x1b[0m  ${stats}`,
-    );
-  } else {
-    console.log(
-      `\x1b[31m${failed} of ${ran} definition${ran === 1 ? '' : 's'} failed.\x1b[0m  ${stats}`,
-    );
-  }
+  console.log(
+    `${formatOutcomeCounts(status.status, status.instances)}  ${stats}`,
+  );
   console.log('');
+}
+
+/**
+ * "3 of 4 definitions passed: 1 not run". Before, a definition that didn't
+ * pass but didn't fail (cancelled, never run, invalid) still read as passed.
+ */
+export function formatOutcomeCounts(
+  runStatus: string,
+  instances: RunStatusInstance[],
+): string {
+  const counts = new Map<string, number>();
+  let passed = 0;
+  for (const inst of instances) {
+    const outcome = outcomeOf(runStatus, inst);
+    if (outcome === 'passed') {
+      passed++;
+    } else {
+      const label = outcomeLabel(runStatus, inst).toLowerCase();
+      counts.set(label, (counts.get(label) ?? 0) + 1);
+    }
+  }
+  const total = instances.length;
+  const noun = `definition${total === 1 ? '' : 's'}`;
+  if (passed === total) {
+    return `\x1b[32m${total} of ${total} ${noun} passed.\x1b[0m`;
+  }
+  const rest = [...counts].map(([label, n]) => `${n} ${label}`).join(', ');
+  const color = runStatus === 'CANCELLED' ? '\x1b[33m' : '\x1b[31m';
+  const cancelled = runStatus === 'CANCELLED' ? 'Run cancelled. ' : '';
+  return `${color}${cancelled}${passed} of ${total} ${noun} passed: ${rest}.\x1b[0m`;
 }

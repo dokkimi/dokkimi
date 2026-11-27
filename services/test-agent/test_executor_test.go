@@ -2,8 +2,13 @@ package main
 
 import (
 	"context"
+	"errors"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
+	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -331,6 +336,63 @@ func TestTestExecutor_RequestTimeout(t *testing.T) {
 	}
 }
 
+func TestTestExecutor_TimeoutOfActionOverDefault(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case <-time.After(300 * time.Millisecond):
+		case <-r.Context().Done():
+		}
+	}))
+	defer server.Close()
+
+	for _, tt := range []struct {
+		name            string
+		defaultTimeout  time.Duration
+		actionTimeoutMs int
+		wantErr         bool
+	}{
+		{"default long enough", 5 * time.Second, 0, false},
+		{"default too short", 50 * time.Millisecond, 0, true},
+		{"action longer than the default", 50 * time.Millisecond, 5000, false},
+		{"action shorter than the default", 5 * time.Second, 50, true},
+	} {
+		executor := NewTestExecutor(server.URL, tt.defaultTimeout, nil, nil)
+		action := StepAction{Type: "httpRequest", Method: "GET", URL: "service/x", Timeout: tt.actionTimeoutMs}
+		if _, err := executor.doAPIRequest(context.Background(), action, server.URL+"/service/x"); (err != nil) != tt.wantErr {
+			t.Errorf("%s: err %v", tt.name, err)
+		}
+	}
+}
+
+func TestTestExecutor_ResponseBreaksOff(t *testing.T) {
+	var requests atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests.Add(1)
+		w.Header().Set("Content-Length", "1000")
+		w.Write([]byte(`{"partial":`))
+		w.(http.Flusher).Flush()
+		if r.URL.Path == "/service/hangs" {
+			<-r.Context().Done()
+		}
+		panic(http.ErrAbortHandler)
+	}))
+	defer server.Close()
+
+	for path, cause := range map[string]string{"/crashes": "unexpected EOF", "/hangs": "context deadline exceeded"} {
+		requests.Store(0)
+		executor := NewTestExecutor(server.URL, 200*time.Millisecond, nil, nil)
+		step := TestStep{Action: StepAction{Type: "httpRequest", Method: "POST", URL: "service" + path}}
+		_, err := executor.executeStep(context.Background(), step, 0)
+		want := "POST service" + path + " failed: the response broke off after status 200: " + cause
+		if err == nil || err.Error() != want {
+			t.Errorf("got error %v, want %q", err, want)
+		}
+		if requests.Load() != 1 {
+			t.Errorf("%s: the request was sent %d times", path, requests.Load())
+		}
+	}
+}
+
 // ── Audit finding #2: test-level loop + startAtStep skipping step 0 prevents variable setup ──
 
 func TestTestExecutor_TestVarsNotSeededWhenStartAtStepSkipsStepZero(t *testing.T) {
@@ -379,5 +441,234 @@ func TestTestExecutor_TestVarsNotSeededWhenStartAtStepSkipsStepZero(t *testing.T
 		t.Errorf("Bug #2: test-level variable {{testVar}} not set when startAtStep skips step 0: %v", varErr)
 	} else if val != "should-be-seeded" {
 		t.Errorf("Bug #2: expected testVar='should-be-seeded', got '%s'", val)
+	}
+}
+
+func TestTestExecutor_TestLevelLoopUsesTestVariables(t *testing.T) {
+	var paths []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		paths = append(paths, r.URL.Path)
+		w.Write([]byte(`{}`))
+	}))
+	defer server.Close()
+
+	executor := NewTestExecutor(server.URL, 30*time.Second, nil, nil)
+	testConfig := &TestConfig{
+		TestRunID: "run",
+		Variables: map[string]interface{}{"defIds": []interface{}{"a", "b"}},
+		Tests: []TestDefinition{
+			{
+				Name:    "definition variable",
+				ForEach: &ForEachLoop{Items: "{{defIds}}", As: "id"},
+				Steps:   []TestStep{{Action: StepAction{Type: "httpRequest", Method: "GET", URL: "svc/{{id}}"}}},
+			},
+			{
+				Name:      "test variable",
+				Variables: map[string]interface{}{"testIds": []interface{}{"c", "d"}},
+				ForEach:   &ForEachLoop{Items: "{{testIds}}", As: "id"},
+				Steps:     []TestStep{{Action: StepAction{Type: "httpRequest", Method: "GET", URL: "svc/{{id}}"}}},
+			},
+		},
+	}
+
+	if _, err := executor.ExecuteTests(context.Background(), testConfig, 0, -1); err != nil {
+		t.Fatalf("ExecuteTests() error = %v", err)
+	}
+	if want := []string{"/svc/a", "/svc/b", "/svc/c", "/svc/d"}; !reflect.DeepEqual(paths, want) {
+		t.Errorf("requested %v, want %v", paths, want)
+	}
+}
+
+func TestTestExecutor_StopOnFailureFalseContinuesAndFails(t *testing.T) {
+	failing := []AssertionBlock{{Assertions: []Assertion{{Path: "$.variables.missing", Operator: "exists"}}}}
+	no := false
+	for _, tc := range []struct {
+		name     string
+		test     TestDefinition
+		failures int
+	}{
+		{"on the step", TestDefinition{Name: "t", Steps: []TestStep{
+			{StopOnFailure: &no, Action: StepAction{Type: "wait", DurationMs: 1}, Assertions: failing},
+			{Action: StepAction{Type: "wait", DurationMs: 1}},
+		}}, 1},
+		{"on the test", TestDefinition{Name: "t", StopOnFailure: &no, Steps: []TestStep{
+			{Action: StepAction{Type: "wait", DurationMs: 1}, Assertions: failing},
+			{Action: StepAction{Type: "wait", DurationMs: 1}},
+		}}, 1},
+		{"in a loop", TestDefinition{Name: "t", Steps: []TestStep{
+			{StopOnFailure: &no, Repeat: &RepeatLoop{Count: 2, As: "i", Assertions: LoopAssertions{Blocks: failing}}, Action: StepAction{Type: "wait", DurationMs: 1}},
+			{Action: StepAction{Type: "wait", DurationMs: 1}},
+		}}, 2},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			executor := NewTestExecutor("http://unused", time.Second, nil, nil)
+			executor.SetInlineValidation(NewStepValidator(NewStepLogBuffer(), executor.VarContext()), nil, "run")
+			execs, err := executor.ExecuteTests(context.Background(), &TestConfig{TestRunID: "run", Tests: []TestDefinition{tc.test}}, 0, -1)
+			if err != nil {
+				t.Fatalf("ExecuteTests() error = %v, want the test to continue", err)
+			}
+			if len(execs) != 2 {
+				t.Errorf("ran %d steps, want 2", len(execs))
+			}
+			if got := len(executor.ContinuedFailures()); got != tc.failures {
+				t.Errorf("%d failures recorded, want %d: %v", got, tc.failures, executor.ContinuedFailures())
+			}
+		})
+	}
+}
+
+func TestTestExecutor_WaitEndsAtTheDeadline(t *testing.T) {
+	executor := NewTestExecutor("http://unused", time.Second, nil, nil)
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	start := time.Now()
+	_, err := executor.executeStep(ctx, TestStep{Action: StepAction{Type: "wait", DurationMs: 5000}}, 0)
+	if !errors.Is(err, context.DeadlineExceeded) || time.Since(start) > time.Second {
+		t.Errorf("got %v after %v, want the deadline right away", err, time.Since(start))
+	}
+}
+
+func TestTestExecutor_DokkimiErrorsFailTheStep(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		header  bool
+		wantErr bool
+	}{
+		{"Dokkimi couldn't deliver it", true, true},
+		{"the service answered 502", false, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if tc.header {
+					w.Header().Set(dokkimiErrorHeader, "true")
+				}
+				w.WriteHeader(http.StatusBadGateway)
+				w.Write([]byte("Proxy error: no service named \"nosuch\"\n"))
+			}))
+			defer server.Close()
+			executor := NewTestExecutor(server.URL, time.Second, nil, nil)
+			resp, err := executor.executeAPIStep(context.Background(), StepAction{Type: "httpRequest", Method: "GET", URL: "nosuch/x"}, 0)
+			if tc.wantErr {
+				if err == nil || !strings.Contains(err.Error(), `no service named "nosuch"`) {
+					t.Errorf("got %v, want the interceptor's error", err)
+				}
+			} else if err != nil || resp["statusCode"] != http.StatusBadGateway {
+				t.Errorf("got %v %v, want the 502 as a response", resp, err)
+			}
+		})
+	}
+}
+
+func TestQueryFailure(t *testing.T) {
+	failed := map[string]interface{}{"success": false, "error": `relation "x" does not exist`}
+	if err := queryFailure(StepAction{Database: "pg"}, failed); err == nil || !strings.Contains(err.Error(), `pg failed: relation "x"`) {
+		t.Errorf("got %v", err)
+	}
+	if err := queryFailure(StepAction{}, map[string]interface{}{"success": true}); err != nil {
+		t.Errorf("got %v for a query that worked", err)
+	}
+	for path, want := range map[string]bool{"$.response.success": true, "$.response.error": true, "$.response.data": false} {
+		step := TestStep{Assertions: []AssertionBlock{{Assertions: []Assertion{{Path: path, Operator: "exists"}}}}}
+		if got := assertsOnQueryOutcome(step); got != want {
+			t.Errorf("assertsOnQueryOutcome(%s) = %v, want %v", path, got, want)
+		}
+	}
+}
+
+func TestTestExecutor_UntilFailsWhenTheLastIterationFailed(t *testing.T) {
+	executor := NewTestExecutor("http://127.0.0.1:1", time.Second, nil, nil)
+	step := TestStep{
+		Action: StepAction{Type: "httpRequest", Method: "GET", URL: "svc/x"},
+		Repeat: &RepeatLoop{Count: 2, As: "i", Until: []Assertion{{Path: "$.response.status", Operator: "eq", Value: float64(200)}}},
+	}
+	if _, err := executor.executeStepAt(context.Background(), flatStep{step: step}); err == nil {
+		t.Error("want an error: no iteration got a response")
+	}
+}
+
+func TestTestExecutor_LoopStoppedByTheDeadlineHasAnEndTime(t *testing.T) {
+	executor := NewTestExecutor("http://unused", time.Second, nil, nil)
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	step := TestStep{Action: StepAction{Type: "wait", DurationMs: 1}, Repeat: &RepeatLoop{Count: 2, As: "i", DelayMs: 5000}}
+	exec, err := executor.executeStepAt(ctx, flatStep{step: step})
+	if !errors.Is(err, context.DeadlineExceeded) || exec.EndTime == "" {
+		t.Errorf("got %v with end time %q, want the deadline and an end time", err, exec.EndTime)
+	}
+}
+
+// A 5xx from the service is its answer: it goes to the assertions and the
+// request is not sent again (a retried POST would repeat its effects).
+func TestTestExecutor_ServiceErrorsAreNotRetried(t *testing.T) {
+	for _, status := range []int{http.StatusBadGateway, http.StatusServiceUnavailable, http.StatusGatewayTimeout, http.StatusInternalServerError} {
+		var requests atomic.Int32
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			requests.Add(1)
+			w.WriteHeader(status)
+		}))
+		executor := NewTestExecutor(server.URL, time.Second, nil, nil)
+		resp, err := executor.executeAPIStep(context.Background(), StepAction{Type: "httpRequest", Method: "POST", URL: "svc/orders"}, 0)
+		server.Close()
+		if err != nil || resp["statusCode"] != status {
+			t.Errorf("%d: got %v %v, want the response", status, resp, err)
+		}
+		if n := requests.Load(); n != 1 {
+			t.Errorf("%d: the service received %d requests, want 1", status, n)
+		}
+	}
+}
+
+// When the interceptor answers with X-Dokkimi-Error, the service may already
+// have received the request (it crashed or closed the connection), so the
+// request is not sent again: the step fails with the interceptor's message.
+func TestTestExecutor_DokkimiErrorIsNotRetried(t *testing.T) {
+	var requests atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests.Add(1)
+		w.Header().Set(dokkimiErrorHeader, "true")
+		w.WriteHeader(http.StatusBadGateway)
+		w.Write([]byte("Proxy error: EOF\n"))
+	}))
+	defer server.Close()
+	executor := NewTestExecutor(server.URL, time.Second, nil, nil)
+	_, err := executor.executeAPIStep(context.Background(), StepAction{Type: "httpRequest", Method: "POST", URL: "svc/orders"}, 0)
+	if err == nil || !strings.Contains(err.Error(), "Proxy error: EOF") {
+		t.Errorf("got %v, want the interceptor's error", err)
+	}
+	if n := requests.Load(); n != 1 {
+		t.Errorf("the interceptor received %d requests, want 1", n)
+	}
+}
+
+// When the test agent can't reach its interceptor, the request never got to
+// the service, so it is sent again.
+func TestTestExecutor_UnreachableInterceptorIsRetried(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	addr := ln.Addr().String()
+	ln.Close() // nothing listens yet: the first attempt is refused
+
+	var requests atomic.Int32
+	server := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests.Add(1)
+		w.WriteHeader(http.StatusCreated)
+	})}
+	go func() {
+		time.Sleep(200 * time.Millisecond) // up before the first retry (500 ms)
+		if l, err := net.Listen("tcp", addr); err == nil {
+			server.Serve(l)
+		}
+	}()
+	defer server.Close()
+
+	executor := NewTestExecutor("http://"+addr, time.Second, nil, nil)
+	resp, err := executor.executeAPIStep(context.Background(), StepAction{Type: "httpRequest", Method: "POST", URL: "svc/orders"}, 0)
+	if err != nil || resp["statusCode"] != http.StatusCreated {
+		t.Errorf("got %v %v, want the 201 after a retry", resp, err)
+	}
+	if n := requests.Load(); n != 1 {
+		t.Errorf("the service received %d requests, want 1", n)
 	}
 }

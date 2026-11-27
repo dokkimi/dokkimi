@@ -18,7 +18,6 @@ jest.mock('../lib/terminal', () => ({
 }));
 
 jest.mock('../lib/editor', () => ({
-  stripIds: jest.fn((x: unknown) => x),
   formatHttpLog: jest.fn(() => 'formatted'),
   openInEditor: jest.fn(),
 }));

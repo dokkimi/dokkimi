@@ -36,7 +36,7 @@ yarn add -D dokkimi
 
 ## Prerequisites
 
-- Node.js 20+
+- Node.js 22+
 - Docker
 
 Run `dokkimi doctor` after installing to verify your setup.
@@ -90,11 +90,20 @@ tests:
             - screenshot: post-published
         assertions:
           - match:
-              origin: web-app
-              method: POST
-              url: api-gateway/v1/posts
+              path: $.traffic
+              where:
+                - path: $$.origin
+                  operator: eq
+                  value: web-app
+                - path: $$.request.method
+                  operator: eq
+                  value: POST
+                - path: $$.request.url
+                  operator: contains
+                  value: api-gateway/v1/posts
+              count: 1
             assertions:
-              - path: response.status
+              - path: $.match.response.status
                 operator: eq
                 value: 201
 
@@ -105,7 +114,7 @@ tests:
           query: "SELECT title FROM posts WHERE title = 'My new post'"
         assertions:
           - assertions:
-              - path: data[0].title
+              - path: $.response.data[0].title
                 operator: eq
                 value: My new post
 ```
@@ -125,7 +134,7 @@ env:
   - name: DATABASE_URL
     value: postgresql://dokkimi:dokkimi@postgres-db:5432/dokkimi
   - name: USER_SERVICE_URL
-    value: http://user-service:3000
+    value: http://user-service
 ```
 
 Image tags and other values can be centralized in `.dokkimi/config.yaml` using `${{VAR}}` syntax — change once, apply everywhere.
@@ -142,7 +151,7 @@ Image tags and other values can be centralized in `.dokkimi/config.yaml` using `
 | `dokkimi dump`              | Export last run as JSON for AI-assisted debugging |
 | `dokkimi doctor`            | Check prerequisites and system health             |
 | `dokkimi status`            | Show whether Dokkimi is running                   |
-| `dokkimi clean`             | Stop all instances and clean up resources         |
+| `dokkimi clean`             | Stop this project's instances, delete its runs    |
 | `dokkimi config`            | View and edit Dokkimi settings                    |
 | `dokkimi reboot`            | Restart Dokkimi services                          |
 | `dokkimi uninstall`         | Remove Dokkimi from your system                   |

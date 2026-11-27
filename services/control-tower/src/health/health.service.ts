@@ -1,6 +1,8 @@
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { ReadinessStatus } from '@prisma/client';
+import { ReadinessStatus, RunStatus } from '@prisma/client';
+import { ConfigService } from '@nestjs/config';
+import { Concurrency, DOKKIMI_VERSION } from '@dokkimi/config';
 import { HealthStatusDto } from './dto/health-status.dto';
 
 export interface HealthCheckResult {
@@ -15,7 +17,11 @@ export interface HealthStatus {
   service: string;
   timestamp: string;
   uptime: number;
-  version?: string;
+  version: string;
+  /** A run is pending or running: the CLI restarts an old version only when not */
+  activeRun: boolean;
+  /** What it runs with: the CLI restarts it, when idle, to apply a change */
+  concurrency: Concurrency;
   checks: {
     database: HealthCheckResult;
     prisma: HealthCheckResult;
@@ -27,10 +33,13 @@ export class HealthService {
   private readonly logger = new Logger(HealthService.name);
   private readonly startTime = Date.now();
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly config: ConfigService,
+  ) {}
 
   async getHealthStatus(): Promise<HealthStatus> {
-    const [database, prisma] = await Promise.all([
+    const [database, { result: prisma, activeRun }] = await Promise.all([
       this.checkDatabase(),
       this.checkPrisma(),
     ]);
@@ -43,7 +52,14 @@ export class HealthService {
       service: 'control-tower',
       timestamp: new Date().toISOString(),
       uptime: Math.floor((Date.now() - this.startTime) / 1000),
-      version: process.env.APP_VERSION || process.env.npm_package_version,
+      version: DOKKIMI_VERSION,
+      activeRun,
+      concurrency: {
+        maxConcurrentTests: this.config.get<number>(
+          'MAX_CONCURRENT_NAMESPACES',
+        )!,
+        maxBootingTests: this.config.get<number>('MAX_BOOTING_NAMESPACES')!,
+      },
       checks: {
         database,
         prisma,
@@ -77,16 +93,25 @@ export class HealthService {
     }
   }
 
-  private async checkPrisma(): Promise<HealthCheckResult> {
+  private async checkPrisma(): Promise<{
+    result: HealthCheckResult;
+    activeRun: boolean;
+  }> {
     const startTime = Date.now();
     try {
-      await this.prisma.run.findFirst({ take: 1 });
+      const active = await this.prisma.run.findFirst({
+        where: { status: { in: [RunStatus.PENDING, RunStatus.RUNNING] } },
+        select: { id: true },
+      });
       const latency = Date.now() - startTime;
 
       return {
-        status: 'healthy',
-        message: 'Prisma client connection successful',
-        latency,
+        result: {
+          status: 'healthy',
+          message: 'Prisma client connection successful',
+          latency,
+        },
+        activeRun: active !== null,
       };
     } catch (error) {
       const latency = Date.now() - startTime;
@@ -95,10 +120,13 @@ export class HealthService {
         error instanceof Error ? error.stack : String(error),
       );
       return {
-        status: 'unhealthy',
-        message: 'Prisma client connection failed',
-        latency,
-        error: error instanceof Error ? error.message : 'Unknown error',
+        result: {
+          status: 'unhealthy',
+          message: 'Prisma client connection failed',
+          latency,
+          error: error instanceof Error ? error.message : 'Unknown error',
+        },
+        activeRun: false,
       };
     }
   }

@@ -42,7 +42,7 @@ type DatabaseInfo struct {
 type DBQueryResult struct {
 	Success      bool                     `json:"success"`
 	Data         []map[string]interface{} `json:"data,omitempty"`
-	RowsAffected int64                    `json:"rowsAffected,omitempty"`
+	RowsAffected int64                    `json:"rowsAffected"` // rows changed by a write, or returned by a read
 	Error        string                   `json:"error,omitempty"`
 	Duration     int                      `json:"duration,omitempty"`
 }
@@ -240,6 +240,7 @@ func (e *DatabaseQueryExecutor) logQueryResult(
 		"databaseName":   databaseName,
 		"query":          query,
 		"success":        success,
+		"rowsAffected":   rowsAffected,
 		"timestamp":      time.Now().UTC().Format(time.RFC3339Nano),
 	}
 
@@ -252,9 +253,6 @@ func (e *DatabaseQueryExecutor) logQueryResult(
 			logMessage["data"] = data
 		} else if data != nil {
 			logMessage["data"] = []interface{}{}
-		}
-		if rowsAffected > 0 {
-			logMessage["rowsAffected"] = rowsAffected
 		}
 		if duration > 0 {
 			logMessage["duration"] = duration

@@ -1,5 +1,5 @@
 import { validateDefinition } from './validate';
-import { makeResult, makeMockFs } from './test-helpers';
+import { makeResult, makeMockFs, ONE_TEST } from './test-helpers';
 
 // ---------------------------------------------------------------------------
 // validateDefinition
@@ -19,6 +19,7 @@ describe('validateDefinition', () => {
     const r = makeResult();
     validateDefinition(
       {
+        tests: ONE_TEST,
         name: 'my-def',
         items: [{ type: 'DATABASE', name: 'pg', database: 'postgres' }],
       },
@@ -31,7 +32,7 @@ describe('validateDefinition', () => {
 
   it('errors on missing name', () => {
     const r = makeResult();
-    validateDefinition({ items: [] }, '/f.json', r, fs);
+    validateDefinition({ tests: ONE_TEST, items: [] }, '/f.json', r, fs);
     expect(r.errors.some((e) => e.includes('missing or empty "name"'))).toBe(
       true,
     );
@@ -39,13 +40,23 @@ describe('validateDefinition', () => {
 
   it('errors on name exceeding max length', () => {
     const r = makeResult();
-    validateDefinition({ name: 'a'.repeat(101), items: [] }, '/f.json', r, fs);
+    validateDefinition(
+      { tests: ONE_TEST, name: 'a'.repeat(101), items: [] },
+      '/f.json',
+      r,
+      fs,
+    );
     expect(r.errors.some((e) => e.includes('exceeds'))).toBe(true);
   });
 
   it('errors when items is not an array', () => {
     const r = makeResult();
-    validateDefinition({ name: 'def', items: 'bad' }, '/f.json', r, fs);
+    validateDefinition(
+      { tests: ONE_TEST, name: 'def', items: 'bad' },
+      '/f.json',
+      r,
+      fs,
+    );
     expect(r.errors.some((e) => e.includes('"items" must be an array'))).toBe(
       true,
     );
@@ -53,7 +64,12 @@ describe('validateDefinition', () => {
 
   it('warns on empty items', () => {
     const r = makeResult();
-    validateDefinition({ name: 'def', items: [] }, '/f.json', r, fs);
+    validateDefinition(
+      { tests: ONE_TEST, name: 'def', items: [] },
+      '/f.json',
+      r,
+      fs,
+    );
     expect(r.warnings.some((w) => w.includes('"items" is empty'))).toBe(true);
   });
 
@@ -61,6 +77,7 @@ describe('validateDefinition', () => {
     const r = makeResult();
     validateDefinition(
       {
+        tests: ONE_TEST,
         name: 'def',
         items: [
           { type: 'DATABASE', name: 'pg', database: 'postgres' },
@@ -77,7 +94,7 @@ describe('validateDefinition', () => {
   it('resolves $ref items', () => {
     const r = makeResult();
     validateDefinition(
-      { name: 'def', items: [{ $ref: '../shared/svc.json' }] },
+      { tests: ONE_TEST, name: 'def', items: [{ $ref: '../shared/svc.json' }] },
       '/defs/test.json',
       r,
       fs,
@@ -91,7 +108,12 @@ describe('validateDefinition', () => {
       {
         name: 'def',
         items: [{ type: 'DATABASE', name: 'pg', database: 'postgres' }],
-        tests: [{ name: 'test', steps: [] }],
+        tests: [
+          {
+            name: 'test',
+            steps: [{ action: { type: 'wait', durationMs: 1 } }],
+          },
+        ],
       },
       '/f.json',
       r,
@@ -104,7 +126,12 @@ describe('validateDefinition', () => {
     it('accepts valid config with timeoutSeconds', () => {
       const r = makeResult();
       validateDefinition(
-        { name: 'def', items: [], config: { timeoutSeconds: 300 } },
+        {
+          tests: ONE_TEST,
+          name: 'def',
+          items: [],
+          config: { timeoutSeconds: 300 },
+        },
         '/f.json',
         r,
         fs,
@@ -115,7 +142,12 @@ describe('validateDefinition', () => {
     it('errors on invalid config.timeoutSeconds', () => {
       const r = makeResult();
       validateDefinition(
-        { name: 'def', items: [], config: { timeoutSeconds: -1 } },
+        {
+          tests: ONE_TEST,
+          name: 'def',
+          items: [],
+          config: { timeoutSeconds: -1 },
+        },
         '/f.json',
         r,
         fs,
@@ -130,7 +162,12 @@ describe('validateDefinition', () => {
     it('errors on non-integer config.timeoutSeconds', () => {
       const r = makeResult();
       validateDefinition(
-        { name: 'def', items: [], config: { timeoutSeconds: 1.5 } },
+        {
+          tests: ONE_TEST,
+          name: 'def',
+          items: [],
+          config: { timeoutSeconds: 1.5 },
+        },
         '/f.json',
         r,
         fs,
@@ -145,7 +182,7 @@ describe('validateDefinition', () => {
     it('errors when config is not an object', () => {
       const r = makeResult();
       validateDefinition(
-        { name: 'def', items: [], config: 'bad' },
+        { tests: ONE_TEST, name: 'def', items: [], config: 'bad' },
         '/f.json',
         r,
         fs,
@@ -159,6 +196,7 @@ describe('validateDefinition', () => {
       const r = makeResult();
       validateDefinition(
         {
+          tests: ONE_TEST,
           name: 'def',
           items: [],
           config: { browser: { version: '148.0.7778.56' } },
@@ -174,6 +212,7 @@ describe('validateDefinition', () => {
       const r = makeResult();
       validateDefinition(
         {
+          tests: ONE_TEST,
           name: 'def',
           items: [],
           config: { browser: { name: 'chrome', version: '148.0.7778.56' } },
@@ -182,15 +221,16 @@ describe('validateDefinition', () => {
         r,
         fs,
       );
-      expect(
-        r.warnings.some((w) => w.includes('unknown property "name"')),
-      ).toBe(true);
+      expect(r.errors.some((w) => w.includes('unknown property "name"'))).toBe(
+        true,
+      );
     });
 
     it('errors on empty browser version', () => {
       const r = makeResult();
       validateDefinition(
         {
+          tests: ONE_TEST,
           name: 'def',
           items: [],
           config: { browser: { version: '' } },
@@ -206,16 +246,21 @@ describe('validateDefinition', () => {
       ).toBe(true);
     });
 
-    it('warns on unknown config keys', () => {
+    it('rejects unknown config keys', () => {
       const r = makeResult();
       validateDefinition(
-        { name: 'def', items: [], config: { unknownKey: true } },
+        {
+          tests: ONE_TEST,
+          name: 'def',
+          items: [],
+          config: { unknownKey: true },
+        },
         '/f.json',
         r,
         fs,
       );
       expect(
-        r.warnings.some((w) => w.includes('unknown property "unknownKey"')),
+        r.errors.some((w) => w.includes('unknown property "unknownKey"')),
       ).toBe(true);
     });
   });
@@ -225,6 +270,7 @@ describe('validateDefinition', () => {
       const r = makeResult();
       validateDefinition(
         {
+          tests: ONE_TEST,
           name: 'def',
           items: [{ type: 'DATABASE', name: 'pg', database: 'postgres' }],
           variables: {
@@ -242,7 +288,7 @@ describe('validateDefinition', () => {
     it('does not warn on "variables" as unknown property', () => {
       const r = makeResult();
       validateDefinition(
-        { name: 'def', items: [], variables: { key: 'val' } },
+        { tests: ONE_TEST, name: 'def', items: [], variables: { key: 'val' } },
         '/f.json',
         r,
         fs,
@@ -255,7 +301,7 @@ describe('validateDefinition', () => {
     it('errors when variables is not an object', () => {
       const r = makeResult();
       validateDefinition(
-        { name: 'def', items: [], variables: 'bad' },
+        { tests: ONE_TEST, name: 'def', items: [], variables: 'bad' },
         '/f.json',
         r,
         fs,
@@ -268,7 +314,12 @@ describe('validateDefinition', () => {
     it('errors on non-alphanumeric variable key', () => {
       const r = makeResult();
       validateDefinition(
-        { name: 'def', items: [], variables: { 'bad-key': 'val' } },
+        {
+          tests: ONE_TEST,
+          name: 'def',
+          items: [],
+          variables: { 'bad-key': 'val' },
+        },
         '/f.json',
         r,
         fs,
@@ -281,7 +332,12 @@ describe('validateDefinition', () => {
     it('accepts non-string variable values', () => {
       const r = makeResult();
       validateDefinition(
-        { name: 'def', items: [], variables: { key: 123, arr: [1, 2] } },
+        {
+          tests: ONE_TEST,
+          name: 'def',
+          items: [],
+          variables: { key: 123, arr: [1, 2] },
+        },
         '/f.json',
         r,
         fs,

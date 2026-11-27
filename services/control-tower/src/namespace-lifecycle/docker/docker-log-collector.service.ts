@@ -25,10 +25,15 @@ export class DockerLogCollectorService {
     instanceItemId?: string,
   ): Promise<void> {
     try {
+      // A frame can arrive split across chunks: keep the incomplete end
+      // until the rest arrives
+      let pending: Buffer = Buffer.alloc(0);
       const stream = await this.dockerClient.streamLogs(
         containerId,
         (data: Buffer) => {
-          this.processLogChunk(data, instanceId, instanceItemId);
+          pending = pending.length ? Buffer.concat([pending, data]) : data;
+          const used = this.processFrames(pending, instanceId, instanceItemId);
+          pending = pending.subarray(used);
         },
       );
 
@@ -72,45 +77,26 @@ export class DockerLogCollectorService {
     );
   }
 
-  private processLogChunk(
+  /** Processes the complete frames in `data`, returning the bytes used */
+  private processFrames(
     data: Buffer,
     instanceId: string,
     instanceItemId?: string,
-  ): void {
+  ): number {
     // Docker multiplexed stream format: 8-byte header + payload
     // Header: [stream_type(1), 0, 0, 0, size(4)]
     // stream_type: 1 = stdout, 2 = stderr
-    // We strip the header and process each frame.
     let offset = 0;
-    while (offset < data.length) {
-      if (offset + 8 > data.length) {
-        // Incomplete header — treat remainder as raw text
-        this.processLine(
-          data.subarray(offset).toString('utf-8'),
-          instanceId,
-          instanceItemId,
-        );
-        break;
-      }
-
+    while (offset + 8 <= data.length) {
       const streamType = data[offset];
       const payloadSize = data.readUInt32BE(offset + 4);
-      offset += 8;
-
-      if (offset + payloadSize > data.length) {
-        // Incomplete payload — process what we have
-        this.processLine(
-          data.subarray(offset).toString('utf-8'),
-          instanceId,
-          instanceItemId,
-        );
+      if (offset + 8 + payloadSize > data.length) {
         break;
       }
-
       const payload = data
-        .subarray(offset, offset + payloadSize)
+        .subarray(offset + 8, offset + 8 + payloadSize)
         .toString('utf-8');
-      offset += payloadSize;
+      offset += 8 + payloadSize;
 
       // Split by newlines — each line is a separate log entry
       const lines = payload.split('\n').filter((l) => l.length > 0);
@@ -123,6 +109,7 @@ export class DockerLogCollectorService {
         );
       }
     }
+    return offset;
   }
 
   private processLine(

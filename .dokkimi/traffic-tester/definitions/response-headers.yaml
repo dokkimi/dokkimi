@@ -1,0 +1,66 @@
+name: response-headers
+description: A caller receives only the response headers the service sent
+config:
+  timeoutSeconds: 120
+items:
+  # Sends a short chunked body, without a Content-Type or Date
+  - type: SERVICE
+    name: bare
+    image: ghcr.io/dokkimi/traffic-tester:0.1.0
+    port: 4000
+    healthCheck: /health
+    command:
+      - node
+      - -e
+      - |
+        require('http').createServer((req, res) => {
+          res.sendDate = false;
+          res.write('<html>');
+          res.end('hi');
+        }).listen(4000);
+  # Answers with the response headers it got from bare
+  - type: SERVICE
+    name: caller
+    image: ghcr.io/dokkimi/traffic-tester:0.1.0
+    port: 4000
+    healthCheck: /health
+    command:
+      - node
+      - -e
+      - |
+        const http = require('http');
+        http.createServer((req, res) => {
+          if (req.url === '/health') {
+            return res.end('ok');
+          }
+          http.get('http://bare/x', (response) => {
+            let body = '';
+            response.on('data', (chunk) => (body += chunk));
+            response.on('end', () => {
+              res.setHeader('Content-Type', 'application/json');
+              res.end(JSON.stringify({ headers: response.headers, body }));
+            });
+          });
+        }).listen(4000);
+tests:
+  - name: Between services
+    steps:
+      - name: Caller calls bare
+        action: { type: httpRequest, method: GET, url: caller/x }
+        assertions:
+          - assertions:
+              - { path: $.response.body.body, operator: eq, value: <html>hi }
+              - {
+                  path: $.response.body.headers.transfer-encoding,
+                  operator: eq,
+                  value: chunked,
+                }
+              - {
+                  path: $.response.body.headers.content-type,
+                  operator: notExists,
+                }
+              - { path: $.response.body.headers.date, operator: notExists }
+              - {
+                  path: $.response.body.headers.content-length,
+                  operator: notExists,
+                }

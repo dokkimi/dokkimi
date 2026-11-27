@@ -16,17 +16,20 @@ import (
 	"time"
 )
 
-// executeAPIStep executes an HTTP request action with retry logic for transient errors.
+// executeAPIStep executes an HTTP request action. Only a request that never
+// reached the interceptor (a connection error) is sent again. Any response from
+// the service, 5xx included, is the step's result. When the interceptor answers
+// with X-Dokkimi-Error the step fails without a retry: the service may already
+// have received the request.
 // Returns an extraction document: { statusCode, headers, body }.
 func (e *TestExecutor) executeAPIStep(ctx context.Context, action StepAction, stepIndex int) (map[string]interface{}, error) {
-	strippedURL := stripScheme(action.URL)
+	strippedURL := encodeURLChars(stripScheme(action.URL))
 	fullURL := e.interceptorURL + "/" + strippedURL
 
 	// Log user-friendly message with the URL
 	e.testExecutionLogger.LogRequestStarted(stepIndex, action.Method, action.URL)
 
 	var lastErr error
-	var lastResp *APIResponse
 	backoff := initialBackoff
 
 	for attempt := 0; attempt <= maxRetries; attempt++ {
@@ -44,30 +47,36 @@ func (e *TestExecutor) executeAPIStep(ctx context.Context, action StepAction, st
 		}
 
 		resp, err := e.doAPIRequest(ctx, action, fullURL)
+		if err != nil && resp != nil {
+			// The request arrived and was being answered, so don't send it again
+			return nil, fmt.Errorf("%s %s failed: %w", action.Method, action.URL, err)
+		}
 		if err != nil {
 			lastErr = err
-			lastResp = nil
 			log.Printf("Request failed with error: %v (URL: %s)", err, fullURL)
 			continue
 		}
 
-		if retryableStatusCodes[resp.StatusCode] {
-			lastErr = fmt.Errorf("received retryable status code %d", resp.StatusCode)
-			lastResp = resp
-			log.Printf("Received retryable status code %d for %s %s", resp.StatusCode, action.Method, fullURL)
-			continue
+		if resp.Headers.Get(dokkimiErrorHeader) != "" {
+			// The interceptor got no response from the service, so there is none
+			return nil, fmt.Errorf("%s %s failed: %s", action.Method, action.URL, strings.TrimSpace(string(resp.Body)))
 		}
 
 		return apiResponseToExtractDoc(resp), nil
 	}
 
-	if lastResp != nil {
-		log.Printf("Request returned status %d after %d retries: %s %s", lastResp.StatusCode, maxRetries+1, action.Method, fullURL)
-		return apiResponseToExtractDoc(lastResp), nil
-	}
 	log.Printf("Request failed after %d retries: %v", maxRetries+1, lastErr)
 	return nil, fmt.Errorf("%s %s failed: %s", action.Method, action.URL, rootCause(lastErr))
 }
+
+// dokkimiErrorHeader marks a response the interceptor made because it couldn't
+// deliver the request. Keep in sync with the interceptor's DokkimiErrorHeader.
+const dokkimiErrorHeader = "X-Dokkimi-Error"
+
+// dokkimiSchemeHeader tells the interceptor which scheme a step's URL asked
+// for; the interceptor strips it before forwarding. Keep in sync with the
+// interceptor's DokkimiSchemeHeader.
+const dokkimiSchemeHeader = "X-Dokkimi-Scheme"
 
 // apiResponseToExtractDoc converts an APIResponse to an extraction document: { statusCode, headers, body }.
 func apiResponseToExtractDoc(resp *APIResponse) map[string]interface{} {
@@ -202,7 +211,8 @@ func buildFormDataBody(formData map[string]interface{}) (io.Reader, string, erro
 	return &buf, writer.FormDataContentType(), nil
 }
 
-// doAPIRequest performs a single HTTP request attempt and returns the full response
+// doAPIRequest performs a single HTTP request attempt and returns the full
+// response, or an error and what arrived of it if it broke off.
 func (e *TestExecutor) doAPIRequest(ctx context.Context, action StepAction, fullURL string) (*APIResponse, error) {
 	var bodyReader io.Reader
 	var contentType string
@@ -241,6 +251,9 @@ func (e *TestExecutor) doAPIRequest(ctx context.Context, action StepAction, full
 	if contentType != "" {
 		req.Header.Set("Content-Type", contentType)
 	}
+	if scheme := requestedScheme(action.URL); scheme != "" {
+		req.Header.Set(dokkimiSchemeHeader, scheme)
+	}
 	for key, value := range action.Headers {
 		if action.FormData != nil && strings.EqualFold(key, "Content-Type") {
 			continue
@@ -248,13 +261,13 @@ func (e *TestExecutor) doAPIRequest(ctx context.Context, action StepAction, full
 		req.Header.Set(key, value)
 	}
 
-	reqCtx := ctx
+	timeout := e.requestTimeout
 	if action.Timeout > 0 {
-		var cancel context.CancelFunc
-		reqCtx, cancel = context.WithTimeout(ctx, time.Duration(action.Timeout)*time.Millisecond)
-		defer cancel()
-		req = req.WithContext(reqCtx)
+		timeout = time.Duration(action.Timeout) * time.Millisecond
 	}
+	reqCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	req = req.WithContext(reqCtx)
 
 	log.Printf("Executing request: %s %s", action.Method, fullURL)
 	resp, err := e.httpClient.Do(req)
@@ -265,21 +278,19 @@ func (e *TestExecutor) doAPIRequest(ctx context.Context, action StepAction, full
 
 	bodyBytes, err := io.ReadAll(resp.Body)
 	if err != nil {
-		log.Printf("Warning: failed to read response body: %v", err)
-		bodyBytes = nil
-	} else {
-		bodyStr := string(bodyBytes)
-		if len(bodyStr) > 500 {
-			bodyStr = bodyStr[:500] + "... (truncated)"
-		}
-		log.Printf("Response status: %d, body: %s", resp.StatusCode, bodyStr)
+		err = fmt.Errorf("the response broke off after status %d: %w", resp.StatusCode, err)
 	}
+	bodyStr := string(bodyBytes)
+	if len(bodyStr) > 500 {
+		bodyStr = bodyStr[:500] + "... (truncated)"
+	}
+	log.Printf("Response status: %d, body: %s", resp.StatusCode, bodyStr)
 
 	return &APIResponse{
 		StatusCode: resp.StatusCode,
 		Body:       bodyBytes,
 		Headers:    resp.Header,
-	}, nil
+	}, err
 }
 
 // executeDbQueryStep executes a database query action and returns the result
@@ -382,6 +393,36 @@ func appendQueryParams(rawURL string, params map[string]interface{}) (string, er
 }
 
 // stripScheme removes http:// or https:// prefix from a URL
+// requestedScheme returns "http" or "https" when a step's URL starts with one,
+// else "" (the interceptor then uses its default for the target).
+func requestedScheme(url string) string {
+	switch {
+	case strings.HasPrefix(url, "http://"):
+		return "http"
+	case strings.HasPrefix(url, "https://"):
+		return "https"
+	default:
+		return ""
+	}
+}
+
+// encodeURLChars percent-encodes the characters a URL can't contain as they
+// are (spaces, quotes, <>, control characters, non-ASCII), as a browser does
+// with a typed URL. Everything else is kept as written, including %, +, & and
+// =, so an already-encoded URL doesn't change.
+func encodeURLChars(s string) string {
+	var b strings.Builder
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if c <= 0x20 || c >= 0x7f || strings.IndexByte(`"<>\^`+"`"+`{|}`, c) >= 0 {
+			fmt.Fprintf(&b, "%%%02X", c)
+		} else {
+			b.WriteByte(c)
+		}
+	}
+	return b.String()
+}
+
 func stripScheme(url string) string {
 	if strings.HasPrefix(url, "http://") {
 		return url[7:]

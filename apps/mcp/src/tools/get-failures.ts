@@ -3,6 +3,8 @@ import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { ctFetch, ctFetchOrNull } from '../lib/ct-client';
 import { findDokkimiDir } from '../lib/dokkimi-dir';
+import { instanceOutcome } from '@dokkimi/config';
+import { endedWithoutPassing } from '../lib/run-outcomes';
 import type {
   LatestRunResponse,
   AssertionResult,
@@ -24,6 +26,7 @@ export function registerGetFailures(server: McpServer): void {
     async ({ instanceId }) => {
       try {
         let failedInstances: InstanceSummary[];
+        let outcomes = new Map<string, string>();
 
         if (instanceId) {
           failedInstances = [{ id: instanceId, name: '', status: 'FAILED' }];
@@ -52,24 +55,21 @@ export function registerGetFailures(server: McpServer): void {
             };
           }
 
-          failedInstances = run.instances.filter(
-            (i) => (i.testStatus ?? i.status) === 'FAILED',
-          );
-
-          if (failedInstances.length === 0) {
+          const ended = endedWithoutPassing(run);
+          if ('message' in ended) {
             return {
               content: [
                 {
                   type: 'text' as const,
-                  text: JSON.stringify(
-                    { message: 'No failures found. All tests passed.' },
-                    null,
-                    2,
-                  ),
+                  text: JSON.stringify({ message: ended.message }, null, 2),
                 },
               ],
             };
           }
+          outcomes = new Map(
+            ended.instances.map((i) => [i.id, instanceOutcome(run.status, i)]),
+          );
+          failedInstances = ended.instances;
         }
 
         const results = await Promise.all(
@@ -82,6 +82,9 @@ export function registerGetFailures(server: McpServer): void {
               return {
                 instanceId: inst.id,
                 instanceName: inst.name,
+                ...(outcomes.has(inst.id)
+                  ? { outcome: outcomes.get(inst.id) }
+                  : {}),
                 errorMessage: inst.errorMessage,
                 failedAssertions: failed.map((a) => ({
                   stepIndex: a.stepIndex,

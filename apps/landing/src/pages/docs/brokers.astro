@@ -27,15 +27,13 @@ import CodeBlock from '../../components/CodeBlock.astro';
     <tbody>
       <tr><td><code>description</code></td><td>string</td><td>&mdash;</td><td>Human-readable description (max 500 chars)</td></tr>
       <tr><td><code>image</code></td><td>string</td><td>per engine</td><td>Custom Docker image (e.g. <code>"rabbitmq:3.13-management"</code>, <code>"apache/kafka:3.9"</code>)</td></tr>
-      <tr><td><code>port</code></td><td>integer</td><td>per engine</td><td>Native broker port</td></tr>
+      <tr><td><code>port</code></td><td>integer</td><td>per engine</td><td>Port services connect to (default: 5672 for AMQP, 9092 for Kafka). The broker itself uses 4369, 10672 and 30672 (AMQP) or 9093 and 19092 (Kafka), so those can't be chosen</td></tr>
       <tr><td><code>healthCheck</code></td><td>string</td><td>&mdash;</td><td>Health check endpoint or <code>"tcp"</code></td></tr>
       <tr><td><code>env</code></td><td>array</td><td>&mdash;</td><td>Environment variables: <code>[&#123; "name": "KEY", "value": "VALUE" &#125;]</code></td></tr>
       <tr><td><code>command</code></td><td>string[]</td><td>&mdash;</td><td>Override Docker image CMD</td></tr>
-      <tr><td><code>minCpu</code></td><td>number</td><td>&mdash;</td><td>Minimum CPU cores</td></tr>
-      <tr><td><code>minMemory</code></td><td>number</td><td>&mdash;</td><td>Minimum memory in MB</td></tr>
-      <tr><td><code>maxCpu</code></td><td>number</td><td>&mdash;</td><td>Maximum CPU cores</td></tr>
-      <tr><td><code>maxMemory</code></td><td>number</td><td>&mdash;</td><td>Maximum memory in MB</td></tr>
       <tr><td><code>stage</code></td><td>integer</td><td><code>0</code></td><td>Deployment stage &mdash; controls <a href="/docs/project-structure#staged-bootup-order">bootup order</a></td></tr>
+      <tr><td><code>maxCpu</code></td><td>number</td><td>&mdash;</td><td>Limit on CPU cores (e.g., 0.5). No limit when unset</td></tr>
+      <tr><td><code>maxMemory</code></td><td>number</td><td>&mdash;</td><td>Limit on memory in MB (at least 6). The container is killed if it uses more. No limit when unset</td></tr>
     </tbody>
   </table>
 
@@ -143,7 +141,7 @@ broker: kafka`} lang="yaml" />
       <tr><td><code>routingKey</code></td><td>Routing key used for the message</td></tr>
       <tr><td rowspan="4">Kafka</td><td><code>topic</code></td><td>Kafka topic</td></tr>
       <tr><td><code>partition</code></td><td>Partition index</td></tr>
-      <tr><td><code>key</code></td><td>Message key (string or parsed JSON)</td></tr>
+      <tr><td><code>key</code></td><td>Message key, as the exact text it was (a numeric key stays a string). A key that is a JSON object or array is shown parsed</td></tr>
       <tr><td><code>offset</code></td><td>Message offset (consume only)</td></tr>
     </tbody>
   </table>

@@ -94,6 +94,7 @@ export function buildTestAgentEnvVars(
     CONTROL_TOWER_URL: buildClusterServiceUrl(config.services.controlTower),
     CONFIG_MAP_NAME: 'dokkimi-interceptor-config',
     BROWSER_URL: runtimeConfig.browserURL,
+    HTTP_TIMEOUT_MS: config.timeouts.httpRequest.toString(),
     DEFAULT_VIEWPORT_WIDTH: runtimeConfig.defaultViewportWidth?.toString(),
     DEFAULT_VIEWPORT_HEIGHT: runtimeConfig.defaultViewportHeight?.toString(),
   };

@@ -6,20 +6,13 @@ import (
 	"time"
 )
 
-// Retry configuration for transient errors
+// Retry configuration for requests that never reached the service
 const (
 	maxRetries        = 3
 	initialBackoff    = 500 * time.Millisecond
 	maxBackoff        = 5 * time.Second
 	backoffMultiplier = 2.0
 )
-
-// retryableStatusCodes are HTTP status codes that indicate transient errors worth retrying
-var retryableStatusCodes = map[int]bool{
-	502: true, // Bad Gateway - upstream not ready
-	503: true, // Service Unavailable
-	504: true, // Gateway Timeout
-}
 
 // APIResponse holds the result of an HTTP request
 type APIResponse struct {
@@ -32,6 +25,7 @@ type APIResponse struct {
 type TestExecutor struct {
 	httpClient            *http.Client
 	interceptorURL        string
+	requestTimeout        time.Duration // unless the action has its own
 	databaseQueryExecutor *DatabaseQueryExecutor
 	testExecutionLogger   *TestExecutionLogger
 	varCtx                *VariableContext
@@ -40,6 +34,7 @@ type TestExecutor struct {
 	validationReporter    *ValidationReporter
 	instanceID            string
 	lastStepResponse      map[string]interface{} // last response from executeStep, for test-level until
+	continuedFailures     []string               // steps that failed under stopOnFailure: false
 }
 
 // NewTestExecutor creates a new test executor
@@ -59,13 +54,13 @@ func NewTestExecutor(interceptorURL string, timeout time.Duration, databaseQuery
 
 	return &TestExecutor{
 		httpClient: &http.Client{
-			Timeout:   timeout,
 			Transport: transport,
 			CheckRedirect: func(req *http.Request, via []*http.Request) error {
 				return http.ErrUseLastResponse
 			},
 		},
 		interceptorURL:        interceptorURL,
+		requestTimeout:        timeout,
 		databaseQueryExecutor: databaseQueryExecutor,
 		testExecutionLogger:   testExecutionLogger,
 		varCtx:                varCtx,
@@ -76,6 +71,12 @@ func NewTestExecutor(interceptorURL string, timeout time.Duration, databaseQuery
 // steps can be dispatched. Leave unset for API/DB-only runs.
 func (e *TestExecutor) SetUIStepExecutor(ui *UIStepExecutor) {
 	e.uiStepExecutor = ui
+}
+
+// ContinuedFailures describes the steps that failed but didn't stop the test,
+// because of stopOnFailure: false. They fail it once it is done.
+func (e *TestExecutor) ContinuedFailures() []string {
+	return e.continuedFailures
 }
 
 // VisualFailures returns any visual match failure messages collected during
@@ -144,6 +145,9 @@ func (e *TestExecutor) flattenSteps(testConfig *TestConfig, resetVars bool) []fl
 	globalIndex := 0
 	for ti, testDef := range testConfig.Tests {
 		for si, step := range testDef.Steps {
+			if step.StopOnFailure == nil {
+				step.StopOnFailure = testDef.StopOnFailure // the test's setting is the default
+			}
 			steps = append(steps, flatStep{
 				globalIndex:   globalIndex,
 				testIndex:     ti,

@@ -12,6 +12,7 @@ import {
   err,
   warn,
   checkUnknownKeys,
+  checkFieldTypes,
   MAX_REF_DEPTH,
 } from './validate-helpers';
 import {
@@ -22,7 +23,6 @@ import { validateUiAction } from './validate-ui-action';
 import {
   validateLoopModifiers,
   validateLoopSiblingConflicts,
-  validateTestLoopSiblingConflicts,
 } from './validate-loops';
 
 // ---------------------------------------------------------------------------
@@ -203,6 +203,17 @@ export function validateStep(
   }
 
   checkUnknownKeys(step, VALID_STEP_KEYS, ctx, r);
+  checkFieldTypes(
+    step,
+    {
+      name: 'string',
+      description: 'string',
+      stopOnFailure: 'boolean',
+      extract: 'object',
+    },
+    ctx,
+    r,
+  );
 
   // When a step-level loop is present, action lives inside the loop body
   const hasLoopModifier =
@@ -261,6 +272,29 @@ export function validateStep(
     ) {
       err(r, `${ctx}.action: "queryParams" must be an object`);
     }
+    if (
+      action.timeout !== undefined &&
+      (typeof action.timeout !== 'number' ||
+        !Number.isInteger(action.timeout) ||
+        action.timeout <= 0)
+    ) {
+      err(r, `${ctx}.action: "timeout" must be a positive integer (ms)`);
+    }
+    checkFieldTypes(action, { headers: 'object' }, `${ctx}.action`, r);
+    if (
+      action.headers &&
+      typeof action.headers === 'object' &&
+      !Array.isArray(action.headers)
+    ) {
+      for (const [h, v] of Object.entries(action.headers)) {
+        if (typeof v !== 'string') {
+          err(
+            r,
+            `${ctx}.action.headers: "${h}" must be a string — quote it: "${String(v)}"`,
+          );
+        }
+      }
+    }
   } else if (action.type === 'dbQuery') {
     checkUnknownKeys(action, VALID_ACTION_KEYS.dbQuery, `${ctx}.action`, r);
     if (typeof action.database !== 'string') {
@@ -272,6 +306,12 @@ export function validateStep(
     if (typeof action.query !== 'string') {
       err(r, `${ctx}.action: dbQuery requires "query" (string)`);
     }
+    checkFieldTypes(
+      action,
+      { params: 'object', timeout: 'integer' },
+      `${ctx}.action`,
+      r,
+    );
   } else if (action.type === 'wait') {
     checkUnknownKeys(action, VALID_ACTION_KEYS.wait, `${ctx}.action`, r);
     if (
@@ -297,20 +337,32 @@ export function validateStep(
           `${ctx}.action.actions[${ai}]`,
           r,
         );
+        // The test agent runs each sub-action once
+        for (const loop of ['forEach', 'for', 'repeat']) {
+          if (subAction && typeof subAction === 'object' && loop in subAction) {
+            err(
+              r,
+              `${ctx}.action.actions[${ai}]: "${loop}" can't be used inside parallel — loop the step instead`,
+            );
+          }
+        }
       }
-      // Reject more than one UI action in a parallel group
-      const uiCount = (action.actions as Record<string, unknown>[]).filter(
-        (a) => a?.type === 'ui',
-      ).length;
-      if (uiCount > 1) {
-        err(
-          r,
-          `${ctx}.action: parallel cannot have more than one UI action — split each UI action into its own sequential step`,
-        );
+      // The test agent runs only httpRequest and dbQuery inside parallel
+      for (let ai = 0; ai < action.actions.length; ai++) {
+        const subType = (action.actions[ai] as Record<string, unknown>)?.type;
+        if (subType === 'wait' || subType === 'ui') {
+          err(
+            r,
+            `${ctx}.action.actions[${ai}]: "${subType}" can't run inside parallel — put it in its own step`,
+          );
+        }
       }
     }
   } else if (action.type) {
-    warn(r, `${ctx}.action: unknown action type "${action.type}"`);
+    err(
+      r,
+      `${ctx}.action: unknown action type "${action.type}" — expected httpRequest, dbQuery, wait, ui or parallel`,
+    );
   } else {
     err(r, `${ctx}.action: missing "type"`);
   }
@@ -378,16 +430,16 @@ export function validateTests(
   fs: FileSystem,
 ): void {
   if (!Array.isArray(tests)) {
-    if (typeof tests === 'object' && tests !== null) {
-      warn(
-        r,
-        'tests: object format detected (legacy). Consider migrating to V3 array format.',
-      );
-    } else {
-      err(r, '"tests" must be an array of test definitions');
-    }
+    err(r, '"tests" must be an array of test definitions');
     return;
   }
+  if (tests.length === 0) {
+    err(r, 'a definition needs at least one test');
+    return;
+  }
+
+  // Screenshots are stored per definition, as screenshot/<name>.png
+  const screenshotNames = new Map<string, string>();
 
   for (let ti = 0; ti < tests.length; ti++) {
     const test = tests[ti] as Record<string, unknown>;
@@ -401,75 +453,88 @@ export function validateTests(
     if (typeof test.name !== 'string' || test.name.length === 0) {
       err(r, `${ctx}: missing or empty "name"`);
     }
+    checkFieldTypes(
+      test,
+      { description: 'string', stopOnFailure: 'boolean' },
+      ctx,
+      r,
+    );
 
-    checkUnknownKeys(test, VALID_TEST_KEYS, ctx, r);
+    const { timeoutSeconds, ...knownTestKeys } = test;
+    if (timeoutSeconds !== undefined) {
+      err(
+        r,
+        `${ctx}: "timeoutSeconds" is not supported on a test — use config.timeoutSeconds for the run`,
+      );
+    }
+    checkUnknownKeys(knownTestKeys, VALID_TEST_KEYS, ctx, r);
 
     validateVariablesField(test.variables, ctx, filePath, r, fs);
 
     // Validate loop modifiers on the test itself.
     validateLoopModifiers(test, ctx, r, { level: 'test' });
-    validateTestLoopSiblingConflicts(test, ctx, r);
 
-    if (test.steps !== undefined) {
-      if (!Array.isArray(test.steps)) {
-        err(r, `${ctx}: "steps" must be an array`);
-      } else {
-        for (let si = 0; si < test.steps.length; si++) {
-          validateStep(
-            test.steps[si] as Record<string, unknown>,
-            `${ctx}.steps[${si}]`,
+    if (test.steps === undefined) {
+      err(r, `${ctx}: a test needs "steps"`);
+    } else if (!Array.isArray(test.steps)) {
+      err(r, `${ctx}: "steps" must be an array`);
+    } else if (test.steps.length === 0) {
+      err(r, `${ctx}: a test needs at least one step`);
+    } else {
+      for (let si = 0; si < test.steps.length; si++) {
+        validateStep(
+          test.steps[si] as Record<string, unknown>,
+          `${ctx}.steps[${si}]`,
+          r,
+        );
+      }
+
+      // Warn if test-level repeat has until but the last step is a wait action,
+      // since until evaluates against the last step's response (which is nil for wait).
+      if (
+        test.repeat !== undefined &&
+        typeof test.repeat === 'object' &&
+        !Array.isArray(test.repeat) &&
+        (test.repeat as Record<string, unknown>).until !== undefined
+      ) {
+        const lastStep = test.steps[test.steps.length - 1] as Record<
+          string,
+          unknown
+        >;
+        const action = lastStep?.action as Record<string, unknown> | undefined;
+        if (action?.type === 'wait') {
+          warn(
             r,
+            `${ctx}: test-level "repeat.until" evaluates against the last step's response, but the last step is a "wait" action (which produces no response) — the until condition will never match a $.response.* path`,
           );
         }
-
-        // Warn if test-level repeat has until but the last step is a wait action,
-        // since until evaluates against the last step's response (which is nil for wait).
-        if (
-          test.repeat !== undefined &&
-          typeof test.repeat === 'object' &&
-          !Array.isArray(test.repeat) &&
-          (test.repeat as Record<string, unknown>).until !== undefined &&
-          test.steps.length > 0
-        ) {
-          const lastStep = test.steps[test.steps.length - 1] as Record<
-            string,
-            unknown
-          >;
-          const action = lastStep?.action as
-            | Record<string, unknown>
-            | undefined;
-          if (action?.type === 'wait') {
-            warn(
-              r,
-              `${ctx}: test-level "repeat.until" evaluates against the last step's response, but the last step is a "wait" action (which produces no response) — the until condition will never match a $.response.* path`,
-            );
-          }
-        }
-
-        // Cross-step uniqueness for artifact names. The artifact pipeline
-        // writes user-named captures to <type>/<name>.<ext> under the
-        // instance directory; two captures sharing a name within one test
-        // would silently overwrite each other in storage. Covers both plain
-        // screenshot primitives and visualMatch captures (same folder).
-        validateScreenshotNameUniqueness(test.steps, ctx, r);
       }
+
+      // Cross-step uniqueness for artifact names. The artifact pipeline
+      // writes user-named captures to <type>/<name>.<ext> under the
+      // instance directory; two captures sharing a name within one test
+      // would silently overwrite each other in storage. Covers both plain
+      // screenshot primitives and visualMatch captures (same folder).
+      validateScreenshotNameUniqueness(test.steps, ctx, screenshotNames, r);
     }
   }
 }
 
+/**
+ * seen: name → first location, across the definition's tests. Screenshots
+ * are stored as screenshot/<name>.png per definition; two captures sharing a
+ * name would overwrite each other (and make the baseline lookup ambiguous
+ * when `match` is set).
+ */
 function validateScreenshotNameUniqueness(
   steps: unknown,
   ctx: string,
+  seen: Map<string, string>,
   r: ValidationResult,
 ): void {
   if (!Array.isArray(steps)) {
     return;
   }
-  // name → first-occurrence location. Screenshots are stored as
-  // screenshot/<name>.png under the artifact directory; two captures sharing
-  // a name within one test would silently overwrite each other (and would
-  // ambiguate the baseline lookup when `match` is set).
-  const seen = new Map<string, string>();
   for (let si = 0; si < steps.length; si++) {
     const step = steps[si] as {
       action?: { type?: string; steps?: unknown[] };
@@ -491,7 +556,7 @@ function validateScreenshotNameUniqueness(
       if (prior) {
         err(
           r,
-          `${here}: duplicate screenshot name "${name}" — also used at ${prior}. Each artifact name must be unique within a test (artifacts are stored as screenshot/<name>.png and would overwrite each other).`,
+          `${here}: duplicate screenshot name "${name}" — also used at ${prior}. Each screenshot name must be unique within a definition (screenshots are stored as screenshot/<name>.png and would overwrite each other).`,
         );
       } else {
         seen.set(name, here);

@@ -186,10 +186,10 @@ func TestDesugarMatchCount(t *testing.T) {
 		}
 	})
 
-	t.Run("nil", func(t *testing.T) {
+	t.Run("omitted is at least one", func(t *testing.T) {
 		c := desugarMatchCount(nil)
-		if c != nil {
-			t.Errorf("expected nil, got %+v", c)
+		if c == nil || c.Operator != "gte" || c.Value != 1 {
+			t.Errorf("expected gte 1, got %+v", c)
 		}
 	})
 }
@@ -597,7 +597,7 @@ func TestStepValidator(t *testing.T) {
 			EndTime:   now.Add(200 * time.Millisecond).Format(time.RFC3339Nano),
 		}
 
-		results, passed := sv.validateStep(step, stepExec, nil)
+		results, passed := sv.validateStep(step, step.Action, stepExec, nil)
 		if !passed {
 			t.Errorf("expected step to pass, got results: %+v", results)
 		}
@@ -629,7 +629,7 @@ func TestStepValidator(t *testing.T) {
 			EndTime:   now.Add(200 * time.Millisecond).Format(time.RFC3339Nano),
 		}
 
-		results, passed := sv.validateStep(step, stepExec, nil)
+		results, passed := sv.validateStep(step, step.Action, stepExec, nil)
 		if !passed {
 			t.Errorf("expected step to pass, got results: %+v", results)
 		}
@@ -697,7 +697,7 @@ func TestMatchAs(t *testing.T) {
 			EndTime:   now.Add(200 * time.Millisecond).Format(time.RFC3339Nano),
 		}
 
-		results, passed := sv.validateStep(step, stepExec, nil)
+		results, passed := sv.validateStep(step, step.Action, stepExec, nil)
 		if !passed {
 			t.Errorf("expected step to pass, got results: %+v", results)
 		}
@@ -757,7 +757,7 @@ func TestMatchAs(t *testing.T) {
 			EndTime:   now.Add(200 * time.Millisecond).Format(time.RFC3339Nano),
 		}
 
-		results, passed := sv.validateStep(step, stepExec, nil)
+		results, passed := sv.validateStep(step, step.Action, stepExec, nil)
 		if !passed {
 			t.Errorf("expected step to pass, got results: %+v", results)
 		}
@@ -818,7 +818,7 @@ func TestValidateBlock_MatchThenAssertions(t *testing.T) {
 			EndTime:   now.Add(200 * time.Millisecond).Format(time.RFC3339Nano),
 		}
 
-		results, passed := sv.validateStep(step, stepExec, nil)
+		results, passed := sv.validateStep(step, step.Action, stepExec, nil)
 		if !passed {
 			t.Errorf("expected step to pass, got failing results:")
 			for _, r := range results {
@@ -871,7 +871,7 @@ func TestValidateBlock_MatchThenAssertions(t *testing.T) {
 			EndTime:   now.Add(200 * time.Millisecond).Format(time.RFC3339Nano),
 		}
 
-		results, passed := sv.validateStep(step, stepExec, nil)
+		results, passed := sv.validateStep(step, step.Action, stepExec, nil)
 		if passed {
 			t.Error("expected step to fail due to count mismatch")
 		}
@@ -953,7 +953,8 @@ func TestEmptyMatchTargetedErrors(t *testing.T) {
 			Assertions: []AssertionBlock{
 				{
 					Match: &MatchCriteria{
-						Path: "$.traffic",
+						Path:  "$.traffic",
+						Count: map[string]interface{}{"operator": "gte", "value": float64(0)}, // allows none
 						Where: []WhereEntry{
 							{Path: "$$.origin", Operator: "eq", Value: "nonexistent"},
 						},
@@ -970,7 +971,7 @@ func TestEmptyMatchTargetedErrors(t *testing.T) {
 			EndTime:   now.Add(200 * time.Millisecond).Format(time.RFC3339Nano),
 		}
 
-		results, passed := sv.validateStep(step, stepExec, nil)
+		results, passed := sv.validateStep(step, step.Action, stepExec, nil)
 		if passed {
 			t.Error("expected step to fail")
 		}
@@ -988,6 +989,25 @@ func TestEmptyMatchTargetedErrors(t *testing.T) {
 			t.Error("expected at least one targeted error for $.match path")
 		}
 	})
+}
+
+func TestMatchWithoutCountNeedsOne(t *testing.T) {
+	sv := NewStepValidator(NewStepLogBuffer(), NewVariableContext())
+	now := time.Now()
+	step := TestStep{
+		Action: StepAction{Type: "wait"},
+		Assertions: []AssertionBlock{{
+			Match: &MatchCriteria{Path: "$.traffic", Where: []WhereEntry{{Path: "$$.to", Operator: "eq", Value: "payments"}}},
+		}},
+	}
+	stepExec := StepExecution{
+		StartTime: now.Add(-200 * time.Millisecond).Format(time.RFC3339Nano),
+		EndTime:   now.Add(200 * time.Millisecond).Format(time.RFC3339Nano),
+	}
+	results, passed := sv.validateStep(step, step.Action, stepExec, nil)
+	if passed || len(results) != 1 || results[0].ResultKind != "count" || !isRetryable(results) {
+		t.Errorf("want one failed count result that is retried, got passed=%v %+v", passed, results)
+	}
 }
 
 func TestMatchPathNonArray(t *testing.T) {
@@ -1051,7 +1071,7 @@ func TestBlockExtractWithinMatch(t *testing.T) {
 			EndTime:   now.Add(200 * time.Millisecond).Format(time.RFC3339Nano),
 		}
 
-		results, passed := sv.validateStep(step, stepExec, nil)
+		results, passed := sv.validateStep(step, step.Action, stepExec, nil)
 		if !passed {
 			t.Errorf("expected step to pass, got failing results:")
 			for _, r := range results {

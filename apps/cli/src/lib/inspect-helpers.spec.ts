@@ -156,13 +156,13 @@ describe('deriveStepAssertionStatuses', () => {
       makeAssertion({ stepIndex: 0, passed: false }),
     ];
     const result = deriveStepAssertionStatuses(assertions);
-    expect(result.get('0')).toBe('FAILED');
+    expect(result.get(0)).toBe('FAILED');
   });
 
   it('PASSED only set if no existing entry', () => {
     const assertions = [makeAssertion({ stepIndex: 1, passed: true })];
     const result = deriveStepAssertionStatuses(assertions);
-    expect(result.get('1')).toBe('PASSED');
+    expect(result.get(1)).toBe('PASSED');
   });
 
   it('PASSED does not override FAILED', () => {
@@ -171,7 +171,7 @@ describe('deriveStepAssertionStatuses', () => {
       makeAssertion({ stepIndex: 0, passed: true }),
     ];
     const result = deriveStepAssertionStatuses(assertions);
-    expect(result.get('0')).toBe('FAILED');
+    expect(result.get(0)).toBe('FAILED');
   });
 
   it('SKIPPED only set if no existing entry', () => {
@@ -179,7 +179,7 @@ describe('deriveStepAssertionStatuses', () => {
       makeAssertion({ stepIndex: 2, passed: true, resultKind: 'SKIPPED' }),
     ];
     const result = deriveStepAssertionStatuses(assertions);
-    expect(result.get('2')).toBe('SKIPPED');
+    expect(result.get(2)).toBe('SKIPPED');
   });
 
   it('NOT_VALIDATED only set if no existing entry', () => {
@@ -191,7 +191,7 @@ describe('deriveStepAssertionStatuses', () => {
       }),
     ];
     const result = deriveStepAssertionStatuses(assertions);
-    expect(result.get('3')).toBe('NOT_VALIDATED');
+    expect(result.get(3)).toBe('NOT_VALIDATED');
   });
 
   it('SKIPPED does not override existing status', () => {
@@ -200,7 +200,7 @@ describe('deriveStepAssertionStatuses', () => {
       makeAssertion({ stepIndex: 0, passed: true, resultKind: 'SKIPPED' }),
     ];
     const result = deriveStepAssertionStatuses(assertions);
-    expect(result.get('0')).toBe('PASSED');
+    expect(result.get(0)).toBe('PASSED');
   });
 
   it('handles empty array', () => {

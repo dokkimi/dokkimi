@@ -5,6 +5,7 @@ import {
   filterFilesByPattern,
   findDokkimiDir,
   findDokkimiDirFrom,
+  isDokkimiDataDir,
   collectInitFilePaths,
   loadDokignore,
   scanDefinitionFiles,
@@ -81,6 +82,43 @@ describe('findDokkimiDirFrom', () => {
   });
 });
 
+// Before, ~/.dokkimi (Dokkimi's data, run snapshots among them) was taken
+// for a project's .dokkimi, and its old snapshots were run as definitions
+describe('~/.dokkimi', () => {
+  let home: string;
+
+  beforeEach(() => {
+    home = createTempDir();
+    // The module itself: the imported `os` is a read-only copy
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    jest.spyOn(require('os') as typeof os, 'homedir').mockReturnValue(home);
+    touch(home, '.dokkimi/runs/p/20260101-000000/snapshots/a/definition.json');
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+
+  it('is not found from a folder under home with no project', () => {
+    const dir = path.join(home, 'code', 'newproj');
+    fs.mkdirSync(dir, { recursive: true });
+    expect(isDokkimiDataDir(path.join(home, '.dokkimi'))).toBe(true);
+    expect(findDokkimiDirFrom(dir)).toBeNull();
+    expect(findDokkimiDirFrom(home)).toBeNull();
+    expect(
+      findDokkimiDir(path.join(home, '.dokkimi', 'runs', 'x.json')),
+    ).toBeNull();
+  });
+
+  it("still finds a project's .dokkimi under home", () => {
+    const project = path.join(home, 'code', 'app', '.dokkimi');
+    fs.mkdirSync(path.join(project, 'sub'), { recursive: true });
+    expect(findDokkimiDirFrom(path.join(project, 'sub'))).toBe(project);
+    expect(findDokkimiDirFrom(path.dirname(project))).toBe(project);
+  });
+});
+
 describe('filterFilesByPattern', () => {
   const dokkimiDir = '/project/.dokkimi';
   const files = [
@@ -133,6 +171,19 @@ describe('filterFilesByPattern', () => {
       '/^payments\\/check/',
     );
     expect(result).toEqual(['/project/.dokkimi/payments/checkout.json']);
+  });
+
+  it('treats an explicit regex with glob characters as a regex', () => {
+    expect(filterFilesByPattern(files, dokkimiDir, '/check.*out/')).toEqual([
+      '/project/.dokkimi/payments/checkout.json',
+    ]);
+    expect(
+      filterFilesByPattern(files, dokkimiDir, '/^(auth|users)[/.]/'),
+    ).toEqual([
+      '/project/.dokkimi/auth/login.json',
+      '/project/.dokkimi/auth/signup.yaml',
+      '/project/.dokkimi/users.json',
+    ]);
   });
 
   it('returns empty array when nothing matches', () => {
@@ -252,5 +303,21 @@ describe('scanDefinitionFiles', () => {
 
     const files = scanDefinitionFiles(tmp).map((f) => path.basename(f));
     expect(files).toEqual(['keep.json']);
+  });
+
+  // Before, folder patterns never matched: only files were checked
+  it.each([
+    'experiments/',
+    'experiments',
+    'definitions/experiments/',
+    '**/experiments',
+  ])('skips a folder ignored with %s', (pattern) => {
+    touch(tmp, 'definitions/keep.json');
+    touch(tmp, 'definitions/experiments/a.json');
+    touch(tmp, 'definitions/experiments/deep/b.json');
+    fs.writeFileSync(path.join(tmp, '.dokignore'), `${pattern}\n`);
+
+    const files = scanDefinitionFiles(tmp).map((f) => path.relative(tmp, f));
+    expect(files).toEqual([path.join('definitions', 'keep.json')]);
   });
 });

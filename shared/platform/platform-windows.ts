@@ -24,7 +24,19 @@ export const windows: Platform = {
           stdio: ['pipe', 'pipe', 'pipe'],
         });
       } catch {
-        resolve({ forceKilled: false });
+        // Without /F, taskkill only asks the process to close, and fails at
+        // once for one without a window, like the daemon: force it.
+        if (!this.isProcessAlive(pid)) {
+          resolve({ forceKilled: false });
+          return;
+        }
+        try {
+          execSync(`taskkill /PID ${pid} /T /F`, {
+            timeout: 3000,
+            stdio: ['pipe', 'pipe', 'pipe'],
+          });
+        } catch {}
+        resolve({ forceKilled: true });
         return;
       }
 
@@ -48,18 +60,21 @@ export const windows: Platform = {
     });
   },
 
-  findProcessesByPattern(pattern: string): number[] {
+  processStartTime(pid: number): number | null {
     try {
-      const output = execSync(
-        `wmic process where "CommandLine like '%${pattern.replace(/'/g, "\\'")}%'" get ProcessId`,
-        { encoding: 'utf8', timeout: 5000, stdio: ['pipe', 'pipe', 'pipe'] },
-      );
-      return output
-        .split('\n')
-        .map((line) => parseInt(line.trim(), 10))
-        .filter((pid) => !isNaN(pid) && pid !== process.pid);
+      const output = execFileSync(
+        'powershell',
+        [
+          '-NoProfile',
+          '-Command',
+          `(Get-Process -Id ${Math.trunc(pid)}).StartTime.ToUniversalTime().ToString('o')`,
+        ],
+        { encoding: 'utf8', timeout: 10000, stdio: ['pipe', 'pipe', 'pipe'] },
+      ).trim();
+      const ms = Date.parse(output);
+      return output && !isNaN(ms) ? ms : null;
     } catch {
-      return [];
+      return null;
     }
   },
 

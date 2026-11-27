@@ -44,23 +44,13 @@ describe('editor', () => {
       expect(result).toEqual({ name: 'keep' });
     });
 
-    it('handles nested objects recursively', () => {
-      const result = stripIds({
+    it('keeps ids in nested data', () => {
+      const row = {
         name: 'outer',
-        child: { id: '1', value: 42 },
-      });
-      expect(result).toEqual({
-        name: 'outer',
-        child: { value: 42 },
-      });
-    });
-
-    it('handles arrays of objects', () => {
-      const result = stripIds([
-        { id: '1', name: 'a' },
-        { id: '2', name: 'b' },
-      ]);
-      expect(result).toEqual([{ name: 'a' }, { name: 'b' }]);
+        child: { id: '1', instanceId: '2' },
+        list: [{ id: '3' }, { id: '4' }],
+      };
+      expect(stripIds(row)).toEqual(row);
     });
 
     it('preserves non-id fields', () => {
@@ -74,20 +64,6 @@ describe('editor', () => {
         url: '/api',
         statusCode: 200,
       });
-    });
-
-    it('handles null', () => {
-      expect(stripIds(null)).toBeNull();
-    });
-
-    it('handles undefined', () => {
-      expect(stripIds(undefined)).toBeUndefined();
-    });
-
-    it('handles primitives', () => {
-      expect(stripIds(42)).toBe(42);
-      expect(stripIds('hello')).toBe('hello');
-      expect(stripIds(true)).toBe(true);
     });
 
     it('handles empty objects', () => {

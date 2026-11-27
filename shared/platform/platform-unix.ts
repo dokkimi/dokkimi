@@ -44,19 +44,19 @@ export const unix: Platform = {
     });
   },
 
-  findProcessesByPattern(pattern: string): number[] {
+  processStartTime(pid: number): number | null {
     try {
-      const output = execSync(`pgrep -f "${pattern}"`, {
+      // e.g. "Fri Nov 27 01:22:33 2026", local time
+      const output = execFileSync('ps', ['-o', 'lstart=', '-p', String(pid)], {
         encoding: 'utf8',
         timeout: 5000,
         stdio: ['pipe', 'pipe', 'pipe'],
-      });
-      return output
-        .split('\n')
-        .map((line) => parseInt(line.trim(), 10))
-        .filter((pid) => !isNaN(pid) && pid !== process.pid);
+        env: { ...process.env, LC_ALL: 'C' },
+      }).trim();
+      const ms = Date.parse(output);
+      return output && !isNaN(ms) ? ms : null;
     } catch {
-      return [];
+      return null;
     }
   },
 

@@ -7,7 +7,7 @@ import CodeBlock from '../../components/CodeBlock.astro';
   <h1>Mocks</h1>
   <p class="subtitle">Intercept outbound HTTP requests from your services and return controlled responses.</p>
 
-  <p>When a service makes an outbound HTTP request, the interceptor sidecar checks it against all MOCK items. If a mock matches, the mock response is returned. If no mock matches, the request passes through to its real destination.</p>
+  <p>When a service makes an outbound HTTP request, the interceptor sidecar checks it against all MOCK items. If a mock matches, the mock response is returned. If no mock matches, the request passes through to its real destination. Mocks apply to every request: from services, workers, test steps and the UI test browser, to external hosts and to your own services.</p>
 
   <h2>Required fields</h2>
   <table>
@@ -17,8 +17,8 @@ import CodeBlock from '../../components/CodeBlock.astro';
     <tbody>
       <tr><td><code>type</code></td><td><code>"MOCK"</code></td><td>Item type</td></tr>
       <tr><td><code>name</code></td><td>string</td><td>Unique name (1-63 chars)</td></tr>
-      <tr><td><code>mockTarget</code></td><td>string</td><td>Target hostname to intercept (e.g., <code>api.stripe.com</code>)</td></tr>
-      <tr><td><code>mockPath</code></td><td>string</td><td>URL path to match (e.g., <code>/v1/charges</code>, <code>/api/*</code>)</td></tr>
+      <tr><td><code>mockTarget</code></td><td>string</td><td>Target host, in any case (e.g., <code>api.stripe.com</code>), or the name of one of your services, or <code>*</code> for any. Matches any port unless it includes one; <code>:443</code> and <code>:80</code> match calls that leave it out. Subdomain wildcards are not supported.</td></tr>
+      <tr><td><code>mockPath</code></td><td>string</td><td>URL path to match (e.g., <code>/v1/charges</code>, <code>/api/*</code>). Characters can be written encoded or not (<code>/a%20b</code> or <code>/a b</code>), but <code>%2F</code> is not a <code>/</code>.</td></tr>
     </tbody>
   </table>
 
@@ -30,11 +30,13 @@ import CodeBlock from '../../components/CodeBlock.astro';
     <tbody>
       <tr><td><code>description</code></td><td>string</td><td>—</td><td>Human-readable description (max 500 chars)</td></tr>
       <tr><td><code>mockMethod</code></td><td>enum</td><td><code>*</code></td><td>HTTP method: <code>GET</code>, <code>POST</code>, <code>PUT</code>, <code>DELETE</code>, <code>PATCH</code>, <code>HEAD</code>, <code>OPTIONS</code>, or <code>*</code> (any)</td></tr>
-      <tr><td><code>mockOrigin</code></td><td>string</td><td>any</td><td>Service name that makes the request, or <code>*</code> for any</td></tr>
-      <tr><td><code>mockDelayMs</code></td><td>integer</td><td>—</td><td>Artificial response delay in milliseconds</td></tr>
-      <tr><td><code>mockResponseStatus</code></td><td>integer</td><td>—</td><td>HTTP response status code (100-599)</td></tr>
-      <tr><td><code>mockResponseHeaders</code></td><td>object</td><td>—</td><td>Response headers</td></tr>
+      <tr><td><code>mockOrigin</code></td><td>string</td><td>any</td><td>Name of the SERVICE or WORKER that makes the request. Omit it, or use <code>*</code>, for any caller, including test steps. Use <code>chromium</code> for the UI test browser.</td></tr>
+      <tr><td><code>mockDelayMs</code></td><td>integer</td><td>—</td><td>Artificial response delay in milliseconds. For a delay over 30 seconds, give a test step that waits for it a longer <code>timeout</code>.</td></tr>
+      <tr><td><code>mockResponseStatus</code></td><td>integer</td><td><code>200</code></td><td>HTTP response status code (100-599)</td></tr>
+      <tr><td><code>mockResponseHeaders</code></td><td>object</td><td>—</td><td>Response headers. A mock with a body has <code>Content-Type: application/json</code> unless set here.</td></tr>
       <tr><td><code>mockResponseBody</code></td><td>any JSON</td><td>—</td><td>Response body</td></tr>
+      <tr><td><code>mockRequestBodyContains</code></td><td>string</td><td>—</td><td>Match only requests whose body contains this text (case-insensitive). Compressed bodies are decompressed first. Cannot combine with <code>mockRequestBodyMatches</code>.</td></tr>
+      <tr><td><code>mockRequestBodyMatches</code></td><td>string</td><td>—</td><td>Match only requests whose body matches this Go regex. Case-sensitive; start with <code>(?i)</code> for case-insensitive. No lookaround or backreferences.</td></tr>
     </tbody>
   </table>
 
@@ -85,53 +87,19 @@ import CodeBlock from '../../components/CodeBlock.astro';
       <tr><td>Full wildcard</td><td><code>*</code></td><td>Any path</td></tr>
     </tbody>
   </table>
-  <p>Query strings are ignored during path matching. Wildcards in the middle of a path (e.g., <code>/api/*/posts</code>) are not supported — only trailing wildcards work.</p>
+  <p>Query strings are ignored during path matching. Wildcards in the middle of a path (e.g., <code>/api/*/posts</code>) are not supported — only trailing wildcards work — and neither are variables that are only part of a segment or combined with a wildcard. Those are validation errors, and so is a <code>=</code> in a variable (<code>&#123;name=**&#125;</code>).</p>
+  <p>A trailing slash matters: <code>/api/users</code> doesn't match <code>/api/users/</code>, <code>/api/users/:id</code> doesn't match <code>/api/users/1/</code>, and <code>/api/*</code> doesn't match <code>/api</code>.</p>
 
-  <h2>Mock precedence</h2>
-  <p>When multiple mocks match the same request, the most specific mock wins. Specificity is scored by how many fields are narrowed beyond the default wildcard:</p>
-  <ul>
-    <li>Specific <code>mockOrigin</code> (not <code>*</code>): +1</li>
-    <li>Specific <code>mockTarget</code> (not <code>*</code>): +1</li>
-    <li>Specific <code>mockMethod</code> (not <code>*</code>): +1</li>
-    <li>Exact path or path variable: +2, trailing wildcard: +1</li>
-  </ul>
-  <p>On a tie, exact paths beat path variables, and the mock defined first wins.</p>
-
-  <h2>Alternative: top-level mocks array</h2>
-  <p>Mocks can also be defined in a top-level <code>mocks</code> array on the definition, with shorter field names:</p>
-  <CodeBlock code={`{
-  "name": "my-definition",
-  "items": [ ... ],
-  "mocks": [
-    {
-      "name": "Stripe Create Charge",
-      "method": "POST",
-      "origin": "payment-service",
-      "target": "api.stripe.com",
-      "path": "/v1/charges",
-      "responseStatus": 200,
-      "responseHeaders": { "Content-Type": "application/json" },
-      "responseBody": { "id": "ch_test", "status": "succeeded" }
-    }
-  ]
-}`} lang="json" />
-
-  <h3>Field name mapping</h3>
-  <table>
-    <thead>
-      <tr><th>Item field</th><th>Mocks array field</th></tr>
-    </thead>
-    <tbody>
-      <tr><td><code>mockMethod</code></td><td><code>method</code></td></tr>
-      <tr><td><code>mockOrigin</code></td><td><code>origin</code></td></tr>
-      <tr><td><code>mockTarget</code></td><td><code>target</code></td></tr>
-      <tr><td><code>mockPath</code></td><td><code>path</code></td></tr>
-      <tr><td><code>mockDelayMs</code></td><td><code>delayMs</code></td></tr>
-      <tr><td><code>mockResponseStatus</code></td><td><code>responseStatus</code></td></tr>
-      <tr><td><code>mockResponseHeaders</code></td><td><code>responseHeaders</code></td></tr>
-      <tr><td><code>mockResponseBody</code></td><td><code>responseBody</code></td></tr>
-    </tbody>
-  </table>
+  <h2 id="precedence">Mock precedence</h2>
+  <p>A mock matches a request only if its target, origin, path, method, and body conditions all match. When several mocks match, they are compared field by field, in this order. A field only matters if the mocks are equal in those before it:</p>
+  <ol>
+    <li><strong>Target</strong> &mdash; host and port, then host, then <code>*</code></li>
+    <li><strong>Origin</strong> &mdash; named, then omitted or <code>*</code></li>
+    <li><strong>Path</strong> &mdash; exact, then with variables (fewer first), then the longer prefix before <code>*</code>, then <code>*</code></li>
+    <li><strong>Method</strong> &mdash; named, then omitted or <code>*</code></li>
+    <li><strong>Body</strong> &mdash; a body match, then none</li>
+  </ol>
+  <p>If they are still equal, the mock defined first wins. To return different responses for different bodies, give the mocks the same target, path, and method, and add one without a body match as the fallback.</p>
 
   <div class="nav-links">
     <a href="/docs/brokers">← Brokers</a>

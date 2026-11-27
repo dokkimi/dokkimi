@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"log"
 	"net"
 	"time"
@@ -10,10 +11,11 @@ import (
 
 type Proxy struct {
 	*shared.BaseProxy
+	cursors *cursorRegistry
 }
 
 func NewProxy(cfg *shared.Config, logger *shared.QueryLogger) *Proxy {
-	p := &Proxy{}
+	p := &Proxy{cursors: newCursorRegistry()}
 	p.BaseProxy = shared.NewBaseProxy(cfg, logger, p.handleConnection)
 	return p
 }
@@ -44,6 +46,15 @@ func (p *Proxy) handleConnection(clientConn net.Conn) {
 		p.UntrackConn(upstreamConn)
 	}()
 
-	pc := newProxyConnection(clientConn, upstreamConn, p.Config, p.Logger)
+	pc := newProxyConnection(clientConn, upstreamConn, p.Config, p.Logger, p.cursors)
 	pc.relay()
+}
+
+// Shutdown also logs the cursors still open, with the batches read so far:
+// before, those finds and aggregates were never logged
+func (p *Proxy) Shutdown(ctx context.Context) {
+	p.BaseProxy.Shutdown(ctx)
+	for _, acc := range p.cursors.takeAll() {
+		logCursor(p.Logger, p.Config, acc, true, "")
+	}
 }

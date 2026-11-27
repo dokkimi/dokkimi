@@ -32,16 +32,16 @@ describe('checkUnknownKeys', () => {
     expect(r.warnings).toHaveLength(0);
   });
 
-  it('warns on unknown keys', () => {
+  it('rejects unknown keys', () => {
     const r = makeResult();
     checkUnknownKeys({ a: 1, bogus: 2 }, new Set(['a']), 'ctx', r);
-    expect(r.warnings).toHaveLength(1);
-    expect(r.warnings[0]).toContain('unknown property "bogus"');
+    expect(r.errors).toHaveLength(1);
+    expect(r.errors[0]).toContain('unknown property "bogus"');
   });
 
-  it('warns on each unknown key', () => {
+  it('rejects each unknown key', () => {
     const r = makeResult();
     checkUnknownKeys({ a: 1, x: 2, y: 3 }, new Set(['a']), 'ctx', r);
-    expect(r.warnings).toHaveLength(2);
+    expect(r.errors).toHaveLength(2);
   });
 });

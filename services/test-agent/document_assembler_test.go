@@ -142,7 +142,7 @@ func TestFindDirectRequestLog(t *testing.T) {
 		}
 	})
 
-	t.Run("selects log closest to midpoint when multiple match", func(t *testing.T) {
+	t.Run("selects the latest log when multiple match", func(t *testing.T) {
 		earlyTs := now.Add(-80 * time.Millisecond).Format(time.RFC3339Nano)
 		midTs := now.Add(5 * time.Millisecond).Format(time.RFC3339Nano)
 		lateTs := now.Add(80 * time.Millisecond).Format(time.RFC3339Nano)
@@ -155,8 +155,8 @@ func TestFindDirectRequestLog(t *testing.T) {
 		if result == nil {
 			t.Fatal("expected to find log")
 		}
-		if result.Timestamp != midTs {
-			t.Errorf("expected midpoint log, got timestamp %s", result.Timestamp)
+		if result.Timestamp != lateTs {
+			t.Errorf("expected the latest log, got timestamp %s", result.Timestamp)
 		}
 	})
 

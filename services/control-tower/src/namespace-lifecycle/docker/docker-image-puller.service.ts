@@ -60,38 +60,32 @@ export class DockerImagePullerService {
       }
     }
 
-    const dbImages = new Set<string>();
+    // The image that will run: a custom `image` wins over the engine default
+    const runImages = new Set<string>();
     for (const item of ctx.definition.items) {
-      if (item.type !== 'DATABASE' || !item.database) {
-        continue;
+      let image: string | undefined;
+      if (item.type === 'DATABASE' && item.database) {
+        image =
+          item.image ||
+          this.databaseConfig.getConfig(
+            item.database,
+            {
+              dbName: item.dbName ?? undefined,
+              dbUser: item.dbUser ?? undefined,
+              dbPassword: item.dbPassword ?? undefined,
+            },
+            item.version ?? undefined,
+          ).image;
+      } else if (item.type === 'BROKER' && item.broker) {
+        image =
+          item.image ||
+          this.brokerConfig.getConfig(item.broker, item.version ?? undefined)
+            .image;
       }
-      const dbConfig = this.databaseConfig.getConfig(
-        item.database,
-        {
-          dbName: item.dbName ?? undefined,
-          dbUser: item.dbUser ?? undefined,
-          dbPassword: item.dbPassword ?? undefined,
-        },
-        item.version ?? undefined,
-      );
-      if (!dbImages.has(dbConfig.image)) {
-        dbImages.add(dbConfig.image);
-        pulls.push(this.dockerClient.pullImage(dbConfig.image));
-      }
-    }
-
-    const brokerImages = new Set<string>();
-    for (const item of ctx.definition.items) {
-      if (item.type !== 'BROKER' || !item.broker) {
-        continue;
-      }
-      const bCfg = this.brokerConfig.getConfig(
-        item.broker,
-        item.version ?? undefined,
-      );
-      if (!brokerImages.has(bCfg.image)) {
-        brokerImages.add(bCfg.image);
-        pulls.push(this.dockerClient.pullImage(bCfg.image));
+      if (image && !runImages.has(image)) {
+        runImages.add(image);
+        const auth = this.registryService.getAuthConfig(ctx.runId, image);
+        pulls.push(this.dockerClient.pullImage(image, auth));
       }
     }
 

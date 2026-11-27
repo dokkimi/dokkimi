@@ -207,6 +207,11 @@ func extractCommand(v *respValue) string {
 	parts := make([]string, len(v.array))
 	for i, elem := range v.array {
 		parts[i] = elem.str
+		// Quote an argument that the space-separated form would split or
+		// lose, so the logged command reads as it was given
+		if elem.str == "" || strings.ContainsAny(elem.str, " \t") {
+			parts[i] = `"` + elem.str + `"`
+		}
 	}
 	return strings.Join(parts, " ")
 }

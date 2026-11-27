@@ -6,18 +6,28 @@ import * as path from 'path';
 
 const mockFs: Record<string, string> = {};
 const mockExistsSync = jest.fn((p: string) => p in mockFs);
-const mockReadFileSync = jest.fn((p: string) => {
+const readMockFile = (p: string) => {
   if (p in mockFs) {
     return mockFs[p];
   }
-  throw new Error('ENOENT');
-});
+  throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' });
+};
+const mockReadFileSync = jest.fn(readMockFile);
 const mockWriteFileSync = jest.fn(
   (p: string, content: string, _encoding?: string) => {
     mockFs[p] = content;
   },
 );
 const mockMkdirSync = jest.fn();
+// The user's own files (CLAUDE.md, Copilot) are written through safe-write
+const mockSafeWrite = jest.fn((p: string, content: string) => {
+  mockFs[p] = content;
+});
+jest.mock('./safe-write', () => ({
+  createFile: (p: string, c: string) => mockSafeWrite(p, c),
+  replaceFile: (p: string, c: string) => mockSafeWrite(p, c),
+}));
+const mockStatSync = jest.fn();
 
 jest.mock('fs', () => ({
   existsSync: (...args: unknown[]) => mockExistsSync(args[0] as string),
@@ -26,6 +36,7 @@ jest.mock('fs', () => ({
     mockWriteFileSync(args[0] as string, args[1] as string, args[2] as string),
   mkdirSync: (...args: unknown[]) =>
     mockMkdirSync(args[0] as string, args[1] as object),
+  statSync: (...args: unknown[]) => mockStatSync(args[0] as string),
 }));
 
 jest.mock('os', () => ({
@@ -35,6 +46,12 @@ jest.mock('os', () => ({
 const mockConfig = { DOKKIMI_VERSION: '1.2.3' };
 jest.mock('@dokkimi/config', () => mockConfig);
 
+jest.mock('./mcp-config', () => ({
+  MCP_CONFIG_PATHS: ['/mock-home/.claude.json', '/mock-home/.cursor/mcp.json'],
+  addMcpEntry: jest.fn(),
+}));
+
+import { addMcpEntry } from './mcp-config';
 import { registerLlmContext } from './llm-context-register';
 
 // ---------------------------------------------------------------------------
@@ -77,6 +94,7 @@ function clearMockFs(): void {
 describe('registerLlmContext', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockReadFileSync.mockImplementation(readMockFile);
     clearMockFs();
     mockConfig.DOKKIMI_VERSION = '1.2.3';
   });
@@ -110,11 +128,7 @@ describe('registerLlmContext', () => {
     );
 
     // Should write CLAUDE.md (via upsertSection)
-    expect(mockWriteFileSync).toHaveBeenCalledWith(
-      CLAUDE_MD_PATH,
-      expect.stringContaining('<!-- dokkimi -->'),
-      'utf-8',
-    );
+    expect(mockFs[CLAUDE_MD_PATH]).toContain('<!-- dokkimi -->');
 
     // Should write Cursor rules
     expect(mockWriteFileSync).toHaveBeenCalledWith(
@@ -124,11 +138,7 @@ describe('registerLlmContext', () => {
     );
 
     // Should write Copilot instructions
-    expect(mockWriteFileSync).toHaveBeenCalledWith(
-      COPILOT_PATH,
-      expect.stringContaining('<!-- dokkimi -->'),
-      'utf-8',
-    );
+    expect(mockFs[COPILOT_PATH]).toContain('<!-- dokkimi -->');
   });
 
   it('creates/updates Claude CLAUDE.md with Dokkimi section', () => {
@@ -136,7 +146,7 @@ describe('registerLlmContext', () => {
 
     registerLlmContext();
 
-    const claudeCall = mockWriteFileSync.mock.calls.find(
+    const claudeCall = mockSafeWrite.mock.calls.find(
       (c) => c[0] === CLAUDE_MD_PATH,
     );
     expect(claudeCall).toBeDefined();
@@ -164,7 +174,7 @@ describe('registerLlmContext', () => {
 
     registerLlmContext();
 
-    const copilotCall = mockWriteFileSync.mock.calls.find(
+    const copilotCall = mockSafeWrite.mock.calls.find(
       (c) => c[0] === COPILOT_PATH,
     );
     expect(copilotCall).toBeDefined();
@@ -215,11 +225,7 @@ describe('registerLlmContext', () => {
     );
 
     // Should update all LLM context files (full register)
-    expect(mockWriteFileSync).toHaveBeenCalledWith(
-      CLAUDE_MD_PATH,
-      expect.stringContaining('<!-- dokkimi -->'),
-      'utf-8',
-    );
+    expect(mockFs[CLAUDE_MD_PATH]).toContain('<!-- dokkimi -->');
   });
 
   it('ensures missing files are created even when version matches', () => {
@@ -241,11 +247,7 @@ describe('registerLlmContext', () => {
     );
 
     // Should write CLAUDE.md
-    expect(mockWriteFileSync).toHaveBeenCalledWith(
-      CLAUDE_MD_PATH,
-      expect.stringContaining('<!-- dokkimi -->'),
-      'utf-8',
-    );
+    expect(mockFs[CLAUDE_MD_PATH]).toContain('<!-- dokkimi -->');
 
     // Should write Cursor rules
     expect(mockWriteFileSync).toHaveBeenCalledWith(
@@ -255,11 +257,7 @@ describe('registerLlmContext', () => {
     );
 
     // Should write Copilot
-    expect(mockWriteFileSync).toHaveBeenCalledWith(
-      COPILOT_PATH,
-      expect.stringContaining('<!-- dokkimi -->'),
-      'utf-8',
-    );
+    expect(mockFs[COPILOT_PATH]).toContain('<!-- dokkimi -->');
   });
 
   it('replaces existing Dokkimi section in Claude CLAUDE.md on full register', () => {
@@ -270,7 +268,7 @@ describe('registerLlmContext', () => {
 
     registerLlmContext();
 
-    const claudeCall = mockWriteFileSync.mock.calls.find(
+    const claudeCall = mockSafeWrite.mock.calls.find(
       (c) => c[0] === CLAUDE_MD_PATH,
     );
     expect(claudeCall).toBeDefined();
@@ -284,6 +282,28 @@ describe('registerLlmContext', () => {
     expect(content).toContain('# Other');
   });
 
+  // Before, a CLAUDE.md that couldn't be read was replaced by the section
+  it("leaves a CLAUDE.md it can't read alone", () => {
+    mockFs[INSTRUCTIONS_SOURCE] = '# Instructions';
+    mockReadFileSync.mockImplementation((p: string) => {
+      if (p === CLAUDE_MD_PATH) {
+        throw Object.assign(new Error('EACCES'), { code: 'EACCES' });
+      }
+      if (p in mockFs) {
+        return mockFs[p];
+      }
+      throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' });
+    });
+
+    registerLlmContext();
+
+    const written = [
+      ...mockSafeWrite.mock.calls,
+      ...mockWriteFileSync.mock.calls,
+    ];
+    expect(written.map((c) => c[0])).not.toContain(CLAUDE_MD_PATH);
+  });
+
   it('handles missing home directory gracefully', () => {
     mockFs[INSTRUCTIONS_SOURCE] = '# Instructions';
     // Make mkdirSync throw for the first call
@@ -293,5 +313,81 @@ describe('registerLlmContext', () => {
 
     // Should not throw — errors are silently caught
     expect(() => registerLlmContext()).not.toThrow();
+  });
+
+  describe('MCP registration', () => {
+    const mockAddMcpEntry = addMcpEntry as jest.Mock;
+    const originalIsTTY = process.stderr.isTTY;
+    let errorSpy: jest.SpyInstance;
+
+    beforeEach(() => {
+      mockFs[INSTRUCTIONS_SOURCE] = '# Instructions';
+      mockAddMcpEntry.mockReset();
+      mockStatSync.mockReset();
+      mockStatSync.mockImplementation(() => {
+        throw new Error('ENOENT');
+      });
+      process.stderr.isTTY = true;
+      errorSpy = jest.spyOn(console, 'error').mockImplementation();
+    });
+
+    afterEach(() => {
+      process.stderr.isTTY = originalIsTTY;
+      errorSpy.mockRestore();
+    });
+
+    const failFirst = () =>
+      mockAddMcpEntry.mockImplementationOnce(() => {
+        throw new Error('is not valid JSON');
+      });
+
+    it.each(['1.2.3', '1.0.0'])(
+      'registers in every config file (stored version %s)',
+      (storedVersion) => {
+        mockFs[VERSION_PATH] = storedVersion;
+        registerLlmContext();
+        expect(mockAddMcpEntry.mock.calls.map((c) => c[0])).toEqual([
+          '/mock-home/.claude.json',
+          '/mock-home/.cursor/mcp.json',
+        ]);
+        expect(errorSpy).not.toHaveBeenCalled();
+      },
+    );
+
+    it('warns about an unusable file and still registers in the next', () => {
+      failFirst();
+      registerLlmContext();
+      expect(mockAddMcpEntry).toHaveBeenCalledTimes(2);
+      expect(errorSpy).toHaveBeenCalledWith(
+        expect.stringContaining('/mock-home/.claude.json is not valid JSON'),
+      );
+      expect(mockFs[path.join(DOKKIMI_DIR, '.mcp-warned')]).toBeDefined();
+    });
+
+    it('does not repeat the warning within a day', () => {
+      mockStatSync.mockReturnValue({ mtimeMs: Date.now() - 60_000 });
+      failFirst();
+      registerLlmContext();
+      expect(errorSpy).not.toHaveBeenCalled();
+    });
+
+    it('warns again after a day', () => {
+      mockStatSync.mockReturnValue({ mtimeMs: Date.now() - 25 * 3_600_000 });
+      failFirst();
+      registerLlmContext();
+      expect(errorSpy).toHaveBeenCalled();
+    });
+
+    it('stays silent, without using up the warning, when not a terminal', () => {
+      process.stderr.isTTY = false;
+      failFirst();
+      registerLlmContext();
+      expect(errorSpy).not.toHaveBeenCalled();
+      expect(mockWriteFileSync).not.toHaveBeenCalledWith(
+        path.join(DOKKIMI_DIR, '.mcp-warned'),
+        expect.anything(),
+        expect.anything(),
+      );
+    });
   });
 });

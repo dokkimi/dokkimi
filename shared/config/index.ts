@@ -7,3 +7,4 @@ export * from './assertions';
 export * from './user-prefs';
 export * from './version';
 export * from './paths';
+export * from './outcome';

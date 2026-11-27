@@ -8,7 +8,7 @@ import CodeBlock from '../../components/CodeBlock.astro';
   <p class="subtitle">Dokkimi ships with a full MCP server and auto-configures your AI agent on install. No setup required.</p>
 
   <h2>MCP server</h2>
-  <p>Dokkimi includes a <a href="https://modelcontextprotocol.io" target="_blank" rel="noopener noreferrer">Model Context Protocol</a> (MCP) server that gives your AI agent direct access to Dokkimi's capabilities as native tool calls. When you install Dokkimi, it automatically registers the MCP server with Claude Code, Cursor, and GitHub Copilot — your agent can validate, run, and debug tests without shelling out to the CLI.</p>
+  <p>Dokkimi includes a <a href="https://modelcontextprotocol.io" target="_blank" rel="noopener noreferrer">Model Context Protocol</a> (MCP) server that gives your AI agent direct access to Dokkimi's capabilities as native tool calls. When you install Dokkimi, it automatically registers the MCP server with Claude Code and Cursor (GitHub Copilot gets a context file instead; see <a href="#auto-registration">Auto-registration</a>) — your agent can validate, run, and debug tests without shelling out to the CLI.</p>
 
   <p>The MCP server exposes these tool groups:</p>
 
@@ -32,8 +32,8 @@ import CodeBlock from '../../components/CodeBlock.astro';
       <tr><th>Tool</th><th>Description</th></tr>
     </thead>
     <tbody>
-      <tr><td><code>run_tests</code></td><td>Run test definitions by name, path, or pattern. Returns pass/fail summary with run ID.</td></tr>
-      <tr><td><code>watch_run</code></td><td>Stream live status updates from an in-progress run.</td></tr>
+      <tr><td><code>run_tests</code></td><td>Run test definitions by name, path, or pattern. Returns pass/fail summary with run ID. If no run started, it fails and returns the CLI's output, such as validation errors.</td></tr>
+      <tr><td><code>watch_run</code></td><td>Wait for the current run to finish (polling, up to 10 minutes) and return its final summary.</td></tr>
       <tr><td><code>stop</code></td><td>Stop a running test.</td></tr>
     </tbody>
   </table>
@@ -66,8 +66,12 @@ import CodeBlock from '../../components/CodeBlock.astro';
       <tr><td><code>status</code></td><td>Check if Dokkimi is running, and list active or recent instances.</td></tr>
       <tr><td><code>get_run_history</code></td><td>List past runs with their results.</td></tr>
       <tr><td><code>doctor</code></td><td>Diagnose installation issues (Docker, images, config).</td></tr>
-      <tr><td><code>clean</code></td><td>Remove orphaned containers and networks.</td></tr>
+      <tr><td><code>clean</code></td><td>Stop the project's instances and delete its runs, containers, and networks.</td></tr>
       <tr><td><code>init</code></td><td>Scaffold a new <code>.dokkimi/</code> project.</td></tr>
+      <tr><td><code>get_config</code></td><td>Show all Dokkimi settings with their defaults and where each value comes from (project, global, or default).</td></tr>
+      <tr><td><code>set_config</code></td><td>Change a setting (concurrency, run history, telemetry). Concurrency is machine-wide: Dokkimi uses the global value, and a change takes effect on the next command that finds no run active.</td></tr>
+      <tr><td><code>reboot</code></td><td>Restart Dokkimi services. Interrupts any running instances.</td></tr>
+      <tr><td><code>send_feedback</code></td><td>Send feedback to the Dokkimi team about the AI experience: something missing, confusing, or working well.</td></tr>
     </tbody>
   </table>
 
@@ -82,7 +86,7 @@ import CodeBlock from '../../components/CodeBlock.astro';
     <li>Fixes the issue and re-runs — all without leaving the conversation</li>
   </ol>
 
-  <h2>Auto-registration</h2>
+  <h2 id="auto-registration">Auto-registration</h2>
   <p>When you install Dokkimi, it automatically configures itself with every supported AI tool:</p>
   <table>
     <thead>
@@ -95,6 +99,7 @@ import CodeBlock from '../../components/CodeBlock.astro';
     </tbody>
   </table>
   <p>The complete Dokkimi specification is written to <code>~/.dokkimi/dokkimi-instructions.md</code> and referenced from each tool's context. This means your agent knows the full definition format, all assertion operators, and every CLI command — without you pointing it to docs.</p>
+  <p>An existing <code>dokkimi</code> MCP entry is never overwritten, and a config file that can't be read as JSON is left untouched. Run <code>dokkimi doctor</code> to check registration.</p>
 
   <h2>Writing tests with AI</h2>
   <p>Just describe what you want to test. Your AI assistant already has the full Dokkimi spec in context:</p>

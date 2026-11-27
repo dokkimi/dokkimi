@@ -1,7 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
-import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
-import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
+import { APP_INTERCEPTOR } from '@nestjs/core';
 import { PrismaModule } from './prisma/prisma.module';
 import { LoggingModule } from './logging/logging.module';
 import { LoggingInterceptor } from './logging/logging.interceptor';
@@ -14,7 +13,7 @@ import { LogProcessingModule } from './log-processing/log-processing.module';
 import { ArtifactsModule } from './artifacts/artifacts.module';
 import { BaselinesModule } from './baselines/baselines.module';
 import { StorageModule } from './storage/storage.module';
-import { getConfig, getConcurrencyPrefs } from '@dokkimi/config';
+import { getConfig, resolveConcurrency } from '@dokkimi/config';
 
 @Module({
   imports: [
@@ -23,16 +22,13 @@ import { getConfig, getConcurrencyPrefs } from '@dokkimi/config';
       load: [
         () => {
           const config = getConfig();
+          const concurrency = resolveConcurrency(config);
           return {
             DATABASE_URL: config.database.url,
             STORAGE_DIR: config.storage.dir,
             INIT_FILES_DIR: config.storage.initFilesDir,
-            MAX_CONCURRENT_NAMESPACES:
-              getConcurrencyPrefs().maxConcurrentTests ??
-              config.concurrency.maxConcurrentTests,
-            MAX_BOOTING_NAMESPACES:
-              getConcurrencyPrefs().maxBootingTests ??
-              config.concurrency.maxBootingTests,
+            MAX_CONCURRENT_NAMESPACES: concurrency.maxConcurrentTests,
+            MAX_BOOTING_NAMESPACES: concurrency.maxBootingTests,
             CIRCUIT_BREAKER_TIMEOUT: config.circuitBreaker?.timeout ?? 3000,
             CIRCUIT_BREAKER_ERROR_THRESHOLD:
               config.circuitBreaker?.errorThresholdPercentage ?? 50,
@@ -42,12 +38,6 @@ import { getConfig, getConcurrencyPrefs } from '@dokkimi/config';
         },
       ],
     }),
-    ThrottlerModule.forRoot([
-      {
-        ttl: 60000, // 1 minute
-        limit: 100, // 100 requests per minute (log ingestion uses @SkipThrottle)
-      },
-    ]),
     PrismaModule,
     LoggingModule.forRoot({ serviceName: 'CT', serviceColor: '\x1b[36m' }),
     TelemetryModule.forRoot({ serviceName: 'control-tower' }),
@@ -62,10 +52,6 @@ import { getConfig, getConcurrencyPrefs } from '@dokkimi/config';
   ],
   controllers: [],
   providers: [
-    {
-      provide: APP_GUARD,
-      useClass: ThrottlerGuard,
-    },
     {
       provide: APP_INTERCEPTOR,
       useClass: LoggingInterceptor,

@@ -26,7 +26,8 @@ describe('get_run_summary', () => {
       instances: [
         { id: 'i1', name: 'test-a', status: 'STOPPED', testStatus: 'PASSED' },
         { id: 'i2', name: 'test-b', status: 'STOPPED', testStatus: 'FAILED' },
-        { id: 'i3', name: 'test-c', status: 'SKIPPED' },
+        // Stopped with no result: it never ran
+        { id: 'i3', name: 'test-c', status: 'STOPPED' },
       ],
     });
 
@@ -38,8 +39,15 @@ describe('get_run_summary', () => {
       total: 3,
       passed: 1,
       failed: 1,
-      skipped: 1,
+      cancelled: 0,
+      notRun: 1,
+      running: 0,
     });
+    expect(data.instances.map((i: { outcome: string }) => i.outcome)).toEqual([
+      'passed',
+      'failed',
+      'not-run',
+    ]);
     expect(data.instances).toHaveLength(3);
   });
 

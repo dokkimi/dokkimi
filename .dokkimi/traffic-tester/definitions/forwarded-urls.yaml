@@ -1,0 +1,80 @@
+name: forwarded-urls
+description: Services receive the URL exactly as it was sent
+config:
+  timeoutSeconds: 120
+items:
+  - $ref: ../shared/service-a.yaml
+  # Answers with the URL it received
+  - type: SERVICE
+    name: echo
+    image: ghcr.io/dokkimi/traffic-tester:0.1.0
+    port: 4000
+    healthCheck: /health
+    command:
+      - node
+      - -e
+      - |
+        require('http').createServer((req, res) => {
+          res.setHeader('Content-Type', 'application/json');
+          res.end(JSON.stringify({ url: req.url }));
+        }).listen(4000);
+tests:
+  - name: Between services
+    steps:
+      - name: Service-a calls echo
+        action:
+          type: httpRequest
+          method: POST
+          url: service-a/call
+          headers:
+            Content-Type: application/json
+          body:
+            requests:
+              - { method: GET, baseURL: 'http://echo', url: '/plain' }
+              - { method: GET, baseURL: 'http://echo', url: '/query?x=1&y=2' }
+              - { method: GET, baseURL: 'http://echo', url: '/a%2Fb' }
+              - { method: GET, baseURL: 'http://echo', url: '/100%25' }
+              - { method: GET, baseURL: 'http://echo', url: '/a%20b?q=c%20d' }
+        assertions:
+          - assertions:
+              - {
+                  path: '$.response.body.results[0].url',
+                  operator: eq,
+                  value: '/plain',
+                }
+              - {
+                  path: '$.response.body.results[1].url',
+                  operator: eq,
+                  value: '/query?x=1&y=2',
+                }
+              - {
+                  path: '$.response.body.results[2].url',
+                  operator: eq,
+                  value: '/a%2Fb',
+                }
+              - {
+                  path: '$.response.body.results[3].url',
+                  operator: eq,
+                  value: '/100%25',
+                }
+              - {
+                  path: '$.response.body.results[4].url',
+                  operator: eq,
+                  value: '/a%20b?q=c%20d',
+                }
+  - name: From a step
+    steps:
+      - name: No query
+        action: { type: httpRequest, method: GET, url: echo/plain }
+        assertions:
+          - assertions:
+              - { path: $.response.body.url, operator: eq, value: /plain }
+      - name: With a query
+        action: { type: httpRequest, method: GET, url: 'echo/query?x=1&y=2' }
+        assertions:
+          - assertions:
+              - {
+                  path: $.response.body.url,
+                  operator: eq,
+                  value: '/query?x=1&y=2',
+                }

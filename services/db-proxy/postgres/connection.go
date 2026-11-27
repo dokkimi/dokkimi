@@ -1,6 +1,7 @@
 package main
 
 import (
+	"github.com/jackc/pgx/v5/pgtype"
 	"io"
 	"log"
 	"net"
@@ -10,10 +11,38 @@ import (
 	"github.com/dokkimi/dokkimi/services/db-proxy/shared"
 )
 
+// Kinds of pending entry, by the message that created it
+const (
+	kindExecute = iota // an Execute: answered by one result
+	kindSimple         // a simple Query: one or more statements, answered by the time of its ReadyForQuery
+	kindParse          // a Parse: answered by ParseComplete, or an error that is logged
+)
+
 // pendingQuery tracks a query waiting for its response from upstream
 type pendingQuery struct {
+	kind      int
 	sql       string
 	startTime time.Time
+	formats   []int16 // result format codes from Bind (extended protocol)
+	group     int     // number of sync points (Query or Sync) sent before it
+	stmt      string  // prepared statement it executes (extended protocol)
+
+	// A simple Query's result so far: its last result set (data not nil),
+	// or its last result when none returned rows. After an error the server
+	// runs none of its later statements, so an error is the result.
+	answered     bool
+	success      bool
+	rowsAffected int64
+	errMsg       string
+	data         []map[string]interface{}
+}
+
+// describeRequest is a Describe the client sent, waiting for its
+// RowDescription or NoData: of a prepared statement ('S') or a portal ('P').
+type describeRequest struct {
+	kind  byte
+	name  string
+	group int
 }
 
 // proxyConnection manages a single client↔upstream connection pair
@@ -23,10 +52,18 @@ type proxyConnection struct {
 	config       *shared.Config
 	logger       *shared.QueryLogger
 
-	mu         sync.Mutex
-	stmtCache  map[string]string // statement name → SQL
-	activeStmt string            // statement being executed (set by Bind)
-	pending    []pendingQuery    // queries awaiting response
+	mu            sync.Mutex
+	stmtCache     map[string]string // statement name → SQL
+	activeStmt    string            // statement being executed (set by Bind)
+	activeFormats []int16           // result formats of that execution (set by Bind)
+	pending       []pendingQuery    // queries awaiting response
+	syncSent      int               // sync points (Query or Sync) sent by the client
+	readySeen     int               // ReadyForQuery messages received from the server
+
+	describes   []describeRequest       // Describes waiting for their reply
+	stmtColumns map[string][]columnMeta // prepared statement → its result columns
+
+	types *pgtype.Map // decodes binary result values; one per connection, not shared
 
 	// Result accumulation for the current query
 	columns    []columnMeta             // from RowDescription
@@ -40,6 +77,8 @@ func newProxyConnection(client, upstream net.Conn, cfg *shared.Config, logger *s
 		config:       cfg,
 		logger:       logger,
 		stmtCache:    make(map[string]string),
+		stmtColumns:  make(map[string][]columnMeta),
+		types:        pgtype.NewMap(),
 	}
 }
 
@@ -77,9 +116,26 @@ func (pc *proxyConnection) relayClientToUpstream() {
 		switch msgType {
 		case msgQuery:
 			query := extractSimpleQuery(frame)
+			pc.mu.Lock()
 			if query != "" {
+				pc.pending = append(pc.pending, pendingQuery{kind: kindSimple, sql: query, startTime: time.Now(), group: pc.syncSent})
+			}
+			pc.syncSent++ // a simple query is its own sync point
+			pc.mu.Unlock()
+
+		case msgSync:
+			pc.mu.Lock()
+			pc.syncSent++
+			pc.mu.Unlock()
+
+		case msgDescribe:
+			if len(frame) >= 6 {
+				name := ""
+				if end := indexOf(frame[6:], 0); end >= 0 {
+					name = string(frame[6 : 6+end])
+				}
 				pc.mu.Lock()
-				pc.pending = append(pc.pending, pendingQuery{sql: query, startTime: time.Now()})
+				pc.describes = append(pc.describes, describeRequest{kind: frame[5], name: name, group: pc.syncSent})
 				pc.mu.Unlock()
 			}
 
@@ -88,20 +144,25 @@ func (pc *proxyConnection) relayClientToUpstream() {
 			if query != "" {
 				pc.mu.Lock()
 				pc.stmtCache[stmtName] = query
+				// A statement that can't be prepared is answered with an
+				// error and never executed: it is logged as this entry.
+				pc.pending = append(pc.pending, pendingQuery{kind: kindParse, sql: query, startTime: time.Now(), group: pc.syncSent})
 				pc.mu.Unlock()
 			}
 
 		case msgBind:
 			stmtName := extractBindStmtName(frame)
+			formats := extractBindResultFormats(frame)
 			pc.mu.Lock()
 			pc.activeStmt = stmtName
+			pc.activeFormats = formats
 			pc.mu.Unlock()
 
 		case msgExecute:
 			pc.mu.Lock()
 			stmtName := pc.activeStmt
 			if query, ok := pc.stmtCache[stmtName]; ok {
-				pc.pending = append(pc.pending, pendingQuery{sql: query, startTime: time.Now()})
+				pc.pending = append(pc.pending, pendingQuery{kind: kindExecute, sql: query, startTime: time.Now(), formats: pc.activeFormats, group: pc.syncSent, stmt: stmtName})
 			}
 			pc.mu.Unlock()
 
@@ -133,18 +194,49 @@ func (pc *proxyConnection) relayUpstreamToClient() {
 		}
 
 		switch msgType {
-		case msgRowDescription:
+		case msgParseComplete:
 			pc.mu.Lock()
-			pc.columns = extractColumnInfo(frame)
+			if len(pc.pending) > 0 && pc.pending[0].kind == kindParse {
+				pc.pending = pc.pending[1:]
+			}
+			pc.mu.Unlock()
+
+		case msgRowDescription, msgNoData:
+			// The reply to a Describe, or (simple query) the start of a result.
+			var cols []columnMeta
+			if msgType == msgRowDescription {
+				cols = extractColumnInfo(frame)
+			}
+			pc.mu.Lock()
+			if len(pc.describes) > 0 {
+				d := pc.describes[0]
+				pc.describes = pc.describes[1:]
+				if d.kind == 'S' {
+					// A statement can be described once and run many times
+					pc.stmtColumns[d.name] = cols
+				} else {
+					pc.columns = cols
+				}
+			} else if msgType == msgRowDescription {
+				pc.columns = cols
+			}
 			pc.resultRows = nil
 			pc.mu.Unlock()
 
 		case msgDataRow:
 			pc.mu.Lock()
-			if pc.columns != nil {
-				values := extractTypedDataRow(frame, pc.columns)
-				row := make(map[string]interface{}, len(pc.columns))
-				for i, col := range pc.columns {
+			cols := pc.columns
+			var formats []int16
+			if len(pc.pending) > 0 {
+				formats = pc.pending[0].formats
+				if cols == nil {
+					cols = pc.stmtColumns[pc.pending[0].stmt]
+				}
+			}
+			if cols != nil {
+				values := extractTypedDataRow(frame, cols, formats, pc.types)
+				row := make(map[string]interface{}, len(cols))
+				for i, col := range cols {
 					if i < len(values) {
 						row[col.name] = values[i]
 					}
@@ -157,6 +249,9 @@ func (pc *proxyConnection) relayUpstreamToClient() {
 			_, rowsAffected := extractCommandTag(frame)
 			pc.mu.Lock()
 			data := pc.resultRows
+			if data == nil && pc.columns != nil {
+				data = []map[string]interface{}{} // a result set without rows
+			}
 			pc.resultRows = nil
 			pc.columns = nil
 			pc.mu.Unlock()
@@ -169,6 +264,51 @@ func (pc *proxyConnection) relayUpstreamToClient() {
 			pc.columns = nil
 			pc.mu.Unlock()
 			pc.completeQuery(false, 0, errMsg, nil)
+
+		case msgEmptyQuery:
+			// The reply to an empty query (";" or ""), e.g. a connection check
+			pc.completeQuery(true, 0, "", nil)
+
+		case msgPortalSuspended:
+			// Execute with a row limit (a cursor or fetch size) returned its rows;
+			// the next Execute continues it as a new entry.
+			pc.mu.Lock()
+			data := pc.resultRows
+			pc.resultRows = nil
+			pc.mu.Unlock()
+			pc.completeQuery(true, int64(len(data)), "", data)
+
+		case msgReadyForQuery:
+			// Everything sent before this sync point is done: a simple Query's
+			// statements have all been answered, so it is logged now. After an
+			// error the server skips the rest of the group, so drop what it never
+			// answered, or every later query would be paired with the wrong reply.
+			pc.mu.Lock()
+			pc.readySeen++
+			var done []pendingQuery
+			kept := pc.pending[:0]
+			for _, pq := range pc.pending {
+				switch {
+				case pq.group >= pc.readySeen:
+					kept = append(kept, pq)
+				case pq.kind == kindSimple && pq.answered:
+					done = append(done, pq)
+				}
+			}
+			pc.pending = kept
+			keptDescribes := pc.describes[:0]
+			for _, d := range pc.describes {
+				if d.group >= pc.readySeen {
+					keptDescribes = append(keptDescribes, d)
+				}
+			}
+			pc.describes = keptDescribes
+			pc.columns = nil
+			pc.resultRows = nil
+			pc.mu.Unlock()
+			for _, pq := range done {
+				pc.logQuery(pq, pq.success, pq.rowsAffected, pq.errMsg, pq.data)
+			}
 		}
 
 		if _, err := pc.clientConn.Write(frame); err != nil {
@@ -180,20 +320,35 @@ func (pc *proxyConnection) relayUpstreamToClient() {
 	}
 }
 
-// completeQuery pops the oldest pending query and logs it with response details
+// completeQuery records a statement's result for the oldest pending query.
+// An Execute or a failed Parse is logged at once. A simple Query keeps the
+// result and is logged at its ReadyForQuery, when all its statements are done.
+// data is nil for a result that isn't a result set.
 func (pc *proxyConnection) completeQuery(success bool, rowsAffected int64, errMsg string, data []map[string]interface{}) {
-	if pc.logger == nil {
-		return
-	}
-
 	pc.mu.Lock()
 	if len(pc.pending) == 0 {
+		pc.mu.Unlock()
+		return
+	}
+	if pq := &pc.pending[0]; pq.kind == kindSimple {
+		// A later statement without rows (e.g. COMMIT) doesn't replace a result set
+		if !success || data != nil || pq.data == nil {
+			pq.answered, pq.success, pq.rowsAffected, pq.errMsg, pq.data = true, success, rowsAffected, errMsg, data
+		}
 		pc.mu.Unlock()
 		return
 	}
 	pq := pc.pending[0]
 	pc.pending = pc.pending[1:]
 	pc.mu.Unlock()
+	pc.logQuery(pq, success, rowsAffected, errMsg, data)
+}
+
+// logQuery logs a query with its result
+func (pc *proxyConnection) logQuery(pq pendingQuery, success bool, rowsAffected int64, errMsg string, data []map[string]interface{}) {
+	if pc.logger == nil {
+		return
+	}
 
 	durationMs := int(time.Since(pq.startTime).Milliseconds())
 	msg := shared.DatabaseLogMessage{
@@ -203,11 +358,9 @@ func (pc *proxyConnection) completeQuery(success bool, rowsAffected int64, errMs
 		DatabaseName:   pc.config.InstanceItemName,
 		Query:          pq.sql,
 		Success:        success,
+		RowsAffected:   rowsAffected,
 		Duration:       &durationMs,
 		Timestamp:      time.Now().Format(time.RFC3339Nano),
-	}
-	if rowsAffected > 0 {
-		msg.RowsAffected = &rowsAffected
 	}
 	if errMsg != "" {
 		msg.Error = errMsg

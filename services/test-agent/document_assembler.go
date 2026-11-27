@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
-	"math"
 	"reflect"
 	"strings"
 	"time"
@@ -123,18 +122,27 @@ func FindDirectRequestLog(httpLogs []HttpLogMessage, action StepAction, stepExec
 		if logTime.Before(startTime) || logTime.After(endTime) {
 			continue
 		}
+		if log.Origin != nil && *log.Origin != "" {
+			continue // made by a service, not by the test agent
+		}
 		if log.Method != action.Method {
 			continue
 		}
 		if action.URL != "" {
-			slashIdx := strings.Index(action.URL, "/")
+			// Compare as it was sent: without a scheme, and encoded as the
+			// interceptor logs the path
+			stepURL := encodeURLChars(stripScheme(action.URL))
+			slashIdx := strings.Index(stepURL, "/")
 			var service, path string
 			if slashIdx >= 0 {
-				service = action.URL[:slashIdx]
-				path = action.URL[slashIdx:]
+				service = stepURL[:slashIdx]
+				path = stepURL[slashIdx:]
 			} else {
-				service = action.URL
+				service = stepURL
 			}
+			// The log's target has no port: a service is reached on its own
+			// port, and an external host's port isn't part of its name
+			service, _, _ = strings.Cut(service, ":")
 			if service != "" && (log.Target == nil || *log.Target != service) {
 				continue
 			}
@@ -145,24 +153,15 @@ func FindDirectRequestLog(httpLogs []HttpLogMessage, action StepAction, stepExec
 		candidates = append(candidates, log)
 	}
 
-	if len(candidates) == 0 {
-		return nil
-	}
-	if len(candidates) == 1 {
-		return candidates[0]
-	}
-
-	mid := stepExecMidpoint(stepExec)
-	best := candidates[0]
-	bestDist := math.Abs(float64(parseLogTimestamp(best.Timestamp).UnixMilli() - mid))
-	for _, c := range candidates[1:] {
-		dist := math.Abs(float64(parseLogTimestamp(c.Timestamp).UnixMilli() - mid))
-		if dist < bestDist {
-			best = c
-			bestDist = dist
+	// The step's last request: an action loop sends it several times, and
+	// extract and assertions run once, on the last response.
+	var latest *HttpLogMessage
+	for _, c := range candidates {
+		if latest == nil || !httpLogTime(c).Before(httpLogTime(latest)) {
+			latest = c
 		}
 	}
-	return best
+	return latest
 }
 
 // FindDirectDatabaseLog finds the database log for a dbQuery action.
@@ -183,46 +182,82 @@ func FindDirectDatabaseLog(dbLogs []DatabaseLogMessage, action StepAction, stepE
 		if log.DatabaseName != action.Database {
 			continue
 		}
-		if !queriesMatch(log.Query, action.Query) {
+		if !queriesMatch(log.Query, action.Query) && !(strings.EqualFold(log.DatabaseType, "redis") && redisCommandsMatch(log.Query, action.Query)) {
 			continue
 		}
 		candidates = append(candidates, log)
 	}
 
-	if len(candidates) == 0 {
-		return nil
-	}
-	if len(candidates) == 1 {
-		return candidates[0]
-	}
-
-	mid := stepExecMidpoint(stepExec)
-	best := candidates[0]
-	bestDist := math.Abs(float64(parseLogTimestamp(best.Timestamp).UnixMilli() - mid))
-	for _, c := range candidates[1:] {
-		dist := math.Abs(float64(parseLogTimestamp(c.Timestamp).UnixMilli() - mid))
-		if dist < bestDist {
-			best = c
-			bestDist = dist
+	// The step's last query, as for HTTP requests (an action loop runs it
+	// several times; extract and assertions use the last result).
+	var latest *DatabaseLogMessage
+	for _, c := range candidates {
+		if latest == nil || !parseLogTimestamp(c.Timestamp).Before(parseLogTimestamp(latest.Timestamp)) {
+			latest = c
 		}
 	}
-	return best
+	return latest
 }
 
-// queriesMatch compares two query strings structurally. Both are parsed as
-// JSON; if either fails to parse, it falls back to exact string comparison.
-// This handles BSON round-trip differences (key ordering, float formatting).
-func queriesMatch(a, b string) bool {
-	a = strings.TrimSpace(a)
-	b = strings.TrimSpace(b)
-	if a == b {
+// queriesMatch reports whether a logged query is the step's own query. They
+// are compared as text, or else structurally as JSON (key order and spacing
+// don't matter). For a MongoDB insert, the driver adds a generated _id to each
+// document that has none, so an _id that is only in the logged document is
+// ignored.
+func queriesMatch(logged, step string) bool {
+	logged = strings.TrimSpace(logged)
+	step = strings.TrimSpace(step)
+	if logged == step {
 		return true
 	}
-	var parsedA, parsedB interface{}
-	if json.Unmarshal([]byte(a), &parsedA) != nil || json.Unmarshal([]byte(b), &parsedB) != nil {
+	var parsedLogged, parsedStep interface{}
+	if json.Unmarshal([]byte(logged), &parsedLogged) != nil || json.Unmarshal([]byte(step), &parsedStep) != nil {
 		return false
 	}
-	return reflect.DeepEqual(parsedA, parsedB)
+	dropGeneratedIDs(parsedLogged, parsedStep)
+	return reflect.DeepEqual(parsedLogged, parsedStep)
+}
+
+// redisCommandsMatch compares two Redis commands argument by argument, as the
+// Redis executor splits them, ignoring the case of the command name.
+func redisCommandsMatch(logged, step string) bool {
+	a, b := parseRedisCommand(logged), parseRedisCommand(step)
+	if len(a) == 0 || len(a) != len(b) || !strings.EqualFold(a[0], b[0]) {
+		return false
+	}
+	for i := 1; i < len(a); i++ {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
+// dropGeneratedIDs removes, from a logged MongoDB insertOne or insertMany, the
+// _id of each document whose counterpart in the step's query has no _id.
+func dropGeneratedIDs(logged, step interface{}) {
+	l, lok := logged.(map[string]interface{})
+	s, sok := step.(map[string]interface{})
+	if !lok || !sok || (l["operation"] != "insertOne" && l["operation"] != "insertMany") {
+		return
+	}
+	dropID := func(loggedDoc, stepDoc interface{}) {
+		ld, lok := loggedDoc.(map[string]interface{})
+		sd, sok := stepDoc.(map[string]interface{})
+		if lok && sok {
+			if _, has := sd["_id"]; !has {
+				delete(ld, "_id")
+			}
+		}
+	}
+	dropID(l["document"], s["document"])
+	ldocs, lok := l["documents"].([]interface{})
+	sdocs, sok := s["documents"].([]interface{})
+	if lok && sok && len(ldocs) == len(sdocs) {
+		for i := range ldocs {
+			dropID(ldocs[i], sdocs[i])
+		}
+	}
 }
 
 func stepTimeWindow(stepExec StepExecution) (time.Time, time.Time, error) {
@@ -239,18 +274,6 @@ func stepTimeWindow(stepExec StepExecution) (time.Time, time.Time, error) {
 	// logs that arrive slightly after the step response returns.
 	end = end.Add(timestampBufferMs * time.Millisecond)
 	return start, end, nil
-}
-
-func stepExecMidpoint(stepExec StepExecution) int64 {
-	start, startErr := time.Parse(time.RFC3339Nano, stepExec.StartTime)
-	end, endErr := time.Parse(time.RFC3339Nano, stepExec.EndTime)
-	if startErr != nil {
-		log.Printf("Warning: failed to parse step StartTime %q: %v", stepExec.StartTime, startErr)
-	}
-	if endErr != nil {
-		log.Printf("Warning: failed to parse step EndTime %q: %v", stepExec.EndTime, endErr)
-	}
-	return (start.UnixMilli() + end.UnixMilli()) / 2
 }
 
 func parseLogTimestamp(ts string) time.Time {

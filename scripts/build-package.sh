@@ -10,6 +10,8 @@ if command -v cygpath >/dev/null 2>&1; then
   REPO_ROOT="$(cygpath -m "$REPO_ROOT")"
 fi
 STAGE_DIR="$REPO_ROOT/.publish-staging"
+# Files this build changes; publish-package.sh expects them committed
+BUILD_CHANGED_FILES='^(VERSION|(.*/)?package\.json|shared/config/version\.ts|Formula/dokkimi\.rb)$'
 CURRENT_VERSION=$(cat "$REPO_ROOT/VERSION" | tr -d '[:space:]')
 
 echo ""
@@ -62,6 +64,16 @@ echo ""
 echo "==> Cleaning staging directory"
 rm -rf "$STAGE_DIR"
 mkdir -p "$STAGE_DIR"
+
+# Record what is being built, so publish-package.sh can refuse a stale build.
+# The build itself changes the version files and the formula (committed before
+# publishing); any other uncommitted change would be in the package but in no
+# commit.
+git -C "$REPO_ROOT" rev-parse HEAD > "$STAGE_DIR/.built-from"
+OTHER_CHANGES=$(git -C "$REPO_ROOT" status --porcelain | cut -c4- | grep -vE "$BUILD_CHANGED_FILES" || true)
+if [ -n "$OTHER_CHANGES" ]; then
+  echo "dirty" >> "$STAGE_DIR/.built-from"
+fi
 
 echo "==> Building all packages"
 cd "$REPO_ROOT"

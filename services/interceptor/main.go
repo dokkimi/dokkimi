@@ -2,7 +2,9 @@ package main
 
 import (
 	"bytes"
+	"compress/flate"
 	"compress/gzip"
+	"compress/zlib"
 	"context"
 	"crypto/rsa"
 	"crypto/tls"
@@ -22,7 +24,9 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/andybalholm/brotli"
 	"github.com/google/uuid"
+	"github.com/klauspost/compress/zstd"
 )
 
 // Version is set at build time via -ldflags "-X main.Version=..."
@@ -58,7 +62,7 @@ func main() {
 		return cache.GetUrlMap()
 	}
 
-	mockManager := NewMockManager(cache, nil, cfg.Origin, getUrlMap)
+	mockManager := NewMockManager(cache, cfg.Origin)
 	proxyService := NewProxyService(cfg, mockManager, getUrlMap)
 
 	// Initialize logger (only if logging is enabled)
@@ -119,56 +123,17 @@ func main() {
 		}
 	}
 
-	// Determine if this is the global interceptor (no ORIGIN set) or a per-service interceptor
-	isGlobalInterceptor := cfg.Origin == ""
-
-	// Create HTTP handler with health check
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Global interceptor: proxy ALL requests, never respond with own health check
-		// This is because external requests come through ingress and we need to forward them
-		if isGlobalInterceptor {
-			handleRequest(w, r, proxyService, logger, testExecutionLogger, cache, cfg)
-			return
-		}
-
-		// Per-service interceptor: check if this is a health check for the interceptor itself
-		// or a request that should be proxied to the service
-		urlMap := cache.GetUrlMap()
-		isServiceRequest := false
-		if r.Host != "" {
-			hostname := stripPortFromHost(r.Host)
-			if _, exists := urlMap[hostname]; exists {
-				isServiceRequest = true
-			}
-			// Also try extracting service name from FQDN
-			// e.g., "traffic-tester-2.namespace.svc.cluster.local" -> "traffic-tester-2"
-			serviceName := extractServiceName(hostname)
-			if serviceName != hostname {
-				if _, exists := urlMap[serviceName]; exists {
-					isServiceRequest = true
-				}
-			}
-		}
-
-		// Health check endpoint - only handle if:
-		// 1. Path is exactly /health
-		// 2. NOT a request intended for a proxied service (Host not in urlMap)
-		if r.URL.Path == "/health" && !isServiceRequest {
-			handleHealthCheck(w, r, cache)
-			return
-		}
-
-		// All other requests go through proxy
 		handleRequest(w, r, proxyService, logger, testExecutionLogger, cache, cfg)
 	})
 
 	// Create server
 	server := &http.Server{
-		Addr:         ":" + cfg.Port,
-		Handler:      handler,
-		ReadTimeout:  30 * time.Second,
-		WriteTimeout: 30 * time.Second,
-		IdleTimeout:  120 * time.Second,
+		Addr:    ":" + cfg.Port,
+		Handler: handler,
+		// No read or write timeout: a response may take as long as the caller waits
+		ReadHeaderTimeout: 30 * time.Second,
+		IdleTimeout:       120 * time.Second,
 	}
 
 	// Start server in goroutine
@@ -229,39 +194,24 @@ func handleRequest(w http.ResponseWriter, r *http.Request, proxy *ProxyService, 
 
 	log.Printf("[Interceptor] Received request: %s %s from %s (Host: %s)", r.Method, r.URL.Path, r.RemoteAddr, r.Host)
 
-	// If request came through Ingress, strip the /namespace-{id}/interceptor prefix
-	// Ingress path format: /namespace-{namespaceId}/interceptor{actualPath}
-	if strings.HasPrefix(r.URL.Path, "/namespace-") && strings.Contains(r.URL.Path, "/interceptor") {
-		// Find where /interceptor ends
-		interceptorIdx := strings.Index(r.URL.Path, "/interceptor")
-		if interceptorIdx != -1 {
-			// Strip everything up to and including /interceptor
-			actualPath := r.URL.Path[interceptorIdx+len("/interceptor"):]
-			if actualPath == "" {
-				actualPath = "/"
-			}
-			r.URL.Path = actualPath
-		}
-	}
-
-	// Get URL map for logging
 	urlMap := cache.GetUrlMap()
-
-	// Extract target service name BEFORE proxy modifies the path
-	// This is needed because proxy.getTargetURL() modifies r.URL.Path
-	targetServiceName := extractServiceNameFromRequest(r, urlMap)
+	if cfg.Origin == "" {
+		takeTargetFromPath(r, urlMap)
+	}
+	targetServiceName := targetService(r, urlMap)
 
 	// Parse request body for logging (before it's consumed by proxy)
 	var requestBody interface{}
 	if r.Body != nil {
 		bodyBytes, err := io.ReadAll(r.Body)
 		if err == nil && len(bodyBytes) > 0 {
+			loggableBytes := decompress(bodyBytes, r.Header.Get("Content-Encoding"))
 			parsed := false
 			ct := r.Header.Get("Content-Type")
 			if strings.HasPrefix(ct, "multipart/form-data") {
 				if _, params, err := mime.ParseMediaType(ct); err == nil {
 					if boundary, ok := params["boundary"]; ok {
-						reader := multipart.NewReader(bytes.NewReader(bodyBytes), boundary)
+						reader := multipart.NewReader(bytes.NewReader(loggableBytes), boundary)
 						if form, err := reader.ReadForm(10 << 20); err == nil {
 							defer form.RemoveAll()
 							formMap := make(map[string]interface{}, len(form.Value)+len(form.File))
@@ -298,13 +248,13 @@ func handleRequest(w http.ResponseWriter, r *http.Request, proxy *ProxyService, 
 				}
 			} else {
 				var jsonBody interface{}
-				if err := json.Unmarshal(bodyBytes, &jsonBody); err == nil {
+				if err := json.Unmarshal(loggableBytes, &jsonBody); err == nil {
 					requestBody = jsonBody
 					parsed = true
 				}
 			}
 			if !parsed {
-				requestBody = string(bodyBytes)
+				requestBody = string(loggableBytes)
 			}
 			// Restore body for proxy
 			r.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
@@ -315,13 +265,13 @@ func handleRequest(w http.ResponseWriter, r *http.Request, proxy *ProxyService, 
 	requestSentAt := time.Now()
 
 	// Log request started
-	targetURL := targetServiceName + r.URL.Path
+	targetURL := r.Host + r.URL.Path
 	if testLogger != nil {
 		testLogger.LogRequestStarted(r.Method, targetURL, cfg.Origin)
 	}
 
 	// Handle request
-	resp, err := proxy.HandleRequest(r)
+	resp, isMocked, err := proxy.HandleRequest(r)
 
 	// Capture response received time
 	responseReceivedAt := time.Now()
@@ -339,36 +289,25 @@ func handleRequest(w http.ResponseWriter, r *http.Request, proxy *ProxyService, 
 
 		// Return error response
 		log.Printf("[Interceptor] Failed to handle request for %s %s: %v", r.Method, r.URL.Path, err)
+		if cfg.Origin == "" {
+			// Tells the test agent that this 502 is Dokkimi's, not the target's.
+			// Only test steps get it.
+			w.Header().Set(DokkimiErrorHeader, "true")
+		}
 		http.Error(w, fmt.Sprintf("Proxy error: %v", err), http.StatusBadGateway)
 		return
 	}
 	defer resp.Body.Close()
 
-	// Determine if response was mocked
-	isMocked := resp.Header.Get("X-Mocked") == "true"
-
 	// Read response body into buffer so we can use it for both logging and copying
 	var responseBodyBytes []byte
 	var responseBody interface{}
+	var brokeOff error // the response ended before it was complete
 	if resp.Body != nil {
-		responseBodyBytes, err = io.ReadAll(resp.Body)
-		if err != nil {
-			log.Printf("Error reading response body: %v", err)
-			http.Error(w, fmt.Sprintf("Error reading response: %v", err), http.StatusInternalServerError)
-			return
-		}
-		// Parse response body for logging — decompress if gzip-encoded
+		responseBodyBytes, brokeOff = io.ReadAll(resp.Body)
+		// Parse response body for logging — decompress if needed
 		if len(responseBodyBytes) > 0 {
-			loggableBytes := responseBodyBytes
-			if strings.EqualFold(resp.Header.Get("Content-Encoding"), "gzip") {
-				gr, gzErr := gzip.NewReader(bytes.NewReader(responseBodyBytes))
-				if gzErr == nil {
-					if decompressed, readErr := io.ReadAll(gr); readErr == nil {
-						loggableBytes = decompressed
-					}
-					gr.Close()
-				}
-			}
+			loggableBytes := decompress(responseBodyBytes, resp.Header.Get("Content-Encoding"))
 			var jsonBody interface{}
 			if err := json.Unmarshal(loggableBytes, &jsonBody); err == nil {
 				responseBody = jsonBody
@@ -383,7 +322,7 @@ func handleRequest(w http.ResponseWriter, r *http.Request, proxy *ProxyService, 
 		logger.LogResponse(r, actionID, resp, isMocked, urlMap, cfg.Namespace, cfg.Origin, cfg.NamespaceItemID, targetServiceName, requestBody, responseBody, &requestSentAt, &responseReceivedAt)
 	}
 	if testLogger != nil {
-		testLogger.LogRequestCompleted(r.Method, targetURL, cfg.Origin, resp.StatusCode, durationMs, nil)
+		testLogger.LogRequestCompleted(r.Method, targetURL, cfg.Origin, resp.StatusCode, durationMs, brokeOff)
 	}
 
 	// Copy response headers
@@ -393,8 +332,18 @@ func handleRequest(w http.ResponseWriter, r *http.Request, proxy *ProxyService, 
 		}
 	}
 
+	// Keep Go from adding headers the response doesn't have
+	for _, key := range []string{"Content-Type", "Date"} {
+		if _, sent := resp.Header[key]; !sent {
+			w.Header()[key] = nil
+		}
+	}
+
 	// Set status code
 	w.WriteHeader(resp.StatusCode)
+	if resp.ContentLength < 0 {
+		_ = http.NewResponseController(w).Flush() // keeps Go from adding a Content-Length
+	}
 
 	// Copy response body from buffer
 	if len(responseBodyBytes) > 0 {
@@ -404,17 +353,62 @@ func handleRequest(w http.ResponseWriter, r *http.Request, proxy *ProxyService, 
 		}
 	}
 
+	if brokeOff != nil {
+		log.Printf("[Interceptor] Response of %s %s broke off: %v", r.Method, targetURL, brokeOff)
+		_ = http.NewResponseController(w).Flush()
+		panic(http.ErrAbortHandler) // closes the caller's connection
+	}
+
 	log.Printf("[Interceptor] Sent response to client: status=%d, bodySize=%d bytes", resp.StatusCode, len(responseBodyBytes))
 }
 
-// handleHealthCheck handles health check requests
-func handleHealthCheck(w http.ResponseWriter, _ *http.Request, cache *MockCache) {
-	// Check if cache is initialized (basic health check)
-	_ = cache.GetMocks() // This will never fail, just ensures cache is accessible
+// DokkimiErrorHeader marks a response that Dokkimi made because it couldn't
+// deliver a test step's request.
+const DokkimiErrorHeader = "X-Dokkimi-Error"
 
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	w.Write([]byte(`{"status":"healthy"}`))
+// DokkimiSchemeHeader carries the scheme a test step's URL asked for ("http"
+// or "https"). The interceptor uses it instead of its default and strips it
+// before forwarding. Keep in sync with the test agent's dokkimiSchemeHeader.
+const DokkimiSchemeHeader = "X-Dokkimi-Scheme"
+
+// decompress returns body as it is if it isn't compressed or can't be decompressed.
+func decompress(body []byte, encoding string) []byte {
+	var reader io.Reader
+	switch strings.ToLower(encoding) {
+	case "gzip":
+		gr, err := gzip.NewReader(bytes.NewReader(body))
+		if err != nil {
+			return body
+		}
+		reader = gr
+	case "deflate":
+		zr, err := zlib.NewReader(bytes.NewReader(body))
+		if err != nil {
+			// Some servers leave out the zlib header. Other bodies can look like the
+			// start of one without it, so it has to be complete.
+			if raw, err := io.ReadAll(flate.NewReader(bytes.NewReader(body))); err == nil {
+				return raw
+			}
+			return body
+		}
+		reader = zr
+	case "br":
+		reader = brotli.NewReader(bytes.NewReader(body))
+	case "zstd":
+		zr, err := zstd.NewReader(bytes.NewReader(body))
+		if err != nil {
+			return body
+		}
+		defer zr.Close()
+		reader = zr
+	default:
+		return body
+	}
+	decompressed, err := io.ReadAll(reader)
+	if err != nil && len(decompressed) == 0 {
+		return body
+	}
+	return decompressed // all of it, or the part that arrived
 }
 
 // loadCA reads and parses a CA certificate and private key from PEM files.

@@ -1,21 +1,15 @@
 import { formatDuration } from './formatting';
-import { fetchJson, sleep } from './cli-utils';
+import { fetchJson, sleep, LOST_CONTACT_MS } from './cli-utils';
 import type {
   RunStatusResponse,
   RunStatusInstance,
   RunOnceResult,
 } from './run-display';
 import type { AssertionResult, TestExecutionLog } from './inspect-types';
+import { outcomeLabel, outcomeOf, runPassed } from './outcome';
+import { formatOutcomeCounts } from './run-format';
 
 const POLL_INTERVAL_MS = 2000;
-
-const TERMINAL_INSTANCE_STATUSES = new Set([
-  'PASSED',
-  'FAILED',
-  'STOPPED',
-  'COMPLETED',
-  'SKIPPED',
-]);
 
 const TERMINAL_RUN_STATUSES = ['COMPLETED', 'FAILED', 'CANCELLED'];
 
@@ -40,15 +34,21 @@ export async function pollForCompletionCI(
   console.log('');
 
   for (const inst of skipped) {
-    printInstanceLine(inst, undefined, undefined);
+    printInstanceLine('', inst, undefined, undefined);
     printedInstances.add(inst.id);
   }
 
   let latestStatus: RunStatusResponse | null = null;
+  let lastAnswerAt = runStart;
 
   while (true) {
     if (abort?.signal.aborted) {
-      return { passed: false, runId, instances: latestStatus?.instances ?? [] };
+      return {
+        passed: false,
+        runId,
+        runStatus: latestStatus?.status ?? '',
+        instances: latestStatus?.instances ?? [],
+      };
     }
 
     if (timeoutMs && Date.now() - runStart > timeoutMs) {
@@ -60,6 +60,25 @@ export async function pollForCompletionCI(
       return {
         passed: false,
         runId,
+        runStatus: latestStatus?.status ?? '',
+        instances: [
+          ...(latestStatus?.instances ?? []),
+          ...skipped.filter((s) => !printedInstances.has(s.id)),
+        ],
+      };
+    }
+
+    // Before, a run whose Dokkimi died was polled until the timeout
+    if (Date.now() - lastAnswerAt > LOST_CONTACT_MS) {
+      console.log('');
+      console.log(
+        `[Dokkimi] \x1b[31mLost contact with Dokkimi: no answer for ${LOST_CONTACT_MS / 1000}s\x1b[0m`,
+      );
+      printStuckInstances(latestStatus);
+      return {
+        passed: false,
+        runId,
+        runStatus: latestStatus?.status ?? '',
         instances: [
           ...(latestStatus?.instances ?? []),
           ...skipped.filter((s) => !printedInstances.has(s.id)),
@@ -73,13 +92,13 @@ export async function pollForCompletionCI(
       );
       if (result) {
         const now = Date.now();
+        lastAnswerAt = now;
         for (const inst of result.instances) {
           if (inst.status !== 'PENDING' && !instanceStartedAt.has(inst.id)) {
             instanceStartedAt.set(inst.id, now);
           }
-          const displayStatus = inst.testStatus ?? inst.status;
           if (
-            TERMINAL_INSTANCE_STATUSES.has(displayStatus) &&
+            outcomeOf(result.status, inst) !== 'running' &&
             !instanceCompletedAt.has(inst.id)
           ) {
             instanceCompletedAt.set(inst.id, now);
@@ -88,19 +107,17 @@ export async function pollForCompletionCI(
         latestStatus = result;
 
         for (const inst of result.instances) {
-          const displayStatus = inst.testStatus ?? inst.status;
-          if (
-            TERMINAL_INSTANCE_STATUSES.has(displayStatus) &&
-            !printedInstances.has(inst.id)
-          ) {
+          const outcome = outcomeOf(result.status, inst);
+          if (outcome !== 'running' && !printedInstances.has(inst.id)) {
             printedInstances.add(inst.id);
             printInstanceLine(
+              result.status,
               inst,
               instanceStartedAt.get(inst.id),
               instanceCompletedAt.get(inst.id),
             );
 
-            if (displayStatus === 'FAILED') {
+            if (outcome === 'failed') {
               await printFailureDetails(ctUrl, inst);
             }
           }
@@ -108,9 +125,13 @@ export async function pollForCompletionCI(
 
         if (TERMINAL_RUN_STATUSES.includes(result.status)) {
           const allInstances = [...result.instances, ...skipped];
-          printSummaryCI(allInstances, Date.now() - runStart);
-          const passed = result.status === 'COMPLETED';
-          return { passed, runId, instances: allInstances };
+          printSummaryCI(result.status, allInstances, Date.now() - runStart);
+          return {
+            passed: runPassed(result.status, allInstances),
+            runId,
+            runStatus: result.status,
+            instances: allInstances,
+          };
         }
       }
     } catch {}
@@ -120,31 +141,21 @@ export async function pollForCompletionCI(
 }
 
 function printInstanceLine(
+  runStatus: string,
   inst: RunStatusInstance,
   startedAt: number | undefined,
   completedAt: number | undefined,
 ): void {
-  const displayStatus = inst.testStatus ?? inst.status;
-  let prefix: string;
-  if (displayStatus === 'SKIPPED') {
-    prefix = '\x1b[90m-\x1b[0m';
-  } else if (displayStatus === 'PASSED' || displayStatus === 'COMPLETED') {
-    prefix = '\x1b[32m✔\x1b[0m';
-  } else {
-    prefix = '\x1b[31m✘\x1b[0m';
-  }
+  const passed = outcomeOf(runStatus, inst) === 'passed';
+  const displayStatus = outcomeLabel(runStatus, inst);
+  const prefix = passed ? '\x1b[32m✔\x1b[0m' : '\x1b[31m✘\x1b[0m';
 
   let durationText = '';
   if (startedAt !== undefined && completedAt !== undefined) {
     durationText = `  \x1b[90m(${formatDuration(completedAt - startedAt)})\x1b[0m`;
   }
 
-  const statusColor =
-    displayStatus === 'PASSED' || displayStatus === 'COMPLETED'
-      ? '\x1b[32m'
-      : displayStatus === 'FAILED'
-        ? '\x1b[31m'
-        : '\x1b[90m';
+  const statusColor = passed ? '\x1b[32m' : '\x1b[31m';
 
   console.log(
     `[Dokkimi] ${prefix} ${inst.name}  ${statusColor}${displayStatus}\x1b[0m${durationText}`,
@@ -206,7 +217,7 @@ function printStuckInstances(status: RunStatusResponse | null): void {
     return;
   }
   const stuck = status.instances.filter(
-    (i) => !TERMINAL_INSTANCE_STATUSES.has(i.testStatus ?? i.status),
+    (i) => outcomeOf(status.status, i) === 'running',
   );
   if (stuck.length === 0) {
     return;
@@ -214,37 +225,26 @@ function printStuckInstances(status: RunStatusResponse | null): void {
   console.log('');
   console.log('  Stuck instances:');
   for (const inst of stuck) {
-    const displayStatus = inst.testStatus ?? inst.status;
-    console.log(`    - ${inst.name}  (${displayStatus})`);
+    console.log(`    - ${inst.name}  (${inst.status})`);
   }
 }
 
-function printSummaryCI(instances: RunStatusInstance[], totalMs: number): void {
-  const passed = instances.filter((i) => {
-    const s = i.testStatus ?? i.status;
-    return s === 'PASSED' || s === 'COMPLETED';
-  }).length;
-  const failed = instances.filter(
-    (i) => (i.testStatus ?? i.status) === 'FAILED',
-  ).length;
-  const skipped = instances.filter(
-    (i) => (i.testStatus ?? i.status) === 'SKIPPED',
-  ).length;
-  const ran = instances.length - skipped;
-
+function printSummaryCI(
+  runStatus: string,
+  instances: RunStatusInstance[],
+  totalMs: number,
+): void {
   console.log('');
-  if (failed === 0) {
+  console.log(
+    `[Dokkimi] ${formatOutcomeCounts(runStatus, instances)}  \x1b[90m(${formatDuration(totalMs)})\x1b[0m`,
+  );
+  const notPassed = instances.filter(
+    (i) => outcomeOf(runStatus, i) !== 'passed',
+  );
+  if (notPassed.length > 0) {
     console.log(
-      `[Dokkimi] \x1b[32m${passed} passed\x1b[0m  \x1b[90m(${formatDuration(totalMs)})\x1b[0m`,
+      `[Dokkimi] Not passed: ${notPassed.map((i) => i.name).join(', ')}`,
     );
-  } else {
-    const failedNames = instances
-      .filter((i) => (i.testStatus ?? i.status) === 'FAILED')
-      .map((i) => i.name);
-    console.log(
-      `[Dokkimi] \x1b[32m${passed} passed\x1b[0m, \x1b[31m${failed} failed\x1b[0m of ${ran}  \x1b[90m(${formatDuration(totalMs)})\x1b[0m`,
-    );
-    console.log(`[Dokkimi] Failed: ${failedNames.join(', ')}`);
   }
   console.log('');
 }

@@ -11,6 +11,17 @@ import {
 import { RunStorageService } from '../../storage/run-storage.service';
 import { envArrayToRecord } from './env.utils';
 
+/**
+ * The major version in a Postgres image's tag ("postgres:18", "16-alpine",
+ * "x/postgres-partman:15.0-alpine"), or null when the tag doesn't start
+ * with one ("latest", no tag).
+ */
+export function postgresMajor(image: string): number | null {
+  const tag = image.split('@')[0].split('/').pop()?.split(':')[1] ?? '';
+  const major = parseInt(tag, 10);
+  return Number.isNaN(major) ? null : major;
+}
+
 @Injectable()
 export class DockerDatabaseGroupService {
   private readonly logger = new Logger(DockerDatabaseGroupService.name);
@@ -34,7 +45,7 @@ export class DockerDatabaseGroupService {
     }
 
     const config = getConfig();
-    const resolved = resolveDbCredentials(item);
+    const resolved = resolveDbCredentials(item, item.database);
     const dbConfig = this.databaseConfig.getConfig(
       item.database,
       {
@@ -107,11 +118,12 @@ export class DockerDatabaseGroupService {
       ? this.buildMongoEntrypoint(internalPort, dbEnv, initFileMountPath)
       : undefined;
 
-    const dbTmpfs = this.getDbTmpfs(item.database);
+    const dbImage = item.image || dbConfig.image;
+    const dbTmpfs = this.getDbTmpfs(item.database, dbImage);
 
     await this.dockerClient.runContainer({
       name: dbContainerName,
-      image: item.image || dbConfig.image,
+      image: dbImage,
       networkName,
       networkMode: `container:${dbProxyName}`,
       env: dbEnv,
@@ -123,6 +135,8 @@ export class DockerDatabaseGroupService {
           : {}),
       exposedPorts: [internalPort],
       ...(dbTmpfs ? { tmpfs: dbTmpfs } : {}),
+      maxCpu: item.maxCpu,
+      maxMemory: item.maxMemory,
       labels: {
         'io.dokkimi.instance-id': instanceId,
         'io.dokkimi.role': 'database',
@@ -220,7 +234,7 @@ if [ -d "${initFileMountPath}" ]; then
   for f in ${initFileMountPath}/*; do
     case "$f" in
       *.sh)  echo "Running $f"; . "$f" ;;
-      *.js)  echo "Running $f"; mongosh --port ${internalPort}${mongoshAuth} "$f" ;;
+      *.js)  echo "Running $f"; mongosh --port ${internalPort}${mongoshAuth} "\${MONGO_INITDB_DATABASE:-test}" "$f" ;;
     esac
   done
 fi`
@@ -239,7 +253,10 @@ ${createUserBlock}${initBlock}
 wait $MONGOD_PID`;
   }
 
-  private getDbTmpfs(databaseType: string): Record<string, string> | undefined {
+  private getDbTmpfs(
+    databaseType: string,
+    image: string,
+  ): Record<string, string> | undefined {
     const dbType = databaseType.toLowerCase();
     switch (dbType) {
       case 'mysql':
@@ -247,7 +264,14 @@ wait $MONGOD_PID`;
         return { '/var/lib/mysql': '' };
       case 'postgres':
       case 'postgresql':
-        return { '/var/lib/postgresql/data': '' };
+        // Postgres 18 keeps its data under /var/lib/postgresql/18/docker and
+        // refuses to start with a mount at /var/lib/postgresql/data. Before
+        // 18, that path is a volume of the image, which a mount above it
+        // wouldn't replace. An unknown version (latest, a custom tag) gets
+        // the 18 mount: an older one still starts, its data on the volume.
+        return (postgresMajor(image) ?? Infinity) < 18
+          ? { '/var/lib/postgresql/data': '' }
+          : { '/var/lib/postgresql': '' };
       case 'mongodb':
         return { '/data/db': '' };
       default:

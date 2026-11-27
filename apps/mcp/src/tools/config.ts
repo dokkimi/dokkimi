@@ -16,11 +16,6 @@ const DEFAULT_MAX_CONCURRENT_TESTS = 6;
 const DEFAULT_MAX_BOOTING_TESTS = 2;
 const DEFAULT_MAX_RUN_HISTORY = 2;
 
-const SETTINGS_REQUIRING_REBOOT = new Set([
-  'maxConcurrentTests',
-  'maxBootingTests',
-]);
-
 function resolveProjectPath(): string | undefined {
   const dokkimiDir = findDokkimiDir(process.cwd());
   return dokkimiDir ? path.dirname(dokkimiDir) : undefined;
@@ -108,7 +103,7 @@ export function registerGetConfig(server: McpServer): void {
 export function registerSetConfig(server: McpServer): void {
   server.tool(
     'set_config',
-    'Updates a Dokkimi setting. Use the scope parameter to target project-level or global config. Changes to maxConcurrentTests and maxBootingTests require a reboot to take effect — call the reboot tool separately after updating.',
+    'Updates a Dokkimi setting. Use the scope parameter to target project-level or global config. Dokkimi applies a change to maxConcurrentTests or maxBootingTests on the next command that finds no run active; no reboot is needed.',
     {
       key: z
         .enum([
@@ -253,7 +248,6 @@ export function registerSetConfig(server: McpServer): void {
           }
         }
 
-        const needsReboot = SETTINGS_REQUIRING_REBOOT.has(key);
         return {
           content: [
             {
@@ -263,13 +257,7 @@ export function registerSetConfig(server: McpServer): void {
                 key,
                 value,
                 scope: effectiveScope,
-                ...(needsReboot
-                  ? {
-                      needsReboot: true,
-                      message:
-                        'Setting updated. Call the reboot tool to apply changes.',
-                    }
-                  : { message: 'Setting updated.' }),
+                message: 'Setting updated.',
               }),
             },
           ],

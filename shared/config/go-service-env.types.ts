@@ -25,6 +25,7 @@ export interface TestAgentEnvVars extends Record<string, string | undefined> {
   // UI steps. test-agent fails any `action.type == "ui"` step loudly when this
   // is unset.
   BROWSER_URL?: string;
+  HTTP_TIMEOUT_MS: string;
   DEFAULT_VIEWPORT_WIDTH?: string;
   DEFAULT_VIEWPORT_HEIGHT?: string;
 }

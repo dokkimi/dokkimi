@@ -4,7 +4,7 @@ import * as path from 'path';
 import { fetchJson, resolveUri } from '../lib/cli-utils';
 import { loadConfig } from '@dokkimi/config';
 import { resolveDefinitions } from '@dokkimi/definition-resolver';
-import { findBaselinesDir } from '../lib/baseline-upload';
+import { findBaselinesDir, newBaselinesDir } from '../lib/baseline-upload';
 import { openFile } from '../lib/editor';
 import type { ArtifactRow, InstanceSummary } from '../lib/inspect-types';
 import { getProjectPath, latestRunUrl } from '../lib/project-path';
@@ -34,13 +34,20 @@ export interface WriteContext {
 // Approve all
 // ---------------------------------------------------------------------------
 
+/** Approves every item whose baseline can be written; returns how many were */
 export async function approveAll(
   items: PendingItem[],
   ctx: WriteContext,
 ): Promise<number> {
   let count = 0;
   for (const item of items) {
-    writeBaseline(ctx, item);
+    const error = writeBaseline(ctx, item);
+    if (error) {
+      console.error(
+        `\x1b[31mNot approved\x1b[0m ${item.instanceName} / ${item.artifact.name}: ${error}`,
+      );
+      continue;
+    }
     await updateVerdict(ctx.ctUrl, item.artifact.id, 'approved');
     count++;
   }
@@ -97,29 +104,35 @@ export function buildWriteContext(ctUrl: string): WriteContext {
   return { sourceByName, storageDir: config.storage.dir, ctUrl };
 }
 
-export function writeBaseline(ctx: WriteContext, item: PendingItem): boolean {
+/**
+ * Writes an item's capture as its baseline. Returns why it couldn't, or null.
+ * A baseline that isn't written must not be approved: the next run would
+ * fail on it again.
+ */
+export function writeBaseline(
+  ctx: WriteContext,
+  item: PendingItem,
+): string | null {
   const sourceFile = ctx.sourceByName.get(item.instanceName);
   if (!sourceFile) {
-    return false;
+    return `no definition named "${item.instanceName}" in this project`;
   }
 
   const baselinesDir =
-    findBaselinesDir(sourceFile) ?? createBaselinesDir(sourceFile);
+    findBaselinesDir(sourceFile) ?? newBaselinesDir(sourceFile);
   const destPath = path.join(baselinesDir, `${item.artifact.name}.png`);
   const captureAbsPath = resolveUri(item.artifact.uri, ctx.storageDir);
 
   try {
     fs.mkdirSync(baselinesDir, { recursive: true });
     fs.copyFileSync(captureAbsPath, destPath);
-    return true;
-  } catch {
-    return false;
+    return null;
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code;
+    return code === 'ENOENT' && !fs.existsSync(captureAbsPath)
+      ? 'the captured screenshot is gone (the run was cleaned up)'
+      : (err as Error).message;
   }
-}
-
-function createBaselinesDir(sourceFile: string): string {
-  const projectRoot = path.dirname(path.dirname(sourceFile));
-  return path.join(projectRoot, 'baselines');
 }
 
 // ---------------------------------------------------------------------------

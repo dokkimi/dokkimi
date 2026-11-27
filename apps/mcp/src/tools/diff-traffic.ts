@@ -1,3 +1,4 @@
+import { instanceOutcome } from '@dokkimi/config';
 import * as path from 'path';
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
@@ -173,14 +174,14 @@ export function registerDiffTraffic(server: McpServer): void {
             runId: currentRun.runId,
             status: currentRun.status,
             createdAt: currentRun.createdAt,
-            instanceStatus: currentInst.testStatus ?? currentInst.status,
+            outcome: instanceOutcome(currentRun.status, currentInst),
             trafficCount: currentTraffic.total,
           },
           previousRun: {
             runId: previousRun.runId,
             status: previousRun.status,
             createdAt: previousRun.createdAt,
-            instanceStatus: previousInst.testStatus ?? previousInst.status,
+            outcome: instanceOutcome(previousRun.status, previousInst),
             trafficCount: previousTraffic.total,
           },
           diff: {

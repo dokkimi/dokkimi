@@ -1,0 +1,46 @@
+name: continue-after-failure
+description: A failing step with stopOnFailure false lets the next steps run, and the definition still fails
+config:
+  timeoutSeconds: 60
+items:
+  - type: SERVICE
+    name: service
+    image: node:20-alpine
+    port: 3000
+    healthCheck: /
+    command:
+      - node
+      - -e
+      - require('http').createServer((req, res) => res.end()).listen(3000)
+tests:
+  - name: Keeps going
+    stopOnFailure: false
+    steps:
+      - name: Fails
+        action: { type: httpRequest, method: GET, url: service/ }
+        assertions:
+          - assertions:
+              - { path: $.response.status, operator: eq, value: 999 }
+      - name: Still runs
+        action: { type: httpRequest, method: GET, url: service/ }
+  - name: A loop keeps going
+    steps:
+      - name: Both iterations fail
+        stopOnFailure: false
+        forEach:
+          items: [a, b]
+          as: id
+          name: failLoop
+          assertions:
+            - assertions:
+                - { path: $.response.status, operator: eq, value: 999 }
+        action: { type: httpRequest, method: GET, url: 'service/{{id}}' }
+      - name: Both iterations ran
+        action: { type: wait, durationMs: 10 }
+        assertions:
+          - assertions:
+              - {
+                  path: $.variables.failLoop.iterations,
+                  operator: eq,
+                  value: 2,
+                }

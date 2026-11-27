@@ -91,6 +91,98 @@ describe('DockerClientService', () => {
       expect(mockNetwork.remove).toHaveBeenCalled();
     });
 
+    // Before, every container was force-removed (SIGKILL), so sidecars lost
+    // the logs still queued for Control Tower
+    it('stops running sidecars before removing anything', async () => {
+      const calls: string[] = [];
+      mockDocker.listContainers.mockResolvedValue([
+        {
+          Id: 'icp',
+          State: 'running',
+          Labels: { 'io.dokkimi.role': 'interceptor' },
+        },
+        {
+          Id: 'dbp',
+          State: 'running',
+          Labels: { 'io.dokkimi.role': 'db-proxy' },
+        },
+        {
+          Id: 'agent',
+          State: 'running',
+          Labels: { 'io.dokkimi.role': 'test-agent' },
+        },
+        {
+          Id: 'svc',
+          State: 'running',
+          Labels: { 'io.dokkimi.role': 'service' },
+        },
+        {
+          Id: 'gone',
+          State: 'exited',
+          Labels: { 'io.dokkimi.role': 'broker-proxy' },
+        },
+      ]);
+      mockDocker.getContainer.mockImplementation((id: string) => ({
+        stop: jest.fn(async (opts: { t: number }) => {
+          calls.push(`stop ${id} ${opts.t}`);
+        }),
+        remove: jest.fn(async () => {
+          calls.push(`remove ${id}`);
+        }),
+      }));
+
+      await service.removeAllContainers('inst-1');
+
+      const stops = calls.filter((c) => c.startsWith('stop'));
+      expect(stops.sort()).toEqual([
+        'stop agent 10',
+        'stop dbp 10',
+        'stop icp 10',
+      ]);
+      expect(calls.slice(0, 3).every((c) => c.startsWith('stop'))).toBe(true);
+      expect(calls.filter((c) => c.startsWith('remove'))).toHaveLength(5);
+      mockDocker.getContainer.mockReturnValue(mockContainer);
+    });
+
+    it('still removes a sidecar whose stop fails', async () => {
+      mockDocker.listContainers.mockResolvedValue([
+        {
+          Id: 'icp',
+          State: 'running',
+          Labels: { 'io.dokkimi.role': 'interceptor' },
+        },
+      ]);
+      mockContainer.stop.mockRejectedValueOnce(new Error('already stopping'));
+
+      await service.removeAllContainers('inst-1');
+
+      expect(mockContainer.remove).toHaveBeenCalledWith({
+        force: true,
+        v: true,
+      });
+    });
+
+    it('retries a network that still has endpoints, and accepts one already gone', async () => {
+      jest.useFakeTimers();
+      mockDocker.listContainers.mockResolvedValue([]);
+      mockDocker.listNetworks.mockResolvedValue([
+        { Name: 'dokkimi-run-inst-1', Id: 'net-1' },
+      ]);
+      mockNetwork.remove
+        .mockRejectedValueOnce(
+          Object.assign(new Error('active endpoints'), { statusCode: 403 }),
+        )
+        .mockRejectedValueOnce(
+          Object.assign(new Error('gone'), { statusCode: 404 }),
+        );
+
+      const done = service.removeNetwork('inst-1');
+      await jest.advanceTimersByTimeAsync(500);
+      await expect(done).resolves.toBeUndefined();
+      expect(mockNetwork.remove).toHaveBeenCalledTimes(2);
+      jest.useRealTimers();
+    });
+
     it('should handle non-existent network gracefully', async () => {
       mockDocker.listNetworks.mockResolvedValue([]);
 
@@ -179,6 +271,38 @@ describe('DockerClientService', () => {
       );
     });
 
+    it('should turn maxCpu and maxMemory into Docker limits', async () => {
+      await service.runContainer({
+        name: 'service-a',
+        image: 'user-image:tag',
+        networkName: 'dokkimi-run-inst-1',
+        maxCpu: 0.5,
+        maxMemory: 256,
+      });
+
+      expect(mockDocker.createContainer).toHaveBeenCalledWith(
+        expect.objectContaining({
+          HostConfig: expect.objectContaining({
+            NanoCpus: 500_000_000,
+            Memory: 256 * 1024 * 1024,
+          }),
+        }),
+      );
+    });
+
+    it('should set no limits when maxCpu and maxMemory are absent', async () => {
+      await service.runContainer({
+        name: 'service-a',
+        image: 'user-image:tag',
+        networkName: 'dokkimi-run-inst-1',
+      });
+
+      const hostConfig =
+        mockDocker.createContainer.mock.calls.at(-1)[0].HostConfig;
+      expect(hostConfig).not.toHaveProperty('NanoCpus');
+      expect(hostConfig).not.toHaveProperty('Memory');
+    });
+
     it('should set network aliases via NetworkingConfig', async () => {
       await service.runContainer({
         name: 'service-a-interceptor',
@@ -255,6 +379,38 @@ describe('DockerClientService', () => {
 
       const info = await service.inspectContainer('nonexistent');
       expect(info).toBeNull();
+    });
+  });
+
+  describe('getExitDetails', () => {
+    it('should return the exit code and the last 20 log lines', async () => {
+      const frame = (text: string) => {
+        const header = Buffer.alloc(8);
+        header.writeUInt32BE(Buffer.byteLength(text), 4);
+        return Buffer.concat([header, Buffer.from(text)]);
+      };
+      const logs = jest
+        .fn()
+        .mockResolvedValue(
+          Buffer.concat([frame('Error: missing setting\n'), frame('  at x\n')]),
+        );
+      mockDocker.getContainer.mockReturnValueOnce({
+        inspect: jest
+          .fn()
+          .mockResolvedValue({ State: { ExitCode: 1, OOMKilled: false } }),
+        logs,
+      });
+
+      expect(await service.getExitDetails('c1')).toEqual({
+        exitCode: 1,
+        oomKilled: false,
+        logTail: ['Error: missing setting', 'at x'],
+      });
+      expect(logs).toHaveBeenCalledWith({
+        stdout: true,
+        stderr: true,
+        tail: 20,
+      });
     });
   });
 

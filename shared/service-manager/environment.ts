@@ -1,7 +1,7 @@
 import path from 'path';
 import fs from 'fs';
 import os from 'os';
-import { DokkimiConfig } from '@dokkimi/config';
+import { Concurrency, DokkimiConfig } from '@dokkimi/config';
 import { execSilent, isCommandAvailable, startDocker } from '@dokkimi/platform';
 
 const SERVICE_ID = 'control-tower';
@@ -9,14 +9,27 @@ const SERVICE_ID = 'control-tower';
 interface HealthResponse {
   status: string;
   service?: string;
+  version?: string;
+  activeRun?: boolean;
+  concurrency?: Concurrency;
 }
 
-export async function checkHealth(
-  url: string,
-): Promise<{ healthy: boolean; detail?: string }> {
+export interface Health {
+  healthy: boolean;
+  detail?: string;
+  version?: string;
+  activeRun?: boolean;
+  concurrency?: Concurrency;
+}
+
+/**
+ * One health check. Healthy only when it is Control Tower and it says so: it
+ * answers 200 with status "unhealthy" when its database fails.
+ */
+export async function checkHealth(url: string): Promise<Health> {
   try {
     const res = await fetch(`${url}/health`, {
-      signal: AbortSignal.timeout(2000),
+      signal: AbortSignal.timeout(5000),
     });
     if (!res.ok) {
       return { healthy: false, detail: `HTTP ${res.status}` };
@@ -25,7 +38,15 @@ export async function checkHealth(
     if (body.service && body.service !== SERVICE_ID) {
       return { healthy: false, detail: `wrong service: ${body.service}` };
     }
-    return { healthy: true };
+    if (body.status !== 'healthy') {
+      return { healthy: false, detail: `status: ${body.status}` };
+    }
+    return {
+      healthy: true,
+      version: body.version,
+      activeRun: body.activeRun,
+      concurrency: body.concurrency,
+    };
   } catch {
     return { healthy: false, detail: 'not reachable' };
   }

@@ -1154,6 +1154,52 @@ describe('UiTimelineService', () => {
     }
   });
 
+  // Before, x→y and y→x starting in the same millisecond each took the other
+  // as parent, and both vanished from the tree
+  it('getStepCallTree keeps opposite calls that start together', async () => {
+    const event = (eventType: string, ms: number) => ({
+      eventType,
+      timestamp: t(ms),
+      stepIndex: 0,
+      subActionIndex: null,
+      subStepIndex: null,
+      actionType: null,
+      selector: null,
+      duration: null,
+      error: null,
+      message: '',
+    });
+    mockPrisma.testExecutionLog.findMany.mockResolvedValue([
+      event('REQUEST_STARTED', 0),
+      event('REQUEST_COMPLETED', 500),
+    ]);
+    const call = (url: string, origin: string, target: string) => ({
+      timestamp: t(10),
+      method: 'GET',
+      url,
+      statusCode: 200,
+      origin,
+      target,
+      isMocked: false,
+      requestSentAt: t(10),
+      responseReceivedAt: t(300),
+    });
+    mockPrisma.httpLog.findMany.mockResolvedValue([
+      call('/x-to-y', 'x', 'y'),
+      call('/y-to-x', 'y', 'x'),
+    ]);
+    mockPrisma.databaseLog.findMany.mockResolvedValue([]);
+
+    const result = await service.getStepCallTree('inst-cycle', 0);
+
+    const urls = (nodes: typeof result): string[] =>
+      nodes.flatMap((n) =>
+        n.kind === 'http' ? [n.url, ...urls(n.children)] : urls(n.children),
+      );
+    expect(result).toHaveLength(1);
+    expect(urls(result).sort()).toEqual(['/x-to-y', '/y-to-x']);
+  });
+
   it('getStepCallTree uses REQUEST_FAILED as end event', async () => {
     const startTs = t(1000);
     const failTs = t(2000);

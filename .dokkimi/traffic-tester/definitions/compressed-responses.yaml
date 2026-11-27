@@ -1,0 +1,195 @@
+name: compressed-responses
+description: Compressed response bodies reach the caller and are readable in captured traffic
+config:
+  timeoutSeconds: 120
+items:
+  - $ref: ../shared/service-a.yaml
+  # Answers with the encoding named by the path
+  - type: SERVICE
+    name: compressor
+    image: ghcr.io/dokkimi/traffic-tester:0.1.0
+    port: 4000
+    healthCheck: /health
+    command:
+      - node
+      - -e
+      - |
+        const zlib = require('zlib');
+        const body = JSON.stringify({ name: 'Alice' });
+        const encodings = { gzip: zlib.gzipSync(body), br: zlib.brotliCompressSync(body), zstd: zlib.zstdCompressSync(body),
+          deflate: zlib.deflateSync(body), 'deflate-raw': zlib.deflateRawSync(body) };
+        require('http').createServer((req, res) => {
+          const encoding = new URL(req.url, 'http://compressor').pathname.slice(1);
+          res.setHeader('Content-Type', 'application/json');
+          if (encodings[encoding]) {
+            res.setHeader('Content-Encoding', encoding.replace('-raw', ''));
+          }
+          res.end(encodings[encoding] ?? body);
+        }).listen(4000);
+tests:
+  - name: Uncompressed response between services
+    steps:
+      - name: Service-a calls compressor
+        action:
+          type: httpRequest
+          method: POST
+          url: service-a/call
+          headers:
+            Content-Type: application/json
+          body:
+            requests:
+              - { method: GET, baseURL: 'http://compressor', url: /none }
+        assertions:
+          - assertions:
+              - path: $.response.body.results[0].name
+                operator: eq
+                value: Alice
+          - match:
+              path: $.traffic
+              where:
+                - { path: $$.origin, operator: eq, value: service-a }
+                - { path: $$.to, operator: eq, value: compressor }
+              count: 1
+            assertions:
+              - { path: $.match.response.body.name, operator: eq, value: Alice }
+  - name: Gzip response between services
+    steps:
+      - name: Service-a calls compressor
+        action:
+          type: httpRequest
+          method: POST
+          url: service-a/call
+          headers:
+            Content-Type: application/json
+          body:
+            requests:
+              - { method: GET, baseURL: 'http://compressor', url: /gzip }
+        assertions:
+          - assertions:
+              - path: $.response.body.results[0].name
+                operator: eq
+                value: Alice
+          - match:
+              path: $.traffic
+              where:
+                - { path: $$.origin, operator: eq, value: service-a }
+                - { path: $$.to, operator: eq, value: compressor }
+              count: 1
+            assertions:
+              - {
+                  path: $.match.response.headers.content-encoding,
+                  operator: eq,
+                  value: gzip,
+                }
+              - { path: $.match.response.body.name, operator: eq, value: Alice }
+  - name: Brotli response between services
+    steps:
+      - name: Service-a calls compressor
+        action:
+          type: httpRequest
+          method: POST
+          url: service-a/call
+          headers:
+            Content-Type: application/json
+          body:
+            requests:
+              - { method: GET, baseURL: 'http://compressor', url: /br }
+        assertions:
+          - assertions:
+              - path: $.response.body.results[0].name
+                operator: eq
+                value: Alice
+          - match:
+              path: $.traffic
+              where:
+                - { path: $$.origin, operator: eq, value: service-a }
+                - { path: $$.to, operator: eq, value: compressor }
+              count: 1
+            assertions:
+              - {
+                  path: $.match.response.headers.content-encoding,
+                  operator: eq,
+                  value: br,
+                }
+              - { path: $.match.response.body.name, operator: eq, value: Alice }
+  - name: Deflate response between services
+    steps:
+      - name: Service-a calls compressor
+        action:
+          type: httpRequest
+          method: POST
+          url: service-a/call
+          headers:
+            Content-Type: application/json
+          body:
+            requests:
+              - { method: GET, baseURL: 'http://compressor', url: /deflate }
+        assertions:
+          - assertions:
+              - path: $.response.body.results[0].name
+                operator: eq
+                value: Alice
+          - match:
+              path: $.traffic
+              where:
+                - { path: $$.origin, operator: eq, value: service-a }
+                - { path: $$.to, operator: eq, value: compressor }
+              count: 1
+            assertions:
+              - path: $.match.response.headers.content-encoding
+                operator: eq
+                value: deflate
+              - { path: $.match.response.body.name, operator: eq, value: Alice }
+  - name: Deflate without zlib header response between services
+    steps:
+      - name: Service-a calls compressor
+        action:
+          type: httpRequest
+          method: POST
+          url: service-a/call
+          headers:
+            Content-Type: application/json
+          body:
+            requests:
+              - { method: GET, baseURL: 'http://compressor', url: /deflate-raw }
+        assertions:
+          - assertions:
+              - path: $.response.body.results[0].name
+                operator: eq
+                value: Alice
+          - match:
+              path: $.traffic
+              where:
+                - { path: $$.origin, operator: eq, value: service-a }
+                - { path: $$.to, operator: eq, value: compressor }
+              count: 1
+            assertions:
+              - path: $.match.response.headers.content-encoding
+                operator: eq
+                value: deflate
+              - { path: $.match.response.body.name, operator: eq, value: Alice }
+  - name: Brotli response to a step
+    steps:
+      - name: Call compressor
+        action:
+          type: httpRequest
+          method: GET
+          url: compressor/br
+        assertions:
+          - assertions:
+              - { path: $.response.status, operator: eq, value: 200 }
+              - { path: $.response.body.name, operator: eq, value: Alice }
+  # A step, because service-a's HTTP client doesn't support zstd
+  - name: Zstandard response to a step
+    steps:
+      - name: Call compressor
+        action:
+          type: httpRequest
+          method: GET
+          url: compressor/zstd
+        assertions:
+          - assertions:
+              - path: $.response.headers.content-encoding
+                operator: eq
+                value: zstd
+              - { path: $.response.body.name, operator: eq, value: Alice }

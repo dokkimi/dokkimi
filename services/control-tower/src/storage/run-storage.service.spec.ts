@@ -1,4 +1,4 @@
-import { RunStorageService } from './run-storage.service';
+import { RunStorageService, mountFileName } from './run-storage.service';
 import { runDirPath } from '@dokkimi/config';
 import * as fs from 'fs/promises';
 import * as fsSync from 'fs';
@@ -73,6 +73,36 @@ describe('RunStorageService', () => {
 
     it('should throw when definition does not exist', async () => {
       await expect(service.readDefinition('missing')).rejects.toThrow();
+    });
+  });
+
+  // Before, both were stored as x.conf and the second overwrote the first
+  describe('writeMountFiles', () => {
+    it('keeps two mount files with the same name apart', async () => {
+      await service.writeMountFiles('inst-1', [
+        {
+          name: 'api',
+          type: 'SERVICE',
+          mountFiles: [
+            {
+              source: 'x.conf',
+              target: '/etc/a.conf',
+              content: Buffer.from('a'),
+            },
+            {
+              source: 'x.conf',
+              target: '/etc/b.conf',
+              content: Buffer.from('b'),
+            },
+          ],
+        },
+      ]);
+
+      const dir = await service.getMountFilesDir('inst-1', 'api');
+      const read = (i: number) =>
+        fs.readFile(path.join(dir, mountFileName(i, 'x.conf')), 'utf-8');
+      expect(await read(0)).toBe('a');
+      expect(await read(1)).toBe('b');
     });
   });
 

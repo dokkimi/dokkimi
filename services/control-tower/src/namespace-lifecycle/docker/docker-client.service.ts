@@ -18,6 +18,10 @@ export interface RunContainerOptions {
   logConfig?: { Type: string; Config: Record<string, string> };
   /** Mount tmpfs volumes (e.g. { '/var/lib/mysql': '' } for in-memory data dirs). */
   tmpfs?: Record<string, string>;
+  /** Limit in CPU cores (the item's maxCpu). */
+  maxCpu?: number | null;
+  /** Limit in MB (the item's maxMemory). */
+  maxMemory?: number | null;
 }
 
 export interface ContainerInfo {
@@ -29,6 +33,18 @@ export interface ContainerInfo {
 
 const DOKKIMI_NETWORK_PREFIX = 'dokkimi-run-';
 const DOKKIMI_LABEL = 'io.dokkimi.managed';
+
+/** Sidecars that queue logs for Control Tower */
+const LOG_SENDING_ROLES = [
+  'interceptor',
+  'service-interceptor',
+  'chromium-interceptor',
+  'db-proxy',
+  'broker-proxy',
+  'test-agent',
+];
+/** Their loggers give up draining after 5s; the agent may also finish a step */
+const SIDECAR_STOP_SECONDS = 10;
 
 @Injectable()
 export class DockerClientService implements OnApplicationBootstrap {
@@ -93,9 +109,27 @@ export class DockerClientService implements OnApplicationBootstrap {
     await this.removeAllContainers(instanceId);
 
     const network = await this.findNetwork(networkName);
-    if (network) {
-      await network.remove();
-      this.logger.log(`Removed Docker network: ${networkName}`);
+    if (!network) {
+      return;
+    }
+    // Docker can briefly still see endpoints of containers just removed
+    // (403/409): retry. Already gone (404) is done.
+    for (let attempt = 1; ; attempt++) {
+      try {
+        await network.remove();
+        this.logger.log(`Removed Docker network: ${networkName}`);
+        return;
+      } catch (err) {
+        const status = (err as { statusCode?: number }).statusCode;
+        if (status === 404) {
+          return;
+        }
+        if ((status === 403 || status === 409) && attempt < 5) {
+          await new Promise((resolve) => setTimeout(resolve, 500));
+          continue;
+        }
+        throw err;
+      }
     }
   }
 
@@ -162,6 +196,10 @@ export class DockerClientService implements OnApplicationBootstrap {
           : { NetworkMode: opts.networkName }),
         ...(opts.logConfig ? { LogConfig: opts.logConfig } : {}),
         ...(opts.tmpfs ? { Tmpfs: opts.tmpfs } : {}),
+        ...(opts.maxCpu ? { NanoCpus: Math.round(opts.maxCpu * 1e9) } : {}),
+        ...(opts.maxMemory
+          ? { Memory: Math.round(opts.maxMemory * 1024 * 1024) }
+          : {}),
       },
       NetworkingConfig: networkingConfig,
     };
@@ -272,6 +310,23 @@ export class DockerClientService implements OnApplicationBootstrap {
       return;
     }
 
+    // Stop the sidecars first: on SIGTERM they send the logs still queued.
+    // A forced removal kills them with those logs.
+    await Promise.all(
+      containers
+        .filter(
+          (c) =>
+            c.State === 'running' &&
+            LOG_SENDING_ROLES.includes(c.Labels?.['io.dokkimi.role'] ?? ''),
+        )
+        .map((c) =>
+          this.docker
+            .getContainer(c.Id)
+            .stop({ t: SIDECAR_STOP_SECONDS })
+            .catch(() => undefined),
+        ),
+    );
+
     await Promise.all(
       containers.map(async (c) => {
         try {
@@ -318,7 +373,7 @@ export class DockerClientService implements OnApplicationBootstrap {
 
   async getExitedContainers(
     instanceId: string,
-  ): Promise<Array<{ id: string; name: string; role: string }>> {
+  ): Promise<Array<{ id: string; itemName?: string; role: string }>> {
     const containers = await this.docker.listContainers({
       all: true,
       filters: {
@@ -328,7 +383,7 @@ export class DockerClientService implements OnApplicationBootstrap {
     });
     return containers.map((c) => ({
       id: c.Id,
-      name: c.Labels['io.dokkimi.item-name'] || c.Names[0]?.replace(/^\//, ''),
+      itemName: c.Labels['io.dokkimi.item-name'],
       role: c.Labels['io.dokkimi.role'] || 'unknown',
     }));
   }
@@ -336,7 +391,7 @@ export class DockerClientService implements OnApplicationBootstrap {
   /** Exit code, OOM flag and last log lines of a stopped container. */
   async getExitDetails(
     nameOrId: string,
-    tailLines = 5,
+    tailLines = 20,
   ): Promise<{ exitCode: number; oomKilled: boolean; logTail: string[] }> {
     const container = this.docker.getContainer(nameOrId);
     const info = await container.inspect();

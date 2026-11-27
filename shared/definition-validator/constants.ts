@@ -10,8 +10,6 @@ export const VALID_ITEM_TYPES = [
   'DATABASE',
   'BROKER',
   'MOCK',
-  'HTTP_REQUEST',
-  'DB_QUERY',
 ] as const;
 export type ItemType = (typeof VALID_ITEM_TYPES)[number];
 
@@ -23,6 +21,20 @@ export const VALID_DATABASES = [
 ] as const;
 
 export const VALID_BROKERS = ['amqp', 'kafka'] as const;
+
+/**
+ * Ports the broker itself uses inside its container, which it shares with
+ * the Dokkimi proxy listening on the item's `port`: Control Tower's
+ * broker-config.service.ts (internal ports, Kafka's controller) and
+ * RabbitMQ's epmd (4369) and distribution port (internal + 20000).
+ */
+export const BROKER_RESERVED_PORTS: Record<
+  (typeof VALID_BROKERS)[number],
+  number[]
+> = {
+  amqp: [4369, 10672, 30672],
+  kafka: [9093, 19092],
+};
 
 export const VALID_HTTP_METHODS = [
   'GET',
@@ -37,8 +49,6 @@ export const VALID_HTTP_METHODS = [
 /** HTTP methods valid for MOCK items (includes wildcard) */
 export const VALID_MOCK_METHODS = [...VALID_HTTP_METHODS, '*'] as const;
 
-export const VALID_REQUEST_PROTOCOLS = ['http', 'https'] as const;
-
 export const PORT_MIN = 1;
 export const PORT_MAX = 65535;
 
@@ -50,6 +60,8 @@ export const MOCK_RESPONSE_STATUS_MAX = 599;
 // ---------------------------------------------------------------------------
 
 export const VALID_DEFINITION_KEYS = new Set([
+  // For editors; removed before the definition is submitted
+  '$schema',
   'name',
   'description',
   'items',
@@ -72,10 +84,7 @@ export const VALID_ITEM_KEYS: Record<string, Set<string>> = {
     'image',
     'port',
     'healthCheck',
-    'uiPath',
     'env',
-    'minCpu',
-    'minMemory',
     'maxCpu',
     'maxMemory',
     'localDevPath',
@@ -92,8 +101,6 @@ export const VALID_ITEM_KEYS: Record<string, Set<string>> = {
     'stage',
     'image',
     'env',
-    'minCpu',
-    'minMemory',
     'maxCpu',
     'maxMemory',
     'localDevPath',
@@ -118,8 +125,6 @@ export const VALID_ITEM_KEYS: Record<string, Set<string>> = {
     'dbUser',
     'dbPassword',
     'noAuth',
-    'minCpu',
-    'minMemory',
     'maxCpu',
     'maxMemory',
   ]),
@@ -136,8 +141,6 @@ export const VALID_ITEM_KEYS: Record<string, Set<string>> = {
     'healthCheck',
     'env',
     'command',
-    'minCpu',
-    'minMemory',
     'maxCpu',
     'maxMemory',
   ]),
@@ -157,33 +160,19 @@ export const VALID_ITEM_KEYS: Record<string, Set<string>> = {
     'mockResponseHeaders',
     'mockResponseBody',
   ]),
-  HTTP_REQUEST: new Set([
-    'type',
-    'name',
-    'description',
-    '$ref',
-    'requestMethod',
-    'requestProtocol',
-    'requestUrl',
-    'requestHeaders',
-    'requestBody',
-    'requestTarget',
-  ]),
-  DB_QUERY: new Set([
-    'type',
-    'name',
-    'description',
-    '$ref',
-    'queryTarget',
-    'queryText',
-    'queryParams',
-  ]),
+};
+
+// Fields that were documented but never did anything. Using one is an
+// error, so it isn't silently ignored.
+export const REMOVED_ITEM_KEYS: Record<string, string> = {
+  minCpu: 'Docker does not reserve resources; use maxCpu for a limit',
+  minMemory: 'Docker does not reserve resources; use maxMemory for a limit',
+  uiPath: 'it was never used; remove it',
 };
 
 export const VALID_TEST_KEYS = new Set([
   'name',
   'description',
-  'timeoutSeconds',
   'stopOnFailure',
   'variables',
   'steps',

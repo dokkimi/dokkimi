@@ -26,9 +26,27 @@ import {
   loadDokignore,
   findDokkimiDir,
   findDokkimiDirFrom,
+  isDokkimiDataDir,
   filterFilesByPattern,
   collectInitFilePaths,
 } from './glob-resolver';
+
+/**
+ * The largest init or mount file Control Tower accepts: its DTO allows 10 MiB
+ * of base64, which encodes 7.5 MiB.
+ */
+export const MAX_FILE_BYTES = (10 * 1024 * 1024 * 3) / 4;
+
+/** Why a file can't be sent, or null */
+function fileTooLarge(absPath: string, shown: string): string | null {
+  const size = fs.statSync(absPath).size;
+  if (size <= MAX_FILE_BYTES) {
+    return null;
+  }
+  // Rounded up, so a file just over the limit doesn't read as equal to it
+  const mb = Math.ceil((size / 1024 / 1024) * 10) / 10;
+  return `"${shown}" is ${mb.toFixed(1)} MB; files are limited to 7.5 MB`;
+}
 
 export type { DokkimiConfig } from './config-loader';
 
@@ -131,6 +149,7 @@ export function resolveDefinitions(target?: string): ResolverResult {
     // 2a: Directory contains a .dokkimi subfolder → use it
     const dokkimiSubdir = path.join(absTarget, '.dokkimi');
     if (
+      !isDokkimiDataDir(dokkimiSubdir) &&
       fs.existsSync(dokkimiSubdir) &&
       fs.statSync(dokkimiSubdir).isDirectory()
     ) {
@@ -248,9 +267,13 @@ export function resolveDefinitions(target?: string): ResolverResult {
 
     const obj = parsed as Record<string, unknown>;
 
+    // A file with a string name and an items list is a definition. Others
+    // are fragments (items, actions, sub-steps, variables), skipped here and
+    // checked by the definitions using them, unless they have "tests": that
+    // is a definition with a mistake, which mustn't be skipped silently.
     const hasName = typeof obj.name === 'string';
     const hasItems = Array.isArray(obj.items);
-    if (!hasName || !hasItems) {
+    if ((!hasName || !hasItems) && obj.tests === undefined) {
       continue;
     }
 
@@ -266,25 +289,15 @@ export function resolveDefinitions(target?: string): ResolverResult {
     };
 
     resolveActionRefs(obj, filePath, r, tFs);
-    validateDefinition(obj, filePath, r, tFs);
 
-    if (r.errors.length > 0) {
+    // Without a name and items list, there's nothing to resolve: report why
+    if (!hasName || !hasItems) {
+      validateDefinition(obj, filePath, r, tFs);
       errors.push({ file: filePath, errors: r.errors, warnings: r.warnings });
       continue;
     }
 
-    // Check for duplicate names
-    if (seenNames.has(name)) {
-      errors.push({
-        file: filePath,
-        errors: [`Duplicate definition name "${name}"`],
-        warnings: [],
-      });
-      continue;
-    }
-    seenNames.add(name);
-
-    // Resolve $ref references
+    // Resolve $ref references. File paths are then relative to the definition.
     const resolvedItems = resolveRefs(items, filePath, r, tFs);
 
     if (r.errors.length > 0) {
@@ -331,122 +344,12 @@ export function resolveDefinitions(target?: string): ResolverResult {
       continue;
     }
 
-    // Build the fully resolved definition
+    // Build the fully resolved definition; "$schema" is only for editors
+    const { $schema: _schema, ...defFields } = obj;
     const resolvedDef: Record<string, unknown> = {
-      ...obj,
+      ...defFields,
       items: resolvedItems.map((ri) => ri.item),
     };
-
-    // Read init files from disk
-    const initFiles: InitFileEntry[] = [];
-    let initFileError = false;
-    for (const ri of resolvedItems) {
-      const item = ri.item;
-      if (item.type !== 'DATABASE') {
-        continue;
-      }
-
-      const initPaths = collectInitFilePaths(item);
-      const allowedRoot = dokkimiDir;
-      for (const initPath of initPaths) {
-        const absInitPath = path.resolve(path.dirname(ri.sourceFile), initPath);
-        // Prevent path traversal outside the .dokkimi directory
-        if (
-          !absInitPath.startsWith(allowedRoot + path.sep) &&
-          absInitPath !== allowedRoot
-        ) {
-          errors.push({
-            file: filePath,
-            errors: [
-              `Init file path "${initPath}" resolves outside the project directory`,
-            ],
-            warnings: [],
-          });
-          initFileError = true;
-          continue;
-        }
-        if (!fs.existsSync(absInitPath)) {
-          errors.push({
-            file: filePath,
-            errors: [
-              `Init file not found: "${initPath}" (resolved to ${absInitPath})`,
-            ],
-            warnings: [],
-          });
-          initFileError = true;
-          continue;
-        }
-        consumedFiles.add(absInitPath);
-        initFiles.push({
-          itemName: item.name as string,
-          filename: path.basename(absInitPath),
-          content: fs.readFileSync(absInitPath),
-        });
-      }
-    }
-
-    if (initFileError) {
-      continue;
-    }
-
-    // Read mount files from disk (SERVICE items)
-    const mountFiles: MountFileEntry[] = [];
-    let mountFileError = false;
-    for (const ri of resolvedItems) {
-      const item = ri.item;
-      if (
-        (item.type !== 'SERVICE' && item.type !== 'WORKER') ||
-        !Array.isArray(item.mountFiles)
-      ) {
-        continue;
-      }
-      const allowedRoot = path.dirname(dokkimiDir);
-      for (const mf of item.mountFiles as Array<{
-        source: string;
-        target: string;
-      }>) {
-        const absMountPath = path.resolve(
-          path.dirname(ri.sourceFile),
-          mf.source,
-        );
-        if (
-          !absMountPath.startsWith(allowedRoot + path.sep) &&
-          absMountPath !== allowedRoot
-        ) {
-          errors.push({
-            file: filePath,
-            errors: [
-              `Mount file path "${mf.source}" resolves outside the project directory`,
-            ],
-            warnings: [],
-          });
-          mountFileError = true;
-          continue;
-        }
-        if (!fs.existsSync(absMountPath)) {
-          errors.push({
-            file: filePath,
-            errors: [
-              `Mount file not found: "${mf.source}" (resolved to ${absMountPath})`,
-            ],
-            warnings: [],
-          });
-          mountFileError = true;
-          continue;
-        }
-        consumedFiles.add(absMountPath);
-        mountFiles.push({
-          itemName: item.name as string,
-          source: path.basename(absMountPath),
-          target: mf.target,
-          content: fs.readFileSync(absMountPath),
-        });
-      }
-    }
-
-    if (mountFileError) {
-      continue;
-    }
 
     // Interpolate {{VAR}} in items from merged variables (config.yaml baseline + definition overrides)
     const buildVars: Record<string, string> = { ...config.env };
@@ -458,8 +361,13 @@ export function resolveDefinitions(target?: string): ResolverResult {
       for (const [k, v] of Object.entries(
         obj.variables as Record<string, unknown>,
       )) {
-        if (typeof v === 'string') {
-          buildVars[k] = v;
+        // A number or boolean variable is used as its text
+        if (
+          typeof v === 'string' ||
+          typeof v === 'number' ||
+          typeof v === 'boolean'
+        ) {
+          buildVars[k] = String(v);
         }
       }
     }
@@ -507,6 +415,173 @@ export function resolveDefinitions(target?: string): ResolverResult {
         ],
         warnings: [],
       });
+      continue;
+    }
+
+    // Validate the definition as it will run, with its values filled in:
+    // a version or healthCheck from a variable is checked as its value
+    validateDefinition(finalDef, filePath, r, tFs);
+    if (r.errors.length > 0) {
+      errors.push({ file: filePath, errors: r.errors, warnings: r.warnings });
+      continue;
+    }
+
+    // Check for duplicate names
+    if (seenNames.has(name)) {
+      errors.push({
+        file: filePath,
+        errors: [`Duplicate definition name "${name}"`],
+        warnings: [],
+      });
+      continue;
+    }
+    seenNames.add(name);
+    const finalItems = finalDef.items as Record<string, unknown>[];
+
+    // Read init files from disk
+    const initFiles: InitFileEntry[] = [];
+    let initFileError = false;
+    for (const item of finalItems) {
+      if (item.type !== 'DATABASE') {
+        continue;
+      }
+
+      const initPaths = collectInitFilePaths(item);
+      const allowedRoot = dokkimiDir;
+      for (const initPath of initPaths) {
+        const absInitPath = path.resolve(path.dirname(filePath), initPath);
+        // Prevent path traversal outside the .dokkimi directory
+        if (
+          !absInitPath.startsWith(allowedRoot + path.sep) &&
+          absInitPath !== allowedRoot
+        ) {
+          errors.push({
+            file: filePath,
+            errors: [
+              `Init file path "${initPath}" resolves outside the project directory`,
+            ],
+            warnings: [],
+          });
+          initFileError = true;
+          continue;
+        }
+        if (!fs.existsSync(absInitPath)) {
+          errors.push({
+            file: filePath,
+            errors: [
+              `Init file not found: "${initPath}" (resolved to ${absInitPath})`,
+            ],
+            warnings: [],
+          });
+          initFileError = true;
+          continue;
+        }
+        if (!fs.statSync(absInitPath).isFile()) {
+          errors.push({
+            file: filePath,
+            errors: [`Init file "${initPath}" is not a file — list each file`],
+            warnings: [],
+          });
+          initFileError = true;
+          continue;
+        }
+        const initTooLarge = fileTooLarge(absInitPath, initPath);
+        if (initTooLarge) {
+          errors.push({
+            file: filePath,
+            errors: [`Init file ${initTooLarge}`],
+            warnings: [],
+          });
+          initFileError = true;
+          continue;
+        }
+        consumedFiles.add(absInitPath);
+        initFiles.push({
+          itemName: item.name as string,
+          filename: path.basename(absInitPath),
+          content: fs.readFileSync(absInitPath),
+        });
+      }
+    }
+
+    if (initFileError) {
+      continue;
+    }
+
+    // Read mount files from disk (SERVICE items)
+    const mountFiles: MountFileEntry[] = [];
+    let mountFileError = false;
+    for (const item of finalItems) {
+      if (
+        (item.type !== 'SERVICE' && item.type !== 'WORKER') ||
+        !Array.isArray(item.mountFiles)
+      ) {
+        continue;
+      }
+      const allowedRoot = path.dirname(dokkimiDir);
+      for (const mf of item.mountFiles as Array<{
+        source: string;
+        target: string;
+      }>) {
+        const absMountPath = path.resolve(path.dirname(filePath), mf.source);
+        if (
+          !absMountPath.startsWith(allowedRoot + path.sep) &&
+          absMountPath !== allowedRoot
+        ) {
+          errors.push({
+            file: filePath,
+            errors: [
+              `Mount file path "${mf.source}" resolves outside the project directory`,
+            ],
+            warnings: [],
+          });
+          mountFileError = true;
+          continue;
+        }
+        if (!fs.existsSync(absMountPath)) {
+          errors.push({
+            file: filePath,
+            errors: [
+              `Mount file not found: "${mf.source}" (resolved to ${absMountPath})`,
+            ],
+            warnings: [],
+          });
+          mountFileError = true;
+          continue;
+        }
+        // Before, a directory crashed the resolver (EISDIR)
+        if (!fs.statSync(absMountPath).isFile()) {
+          errors.push({
+            file: filePath,
+            errors: [
+              `Mount file "${mf.source}" is not a file — mount each file separately`,
+            ],
+            warnings: [],
+          });
+          mountFileError = true;
+          continue;
+        }
+        const mountTooLarge = fileTooLarge(absMountPath, mf.source);
+        if (mountTooLarge) {
+          errors.push({
+            file: filePath,
+            errors: [`Mount file ${mountTooLarge}`],
+            warnings: [],
+          });
+          mountFileError = true;
+          continue;
+        }
+        consumedFiles.add(absMountPath);
+        mountFiles.push({
+          itemName: item.name as string,
+          source: path.basename(absMountPath),
+          target: mf.target,
+          content: fs.readFileSync(absMountPath),
+        });
+      }
+    }
+
+    if (mountFileError) {
       continue;
     }
 

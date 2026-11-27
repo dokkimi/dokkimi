@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { isDefinitionFile } from '@dokkimi/definition-validator';
+import { isDokkimiDataDir } from '@dokkimi/definition-resolver';
 
 export function findDokkimiDir(startDir: string): string | null {
   let dir = path.resolve(startDir);
@@ -8,7 +9,11 @@ export function findDokkimiDir(startDir: string): string | null {
 
   while (dir !== root) {
     const candidate = path.join(dir, '.dokkimi');
-    if (fs.existsSync(candidate) && fs.statSync(candidate).isDirectory()) {
+    if (
+      !isDokkimiDataDir(candidate) &&
+      fs.existsSync(candidate) &&
+      fs.statSync(candidate).isDirectory()
+    ) {
       return candidate;
     }
     dir = path.dirname(dir);

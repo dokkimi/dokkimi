@@ -13,6 +13,10 @@ jest.mock('../lib/cli-utils', () => {
 jest.mock('../lib/update-check', () => ({
   getUpdateStatus: jest.fn(),
 }));
+jest.mock('../lib/mcp-config', () => ({
+  MCP_CONFIG_PATHS: ['/home/.claude.json', '/home/.cursor/mcp.json'],
+  getMcpConfigProblem: jest.fn(),
+}));
 jest.mock('fs');
 
 import {
@@ -24,6 +28,7 @@ import { trackEvent } from '@dokkimi/telemetry';
 import { getServiceStatus } from '@dokkimi/service-manager';
 import { existsSync, readFileSync, statSync } from 'fs';
 import { getUpdateStatus } from '../lib/update-check';
+import { getMcpConfigProblem } from '../lib/mcp-config';
 import { doctor } from './doctor';
 
 const mockExecSilent = execSilent as jest.Mock;
@@ -34,6 +39,7 @@ const mockServiceStatus = getServiceStatus as jest.Mock;
 const mockExistsSync = existsSync as jest.Mock;
 const mockReadFileSync = readFileSync as jest.Mock;
 const mockStatSync = statSync as jest.Mock;
+const mockMcpProblem = getMcpConfigProblem as jest.Mock;
 const mockGetUpdateStatus = getUpdateStatus as jest.Mock;
 
 let consoleSpy: jest.SpyInstance;
@@ -76,6 +82,7 @@ beforeEach(() => {
   exitSpy = jest.spyOn(process, 'exit').mockImplementation(() => {
     throw new Error('process.exit');
   });
+  mockMcpProblem.mockReturnValue(null);
   mockGetUpdateStatus.mockResolvedValue({
     currentVersion: '1.0.0',
     updateAvailable: false,
@@ -206,6 +213,27 @@ describe('doctor', () => {
       (c: { name: string }) => c.name === 'CLI Version',
     );
     expect(versionCheck).toMatchObject({ passed: false, warning: true });
+  });
+
+  it('unusable MCP config is a warning, never a failure', async () => {
+    setupAllPassing();
+    mockMcpProblem.mockImplementation((p: string) =>
+      p.endsWith('.claude.json') ? `${p} is not valid JSON` : null,
+    );
+
+    await doctor(['--json']);
+
+    expect(exitSpy).not.toHaveBeenCalled();
+    const output = JSON.parse(consoleSpy.mock.calls[0][0] as string);
+    expect(output.passed).toBe(true);
+    const check = output.checks.find(
+      (c: { name: string }) => c.name === 'MCP Config',
+    );
+    expect(check).toMatchObject({
+      passed: false,
+      warning: true,
+      detail: '/home/.claude.json is not valid JSON',
+    });
   });
 
   it('missing .dokkimi/ is a warning, not a failure', async () => {

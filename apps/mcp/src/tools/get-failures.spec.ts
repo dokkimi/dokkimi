@@ -152,4 +152,44 @@ describe('get_failures', () => {
     expect(result.isError).toBe(true);
     expect(parseContent(result).error).toMatch(/500/);
   });
+
+  // Before, "All tests passed" was said of a run still going, and a
+  // cancelled or never-run definition wasn't a failure
+  describe('a run that did not pass', () => {
+    const latest = (status: string, instances: object[]) =>
+      mockCtFetchOrNull.mockResolvedValue({
+        runId: 'run-1',
+        status,
+        instances,
+      });
+
+    it('is not called passed while it is still going', async () => {
+      const { server, call } = createMockServer();
+      registerGetFailures(server);
+      latest('RUNNING', [
+        { id: 'i1', name: 'a', status: 'STOPPED', testStatus: 'PASSED' },
+        { id: 'i2', name: 'b', status: 'RUNNING' },
+      ]);
+
+      const data = parseContent(await call('get_failures'));
+      expect(data.message).toBe(
+        'The run is still going: 1 of 2 passed so far, none failed yet.',
+      );
+    });
+
+    it('lists cancelled and never-run definitions', async () => {
+      const { server, call } = createMockServer();
+      registerGetFailures(server);
+      latest('CANCELLED', [
+        { id: 'i1', name: 'a', status: 'STOPPED', testStatus: 'PASSED' },
+        { id: 'i2', name: 'b', status: 'STOPPED' },
+      ]);
+      mockCtFetch.mockResolvedValue([]);
+
+      const data = parseContent(await call('get_failures'));
+      expect(data).toEqual([
+        expect.objectContaining({ instanceName: 'b', outcome: 'cancelled' }),
+      ]);
+    });
+  });
 });

@@ -1,6 +1,7 @@
 import {
   prompt,
   fetchJson,
+  fetchJsonOrThrow,
   fetchAction,
   fetchPost,
   fetchPostWithError,
@@ -8,6 +9,7 @@ import {
   formatUptime,
   formatAge,
   sleep,
+  stopRun,
 } from './cli-utils';
 
 // ---------------------------------------------------------------------------
@@ -52,6 +54,43 @@ describe('fetchJson', () => {
   });
 });
 
+describe('fetchJsonOrThrow', () => {
+  const url = 'http://localhost/logs';
+
+  it('returns parsed JSON on success', async () => {
+    mockFetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => [1],
+    });
+    await expect(fetchJsonOrThrow(url)).resolves.toEqual([1]);
+  });
+
+  it('throws on an error status, naming the URL', async () => {
+    mockFetch.mockResolvedValue({ ok: false, status: 500 });
+    await expect(fetchJsonOrThrow(url)).rejects.toThrow(
+      'HTTP 500 fetching http://localhost/logs',
+    );
+  });
+
+  it('throws on a 404 unless allowed', async () => {
+    mockFetch.mockResolvedValue({ ok: false, status: 404 });
+    await expect(fetchJsonOrThrow(url)).rejects.toThrow('HTTP 404');
+    await expect(fetchJsonOrThrow(url, { allow404: true })).resolves.toBeNull();
+  });
+
+  it('throws on a timeout or a failed connection', async () => {
+    mockFetch.mockRejectedValueOnce(
+      new DOMException('timed out', 'TimeoutError'),
+    );
+    await expect(fetchJsonOrThrow(url)).rejects.toThrow('Timed out fetching');
+    mockFetch.mockRejectedValueOnce(new TypeError('fetch failed'));
+    await expect(fetchJsonOrThrow(url)).rejects.toThrow(
+      'Could not connect fetching',
+    );
+  });
+});
+
 // ---------------------------------------------------------------------------
 // fetchAction
 // ---------------------------------------------------------------------------
@@ -77,6 +116,27 @@ describe('fetchAction', () => {
     mockFetch.mockRejectedValue(new Error('Connection refused'));
     const result = await fetchAction('http://localhost/api', 'POST');
     expect(result).toBe(false);
+  });
+});
+
+// Before, `dokkimi run` stopped whichever run was active, even another
+// terminal's
+describe('stopRun', () => {
+  it('asks to stop only its own run', async () => {
+    mockFetch.mockResolvedValue({ ok: true });
+    expect(await stopRun('http://ct', 'run-1')).toBe(true);
+    expect(mockFetch).toHaveBeenCalledWith(
+      'http://ct/runs/stop',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({ runId: 'run-1' }),
+      }),
+    );
+  });
+
+  it("returns false when Dokkimi can't be reached", async () => {
+    mockFetch.mockRejectedValue(new Error('Connection refused'));
+    expect(await stopRun('http://ct', 'run-1')).toBe(false);
   });
 });
 
@@ -224,6 +284,12 @@ describe('checkService', () => {
       healthy: false,
       detail: 'not reachable',
     });
+  });
+
+  it('tells a slow service from one that is not running', async () => {
+    mockFetch.mockRejectedValue(new DOMException('', 'TimeoutError'));
+    const result = await checkService('ct', 'http://localhost:19001');
+    expect(result.detail).toBe('timed out');
   });
 });
 

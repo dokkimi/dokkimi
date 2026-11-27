@@ -78,6 +78,14 @@ func LoadConfig() (*Config, error) {
 		}
 	}
 
+	if ms := os.Getenv("HTTP_TIMEOUT_MS"); ms != "" {
+		v, err := strconv.Atoi(ms)
+		if err != nil || v <= 0 {
+			return nil, fmt.Errorf("HTTP_TIMEOUT_MS must be a positive integer, got %q", ms)
+		}
+		cfg.RequestTimeout = time.Duration(v) * time.Millisecond
+	}
+
 	if cfg.Port == "" {
 		return nil, fmt.Errorf("PORT is required")
 	}

@@ -25,7 +25,7 @@ import CodeBlock from '../../components/CodeBlock.astro';
     </tbody>
   </table>
 
-  <p>Step-level forEach example:</p>
+  <p>Step-level forEach example. On a step, the loop's <code>action</code>, <code>extract</code> and <code>assertions</code> go inside the loop object:</p>
   <CodeBlock code={`{
   "name": "Verify user {{user.name}}",
   "forEach": {
@@ -33,20 +33,20 @@ import CodeBlock from '../../components/CodeBlock.astro';
       { "name": "Alice", "email": "alice@test.com" },
       { "name": "Bob", "email": "bob@test.com" }
     ],
-    "as": "user"
-  },
-  "action": {
-    "type": "httpRequest",
-    "method": "GET",
-    "url": "api-gateway/api/users?email={{user.email}}"
-  },
-  "assertions": [
-    {
-      "assertions": [
-        { "path": "$.response.body.name", "operator": "eq", "value": "{{user.name}}" }
-      ]
-    }
-  ]
+    "as": "user",
+    "action": {
+      "type": "httpRequest",
+      "method": "GET",
+      "url": "api-gateway/api/users?email={{user.email}}"
+    },
+    "assertions": [
+      {
+        "assertions": [
+          { "path": "$.response.body.name", "operator": "eq", "value": "{{user.name}}" }
+        ]
+      }
+    ]
+  }
 }`} lang="json" />
 
   <h3>Loop name and metadata</h3>
@@ -69,16 +69,16 @@ import CodeBlock from '../../components/CodeBlock.astro';
       { "name": "Bob", "email": "bob@test.com" }
     ],
     "as": "user",
-    "name": "userLoop"
-  },
-  "action": {
-    "type": "httpRequest",
-    "method": "POST",
-    "url": "api-gateway/api/users",
-    "body": { "name": "{{user.name}}", "email": "{{user.email}}" }
-  },
-  "extract": {
-    "userId_{{userLoop.index}}": "$.response.body.id"
+    "name": "userLoop",
+    "action": {
+      "type": "httpRequest",
+      "method": "POST",
+      "url": "api-gateway/api/users",
+      "body": { "name": "{{user.name}}", "email": "{{user.email}}" }
+    },
+    "extract": {
+      "userId_{{userLoop.index}}": "$.response.body.id"
+    }
   }
 }`} lang="json" />
   <p>After this loop, <code>&#123;&#123;userId_0&#125;&#125;</code> and <code>&#123;&#123;userId_1&#125;&#125;</code> hold the IDs of Alice and Bob respectively.</p>
@@ -108,12 +108,14 @@ import CodeBlock from '../../components/CodeBlock.astro';
 
   <CodeBlock code={`{
   "name": "Seed user {{i}}",
-  "for": { "from": 1, "to": 5, "as": "i" },
-  "action": {
-    "type": "httpRequest",
-    "method": "POST",
-    "url": "api-gateway/api/users",
-    "body": { "name": "user-{{i}}" }
+  "for": {
+    "from": 1, "to": 5, "as": "i",
+    "action": {
+      "type": "httpRequest",
+      "method": "POST",
+      "url": "api-gateway/api/users",
+      "body": { "name": "user-{{i}}" }
+    }
   }
 }`} lang="json" />
 
@@ -144,12 +146,12 @@ import CodeBlock from '../../components/CodeBlock.astro';
     "delayMs": 500,
     "until": [
       { "path": "$.response.body.status", "operator": "eq", "value": "done" }
-    ]
-  },
-  "action": {
-    "type": "httpRequest",
-    "method": "GET",
-    "url": "api-gateway/api/jobs/{{jobId}}"
+    ],
+    "action": {
+      "type": "httpRequest",
+      "method": "GET",
+      "url": "api-gateway/api/jobs/{{jobId}}"
+    }
   }
 }`} lang="json" />
 
@@ -172,9 +174,9 @@ import CodeBlock from '../../components/CodeBlock.astro';
   "repeat": {
     "count": 10, "as": "attempt", "name": "pollLoop",
     "delayMs": 500,
-    "until": [{ "path": "$.response.body.status", "operator": "eq", "value": "done" }]
-  },
-  "action": { "type": "httpRequest", "method": "GET", "url": "api/jobs/{{jobId}}" }
+    "until": [{ "path": "$.response.body.status", "operator": "eq", "value": "done" }],
+    "action": { "type": "httpRequest", "method": "GET", "url": "api/jobs/{{jobId}}" }
+  }
 },
 {
   "name": "Verify polling completed",
@@ -189,18 +191,18 @@ import CodeBlock from '../../components/CodeBlock.astro';
 }`} lang="json" />
 
   <h2>stopOnFailure interaction</h2>
-  <p>By default, a failed assertion in any loop iteration stops the loop immediately. Set <code>"stopOnFailure": false</code> on the step to collect all iteration failures without halting:</p>
+  <p>By default, a failed assertion in any loop iteration stops the loop immediately. Set <code>"stopOnFailure": false</code> on the step to collect all iteration failures without halting. The test still fails if any iteration did:</p>
   <CodeBlock code={`{
   "name": "Verify all users (collect failures)",
   "stopOnFailure": false,
   "forEach": {
     "items": "{{users}}",
-    "as": "user"
-  },
-  "action": { "type": "httpRequest", "method": "GET", "url": "api/users/{{user.id}}" },
-  "assertions": [
-    { "assertions": [{ "path": "$.response.status", "operator": "eq", "value": 200 }] }
-  ]
+    "as": "user",
+    "action": { "type": "httpRequest", "method": "GET", "url": "api/users/{{user.id}}" },
+    "assertions": [
+      { "assertions": [{ "path": "$.response.status", "operator": "eq", "value": 200 }] }
+    ]
+  }
 }`} lang="json" />
 
   <h2>Where loops can be used</h2>
@@ -214,12 +216,13 @@ import CodeBlock from '../../components/CodeBlock.astro';
       <tr><td>Test-level</td><td><code>forEach</code>/<code>for</code>/<code>repeat</code> on a test</td><td>All steps repeat per iteration</td></tr>
       <tr><td>Step-level</td><td><code>forEach</code>/<code>for</code>/<code>repeat</code> on a step</td><td>Action + extract + assertions repeat per iteration</td></tr>
       <tr><td>Action-level</td><td><code>forEach</code>/<code>for</code>/<code>repeat</code> inside an action</td><td>Only the action repeats; extract + assertions run once after</td></tr>
-      <tr><td>Assertion-block</td><td><code>forEach</code> on an assertion block</td><td>Assertions nested inside the loop body run once per item</td></tr>
+      <tr><td>Assertion-block</td><td><code>forEach</code>, <code>for</code> or <code>repeat</code> on an assertion block</td><td>Assertions nested inside the loop body run once per item</td></tr>
       <tr><td>UI sub-step group</td><td><code>forEach</code>/<code>for</code>/<code>repeat</code> with nested <code>steps</code> inside a UI action</td><td>Sub-steps repeat per iteration</td></tr>
     </tbody>
   </table>
 
   <h3>Test-level loop</h3>
+  <p>Put <code>steps</code> next to the loop, not inside it.</p>
   <CodeBlock code={`{
   "name": "Verify order {{order.id}}",
   "forEach": {

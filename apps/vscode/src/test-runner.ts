@@ -3,8 +3,9 @@ import * as path from 'path';
 import * as cp from 'child_process';
 import { reportDumpResults, findItemByLabel } from './dump-watcher';
 
+// The CLI's labels for a definition's outcome
 const INSTANCE_LINE_RE =
-  /\[Dokkimi]\s+[✔✘-]\s+(\S+)\s+(PASSED|COMPLETED|FAILED|SKIPPED)/;
+  /\[Dokkimi]\s+[✔✘]\s+(\S+)\s+(PASSED|FAILED|CANCELLED|NOT RUN|INVALID)/;
 
 export function createRunProfile(
   controller: vscode.TestController,
@@ -171,7 +172,7 @@ function parseProgressLines(
     if (!item) {
       continue;
     }
-    if (status === 'PASSED' || status === 'COMPLETED') {
+    if (status === 'PASSED') {
       run.passed(item);
       item.children.forEach((child) => run.passed(child));
     } else if (status === 'FAILED') {
@@ -181,9 +182,9 @@ function parseProgressLines(
           'Failed — details available after run completes',
         ),
       );
-    } else if (status === 'SKIPPED') {
-      run.skipped(item);
-      item.children.forEach((child) => run.skipped(child));
+    } else {
+      // Cancelled, never run, or invalid: not passed
+      run.errored(item, new vscode.TestMessage(status.toLowerCase()));
     }
   }
 }

@@ -113,7 +113,8 @@ describe('DatabaseConfigService', () => {
 
       expect(config.environment.POSTGRES_HOST_AUTH_METHOD).toBe('trust');
       expect(config.environment.POSTGRES_PASSWORD).toBe('');
-      expect(config.environment.POSTGRES_USER).toBe('');
+      // Before, '': clients connecting as "" were refused
+      expect(config.environment.POSTGRES_USER).toBe('postgres');
     });
 
     it('should not set POSTGRES_HOST_AUTH_METHOD when noAuth is false', () => {
@@ -127,8 +128,21 @@ describe('DatabaseConfigService', () => {
       const config = service.getConfig('mysql', { noAuth: true });
 
       expect(config.environment.MYSQL_ALLOW_EMPTY_PASSWORD).toBe('yes');
-      expect(config.environment.MYSQL_PASSWORD).toBe('');
-      expect(config.environment.MYSQL_USER).toBe('');
+      // noAuth connects as root, which is set up without MYSQL_USER
+      expect(config.environment).not.toHaveProperty('MYSQL_USER');
+      expect(config.environment).not.toHaveProperty('MYSQL_PASSWORD');
+    });
+
+    // Before, MYSQL_USER=root made the container exit
+    it('sets up a root dbUser through MYSQL_ROOT_PASSWORD only', () => {
+      const config = service.getConfig('mysql', {
+        dbUser: 'root',
+        dbPassword: 'secret',
+      });
+
+      expect(config.environment).not.toHaveProperty('MYSQL_USER');
+      expect(config.environment).not.toHaveProperty('MYSQL_PASSWORD');
+      expect(config.environment.MYSQL_ROOT_PASSWORD).toBe('secret');
     });
 
     it('should not set MYSQL_ALLOW_EMPTY_PASSWORD when noAuth is false', () => {
@@ -164,10 +178,18 @@ describe('DatabaseConfigService', () => {
       });
     });
 
-    it('should return empty strings when noAuth is true', () => {
-      const result = resolveDbCredentials({ noAuth: true });
-
-      expect(result).toEqual({
+    it("uses each engine's own user when noAuth is true", () => {
+      expect(resolveDbCredentials({ noAuth: true }, 'postgres')).toEqual({
+        dbName: 'postgres',
+        dbUser: 'postgres',
+        dbPassword: '',
+      });
+      expect(resolveDbCredentials({ noAuth: true }, 'mysql')).toEqual({
+        dbName: '',
+        dbUser: 'root',
+        dbPassword: '',
+      });
+      expect(resolveDbCredentials({ noAuth: true }, 'mongodb')).toEqual({
         dbName: '',
         dbUser: '',
         dbPassword: '',

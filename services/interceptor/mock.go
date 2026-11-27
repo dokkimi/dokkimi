@@ -2,40 +2,37 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
+	"net/url"
+	"slices"
 	"strings"
 	"time"
-
-	"github.com/tsdkv/pathmatch"
 )
 
 // MockManager handles mock endpoint matching and response generation
 type MockManager struct {
 	cache  *MockCache
 	origin string
-	urlMap func() UrlMap
 }
 
 // NewMockManager creates a new mock manager
-func NewMockManager(cache *MockCache, _ interface{}, origin string, urlMap func() UrlMap) *MockManager {
+func NewMockManager(cache *MockCache, origin string) *MockManager {
 	return &MockManager{
 		cache:  cache,
 		origin: origin,
-		urlMap: urlMap,
 	}
 }
 
 // FindMatch finds a matching mock endpoint for the request
-// Returns the most specific match (specificity-based priority)
-// When scores are equal, exact path matches are preferred over path variable matches
+// Returns the most specific match, or the first of equally specific ones
 func (m *MockManager) FindMatch(r *http.Request) *MockEndpoint {
 	// Cache is automatically updated by ConfigMap watcher, no need to refresh
 	mocks := m.cache.GetMocks()
-	urlMap := m.urlMap()
 
 	// Buffer body once if any mock uses body matching
 	var bodyBytes []byte
@@ -54,23 +51,17 @@ func (m *MockManager) FindMatch(r *http.Request) *MockEndpoint {
 			return nil
 		}
 		r.Body = io.NopCloser(bytes.NewReader(bodyBytes))
-		// Cap matching input at 1MB to avoid excessive memory use
-		const maxMatchBytes = 1 << 20
-		if len(bodyBytes) > maxMatchBytes {
-			bodyBytes = bodyBytes[:maxMatchBytes]
-		}
+		bodyBytes = decompress(bodyBytes, r.Header.Get("Content-Encoding"))
 	}
 
 	var bestMatch *MockEndpoint
-	bestScore := -1
+	var best []int
 
 	for i := range mocks {
 		mock := &mocks[i]
-		if m.matches(mock, r, urlMap, bodyBytes) {
-			score := m.calculateSpecificity(mock, r, urlMap)
-			// If scores are equal, prefer exact matches over path variable matches
-			if score > bestScore || (score == bestScore && bestMatch != nil && mock.Path == r.URL.Path && bestMatch.Path != r.URL.Path) {
-				bestScore = score
+		if m.matches(mock, r, bodyBytes) {
+			if s := m.specificity(mock, r); slices.Compare(s, best) > 0 {
+				best = s
 				bestMatch = mock
 			}
 		}
@@ -79,84 +70,62 @@ func (m *MockManager) FindMatch(r *http.Request) *MockEndpoint {
 	return bestMatch
 }
 
-// calculateSpecificity calculates a specificity score for a mock match
-// Higher score = more specific match
-// Scoring:
-//   - Origin: specific (1) vs wildcard (0)
-//   - Target: specific (1) vs wildcard (0)
-//   - Method: specific (1) vs wildcard (0)
-//   - Path: exact (2) vs variable (2) vs prefix (1) vs wildcard (0)
-//
-// Note: Path variables score 2 (same as exact) but exact matches are checked first in pathMatches
-// Total possible score: 6 (was 5 before body matching)
-func (m *MockManager) calculateSpecificity(mock *MockEndpoint, r *http.Request, _ UrlMap) int {
-	score := 0
-
-	// Origin specificity (0 or 1)
-	if mock.Origin != "*" {
-		score += 1
+// specificity ranks a mock among those that match the same request. The values
+// are compared in order, so each one only decides between mocks that are equal
+// in those before it.
+func (m *MockManager) specificity(mock *MockEndpoint, r *http.Request) []int {
+	target := 1
+	if mock.Target == "*" {
+		target = 0
+	} else if strings.Contains(mock.Target, ":") {
+		target = 2 // host and port
 	}
 
-	// Target specificity (0 or 1)
-	if mock.Target != "*" {
-		score += 1
+	origin := 0
+	if mock.Origin != "*" && mock.Origin != "" {
+		origin = 1
 	}
 
-	// Method specificity (0 or 1)
+	path, detail := 0, 0
+	switch {
+	case mock.Path == "*":
+	case canonicalPath(mock.Path) == canonicalPath(r.URL.EscapedPath()):
+		path = 3
+	case strings.HasSuffix(mock.Path, "*"):
+		path, detail = 1, len(mock.Path) // longer prefix first
+	default:
+		path, detail = 2, -strings.Count(m.normalizePathVariableSyntax(mock.Path), "{") // fewer variables first
+	}
+
+	method := 0
 	if mock.Method != "*" {
-		score += 1
+		method = 1
 	}
 
-	// Path specificity (0, 1, or 2)
-	// Exact match = 2, Path variable = 2 (treated as equally specific), Prefix wildcard = 1, Full wildcard = 0
-	if mock.Path == "*" {
-		score += 0 // Full wildcard
-	} else if mock.Path == r.URL.Path {
-		score += 2 // Exact match
-	} else if m.hasPathVariables(mock.Path) && m.pathMatches(mock.Path, r.URL.Path) {
-		// Path variable match (e.g., /api/users/{id} matches /api/users/123)
-		// Score: 2 (treated as equally specific as exact match for simplicity)
-		// In practice, exact matches will be checked first, so exact > variable
-		score += 2
-	} else if strings.HasSuffix(mock.Path, "*") && m.pathMatches(mock.Path, r.URL.Path) {
-		score += 1 // Prefix match
-	}
-
-	// Body specificity (0 or 1)
+	body := 0
 	if mock.RequestBodyContains != nil || mock.RequestBodyMatches != nil {
-		score += 1
+		body = 1
 	}
 
-	return score
+	return []int{target, origin, path, detail, method, body}
 }
 
 // matches checks if a mock endpoint matches the request
-func (m *MockManager) matches(mock *MockEndpoint, r *http.Request, urlMap UrlMap, bodyBytes []byte) bool {
-	// Check origin:
-	//   mock.Origin == "*" or "" → matches any interceptor (no origin restriction)
-	//   mock.Origin == "service-key" → matches only that service's interceptor (via urlMap)
-	if mock.Origin != "*" && mock.Origin != "" {
-		if m.origin == "" {
-			// Shared interceptor doesn't match service-specific mocks
-			return false
-		}
-		serviceInfo, exists := urlMap[mock.Origin]
-		if !exists || serviceInfo.Name != m.origin {
-			return false
-		}
+func (m *MockManager) matches(mock *MockEndpoint, r *http.Request, bodyBytes []byte) bool {
+	// Check origin: "*" or "" matches any caller, anything else only the one
+	// with that name.
+	if mock.Origin != "*" && mock.Origin != "" && mock.Origin != m.origin {
+		return false
 	}
 
-	// Check target. If the mock's Target includes a port, match the Host header
-	// verbatim (including port). Otherwise strip any port from Host so
+	// Check target. A port only counts if the mock's Target includes one, so
 	// "api.example.com" matches "api.example.com:8080".
 	if mock.Target != "*" {
-		host := r.Host
-		if !strings.Contains(mock.Target, ":") {
-			if idx := strings.LastIndex(host, ":"); idx != -1 {
-				host = host[:idx]
-			}
+		host := stripPortFromHost(r.Host)
+		if strings.Contains(mock.Target, ":") {
+			host = hostWithPort(r)
 		}
-		if mock.Target != host {
+		if !strings.EqualFold(mock.Target, host) {
 			return false
 		}
 	}
@@ -166,8 +135,7 @@ func (m *MockManager) matches(mock *MockEndpoint, r *http.Request, urlMap UrlMap
 		return false
 	}
 
-	// Check path (simple prefix match for now, can be enhanced)
-	if !m.pathMatches(mock.Path, r.URL.Path) {
+	if !m.pathMatches(mock.Path, r.URL.EscapedPath()) {
 		return false
 	}
 
@@ -180,8 +148,8 @@ func (m *MockManager) matches(mock *MockEndpoint, r *http.Request, urlMap UrlMap
 			return false
 		}
 	}
-	if mock.compiledBodyRegex != nil {
-		if bodyBytes == nil {
+	if mock.RequestBodyMatches != nil {
+		if bodyBytes == nil || mock.compiledBodyRegex == nil {
 			return false
 		}
 		if !mock.compiledBodyRegex.Match(bodyBytes) {
@@ -192,7 +160,36 @@ func (m *MockManager) matches(mock *MockEndpoint, r *http.Request, urlMap UrlMap
 	return true
 }
 
-// pathMatches checks if path matches the pattern
+// hostWithPort returns the host and port a request is for. Clients leave a
+// scheme's usual port out of the Host header.
+func hostWithPort(r *http.Request) string {
+	if strings.Contains(r.Host, ":") {
+		return r.Host
+	}
+	if schemeUsed(r) == "https" {
+		return r.Host + ":443"
+	}
+	return r.Host + ":80"
+}
+
+// canonicalPath returns a path with every segment encoded the same way, however
+// it was written ("/a b" and "/a%20b"), and an encoded "/" still encoded.
+// Variables are left alone.
+func canonicalPath(path string) string {
+	segments := strings.Split(path, "/")
+	for i, segment := range segments {
+		if strings.HasPrefix(segment, "{") {
+			continue
+		}
+		if decoded, err := url.PathUnescape(segment); err == nil {
+			segment = decoded
+		}
+		segments[i] = url.PathEscape(segment)
+	}
+	return strings.Join(segments, "/")
+}
+
+// pathMatches checks if an encoded path matches the pattern
 // Supports:
 //   - Exact matches: "/api/users" == "/api/users"
 //   - Full wildcard: "*" matches anything
@@ -205,30 +202,22 @@ func (m *MockManager) pathMatches(pattern, path string) bool {
 		return true
 	}
 
-	// Exact match
-	if pattern == path {
-		return true
-	}
+	path = canonicalPath(path)
 
 	// Prefix wildcard match (e.g., "/api/*")
-	if strings.HasSuffix(pattern, "*") {
-		prefix := strings.TrimSuffix(pattern, "*")
-		return strings.HasPrefix(path, prefix)
+	if prefix, ok := strings.CutSuffix(pattern, "*"); ok {
+		return strings.HasPrefix(path, canonicalPath(prefix))
 	}
 
-	// Path variable matching using pathmatch library
-	// First, normalize :variable syntax to {variable} syntax
-	normalizedPattern := m.normalizePathVariableSyntax(pattern)
-
-	// Check if the normalized pattern contains variables
-	if m.hasPathVariables(normalizedPattern) {
-		matched, _, err := pathmatch.CompileAndMatch(normalizedPattern, path)
-		if err == nil && matched {
-			return true
+	// Compare the segments. A variable matches any segment that isn't empty.
+	patternSegments := strings.Split(canonicalPath(m.normalizePathVariableSyntax(pattern)), "/")
+	pathSegments := strings.Split(path, "/")
+	return slices.EqualFunc(patternSegments, pathSegments, func(want, got string) bool {
+		if strings.HasPrefix(want, "{") {
+			return got != ""
 		}
-	}
-
-	return false
+		return want == got
+	})
 }
 
 // normalizePathVariableSyntax converts :variable syntax to {variable} syntax
@@ -251,27 +240,14 @@ func (m *MockManager) normalizePathVariableSyntax(pattern string) string {
 	return strings.Join(normalized, "/")
 }
 
-// hasPathVariables checks if a path pattern contains variable syntax
-func (m *MockManager) hasPathVariables(pattern string) bool {
-	// Check for {variable} syntax
-	if strings.Contains(pattern, "{") && strings.Contains(pattern, "}") {
-		return true
-	}
-	// Check for :variable syntax (colon at start of segment)
-	parts := strings.Split(pattern, "/")
-	for _, part := range parts {
-		if strings.HasPrefix(part, ":") && len(part) > 1 {
-			return true
-		}
-	}
-	return false
-}
-
-// ApplyMock applies mock configuration to response
-func (m *MockManager) ApplyMock(mock *MockEndpoint) (*http.Response, error) {
-	// Apply delay if specified
+// ApplyMock applies mock configuration to response. The delay ends early if ctx
+// does, because the caller is gone.
+func (m *MockManager) ApplyMock(ctx context.Context, mock *MockEndpoint) (*http.Response, error) {
 	if mock.DelayMS != nil {
-		time.Sleep(time.Duration(*mock.DelayMS) * time.Millisecond)
+		select {
+		case <-time.After(time.Duration(*mock.DelayMS) * time.Millisecond):
+		case <-ctx.Done():
+		}
 	}
 
 	// Create mock response
@@ -286,9 +262,6 @@ func (m *MockManager) ApplyMock(mock *MockEndpoint) (*http.Response, error) {
 		Body:       http.NoBody,
 	}
 
-	// Mark as mocked
-	response.Header.Set("X-Mocked", "true")
-
 	// Set response body
 	if mock.ResponseBody != nil {
 		bodyBytes := []byte(*mock.ResponseBody)
@@ -300,19 +273,17 @@ func (m *MockManager) ApplyMock(mock *MockEndpoint) (*http.Response, error) {
 	// Set response headers
 	if mock.ResponseHeaders != nil {
 		var headers map[string]interface{}
-		if err := json.Unmarshal([]byte(*mock.ResponseHeaders), &headers); err == nil {
+		decoder := json.NewDecoder(strings.NewReader(*mock.ResponseHeaders))
+		decoder.UseNumber() // keeps numbers as they were written
+		if err := decoder.Decode(&headers); err == nil {
 			for key, value := range headers {
-				switch v := value.(type) {
-				case string:
-					response.Header.Set(key, v)
-				case []interface{}:
-					for _, val := range v {
-						if valStr, ok := val.(string); ok {
-							response.Header.Add(key, valStr)
-						}
-					}
-				default:
-					response.Header.Set(key, fmt.Sprintf("%v", v))
+				values, isList := value.([]interface{})
+				if !isList {
+					values = []interface{}{value}
+				}
+				response.Header.Del(key)
+				for _, v := range values {
+					response.Header.Add(key, fmt.Sprint(v))
 				}
 			}
 		}

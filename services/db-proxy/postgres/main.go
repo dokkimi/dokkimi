@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"database/sql"
-	"fmt"
 	"log"
 	"os"
 	"os/signal"
@@ -51,9 +50,8 @@ func main() {
 	// Started after Listen() so the proxy port is already accepting by the time
 	// health reports "ready" to Control Tower.
 	healthChecker := shared.NewHealthCheckerWithFunc(cfg, func(ctx context.Context) error {
-		connStr := fmt.Sprintf("postgres://%s:%s@localhost:%s/%s?sslmode=disable",
-			cfg.DatabaseCredentials.DBUser, cfg.DatabaseCredentials.DBPassword,
-			cfg.DatabasePort, cfg.DatabaseCredentials.DBName)
+		creds := cfg.DatabaseCredentials
+		connStr := shared.PostgresURL(creds.DBUser, creds.DBPassword, "localhost", cfg.DatabasePort, creds.DBName)
 		db, err := sql.Open("postgres", connStr)
 		if err != nil {
 			return err

@@ -27,7 +27,7 @@ describe('resolveRefs', () => {
       expect(result).toHaveLength(1);
       expect(result[0].item.name).toBe('my-service');
       expect(result[0].item.port).toBe(4000);
-      expect(result[0].sourceFile).toBe('/shared/service.json');
+      expect(result[0].sourceFile).toBe('/defs/test.json');
     });
 
     it('passes through inline items unchanged', () => {
@@ -379,24 +379,44 @@ describe('resolveRefs', () => {
       expect(result[0].item.port).toBe(9090); // inline wins over both refs
     });
 
-    it('sourceFile points to the last ref file', () => {
+    // Every path is relative to the file that declares it. Before, they were
+    // all resolved from the last fragment.
+    it('resolves each file path from the file that declares it', () => {
       const fs = makeMockFs({
-        '/shared/base.json': JSON.stringify({
-          type: 'SERVICE',
-          name: 'svc',
-          port: 3000,
-          healthCheck: '/h',
+        '/proj/shared/db.json': JSON.stringify({
+          type: 'DATABASE',
+          name: 'db',
+          database: 'postgres',
+          initFilePaths: ['./schema.sql'],
         }),
-        '/shared/overlay.json': JSON.stringify({ port: 4000 }),
+        '/proj/shared/more/overlay.json': JSON.stringify({
+          mountFiles: [{ source: './a.conf', target: '/etc/a.conf' }],
+        }),
       });
       const r = makeResult();
       const items = [
-        { $ref: ['../shared/base.json', '../shared/overlay.json'] },
+        {
+          $ref: ['../shared/db.json', '../shared/more/overlay.json'],
+          initFilePath: './seed.sql',
+          mountFiles: [
+            '...$ref.mountFiles',
+            { source: './b.conf', target: '/b' },
+          ],
+        },
       ];
 
-      const result = resolveRefs(items, '/defs/test.json', r, fs);
+      const result = resolveRefs(items, '/proj/defs/test.json', r, fs);
 
-      expect(result[0].sourceFile).toBe('/shared/overlay.json');
+      expect(r.errors).toEqual([]);
+      expect(result[0].sourceFile).toBe('/proj/defs/test.json');
+      expect(result[0].item).toMatchObject({
+        initFilePath: './seed.sql',
+        initFilePaths: ['../shared/schema.sql'],
+        mountFiles: [
+          { source: '../shared/more/a.conf', target: '/etc/a.conf' },
+          { source: './b.conf', target: '/b' },
+        ],
+      });
     });
 
     it('errors when any multi-ref file is missing', () => {
@@ -625,7 +645,7 @@ describe('resolveActionRefs', () => {
     expect(r.warnings).toHaveLength(0);
   });
 
-  it('warns on unrecognized keys in fragment file', () => {
+  it('rejects unrecognized keys in fragment file', () => {
     const fs = makeMockFs({
       '/shared/extra.json': JSON.stringify({
         steps: [{ visit: '/home' }],
@@ -637,9 +657,8 @@ describe('resolveActionRefs', () => {
 
     resolveActionRefs(def, '/defs/test.json', r, fs);
 
-    expect(r.errors).toHaveLength(0);
-    expect(r.warnings).toHaveLength(1);
-    expect(r.warnings[0]).toContain('extra keys');
+    expect(r.errors).toHaveLength(1);
+    expect(r.errors[0]).toContain('extra keys');
   });
 
   it('handles empty steps array in fragment', () => {
@@ -883,7 +902,7 @@ describe('resolveActionRefs — action-level $ref', () => {
     expect(r.warnings).toHaveLength(0);
   });
 
-  it('warns on unrecognized keys in action fragment', () => {
+  it('rejects unrecognized keys in action fragment', () => {
     const fs = makeMockFs({
       '/shared/extra.json': JSON.stringify({
         action: { type: 'httpRequest', method: 'GET', url: 'svc/api' },
@@ -895,10 +914,9 @@ describe('resolveActionRefs — action-level $ref', () => {
 
     resolveActionRefs(def, '/defs/test.json', r, fs);
 
-    expect(r.errors).toHaveLength(0);
-    expect(r.warnings).toHaveLength(1);
-    expect(r.warnings[0]).toContain('extra keys');
-    expect(r.warnings[0]).toContain('foo');
+    expect(r.errors).toHaveLength(1);
+    expect(r.errors[0]).toContain('extra keys');
+    expect(r.errors[0]).toContain('foo');
   });
 
   it('overrides can change the database target', () => {
@@ -1168,5 +1186,28 @@ describe('recursive $ref resolution', () => {
       expect(r.errors.length).toBeGreaterThan(0);
       expect(r.errors.some((e) => e.includes('circular'))).toBe(true);
     });
+  });
+});
+
+// Before, a sub-step $ref inside an action fragment was left as is, and the
+// UI action failed with "missing sub-step kind".
+it('expands sub-step refs inside an action fragment, relative to it', () => {
+  const fs = makeMockFs({
+    '/proj/shared/ui/login.yaml': 'name: login\nsteps:\n  - click: "#login"\n',
+    '/proj/shared/ui/open.yaml':
+      'name: open\naction:\n  type: ui\n  target: app\n  steps:\n    - $ref: ./login.yaml\n    - visit: /x\n',
+  });
+  const r = makeResult();
+  const def = {
+    tests: [
+      { name: 't', steps: [{ action: { $ref: '../shared/ui/open.yaml' } }] },
+    ],
+  };
+  resolveActionRefs(def, '/proj/defs/d.yaml', r, fs);
+  expect(r.errors).toEqual([]);
+  expect(def.tests[0].steps[0].action).toEqual({
+    type: 'ui',
+    target: 'app',
+    steps: [{ click: '#login' }, { visit: '/x' }],
   });
 });
