@@ -145,10 +145,13 @@ export class DeploymentSchedulerService {
         inst.testStatus === 'FAILED';
 
       if (isTerminal) {
+        // A test's result is the instance's result; a teardown that failed
+        // after it (status FAILED) doesn't change it
         if (
-          inst.status === InstanceStatus.FAILED ||
-          inst.testStatus === 'FAILED' ||
-          (inst.status === InstanceStatus.STOPPED && !inst.testStatus)
+          inst.testStatus
+            ? inst.testStatus === 'FAILED'
+            : inst.status === InstanceStatus.FAILED ||
+              inst.status === InstanceStatus.STOPPED
         ) {
           anyFailed = true;
         }
@@ -184,8 +187,10 @@ export class DeploymentSchedulerService {
     const passedCount = run.instances.filter(
       (i) => i.testStatus === 'PASSED',
     ).length;
-    const failedCount = run.instances.filter(
-      (i) => i.testStatus === 'FAILED' || i.status === InstanceStatus.FAILED,
+    const failedCount = run.instances.filter((i) =>
+      i.testStatus
+        ? i.testStatus === 'FAILED'
+        : i.status === InstanceStatus.FAILED,
     ).length;
     const runDurationMs = run.createdAt
       ? Date.now() - new Date(run.createdAt).getTime()

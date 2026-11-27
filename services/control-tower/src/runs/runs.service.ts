@@ -1,5 +1,6 @@
 import {
   ConflictException,
+  HttpException,
   Injectable,
   Logger,
   NotFoundException,
@@ -247,6 +248,55 @@ export class RunsService implements OnApplicationBootstrap {
     });
 
     return { instanceId, status: 'PENDING' };
+  }
+
+  /**
+   * Fails a pending instance whose submission was rejected, with the reason,
+   * and ends the run if nothing else is left. The run isn't checked while
+   * another instance is still waiting for its definition: the CLI submits
+   * one at a time, and those would count as failed.
+   */
+  async rejectSubmission(
+    runId: string,
+    instanceId: string,
+    err: unknown,
+  ): Promise<void> {
+    const response =
+      err instanceof HttpException ? err.getResponse() : undefined;
+    const detail =
+      response && typeof response === 'object' && 'message' in response
+        ? (response as { message: unknown }).message
+        : err instanceof Error
+          ? err.message
+          : String(err);
+    const reason = Array.isArray(detail) ? detail.join('; ') : String(detail);
+    try {
+      const { count } = await this.prisma.namespaceInstance.updateMany({
+        where: { id: instanceId, runId, status: InstanceStatus.PENDING },
+        data: {
+          status: InstanceStatus.FAILED,
+          errorMessage: `Definition rejected: ${reason}`,
+          stoppedAt: new Date(),
+        },
+      });
+      if (count === 0) {
+        return;
+      }
+      const waiting = await this.prisma.namespaceInstance.findMany({
+        where: { runId, status: InstanceStatus.PENDING },
+        select: { id: true },
+      });
+      for (const inst of waiting) {
+        if (!(await this.runStorage.hasDefinition(inst.id))) {
+          return;
+        }
+      }
+      await this.scheduler.handleInstancesStopped([runId]);
+    } catch (e) {
+      this.logger.error(
+        `Failed to record the rejected submission of instance ${instanceId}: ${e}`,
+      );
+    }
   }
 
   async getRunHistory(projectPath?: string, limit = 10) {
@@ -568,15 +618,20 @@ export class RunsService implements OnApplicationBootstrap {
       select: { runId: true },
     });
 
+    // The run is checked even when the teardown fails: before, a teardown
+    // error after a passed test left the run running forever
     this.lifecycle
       .stopInstance(instanceId)
+      .catch((err) => {
+        this.logger.error(`Failed to stop instance ${instanceId}:`, err);
+      })
       .then(() => {
         if (instance?.runId) {
           return this.scheduler.handleInstancesStopped([instance.runId]);
         }
       })
       .catch((err) => {
-        this.logger.error(`Failed to stop instance ${instanceId}:`, err);
+        this.logger.error(`Failed to finish instance ${instanceId}:`, err);
       });
   }
 

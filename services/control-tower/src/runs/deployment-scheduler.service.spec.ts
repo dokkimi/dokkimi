@@ -235,6 +235,25 @@ describe('DeploymentSchedulerService', () => {
   });
 
   describe('checkRunCompletion', () => {
+    // Before, a teardown that failed after the test passed failed the run
+    it('passes a run whose test passed although its teardown failed', async () => {
+      mockPrisma.run.findUnique.mockResolvedValue({
+        id: 'run-1',
+        status: RunStatus.RUNNING,
+        instances: [
+          { id: 'i1', status: InstanceStatus.FAILED, testStatus: 'PASSED' },
+        ],
+      });
+
+      await service.checkRunCompletion('run-1');
+
+      expect(mockPrisma.run.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ status: RunStatus.COMPLETED }),
+        }),
+      );
+    });
+
     it('does nothing if run not found', async () => {
       mockPrisma.run.findUnique.mockResolvedValue(null);
 

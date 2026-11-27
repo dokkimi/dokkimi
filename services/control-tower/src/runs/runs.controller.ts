@@ -6,11 +6,13 @@ import {
   Param,
   Body,
   Query,
+  UseInterceptors,
 } from '@nestjs/common';
 import { RunsService } from './runs.service';
 import { CreateRunDto } from './dto/create-run.dto';
 import { SubmitInstanceDto } from './dto/submit-instance.dto';
 import { RunStorageService } from '../storage/run-storage.service';
+import { SubmissionRejectedInterceptor } from './submission-rejected.interceptor';
 
 @Controller('runs')
 export class RunsController {
@@ -38,6 +40,7 @@ export class RunsController {
    * Submits resolved definition content for an instance, triggering deployment.
    */
   @Post(':runId/instances/:instanceId')
+  @UseInterceptors(SubmissionRejectedInterceptor)
   submitInstance(
     @Param('runId') runId: string,
     @Param('instanceId') instanceId: string,

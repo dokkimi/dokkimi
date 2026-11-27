@@ -91,6 +91,27 @@ describe('DockerClientService', () => {
       expect(mockNetwork.remove).toHaveBeenCalled();
     });
 
+    it('retries a network that still has endpoints, and accepts one already gone', async () => {
+      jest.useFakeTimers();
+      mockDocker.listContainers.mockResolvedValue([]);
+      mockDocker.listNetworks.mockResolvedValue([
+        { Name: 'dokkimi-run-inst-1', Id: 'net-1' },
+      ]);
+      mockNetwork.remove
+        .mockRejectedValueOnce(
+          Object.assign(new Error('active endpoints'), { statusCode: 403 }),
+        )
+        .mockRejectedValueOnce(
+          Object.assign(new Error('gone'), { statusCode: 404 }),
+        );
+
+      const done = service.removeNetwork('inst-1');
+      await jest.advanceTimersByTimeAsync(500);
+      await expect(done).resolves.toBeUndefined();
+      expect(mockNetwork.remove).toHaveBeenCalledTimes(2);
+      jest.useRealTimers();
+    });
+
     it('should handle non-existent network gracefully', async () => {
       mockDocker.listNetworks.mockResolvedValue([]);
 

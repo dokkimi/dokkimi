@@ -97,9 +97,27 @@ export class DockerClientService implements OnApplicationBootstrap {
     await this.removeAllContainers(instanceId);
 
     const network = await this.findNetwork(networkName);
-    if (network) {
-      await network.remove();
-      this.logger.log(`Removed Docker network: ${networkName}`);
+    if (!network) {
+      return;
+    }
+    // Docker can briefly still see endpoints of containers just removed
+    // (403/409): retry. Already gone (404) is done.
+    for (let attempt = 1; ; attempt++) {
+      try {
+        await network.remove();
+        this.logger.log(`Removed Docker network: ${networkName}`);
+        return;
+      } catch (err) {
+        const status = (err as { statusCode?: number }).statusCode;
+        if (status === 404) {
+          return;
+        }
+        if ((status === 403 || status === 409) && attempt < 5) {
+          await new Promise((resolve) => setTimeout(resolve, 500));
+          continue;
+        }
+        throw err;
+      }
     }
   }
 
